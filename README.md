@@ -234,6 +234,9 @@ Every conversation is saved after each turn in `~/.local/share/mo/sessions/`, re
   the input to edit and send, and the conversation goes on from before it, in a fork. The
   conversation as it was stays in `/resume`.
 - `/fork` goes on in a copy; `/clear` starts a new conversation. Neither loses the old one.
+- A conversation is named after its first prompt. `/title <name>` renames it, `/title auto` asks
+  the model for a short title in the language you write in, and `/title` alone says the current
+  one. It works while the model is busy, and the name shows in `/resume` and the side panel.
 
 Going back does not undo what tools changed on disk since that prompt.
 
@@ -364,5 +367,5 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | pgup, pgdown, shift+up/down, mouse wheel | scroll the conversation |
 | drag | select text and copy it; the shared indent is taken off |
 | click | buttons, options and tabs of a dialog, a suggested command, the mode (next), the provider and model (their settings), a job (its last lines), a settings option |
-| `/clear` `/resume` `/rewind` `/fork` `/compact` `/settings` `/providers` `/mcp` `/plugins` `/view <file>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
+| `/clear` `/resume` `/rewind` `/fork` `/title` `/compact` `/settings` `/providers` `/mcp` `/plugins` `/view <file>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
 | `/<name> text` | a plugin command |
