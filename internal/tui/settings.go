@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -17,9 +16,7 @@ import (
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/detect"
 	"github.com/jg/mo/internal/llm"
-	"github.com/jg/mo/internal/render"
 	"github.com/jg/mo/internal/tools"
-	"github.com/jg/mo/internal/web"
 )
 
 const (
@@ -28,7 +25,7 @@ const (
 	settingsMinHeight     = 3
 	maxToolChoiceHeight   = 14
 	autoProvider          = ""
-	settingsHelp          = "enter next · shift+tab back · space toggle · ctrl+j new line in a box · esc cancel"
+	settingsHelp          = "enter next · shift+tab previous field · ←→ yes/no · ctrl+j new line in a box · esc back"
 )
 
 type settingsKind int
@@ -54,12 +51,21 @@ type settingsSavedMsg struct {
 
 // settingsScreen is a form over the user file. A form that saves turns the
 // file into the new one with apply; a form that picks what to edit opens the
-// next one with next.
+// next one with next. Esc opens back, the screen it came from, if any.
 type settingsScreen struct {
 	form  *huh.Form
 	layer config.Config
 	apply func(layer config.Config) (config.Config, error)
 	next  func(m model) (tea.Model, tea.Cmd)
+	back  func(m model) (tea.Model, tea.Cmd)
+	help  string
+}
+
+func (screen *settingsScreen) helpLine() string {
+	if screen.help != "" {
+		return screen.help
+	}
+	return settingsHelp
 }
 
 // loadSettings gathers, off the UI goroutine, what the form shows: the user
@@ -89,19 +95,11 @@ func (m model) openSettings(msg settingsLoadedMsg) (tea.Model, tea.Cmd) {
 	}
 	switch msg.kind {
 	case providerSettings:
-		return m.pickProvider(msg)
+		return m.pickProvider(msg, nil)
 	case mcpSettings:
-		return m.pickMCPServer(msg)
+		return m.pickMCPServer(msg, nil)
 	}
-	draft := newSettingsDraft(msg.layer)
-	if len(m.session.ToolDescriptions) > 0 {
-		draft.describeTools(m.session.ToolDescriptions)
-	}
-	apply := func(layer config.Config) (config.Config, error) {
-		return draft.applyTo(layer, msg.findings)
-	}
-	form := buildSettingsForm(m.session, draft, msg.findings, msg.models)
-	return m.showSettings(&settingsScreen{form: form, layer: msg.layer, apply: apply})
+	return m.openSettingsMenu(msg)
 }
 
 func (m model) showSettings(screen *settingsScreen) (tea.Model, tea.Cmd) {
@@ -118,12 +116,16 @@ func fitForm(form *huh.Form, width, height int) *huh.Form {
 // updateSettings feeds the form and acts once it is completed or left.
 func (m model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if size, ok := msg.(tea.WindowSizeMsg); ok {
-		m.resize(size)
+		redraw := m.resize(size)
 		m.settings.form = fitForm(m.settings.form, size.Width, size.Height)
-		return m, nil
+		return m, redraw
 	}
 	if key, ok := msg.(tea.KeyPressMsg); ok && (key.String() == "esc" || key.String() == "ctrl+c") {
+		screen := m.settings
 		m.settings = nil
+		if screen.back != nil && key.String() == "esc" {
+			return screen.back(m)
+		}
 		return m, printText(m.printer.Note("settings unchanged"))
 	}
 	updated, cmd := m.settings.form.Update(msg)
@@ -179,62 +181,10 @@ func (m model) finishSettings(msg settingsSavedMsg) (tea.Model, tea.Cmd) {
 
 func isAgentMsg(msg tea.Msg) bool {
 	switch msg.(type) {
-	case streamMsg, streamEndMsg, usageMsg, approvalMsg, runDoneMsg, spinner.TickMsg, printMsg:
+	case streamMsg, streamEndMsg, usageMsg, approvalMsg, runDoneMsg, spinner.TickMsg, printMsg, reasoningMsg, drawMsg, redrawMsg:
 		return true
 	}
 	return false
-}
-
-func buildSettingsForm(session Session, draft *settingsDraft, findings []detect.Finding, models []string) *huh.Form {
-	return huh.NewForm(
-		modelGroup(session.Config, draft, findings, models),
-		toolsGroup(draft, toolNames(session)),
-		contextGroup(session.Agent, draft),
-		descriptionsGroup(draft, toolNames(session)),
-		loopGroup(draft),
-		webGroup(draft),
-		huh.NewGroup(
-			huh.NewInput().Title("Memory folder").Value(&draft.memoryDir),
-			huh.NewSelect[string]().Title("Images, SVG and Mermaid").Options(
-				huh.NewOption("auto: kitty graphics where the terminal has them, else colour blocks", string(render.ModeAuto)),
-				huh.NewOption("kitty graphics", string(render.ModeKitty)),
-				huh.NewOption("colour blocks", string(render.ModeBlocks)),
-				huh.NewOption("off: only the file path", string(render.ModeOff)),
-			).Value(&draft.images),
-			huh.NewNote().Title("Elsewhere").Description("providers: /providers · MCP servers: /mcp"),
-		).Title("Memory and display"),
-	).WithShowHelp(false)
-}
-
-func modelGroup(cfg config.Config, draft *settingsDraft, findings []detect.Finding, models []string) *huh.Group {
-	fields := []huh.Field{
-		huh.NewSelect[string]().Title("Provider").Options(providerOptions(cfg, findings, draft.initialProvider)...).Value(&draft.provider),
-		huh.NewInput().Title("Model").Description("empty: the first model the server lists").
-			Suggestions(models).Value(&draft.model),
-		huh.NewInput().Title("Max output tokens").Description("0: the provider's default").
-			Validate(validCount).Value(&draft.maxTokens),
-	}
-	if note := unusableNote(findings); note != "" {
-		fields = append(fields, huh.NewNote().Title("Found but not usable").Description(note))
-	}
-	if _, err := os.Stat(config.ProjectFile(".")); err == nil {
-		fields = append(fields, huh.NewNote().Description("This project's .mo.toml also applies on top of these settings."))
-	}
-	return huh.NewGroup(fields...).Title("Model")
-}
-
-func toolsGroup(draft *settingsDraft, names []string) *huh.Group {
-	return huh.NewGroup(
-		huh.NewSelect[string]().Title("Tool mode").Options(
-			huh.NewOption("full: every tool with its description", string(tools.ModeFull)),
-			huh.NewOption("compact: no descriptions", string(tools.ModeCompact)),
-			huh.NewOption("search: load tools on demand", string(tools.ModeSearch)),
-		).Value(&draft.mode),
-		toolChoice("Loaded from the start in search mode", names, &draft.alwaysLoaded),
-		toolChoice("Ask before running", names, &draft.confirm),
-		toolChoice("Disabled", names, &draft.disabled),
-		huh.NewInput().Title("Max tool output (bytes)").Validate(validCount).Value(&draft.maxOutput),
-	).Title("Tools")
 }
 
 // toolNames is every tool the session can have, built-in first, each once.
@@ -256,70 +206,11 @@ func toolChoice(title string, names []string, value *[]string) *huh.MultiSelect[
 	return huh.NewMultiSelect[string]().Title(title).Options(huh.NewOptions(names...)...).Height(height).Value(value)
 }
 
-func contextGroup(current *agent.Agent, draft *settingsDraft) *huh.Group {
-	return huh.NewGroup(
-		huh.NewNote().Title("Sent with every request now").Description(budgetText(current.Budget())),
-		huh.NewInput().Title("Context window (tokens)").Description("0: ask the server, else 32768 / 200000").
-			Validate(validCount).Value(&draft.window),
-		huh.NewInput().Title("Make room at").Description("share of the window, 0 never").
-			Validate(validFraction).Value(&draft.compactAt),
-		huh.NewSelect[string]().Title("To make room").Options(
-			huh.NewOption("summarize the older messages", "compact"),
-			huh.NewOption("drop the oldest messages", "drop"),
-		).Value(&draft.strategy),
-		huh.NewText().Title("System prompt").Lines(6).Value(&draft.systemPrompt),
-		huh.NewText().Title("Summary prompt").Description("used when compacting").Lines(4).Value(&draft.compactPrompt),
-	).Title("Context")
-}
-
-func webGroup(draft *settingsDraft) *huh.Group {
-	fields := []huh.Field{
-		huh.NewSelect[string]().Title("Web search").Options(
-			huh.NewOption("DuckDuckGo: no key", web.SearchDuckDuckGo),
-			huh.NewOption("SearXNG: your own instance", web.SearchSearXNG),
-			huh.NewOption("Brave: needs a key", web.SearchBrave),
-			huh.NewOption("Tavily: needs a key", web.SearchTavily),
-		).Value(&draft.search),
-		huh.NewInput().Title("SearXNG URL").Description("e.g. http://localhost:8888").Value(&draft.searchURL),
-		huh.NewInput().Title("Search key variable").Description("environment variable holding the Brave or Tavily key").Value(&draft.searchKeyEnv),
-		huh.NewInput().Title("Search key").Description("saved in the settings file; empty keeps the one it has").
-			EchoMode(huh.EchoModePassword).Value(&draft.searchKey),
-	}
-	if draft.savedKey {
-		fields = append(fields, huh.NewConfirm().Title("Forget the saved search key").Value(&draft.forgetKey))
-	}
-	return huh.NewGroup(fields...).Title("Web")
-}
-
-func loopGroup(draft *settingsDraft) *huh.Group {
-	return huh.NewGroup(
-		huh.NewConfirm().Title("Watch for loops").Value(&draft.loopEnabled),
-		huh.NewInput().Title("Same tool call, same result").Description("times before it is not run").
-			Validate(atLeast(2)).Value(&draft.loopRepeats),
-		huh.NewInput().Title("Within the last").Description("replies of the model in this turn").
-			Validate(atLeast(1)).Value(&draft.loopReplies),
-		huh.NewInput().Title("Same text in a row").Description("times before the reply is cut").
-			Validate(atLeast(2)).Value(&draft.loopStreamRepeats),
-		huh.NewInput().Title("Warnings to the model").Description("per turn; the next loop stops the turn").
-			Validate(atLeast(0)).Value(&draft.loopWarnings),
-	).Title("Loop guard")
-}
-
 func atLeast(least int) func(string) error {
 	return func(text string) error {
 		_, err := parseAtLeast(text, least)
 		return err
 	}
-}
-
-func descriptionsGroup(draft *settingsDraft, names []string) *huh.Group {
-	var fields []huh.Field
-	for _, name := range names {
-		if description, shown := draft.descriptions[name]; shown {
-			fields = append(fields, huh.NewInput().Title(name).Value(description))
-		}
-	}
-	return huh.NewGroup(fields...).Title("Tool descriptions").Description("empty sends the tool without one")
 }
 
 func validCount(text string) error {

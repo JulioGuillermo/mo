@@ -67,9 +67,9 @@ func (p *printer) renderer() render.Renderer {
 }
 
 // Answer prints an answer of the model: markdown, with its mermaid and svg
-// blocks and its images of local files drawn.
+// blocks and its images of local files drawn, after a blank line.
 func (p *printer) Answer(text string) string {
-	var parts []string
+	parts := []string{""}
 	for _, segment := range render.Split(text) {
 		parts = append(parts, p.segment(segment))
 	}
@@ -132,7 +132,25 @@ func (p *printer) setDark(dark bool) {
 	}
 }
 
+// Markdown renders text, with its tables drawn as stripes.
 func (p *printer) Markdown(text string) string {
+	parts := splitTables(text)
+	if len(parts) == 1 && !parts[0].isTable {
+		return p.glamour(text)
+	}
+	var out []string
+	for _, part := range parts {
+		switch {
+		case part.isTable:
+			out = append(out, p.Table(part.text))
+		case strings.TrimSpace(part.text) != "":
+			out = append(out, p.glamour(part.text))
+		}
+	}
+	return strings.Join(out, "\n\n")
+}
+
+func (p *printer) glamour(text string) string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.markdown == nil {
@@ -171,9 +189,9 @@ func (p *printer) User(text string) string {
 }
 
 // ToolStart names the tool and shows what it is about to do, a command on
-// its own shaded lines.
+// its own shaded lines, after a blank line.
 func (p *printer) ToolStart(name, summary string) string {
-	header := toolName.Render("● " + name)
+	header := "\n" + toolName.Render("● "+name)
 	if !strings.Contains(summary, "\n") && len(summary) < 60 && name != "bash" {
 		return header + " " + summary
 	}

@@ -162,8 +162,10 @@ func (d *providerDraft) applyTo(layer config.Config) (config.Config, error) {
 	return layer, nil
 }
 
-// pickProvider lists the providers to edit, then opens the chosen one.
-func (m model) pickProvider(msg settingsLoadedMsg) (tea.Model, tea.Cmd) {
+// pickProvider lists the providers to edit, then opens the chosen one. From
+// the settings menu, esc goes back to it and an edit waits there to be saved
+// with the rest; on its own, an edit is saved at once.
+func (m model) pickProvider(msg settingsLoadedMsg, menu *settingsMenu) (tea.Model, tea.Cmd) {
 	cfg := config.UserSettings(msg.layer)
 	picked := m.session.Provider
 	options := providerOptions(cfg, msg.findings, msg.layer.Provider)[1:]
@@ -172,17 +174,28 @@ func (m model) pickProvider(msg settingsLoadedMsg) (tea.Model, tea.Cmd) {
 		huh.NewSelect[string]().Title("Provider to edit").Options(options...).Value(&picked),
 	)).WithShowHelp(false)
 	next := func(m model) (tea.Model, tea.Cmd) {
-		return m.editProvider(msg, cfg, picked)
+		return m.editProvider(msg, cfg, picked, menu)
 	}
-	return m.showSettings(&settingsScreen{form: form, layer: msg.layer, next: next})
+	screen := &settingsScreen{form: form, layer: msg.layer, next: next, help: menuHelp}
+	if menu != nil {
+		screen.back = func(m model) (tea.Model, tea.Cmd) { return m.showMenu(menu) }
+	}
+	return m.showSettings(screen)
 }
 
-func (m model) editProvider(msg settingsLoadedMsg, cfg config.Config, name string) (tea.Model, tea.Cmd) {
+func (m model) editProvider(msg settingsLoadedMsg, cfg config.Config, name string, menu *settingsMenu) (tea.Model, tea.Cmd) {
 	draft := newProviderDraft(name, cfg, msg.findings)
 	title := name
 	if draft.isNew {
 		title = "New provider"
 	}
 	form := huh.NewForm(huh.NewGroup(draft.fields(cfg)...).Title(title)).WithShowHelp(false)
-	return m.showSettings(&settingsScreen{form: form, layer: msg.layer, apply: draft.applyTo})
+	screen := &settingsScreen{form: form, layer: msg.layer, apply: draft.applyTo,
+		back: func(m model) (tea.Model, tea.Cmd) { return m.pickProvider(msg, menu) }}
+	if menu != nil {
+		screen.next = func(m model) (tea.Model, tea.Cmd) {
+			return m.keepEdit(menu, "provider "+orDefault(draft.name, "new"), draft.applyTo)
+		}
+	}
+	return m.showSettings(screen)
 }

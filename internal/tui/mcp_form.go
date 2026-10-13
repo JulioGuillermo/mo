@@ -101,8 +101,9 @@ func (d *mcpDraft) applyTo(layer config.Config) (config.Config, error) {
 	return layer, nil
 }
 
-// pickMCPServer lists the servers to edit, then opens the chosen one.
-func (m model) pickMCPServer(msg settingsLoadedMsg) (tea.Model, tea.Cmd) {
+// pickMCPServer lists the servers to edit, then opens the chosen one, the
+// same way pickProvider does.
+func (m model) pickMCPServer(msg settingsLoadedMsg, menu *settingsMenu) (tea.Model, tea.Cmd) {
 	servers := msg.layer.MCP
 	picked := newServerChoice
 	var options []huh.Option[string]
@@ -114,19 +115,30 @@ func (m model) pickMCPServer(msg settingsLoadedMsg) (tea.Model, tea.Cmd) {
 		huh.NewSelect[string]().Title("MCP server to edit").Description("esc leaves them as they are").Options(options...).Value(&picked),
 	)).WithShowHelp(false)
 	next := func(m model) (tea.Model, tea.Cmd) {
-		return m.editMCPServer(msg, picked)
+		return m.editMCPServer(msg, picked, menu)
 	}
-	return m.showSettings(&settingsScreen{form: form, layer: msg.layer, next: next})
+	screen := &settingsScreen{form: form, layer: msg.layer, next: next, help: menuHelp}
+	if menu != nil {
+		screen.back = func(m model) (tea.Model, tea.Cmd) { return m.showMenu(menu) }
+	}
+	return m.showSettings(screen)
 }
 
-func (m model) editMCPServer(msg settingsLoadedMsg, name string) (tea.Model, tea.Cmd) {
+func (m model) editMCPServer(msg settingsLoadedMsg, name string, menu *settingsMenu) (tea.Model, tea.Cmd) {
 	draft := newMCPDraft(name, msg.layer.MCP[name])
 	title := name
 	if draft.isNew {
 		title = "New MCP server"
 	}
 	form := huh.NewForm(huh.NewGroup(draft.fields(msg.layer.MCP)...).Title(title)).WithShowHelp(false)
-	return m.showSettings(&settingsScreen{form: form, layer: msg.layer, apply: draft.applyTo})
+	screen := &settingsScreen{form: form, layer: msg.layer, apply: draft.applyTo,
+		back: func(m model) (tea.Model, tea.Cmd) { return m.pickMCPServer(msg, menu) }}
+	if menu != nil {
+		screen.next = func(m model) (tea.Model, tea.Cmd) {
+			return m.keepEdit(menu, "MCP server "+orDefault(draft.name, "new"), draft.applyTo)
+		}
+	}
+	return m.showSettings(screen)
 }
 
 func lines(text string) []string {

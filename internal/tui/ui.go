@@ -72,6 +72,8 @@ type model struct {
 	cancel           context.CancelFunc
 	finished         chan struct{}
 	stream           string
+	streamCut        int
+	streamDone       string
 	reasoning        string
 	approval         *approvalMsg
 	usage            llm.Usage
@@ -79,10 +81,14 @@ type model struct {
 	settings         *settingsScreen
 	settingsInFlight bool
 
-	suggestion int
-	transcript string
-	viewport   viewport.Model
-	scrolled   bool
+	suggestion    int
+	blocks        []block
+	redraws       int
+	attachments   map[string]string
+	pastedImages  int
+	showReasoning bool
+	viewport      viewport.Model
+	scrolled      bool
 }
 
 const agentShutdownWait = 3 * time.Second
@@ -165,16 +171,43 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case printMsg:
 		return m.emit(string(msg))
+	case clipboardMsg:
+		if msg.err != nil {
+			return m.emit(m.printer.Error(msg.err))
+		}
+		if msg.image != "" {
+			m.attach([]string{msg.image}, true)
+		}
+		m.attach(msg.files, false)
+		return m, nil
+	case tea.PasteMsg:
+		if m.approval == nil && m.pastedPaths(msg.Content) {
+			return m, nil
+		}
+	case reasoningMsg:
+		m.addReasoning(string(msg))
+		return m, nil
+	case tea.MouseClickMsg:
+		if msg.Button == tea.MouseLeft && m.approval == nil {
+			m.clickReasoning(msg.Y)
+		}
+		return m, nil
 	case tea.MouseWheelMsg:
 		m.scroll(msg.Button == tea.MouseWheelUp, 3)
 		return m, nil
 	case tea.WindowSizeMsg:
-		m.resize(msg)
+		return m, m.resize(msg)
+	case redrawMsg:
+		if int(msg) == m.redraws {
+			m.redraw()
+		}
 		return m, nil
+	case drawMsg:
+		return m.emitDrawn(msg)
 	case tea.BackgroundColorMsg:
 		m.printer.setDark(msg.IsDark())
 		m.input.SetStyles(inputStyles(m.input.Styles(), msg.IsDark()))
-		return m, nil
+		return m, m.scheduleRedraw()
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	case streamMsg:
@@ -182,11 +215,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reasoning += msg.Text
 		} else {
 			m.stream += msg.Text
+			m.renderStream(false)
 		}
 		return m, nil
 	case streamEndMsg:
-		m.stream = ""
-		m.reasoning = ""
+		m.clearStream()
 		return m, nil
 	case usageMsg:
 		m.usage = llm.Usage(msg)
@@ -216,10 +249,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *model) resize(size tea.WindowSizeMsg) {
+// resize fits everything to the new size: what is being written at once,
+// what was printed once the resizing stops.
+func (m *model) resize(size tea.WindowSizeMsg) tea.Cmd {
+	widthChanged := size.Width != m.width
 	m.width, m.height = size.Width, size.Height
 	m.input.SetWidth(size.Width)
 	m.printer.setWidth(size.Width)
+	m.renderStream(true)
+	if !widthChanged {
+		return nil
+	}
+	return m.scheduleRedraw()
 }
 
 func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -232,6 +273,11 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	switch msg.String() {
+	case "ctrl+v":
+		return m, pasteClipboard()
+	case "ctrl+o":
+		m.toggleReasoning()
+		return m, nil
 	case "pgup", "shift+up":
 		m.scroll(true, m.pageSize(msg.String()))
 		return m, nil
@@ -330,9 +376,10 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	}
 
 	m.scrolled = false
-	echo := printText(m.printer.User(prompt))
+	echo := drawText(func() string { return m.printer.User(prompt) })
+	sent := m.withAttachments(prompt)
 	return m.start(echo, func(ctx context.Context, hooks agent.Hooks) error {
-		return m.session.Agent.Run(ctx, prompt, hooks)
+		return m.session.Agent.Run(ctx, sent, hooks)
 	})
 }
 
@@ -365,7 +412,7 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		m.usage = llm.Usage{}
 		return m, printText(m.printer.Note("conversation cleared"))
 	case "help":
-		return m, printText(m.helpView())
+		return m, drawText(m.helpView)
 	case "settings":
 		m.settingsInFlight = true
 		return m, tea.Sequence(printText(m.printer.Note("looking for providers…")), loadSettings(m.session, generalSettings))
@@ -410,12 +457,12 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 	m.cancel()
 	m.approval = nil
 	partial := strings.TrimSpace(m.stream)
-	m.stream = ""
-	m.reasoning = ""
+	m.addReasoning(m.reasoning)
+	m.clearStream()
 
 	var lines []string
 	if partial != "" {
-		lines = append(lines, m.printer.Markdown(partial))
+		lines = append(lines, "\n"+m.printer.Markdown(partial))
 	}
 	switch {
 	case errors.Is(err, context.Canceled):
@@ -432,12 +479,12 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 func (m model) View() tea.View {
 	var view tea.View
 	if m.settings != nil {
-		view = tea.NewView(m.settings.form.View() + "\n" + dimStyle.Render(settingsHelp))
+		view = tea.NewView(m.settings.form.View() + "\n" + dimStyle.Render(m.settings.helpLine()))
 		view.WindowTitle = "mo · settings"
 	} else {
 		bottom := m.bottom()
-		conversation := m.conversation(m.height - lipgloss.Height(bottom))
-		view = tea.NewView(conversation.View() + "\n" + bottom)
+		conversation := m.conversation(m.height - lipgloss.Height(bottom) - 1)
+		view = tea.NewView(conversation.View() + "\n\n" + bottom)
 		view.WindowTitle = "mo"
 	}
 	view.AltScreen = true
@@ -468,7 +515,8 @@ func (m model) conversation(height int) viewport.Model {
 	conversation := m.viewport
 	conversation.SetWidth(m.width)
 	conversation.SetHeight(max(height, 1))
-	conversation.SetContent(strings.TrimRight(m.transcript+m.liveText(), "\n"))
+	transcript, _ := m.transcript()
+	conversation.SetContent(strings.TrimRight(transcript+m.liveText(), "\n"))
 	if !m.scrolled {
 		conversation.GotoBottom()
 	}
@@ -479,7 +527,7 @@ func (m model) conversation(height int) viewport.Model {
 // terminal once, and only their placeholders stay in the transcript.
 func (m model) emit(text string) (tea.Model, tea.Cmd) {
 	uploads := strings.Join(kittyUploads.FindAllString(text, -1), "")
-	m.transcript += kittyUploads.ReplaceAllString(text, "") + "\n"
+	m.blocks = append(m.blocks, block{text: kittyUploads.ReplaceAllString(text, "")})
 	if uploads == "" {
 		return m, nil
 	}
@@ -489,7 +537,7 @@ func (m model) emit(text string) (tea.Model, tea.Cmd) {
 var kittyUploads = regexp.MustCompile(`\x1bPtmux;(?:[^\x1b]|\x1b\x1b)*\x1b\\|\x1b_G[^\x1b]*\x1b\\`)
 
 func (m *model) scroll(up bool, lines int) {
-	m.viewport = m.conversation(m.height - lipgloss.Height(m.bottom()))
+	m.viewport = m.conversation(m.height - lipgloss.Height(m.bottom()) - 1)
 	if up {
 		m.viewport.ScrollUp(lines)
 	} else {
@@ -502,7 +550,7 @@ func (m model) pageSize(key string) int {
 	if strings.HasPrefix(key, "shift") {
 		return 3
 	}
-	return max(m.height-lipgloss.Height(m.bottom())-2, 1)
+	return max(m.height-lipgloss.Height(m.bottom())-3, 1)
 }
 
 func printText(text string) tea.Cmd {
@@ -511,25 +559,45 @@ func printText(text string) tea.Cmd {
 	}
 }
 
-// liveText is the tail of what the model is writing right now, kept short so
-// the redrawn area never grows past the screen.
+// renderStream renders as markdown the lines of the reply that are complete,
+// again each time one more is, or all of them when again is set.
+func (m *model) renderStream(again bool) {
+	cut := strings.LastIndex(m.stream, "\n") + 1
+	if cut == 0 || (cut == m.streamCut && !again) {
+		return
+	}
+	m.streamCut = cut
+	m.streamDone = m.printer.Markdown(m.stream[:cut])
+}
+
+func (m *model) clearStream() {
+	m.stream, m.streamCut, m.streamDone = "", 0, ""
+	m.reasoning = ""
+}
+
+// liveText is what the model is writing right now, set apart from what came
+// before like the answer it becomes: the complete lines as markdown, the line
+// being written as it comes. Before any of it, its reasoning shows dimmed.
 func (m model) liveText() string {
-	text := m.stream
-	style := lipgloss.NewStyle()
-	if text == "" {
-		text = m.reasoning
-		style = dimStyle
+	reasoning := strings.TrimSpace(m.reasoning)
+	if m.stream == "" {
+		if reasoning == "" {
+			return ""
+		}
+		return m.reasoningText(reasoning, m.showReasoning, true)
 	}
-	if text == "" {
-		return ""
+	parts := []string{""}
+	if reasoning != "" {
+		parts = []string{m.reasoningText(reasoning, m.showReasoning, false), ""}
 	}
-	wrapped := lipgloss.NewStyle().Width(max(m.width-2, 20)).Render(strings.TrimSpace(text))
-	lines := strings.Split(wrapped, "\n")
-	maxLines := max(m.height-8, 3)
-	if len(lines) > maxLines {
-		lines = lines[len(lines)-maxLines:]
+	if m.streamDone != "" {
+		parts = append(parts, m.streamDone)
 	}
-	return style.Render(strings.Join(lines, "\n"))
+	wrap := lipgloss.NewStyle().Width(max(m.width-4, 20)).PaddingLeft(2)
+	if tail := strings.TrimSpace(m.stream[m.streamCut:]); tail != "" {
+		parts = append(parts, wrap.Render(tail))
+	}
+	return strings.Join(parts, "\n")
 }
 
 // approvalPrompt is a framed question: the tool, what it will run, and the
@@ -579,7 +647,7 @@ func shortModelName(model string) string {
 // as markdown.
 func (m model) runPluginCommand(command string, run func(context.Context, string) (string, error), argument string) (tea.Model, tea.Cmd) {
 	bridge := m.bridge
-	return m.start(printText(m.printer.User(command)), func(ctx context.Context, _ agent.Hooks) error {
+	return m.start(drawText(func() string { return m.printer.User(command) }), func(ctx context.Context, _ agent.Hooks) error {
 		output, err := run(ctx, argument)
 		if err != nil {
 			return err

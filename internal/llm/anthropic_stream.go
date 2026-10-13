@@ -10,6 +10,7 @@ const cutOffTextNote = "\n\n[answer cut off at the output token limit]"
 type anthropicStream struct {
 	onEvent  func(Event)
 	text     strings.Builder
+	thinking strings.Builder
 	toolUses []*pendingToolUse
 	byIndex  map[int]*pendingToolUse
 	cutOff   bool
@@ -56,6 +57,7 @@ func (s *anthropicStream) handleDelta(event anthropicEvent) {
 		s.text.WriteString(event.Delta.Text)
 		s.onEvent(Event{Kind: EventText, Text: event.Delta.Text})
 	case "thinking_delta":
+		s.thinking.WriteString(event.Delta.Thinking)
 		s.onEvent(Event{Kind: EventReasoning, Text: event.Delta.Thinking})
 	case "input_json_delta":
 		if toolUse, ok := s.byIndex[event.Index]; ok {
@@ -65,7 +67,7 @@ func (s *anthropicStream) handleDelta(event anthropicEvent) {
 }
 
 func (s *anthropicStream) message() Message {
-	message := Message{Role: RoleAssistant, Text: s.text.String()}
+	message := Message{Role: RoleAssistant, Text: s.text.String(), Reasoning: s.thinking.String()}
 	if s.cutOff && len(s.toolUses) == 0 {
 		message.Text += cutOffTextNote
 		s.onEvent(Event{Kind: EventText, Text: cutOffTextNote})

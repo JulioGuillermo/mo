@@ -20,6 +20,7 @@ type OpenAI struct {
 type openAIMessage struct {
 	Role       string           `json:"role"`
 	Content    any              `json:"content"`
+	Reasoning  string           `json:"reasoning_content,omitempty"`
 	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string           `json:"tool_call_id,omitempty"`
 }
@@ -85,7 +86,18 @@ func (p *OpenAI) Stream(ctx context.Context, req Request, onEvent func(Event)) (
 	}
 	defer resp.Body.Close()
 
-	var text strings.Builder
+	var text, reasoning strings.Builder
+	var think thinkSplitter
+	emit := func(answer, thought string) {
+		if thought != "" {
+			reasoning.WriteString(thought)
+			onEvent(Event{Kind: EventReasoning, Text: thought})
+		}
+		if answer != "" {
+			text.WriteString(answer)
+			onEvent(Event{Kind: EventText, Text: answer})
+		}
+	}
 	var calls []*openAIToolCall
 	var usage Usage
 	cutOff := false
@@ -111,15 +123,10 @@ func (p *OpenAI) Stream(ctx context.Context, req Request, onEvent func(Event)) (
 			if delta.Content != "" || delta.ReasoningContent != "" || delta.Reasoning != "" || len(delta.ToolCalls) > 0 {
 				clock.piece()
 			}
+			emit("", delta.ReasoningContent)
+			emit("", delta.Reasoning)
 			if delta.Content != "" {
-				text.WriteString(delta.Content)
-				onEvent(Event{Kind: EventText, Text: delta.Content})
-			}
-			if delta.ReasoningContent != "" {
-				onEvent(Event{Kind: EventReasoning, Text: delta.ReasoningContent})
-			}
-			if delta.Reasoning != "" {
-				onEvent(Event{Kind: EventReasoning, Text: delta.Reasoning})
+				emit(think.feed(delta.Content))
 			}
 			calls = mergeToolCallDeltas(calls, delta.ToolCalls)
 			if choice.FinishReason == "length" {
@@ -132,7 +139,8 @@ func (p *OpenAI) Stream(ctx context.Context, req Request, onEvent func(Event)) (
 		return Response{}, err
 	}
 
-	message := Message{Role: RoleAssistant, Text: text.String()}
+	emit(think.flush())
+	message := Message{Role: RoleAssistant, Text: text.String(), Reasoning: reasoning.String()}
 	if cutOff && len(calls) == 0 {
 		message.Text += cutOffTextNote
 		onEvent(Event{Kind: EventText, Text: cutOffTextNote})
@@ -223,7 +231,7 @@ func openAIContent(message Message) any {
 }
 
 func toOpenAIMessage(message Message) openAIMessage {
-	out := openAIMessage{Role: string(message.Role), Content: openAIContent(message), ToolCallID: message.ToolCallID}
+	out := openAIMessage{Role: string(message.Role), Content: openAIContent(message), ToolCallID: message.ToolCallID, Reasoning: message.Reasoning}
 	for _, call := range message.ToolCalls {
 		var wire openAIToolCall
 		wire.ID = call.ID

@@ -159,3 +159,13 @@ func shellWords(text string) []string {
 	}
 	return words
 }
+
+// PastedFiles returns the files a pasted text names when it is nothing but
+// paths to existing files, as a terminal pastes a dropped file.
+func PastedFiles(text, workDir string) []string {
+	files := namedFiles(text, workDir)
+	if len(files) == 0 || len(files) != len(shellWords(text)) {
+		return nil
+	}
+	return files
+}

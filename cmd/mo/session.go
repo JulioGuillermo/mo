@@ -103,6 +103,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		CompactAt:     *cfg.Context.CompactAt,
 		CompactPrompt: cfg.Context.CompactPrompt,
 		Strategy:      cfg.Context.Strategy,
+		KeepReasoning: *cfg.Context.KeepReasoning,
 		Loop: agent.LoopGuard{
 			Enabled:       *cfg.Loop.Enabled,
 			Replies:       cfg.Loop.Replies,

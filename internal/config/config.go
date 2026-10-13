@@ -47,6 +47,7 @@ type Context struct {
 	CompactAt     *float64 `toml:"compact_at,omitempty"`
 	CompactPrompt string   `toml:"compact_prompt,omitempty"`
 	Strategy      string   `toml:"strategy,omitempty"`
+	KeepReasoning *bool    `toml:"keep_reasoning,omitempty"`
 }
 
 type Loop struct {
@@ -125,7 +126,7 @@ func Defaults() Config {
 			Confirm:      []string{"bash", "rm", "fetch"},
 			MaxOutput:    10000,
 		},
-		Context:   Context{CompactAt: ptr(0.75), Strategy: "compact"},
+		Context:   Context{CompactAt: ptr(0.75), Strategy: "compact", KeepReasoning: ptr(false)},
 		Memory:    Memory{Dir: defaultMemoryDir()},
 		Web:       Web{Search: web.SearchDuckDuckGo},
 		Render:    Render{Images: render.ModeAuto},
@@ -283,6 +284,9 @@ func mergeHarmless(base, layer Config) Config {
 	}
 	base.Context.CompactPrompt = override(base.Context.CompactPrompt, layer.Context.CompactPrompt)
 	base.Context.Strategy = override(base.Context.Strategy, layer.Context.Strategy)
+	if layer.Context.KeepReasoning != nil {
+		base.Context.KeepReasoning = layer.Context.KeepReasoning
+	}
 	base.Render.Images = override(base.Render.Images, layer.Render.Images)
 	base.Loop = mergeLoop(base.Loop, layer.Loop)
 	return base

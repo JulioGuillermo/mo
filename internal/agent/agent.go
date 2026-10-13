@@ -46,6 +46,10 @@ type Agent struct {
 	CompactPrompt string
 	Strategy      string
 
+	// KeepReasoning sends the model its own reasoning back with the
+	// conversation; without it the reasoning is only shown, saving tokens.
+	KeepReasoning bool
+
 	Loop LoopGuard
 
 	RewritePrompt func(ctx context.Context, prompt string) string
@@ -248,10 +252,23 @@ func (a *Agent) request() llm.Request {
 	return llm.Request{
 		Model:     a.Model,
 		System:    a.System,
-		Messages:  a.History,
+		Messages:  a.sentHistory(),
 		Tools:     a.Tools.Specs(),
 		MaxTokens: a.MaxTokens,
 	}
+}
+
+// sentHistory is the history as the model gets it: without reasoning,
+// unless it is kept.
+func (a *Agent) sentHistory() []llm.Message {
+	if a.KeepReasoning || !slices.ContainsFunc(a.History, func(message llm.Message) bool { return message.Reasoning != "" }) {
+		return a.History
+	}
+	sent := slices.Clone(a.History)
+	for i := range sent {
+		sent[i].Reasoning = ""
+	}
+	return sent
 }
 
 // TakeConversation moves the conversation of another agent into this one,

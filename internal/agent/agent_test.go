@@ -12,6 +12,7 @@ package agent
 // | AG-08 | Error    | A call with cut-off arguments gets its error, without running      | P1       |
 // | AG-09 | Happy    | RewritePrompt changes the prompt before it enters the history      | P1       |
 // | AG-10 | Security | BlockToolCall stops a call before anyone is asked to approve it    | P0       |
+// | AG-11 | Happy    | Reasoning stays in the history but goes back only with KeepReasoning | P0     |
 
 import (
 	"context"
@@ -281,6 +282,29 @@ func TestPluginHooks(t *testing.T) {
 		}
 		if !strings.Contains(shown, "no force pushes") {
 			t.Errorf("the block was not shown: %q", shown)
+		}
+	})
+}
+
+func TestReasoningSentBack(t *testing.T) {
+	t.Run("AG-11 reasoning stays in the history but goes back only with KeepReasoning", func(t *testing.T) {
+		sentWith := func(keep bool) (string, string) {
+			provider := &scriptedProvider{replies: []llm.Message{
+				{Role: llm.RoleAssistant, Text: "one", Reasoning: "thought"},
+				{Role: llm.RoleAssistant, Text: "two"},
+			}}
+			agent := newAgent(t, provider)
+			agent.KeepReasoning = keep
+			_ = agent.Run(context.Background(), "a", Hooks{})
+			_ = agent.Run(context.Background(), "b", Hooks{})
+			return provider.requests[1].Messages[1].Reasoning, agent.History[1].Reasoning
+		}
+
+		dropped, keptInHistory := sentWith(false)
+		sent, _ := sentWith(true)
+
+		if dropped != "" || keptInHistory != "thought" || sent != "thought" {
+			t.Errorf("sent without keep = %q history = %q sent with keep = %q", dropped, keptInHistory, sent)
 		}
 	})
 }

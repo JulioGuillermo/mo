@@ -27,6 +27,7 @@ type settingsDraft struct {
 	window        string
 	compactAt     string
 	strategy      string
+	keepReasoning bool
 	systemPrompt  string
 	compactPrompt string
 	maxTokens     string
@@ -61,19 +62,20 @@ func newSettingsDraft(layer config.Config) *settingsDraft {
 		model = cfg.Providers[layer.Provider].Model
 	}
 	draft := &settingsDraft{
-		provider:     layer.Provider,
-		model:        model,
-		mode:         string(cfg.Tools.Mode),
-		alwaysLoaded: slices.Clone(cfg.Tools.AlwaysLoaded),
-		confirm:      slices.Clone(cfg.Tools.Confirm),
-		disabled:     slices.Clone(cfg.Tools.Disabled),
-		maxOutput:    strconv.Itoa(cfg.Tools.MaxOutput),
-		window:       strconv.Itoa(cfg.Context.Window),
-		compactAt:    strconv.FormatFloat(*cfg.Context.CompactAt, 'f', -1, 64),
-		strategy:     cfg.Context.Strategy,
-		systemPrompt: cfg.SystemPrompt,
-		descriptions: map[string]*string{},
-		memoryDir:    cfg.Memory.Dir,
+		provider:      layer.Provider,
+		model:         model,
+		mode:          string(cfg.Tools.Mode),
+		alwaysLoaded:  slices.Clone(cfg.Tools.AlwaysLoaded),
+		confirm:       slices.Clone(cfg.Tools.Confirm),
+		disabled:      slices.Clone(cfg.Tools.Disabled),
+		maxOutput:     strconv.Itoa(cfg.Tools.MaxOutput),
+		window:        strconv.Itoa(cfg.Context.Window),
+		compactAt:     strconv.FormatFloat(*cfg.Context.CompactAt, 'f', -1, 64),
+		strategy:      cfg.Context.Strategy,
+		keepReasoning: *cfg.Context.KeepReasoning,
+		systemPrompt:  cfg.SystemPrompt,
+		descriptions:  map[string]*string{},
+		memoryDir:     cfg.Memory.Dir,
 
 		compactPrompt: cfg.Context.CompactPrompt,
 		maxTokens:     strconv.Itoa(cfg.MaxTokens),
@@ -155,6 +157,10 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 		layer.Context.CompactAt = nil
 	}
 	layer.Context.Strategy = unlessDefault(d.strategy, defaults.Context.Strategy)
+	layer.Context.KeepReasoning = nil
+	if d.keepReasoning != *defaults.Context.KeepReasoning {
+		layer.Context.KeepReasoning = &d.keepReasoning
+	}
 	layer.SystemPrompt = unlessDefault(strings.TrimSpace(d.systemPrompt), agent.DefaultSystemPrompt)
 	layer.Memory.Dir = unlessDefault(strings.TrimSpace(d.memoryDir), defaults.Memory.Dir)
 	layer.Loop = loop
@@ -313,4 +319,32 @@ func findingFor(findings []detect.Finding, provider string) *detect.Finding {
 		}
 	}
 	return nil
+}
+
+// followProvider takes the provider and model of layer, chosen in the
+// provider form, as the ones the draft starts from.
+func (d *settingsDraft) followProvider(layer config.Config) {
+	fresh := newSettingsDraft(layer)
+	d.provider, d.initialProvider = fresh.provider, fresh.initialProvider
+	d.model, d.initialModel = fresh.model, fresh.initialModel
+}
+
+// snapshot returns what puts the draft back as it is now.
+func (d *settingsDraft) snapshot() func() {
+	saved := *d
+	saved.alwaysLoaded = slices.Clone(d.alwaysLoaded)
+	saved.confirm = slices.Clone(d.confirm)
+	saved.disabled = slices.Clone(d.disabled)
+	texts := map[string]string{}
+	for name, text := range d.descriptions {
+		texts[name] = *text
+	}
+	return func() {
+		descriptions := d.descriptions
+		*d = saved
+		d.descriptions = descriptions
+		for name, text := range texts {
+			*descriptions[name] = text
+		}
+	}
 }

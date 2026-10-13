@@ -33,6 +33,8 @@ var keyHelp = [][2]string{
 	{"tab, ↑ ↓", "complete a command"},
 	{"esc, ctrl+c", "stop the current run"},
 	{"pgup, pgdown, wheel", "scroll the conversation"},
+	{"ctrl+o, click", "open or fold the reasoning"},
+	{"ctrl+v", "paste a copied image or files as attachments"},
 	{"shift+drag", "select text"},
 	{"ctrl+d", "quit"},
 }

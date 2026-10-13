@@ -33,9 +33,18 @@ type bridge struct {
 // print adds lines to the scrollback in order, and gives up once the
 // program has exited, since nothing reads its messages any more.
 func (b *bridge) print(text string) {
+	b.send(printMsg(text))
+}
+
+// draw adds lines that are drawn again when the terminal is resized.
+func (b *bridge) draw(draw func() string) {
+	b.send(drawMsg(draw))
+}
+
+func (b *bridge) send(msg tea.Msg) {
 	printed := make(chan struct{})
 	go func() {
-		b.program.Send(printMsg(text))
+		b.program.Send(msg)
 		close(printed)
 	}()
 	select {
@@ -51,15 +60,18 @@ func (b *bridge) hooks() agent.Hooks {
 		},
 		OnAssistant: func(message llm.Message) {
 			b.program.Send(streamEndMsg{})
+			if message.Reasoning != "" {
+				b.send(reasoningMsg(message.Reasoning))
+			}
 			if text := strings.TrimSpace(message.Text); text != "" {
-				b.print(b.printer.Answer(text))
+				b.draw(func() string { return b.printer.Answer(text) })
 			}
 		},
 		OnToolStart: func(call llm.ToolCall, summary string) {
-			b.print(b.printer.ToolStart(call.Name, summary))
+			b.draw(func() string { return b.printer.ToolStart(call.Name, summary) })
 		},
 		OnToolDone: func(call llm.ToolCall, output string, isError bool) {
-			b.print(b.printer.ToolResult(output, isError))
+			b.draw(func() string { return b.printer.ToolResult(output, isError) })
 			if images := b.printer.Images(output); images != "" {
 				b.print(images)
 			}
@@ -88,7 +100,9 @@ func (b *bridge) approve(ctx context.Context, request agent.ApprovalRequest) age
 	select {
 	case decision := <-reply:
 		if decision == agent.Deny {
-			b.print(b.printer.ToolStart(request.Call.Name, request.Summary) + "\n" + b.printer.Denied(request.Call.Name))
+			b.draw(func() string {
+				return b.printer.ToolStart(request.Call.Name, request.Summary) + "\n" + b.printer.Denied(request.Call.Name)
+			})
 		}
 		return decision
 	case <-ctx.Done():

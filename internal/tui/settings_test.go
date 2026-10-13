@@ -220,10 +220,11 @@ func TestSettingsEdges(t *testing.T) {
 	})
 
 	t.Run("SD-15 a resize while the form is open refits it and the input", func(t *testing.T) {
-		withTools := &agent.Agent{Tools: tools.NewRegistry(tools.Env{}, tools.Options{Mode: tools.ModeFull})}
-		session := Session{Agent: withTools, Config: config.Defaults()}
-		m := model{session: session, printer: newPrinter(), input: newInput(), width: 120, height: 50}
-		m.settings = &settingsScreen{form: buildSettingsForm(session, defaultDraft(), nil, nil)}
+		m, menu := menuModel()
+		m.session.Agent = &agent.Agent{Tools: tools.NewRegistry(tools.Env{}, tools.Options{Mode: tools.ModeFull})}
+		m.width, m.height = 120, 50
+		shown, _ := m.showSection(menu, settingsSections[3], "")
+		m = shown.(model)
 
 		updated, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
 

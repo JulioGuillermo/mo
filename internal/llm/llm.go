@@ -18,6 +18,7 @@ const (
 type Message struct {
 	Role       Role
 	Text       string
+	Reasoning  string
 	Images     []Image
 	ToolCalls  []ToolCall
 	ToolCallID string
