@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -16,11 +15,6 @@ type printMsg string
 type streamEndMsg struct{}
 type usageMsg llm.Usage
 type runDoneMsg struct{ err error }
-
-type approvalMsg struct {
-	request agent.ApprovalRequest
-	reply   chan agent.Decision
-}
 
 // bridge turns agent callbacks, which run on the agent goroutine, into
 // program messages and scrollback lines.
@@ -90,22 +84,6 @@ func (b *bridge) hooks() agent.Hooks {
 			b.program.Send(usageMsg(llm.Usage{InputTokens: after}))
 			b.print(b.printer.Note(fmt.Sprintf("context compacted: %s → %s tokens", formatTokens(before), formatTokens(after))))
 		},
-		Approve: b.approve,
-	}
-}
-
-func (b *bridge) approve(ctx context.Context, request agent.ApprovalRequest) agent.Decision {
-	reply := make(chan agent.Decision, 1)
-	b.program.Send(approvalMsg{request: request, reply: reply})
-	select {
-	case decision := <-reply:
-		if decision == agent.Deny {
-			b.draw(func() string {
-				return b.printer.ToolStart(request.Call.Name, request.Summary) + "\n" + b.printer.Denied(request.Call.Name)
-			})
-		}
-		return decision
-	case <-ctx.Done():
-		return agent.Deny
+		Interact: b.interact,
 	}
 }

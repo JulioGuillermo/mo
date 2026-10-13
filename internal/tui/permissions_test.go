@@ -49,18 +49,22 @@ func TestPermissionUI(t *testing.T) {
 
 	t.Run("PU-02 a on a command opens its parts as rules; saving allows it and the rule", func(t *testing.T) {
 		m := ruledModel(t)
-		reply := make(chan agent.Decision, 1)
-		m.approval = &approvalMsg{request: agent.ApprovalRequest{Call: llm.ToolCall{Name: "bash"}, Ruled: true, Commands: []string{"make test"}}, reply: reply}
+		m, reply := withApproval(m, agent.ApprovalRequest{Call: llm.ToolCall{Name: "bash"}, Ruled: true, Commands: []string{"make test"}})
 
 		editor, _ := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 		view := editor.(model).settings.form.View()
 		saved, cmd := editor.(model).settings.next(editor.(model))
 
 		verdict, _ := m.session.Agent.Permissions.Check("make test")
-		if !strings.Contains(view, "make test") || <-reply != agent.Allow || saved.(model).approval != nil || verdict != permissions.Allowed {
+		if !strings.Contains(view, "make test") || decided(reply) != agent.Allow || saved.(model).dialog != nil || verdict != permissions.Allowed {
 			t.Errorf("view:\n%s\nverdict = %v", view, verdict)
 		}
-		done := cmd().(rulesSavedMsg)
+		var done rulesSavedMsg
+		for _, msg := range messages(cmd) {
+			if saved, ok := msg.(rulesSavedMsg); ok {
+				done = saved
+			}
+		}
 		layer, _ := config.ReadUserLayer()
 		if done.err != nil || !strings.Contains(strings.Join(layer.Permissions.Allow, "|"), "make test") || !strings.Contains(strings.Join(layer.Permissions.Allow, "|"), "ls *") {
 			t.Errorf("saved = %+v allow = %q", done, layer.Permissions.Allow)
@@ -69,13 +73,12 @@ func TestPermissionUI(t *testing.T) {
 
 	t.Run("PU-03 esc in the rule editor goes back to the question, still unanswered", func(t *testing.T) {
 		m := ruledModel(t)
-		reply := make(chan agent.Decision, 1)
-		m.approval = &approvalMsg{request: agent.ApprovalRequest{Call: llm.ToolCall{Name: "bash"}, Ruled: true, Commands: []string{"make"}}, reply: reply}
+		m, reply := withApproval(m, agent.ApprovalRequest{Call: llm.ToolCall{Name: "bash"}, Ruled: true, Commands: []string{"make"}})
 
 		editor, _ := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 		back, _ := editor.(model).Update(keyEsc)
 
-		if back.(model).settings != nil || back.(model).approval == nil || len(reply) != 0 {
+		if back.(model).settings != nil || back.(model).dialog == nil || len(reply) != 0 {
 			t.Error("esc did not go back to the question")
 		}
 	})
@@ -122,4 +125,21 @@ func TestPermissionUI(t *testing.T) {
 			t.Errorf("err = %v", err)
 		}
 	})
+}
+
+// messages runs a command and the ones it batches, and returns their messages.
+func messages(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		return []tea.Msg{msg}
+	}
+	var all []tea.Msg
+	for _, each := range batch {
+		all = append(all, messages(each)...)
+	}
+	return all
 }

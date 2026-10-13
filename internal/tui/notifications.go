@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/notify"
 )
@@ -54,9 +56,21 @@ func (m model) turnEnded(err error) tea.Cmd {
 	return m.notifyUser("done")
 }
 
-func (m model) permissionAsked(request approvalMsg) tea.Cmd {
+// interactionAsked calls the user back when the agent waits on them: the
+// first call to approve or the first question, and how many more.
+func (m model) interactionAsked(interaction agent.Interaction) tea.Cmd {
 	if approval := m.session.Config.Notify.Approval; approval == nil || !*approval {
 		return nil
 	}
-	return m.notifyUser("Run " + request.request.Call.Name + "? " + oneLine(request.request.Summary, 120))
+	var body string
+	if len(interaction.Approvals) > 0 {
+		request := interaction.Approvals[0]
+		body = "Run " + request.Call.Name + "? " + oneLine(request.Summary, 120)
+	} else {
+		body = oneLine(interaction.Questions[0].Text, 140)
+	}
+	if more := len(interaction.Approvals) + len(interaction.Questions) - 1; more > 0 {
+		body += fmt.Sprintf(" (+%d more)", more)
+	}
+	return m.notifyUser(body)
 }

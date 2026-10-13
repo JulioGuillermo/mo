@@ -2,10 +2,10 @@ package tui
 
 // Test Traceability Table
 // | ID    | Category | Description                                                 | Priority |
-// | TU-01 | Security | Enter does not approve a pending call, y does               | P0       |
+// | TU-01 | Security | Enter alone never approves: it presses No, selected first; y approves | P0  |
 // | TU-02 | Happy    | Esc during an approval denies the call and stops the run    | P0       |
 // | TU-03 | Edge     | ctrl+d while running stops the run before quitting          | P0       |
-// | TU-04 | Happy    | The approval prompt hides "always" outside the workdir      | P1       |
+// | TU-04 | Happy    | The approval dialog hides "always" outside the workdir      | P1       |
 // | TU-05 | Happy    | The status line shows context used over the window          | P1       |
 // | TU-06 | Happy    | An answer's mermaid block is drawn, its text rendered       | P1       |
 // | TU-07 | Happy    | Images a tool result marks are drawn; others give nothing   | P1       |
@@ -40,10 +40,14 @@ func runningModel(cancelled *bool) model {
 	}
 }
 
-func withApproval(m model, request agent.ApprovalRequest) (model, chan agent.Decision) {
-	reply := make(chan agent.Decision, 1)
-	m.approval = &approvalMsg{request: request, reply: reply}
+func withApproval(m model, request agent.ApprovalRequest) (model, chan agent.Reply) {
+	reply := make(chan agent.Reply, 1)
+	m.dialog = newDialog(interactionMsg{interaction: agent.Interaction{Approvals: []agent.ApprovalRequest{request}}, reply: reply})
 	return m, reply
+}
+
+func decided(reply chan agent.Reply) agent.Decision {
+	return (<-reply).Decisions[0]
 }
 
 func press(m model, key tea.KeyPressMsg) (model, tea.Cmd) {
@@ -61,16 +65,18 @@ var (
 func TestApprovalKeys(t *testing.T) {
 	bashCall := agent.ApprovalRequest{Call: llm.ToolCall{Name: "bash"}, Summary: "rm -rf build"}
 
-	t.Run("TU-01 enter does not approve a pending call, y does", func(t *testing.T) {
+	t.Run("TU-01 enter alone never approves: it presses No, selected first; y approves", func(t *testing.T) {
 		var cancelled bool
-		m, reply := withApproval(runningModel(&cancelled), bashCall)
+		entered, enterReply := withApproval(runningModel(&cancelled), bashCall)
+		typed, yReply := withApproval(runningModel(&cancelled), bashCall)
 
-		m, _ = press(m, keyEnter)
-		if m.approval == nil || len(reply) != 0 {
-			t.Fatal("enter answered the approval")
+		entered, _ = press(entered, keyEnter)
+		typed, _ = press(typed, keyY)
+
+		if entered.dialog != nil || decided(enterReply) != agent.Deny {
+			t.Error("enter did not press No")
 		}
-		m, _ = press(m, keyY)
-		if m.approval != nil || <-reply != agent.Allow {
+		if typed.dialog != nil || decided(yReply) != agent.Allow {
 			t.Error("y did not approve")
 		}
 	})
@@ -81,8 +87,8 @@ func TestApprovalKeys(t *testing.T) {
 
 		m, _ = press(m, keyEsc)
 
-		if <-reply != agent.Deny || !cancelled || m.approval != nil {
-			t.Errorf("cancelled = %v approval = %v", cancelled, m.approval)
+		if decided(reply) != agent.Deny || !cancelled || m.dialog != nil {
+			t.Errorf("cancelled = %v dialog = %v", cancelled, m.dialog)
 		}
 	})
 
@@ -91,11 +97,11 @@ func TestApprovalKeys(t *testing.T) {
 		inside, _ := withApproval(runningModel(&cancelled), bashCall)
 		outside, _ := withApproval(runningModel(&cancelled), agent.ApprovalRequest{Call: llm.ToolCall{Name: "write"}, Warning: "outside the working directory"})
 
-		if !strings.Contains(inside.approvalPrompt(), "always") {
-			t.Error("inside prompt lacks always")
+		if !strings.Contains(ansi.Strip(inside.dialogView()), "Always") {
+			t.Error("inside dialog lacks always")
 		}
-		if strings.Contains(outside.approvalPrompt(), "always") || !strings.Contains(outside.approvalPrompt(), "outside") {
-			t.Errorf("outside prompt = %q", outside.approvalPrompt())
+		if view := ansi.Strip(outside.dialogView()); strings.Contains(view, "Always") || !strings.Contains(view, "outside") {
+			t.Errorf("outside dialog = %q", view)
 		}
 	})
 }

@@ -1,0 +1,155 @@
+package tui
+
+// Test Traceability Table
+// | ID    | Category | Description                                                          | Priority |
+// | DG-01 | Happy    | Tabs show how many parts there are and which is shown; all answered sends them in order | P0 |
+// | DG-02 | Happy    | A question takes an option, several ticked, or text typed; empty text skips | P0 |
+// | DG-03 | Happy    | "Always this session" also answers the other calls to that tool waiting | P1     |
+// | DG-04 | Happy    | Rules added from one call let through the others they cover          | P1       |
+// | DG-05 | Happy    | The dialog stays above the input, the conversation scrolled or not   | P1       |
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/jg/mo/internal/agent"
+	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/permissions"
+	"github.com/jg/mo/internal/tools"
+)
+
+func asking(interaction agent.Interaction) (model, chan agent.Reply) {
+	m := conversationModel()
+	m.running, m.cancel = true, func() {}
+	reply := make(chan agent.Reply, 1)
+	updated, _ := m.Update(interactionMsg{interaction: interaction, reply: reply})
+	return updated.(model), reply
+}
+
+func keys(t *testing.T, m model, pressed ...tea.KeyPressMsg) model {
+	t.Helper()
+	for _, key := range pressed {
+		updated, _ := m.Update(key)
+		m = updated.(model)
+	}
+	return m
+}
+
+var (
+	keyTab   = tea.KeyPressMsg{Code: tea.KeyTab}
+	keyDown  = tea.KeyPressMsg{Code: tea.KeyDown}
+	keySpace = tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
+	keyN     = tea.KeyPressMsg{Code: 'n', Text: "n"}
+	keyA     = tea.KeyPressMsg{Code: 'a', Text: "a"}
+)
+
+func bash(command string) agent.ApprovalRequest {
+	return agent.ApprovalRequest{Call: llm.ToolCall{Name: "bash"}, Summary: command}
+}
+
+func TestDialog(t *testing.T) {
+	t.Run("DG-01 tabs show how many parts there are and which is shown; all answered sends them in order", func(t *testing.T) {
+		m, reply := asking(agent.Interaction{
+			Approvals: []agent.ApprovalRequest{bash("make"), {Call: llm.ToolCall{Name: "fetch"}, Summary: "https://go.dev"}},
+			Questions: []tools.Question{{Text: "Which branch?"}},
+		})
+		first := ansi.Strip(m.dialogView())
+
+		m = keys(t, m, keyTab, keyY)
+		second := ansi.Strip(m.dialogView())
+		for _, r := range "main" {
+			m = keys(t, m, tea.KeyPressMsg{Code: r, Text: string(r)})
+		}
+		m = keys(t, m, keyEnter, keyN)
+
+		if !strings.Contains(first, "⚑ bash") || !strings.Contains(first, "? Which branch?") || !strings.Contains(first, "1 of 3 · 3 left") || !strings.Contains(first, "Run bash?") {
+			t.Errorf("first:\n%s", first)
+		}
+		if !strings.Contains(second, "✓ fetch") || !strings.Contains(second, "3 of 3 · 2 left") || !strings.Contains(second, "Which branch?") {
+			t.Errorf("second:\n%s", second)
+		}
+		got := receive(t, reply)
+		if m.dialog != nil || got.Decisions[0] != agent.Deny || got.Decisions[1] != agent.Allow || got.Answers[0] != "main" {
+			t.Errorf("reply = %+v", got)
+		}
+	})
+
+	t.Run("DG-02 a question takes an option, several ticked, or text typed; empty text skips", func(t *testing.T) {
+		m, reply := asking(agent.Interaction{Questions: []tools.Question{
+			{Text: "Db?", Options: []string{"Postgres", "SQLite"}},
+			{Text: "Features?", Options: []string{"auth", "api", "ui"}, Multiple: true},
+			{Text: "Anything else?", Options: []string{"no"}},
+		}})
+
+		m = keys(t, m, keyDown, keyEnter)
+		m = keys(t, m, keySpace, keyDown, keyDown, keySpace, keyEnter)
+		m = keys(t, m, keyDown, keyEnter)
+
+		got := receive(t, reply)
+		if got.Answers[0] != "SQLite" || got.Answers[1] != "auth, ui" || got.Answers[2] != "" || m.dialog != nil {
+			t.Errorf("answers = %q", got.Answers)
+		}
+	})
+
+	t.Run("DG-03 always this session also answers the other calls to that tool waiting", func(t *testing.T) {
+		m, reply := asking(agent.Interaction{Approvals: []agent.ApprovalRequest{
+			{Call: llm.ToolCall{Name: "rm"}, Summary: "a"}, bash("ls"), {Call: llm.ToolCall{Name: "rm"}, Summary: "b"},
+		}})
+
+		m = keys(t, m, keyA)
+		left := m.dialog.current
+		m = keys(t, m, keyY)
+
+		got := receive(t, reply)
+		if left != 1 || got.Decisions[0] != agent.AllowAlways || got.Decisions[1] != agent.Allow || got.Decisions[2] != agent.Allow {
+			t.Errorf("left = %d decisions = %v", left, got.Decisions)
+		}
+	})
+
+	t.Run("DG-04 rules added from one call let through the others they cover", func(t *testing.T) {
+		m, reply := asking(agent.Interaction{Approvals: []agent.ApprovalRequest{
+			{Call: llm.ToolCall{Name: "bash"}, Summary: "make test", Ruled: true, Commands: []string{"make test"}},
+			{Call: llm.ToolCall{Name: "bash"}, Summary: "make lint", Ruled: true, Commands: []string{"make lint"}},
+			{Call: llm.ToolCall{Name: "bash"}, Summary: "rm -rf x", Ruled: true, Commands: []string{"rm -rf x"}},
+		}})
+		policy, _ := permissions.New(permissions.ModeEdits, []string{"make *"}, nil)
+
+		m.allowByRules(policy)
+		moved, _ := m.next()
+		m = keys(t, moved.(model), keyN)
+
+		got := receive(t, reply)
+		if got.Decisions[0] != agent.Allow || got.Decisions[1] != agent.Allow || got.Decisions[2] != agent.Deny {
+			t.Errorf("decisions = %v", got.Decisions)
+		}
+	})
+
+	t.Run("DG-05 the dialog stays above the input, the conversation scrolled or not", func(t *testing.T) {
+		m, _ := asking(agent.Interaction{Questions: []tools.Question{{Text: "Which branch?"}}})
+		for range 50 {
+			updated, _ := m.Update(printMsg("line"))
+			m = updated.(model)
+		}
+		m.scroll(true, 30)
+
+		if !strings.Contains(ansi.Strip(m.View().Content), "Which branch?") {
+			t.Error("the question went out of sight")
+		}
+	})
+}
+
+// receive waits for the dialog's reply, failing instead of hanging.
+func receive(t *testing.T, reply chan agent.Reply) agent.Reply {
+	t.Helper()
+	select {
+	case got := <-reply:
+		return got
+	case <-time.After(2 * time.Second):
+		t.Fatal("the dialog sent no reply")
+		return agent.Reply{}
+	}
+}

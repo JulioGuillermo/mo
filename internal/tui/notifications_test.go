@@ -4,7 +4,7 @@ package tui
 // | ID    | Category | Description                                                          | Priority |
 // | NU-01 | Happy    | A turn ending while the terminal is not focused calls with the answer | P0      |
 // | NU-02 | Happy    | Nothing is sent while focused, unless asked for, nor after esc        | P1       |
-// | NU-03 | Happy    | A permission question calls with the tool and what it runs           | P0       |
+// | NU-03 | Happy    | A permission question calls with the tool, what it runs and how many more | P0  |
 
 import (
 	"context"
@@ -17,6 +17,7 @@ import (
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/tools"
 )
 
 // sent runs a command and returns what it would write to the terminal.
@@ -74,11 +75,14 @@ func TestNotifications(t *testing.T) {
 
 	t.Run("NU-03 a permission question calls with the tool and what it runs", func(t *testing.T) {
 		m := notifyModel(t, false)
-		question := approvalMsg{request: agent.ApprovalRequest{Call: llm.ToolCall{Name: "bash"}, Summary: "rm -rf build"}, reply: make(chan agent.Decision, 1)}
+		question := interactionMsg{interaction: agent.Interaction{
+			Approvals: []agent.ApprovalRequest{{Call: llm.ToolCall{Name: "bash"}, Summary: "rm -rf build"}},
+			Questions: []tools.Question{{Text: "Which branch?"}},
+		}, reply: make(chan agent.Reply, 1)}
 
 		_, cmd := m.Update(question)
 
-		if !strings.Contains(sent(cmd), "Run bash? rm -rf build") {
+		if !strings.Contains(sent(cmd), "Run bash? rm -rf build (+1 more)") {
 			t.Errorf("sent = %q", sent(cmd))
 		}
 	})

@@ -91,6 +91,9 @@ type Hooks struct {
 	OnNotice    func(text string)
 	OnLoopCut   func(repeated string)
 	Approve     func(ctx context.Context, request ApprovalRequest) Decision
+	// Interact asks the user everything the calls of a reply need at once;
+	// it takes the place of Approve.
+	Interact func(ctx context.Context, interaction Interaction) Reply
 }
 
 func (a *Agent) Run(ctx context.Context, prompt string, hooks Hooks) error {
@@ -184,78 +187,6 @@ func (a *Agent) stream(ctx context.Context, hooks Hooks) (llm.Response, string, 
 
 // answerToolCalls gives every call a result, also the ones skipped after a
 // cancel.
-func (a *Agent) answerToolCalls(ctx context.Context, calls []llm.ToolCall, hooks Hooks) {
-	for _, call := range calls {
-		output, isError := a.answerToolCall(ctx, call, hooks)
-		a.History = append(a.History, llm.Message{
-			Role:       llm.RoleTool,
-			ToolCallID: call.ID,
-			Text:       output,
-			IsError:    isError,
-		})
-	}
-}
-
-func (a *Agent) answerToolCall(ctx context.Context, call llm.ToolCall, hooks Hooks) (string, bool) {
-	if ctx.Err() != nil {
-		return cancelledResult, true
-	}
-	if call.ArgsError != "" {
-		return call.ArgsError, true
-	}
-	call, _, err := a.Tools.Unwrap(call)
-	if err != nil {
-		return err.Error(), true
-	}
-	if a.looping() {
-		return stoppedCallResult, true
-	}
-	if earlier, repeated := a.repeatedCall(call); repeated {
-		return a.blockRepeatedCall(call, earlier, hooks), true
-	}
-	if a.BlockToolCall != nil {
-		if reason := a.BlockToolCall(ctx, call); reason != "" {
-			a.announceBlocked(call, reason, hooks)
-			return reason, true
-		}
-	}
-	summary := a.Tools.Summary(call)
-	if !a.approved(ctx, call, summary, hooks) {
-		if ctx.Err() != nil {
-			return cancelledResult, true
-		}
-		return deniedResult, true
-	}
-	if hooks.OnToolStart != nil {
-		hooks.OnToolStart(call, summary)
-	}
-	output, isError := a.Tools.Run(ctx, call)
-	if hooks.OnToolDone != nil {
-		hooks.OnToolDone(call, output, isError)
-	}
-	return output, isError
-}
-
-func (a *Agent) approved(ctx context.Context, call llm.ToolCall, summary string, hooks Hooks) bool {
-	need := a.approvalFor(ctx, call, hooks)
-	if !need.ask {
-		return true
-	}
-	if hooks.Approve == nil {
-		return false
-	}
-	decision := hooks.Approve(ctx, ApprovalRequest{
-		Call: call, Summary: summary, Warning: need.warning, Reason: need.reason, Commands: need.commands, Ruled: need.ruled,
-	})
-	if decision == AllowAlways && need.warning == "" && !need.ruled {
-		if a.alwaysAllowed == nil {
-			a.alwaysAllowed = map[string]bool{}
-		}
-		a.alwaysAllowed[call.Name] = true
-	}
-	return decision != Deny
-}
-
 func (a *Agent) announceBlocked(call llm.ToolCall, reason string, hooks Hooks) {
 	if hooks.OnToolStart != nil {
 		hooks.OnToolStart(call, a.Tools.Summary(call))

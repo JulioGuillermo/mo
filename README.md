@@ -150,6 +150,11 @@ time. `web_search` uses DuckDuckGo by default, with no key; see `[web]` below fo
 `todo` is the model's task list for work of several steps. It shows above the input while a task
 is left, the one in progress highlighted; it comes back with the conversation on `/resume`.
 
+`ask` lets the model ask you questions, with options or free text. What the calls of one reply
+need from you, approvals and questions, is asked at once in a dialog above the input: tabs show
+how many there are and which one you are on, tab moves between them, and the agent goes on once
+all are answered. Enter presses the selected button, "No" at first; `y` approves.
+
 `memory` keeps notes across sessions, per project or global. Their first lines go into the system
 prompt so the model knows what it saved.
 

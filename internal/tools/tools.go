@@ -113,7 +113,7 @@ func builtins() []Tool {
 func builtinsWith(searcher web.Searcher) []Tool {
 	return []Tool{
 		bashTool(), readTool(), writeTool(), editTool(), lsTool(), mkdirTool(), rmTool(), grepTool(),
-		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(),
+		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(),
 	}
 }
 

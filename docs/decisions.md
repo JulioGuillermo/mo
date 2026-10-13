@@ -101,7 +101,8 @@
   once instead of hanging, and a cancel kills the whole process group. Its output buffer keeps
   1 MB of head and tail, so `yes` cannot eat the memory. A background child holding the pipe open
   ends the call after 2 s as a success.
-- Only `y` approves. Enter does not, so typing into the prompt cannot approve a command by accident.
+- Enter presses the selected button, and "No" is selected first: approving takes `y`, or moving to
+  "Yes" on purpose, so typing into the input cannot approve a command by accident.
 
 ## Permissions
 
@@ -413,3 +414,20 @@
   `terminal` keeps the terminal's background and asks it whether it is dark.
 - Inline code and code blocks are on blue, table stripes too; glamour's grey did not sit on a
   blue screen.
+
+## Questions and approvals
+
+- The model asks with an `ask` tool: up to 4 questions, each free text or with up to 6 options, one
+  or several to pick; the user can always answer in their own words, and an empty answer skips.
+- Every call of a reply is checked before any runs, and what needs the user, the calls to approve
+  and the questions, is asked at once. The user sees how many there are and in what order, and can
+  go between them with tab before the agent goes on.
+- The loop guard runs twice: before asking, so a call that repeats earlier replies is never offered
+  for approval, and again when each call runs, since a call repeated within the same reply only
+  shows as a repeat once the first one has a result.
+- The dialog sits above the input, not in the conversation, so it stays in sight however the
+  conversation scrolls. It is drawn with backgrounds, not a border, and buttons for the answers.
+- "Always this session" answers the other calls to the same tool waiting in the dialog; rules
+  added from one call answer the others they cover in every part.
+- Without a user (mo run once), approvals are denied and the model is told to decide its questions
+  itself and say what it assumed.

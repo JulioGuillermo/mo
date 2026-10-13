@@ -83,7 +83,7 @@ type model struct {
 	streamCut        int
 	streamDone       string
 	reasoning        string
-	approval         *approvalMsg
+	dialog           *dialog
 	usage            llm.Usage
 	speed            llm.Usage
 	settings         *settingsScreen
@@ -204,7 +204,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.attach(msg.files, false)
 		return m, nil
 	case tea.PasteMsg:
-		if m.approval == nil && m.pastedPaths(msg.Content) {
+		if m.dialog != nil {
+			return m.pasteIntoDialog(msg)
+		}
+		if m.pastedPaths(msg.Content) {
 			return m, nil
 		}
 	case rulesSavedMsg:
@@ -222,7 +225,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.addReasoning(string(msg))
 		return m, nil
 	case tea.MouseClickMsg:
-		if msg.Button == tea.MouseLeft && m.approval == nil {
+		if msg.Button == tea.MouseLeft && m.dialog == nil {
 			m.clickDetails(msg.Y)
 		}
 		return m, nil
@@ -267,9 +270,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.speed = llm.Usage(msg)
 		}
 		return m, nil
-	case approvalMsg:
-		m.approval = &msg
-		return m, m.permissionAsked(msg)
+	case interactionMsg:
+		return m.openDialog(msg)
 	case tea.FocusMsg:
 		m.focused = true
 		return m, nil
@@ -310,8 +312,8 @@ func (m *model) resize(size tea.WindowSizeMsg) tea.Cmd {
 }
 
 func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	if m.approval != nil {
-		return m.answerApproval(msg.String())
+	if m.dialog != nil {
+		return m.handleDialogKey(msg)
 	}
 	if matches := m.suggestions(); len(matches) > 0 && !m.running {
 		if handled, next, cmd := m.handleSuggestionKey(msg.String(), matches); handled {
@@ -402,31 +404,6 @@ func (m model) handleSuggestionKey(key string, matches []command) (bool, tea.Mod
 		return false, m, nil
 	}
 	return true, m, nil
-}
-
-func (m model) answerApproval(pressed string) (tea.Model, tea.Cmd) {
-	request := m.approval.request
-	switch pressed {
-	case "y":
-		m.approval.reply <- agent.Allow
-	case "a":
-		if request.Ruled {
-			if len(request.Commands) == 0 || request.Warning != "" {
-				return m, nil
-			}
-			return m.editRules(*m.approval)
-		}
-		m.approval.reply <- agent.AllowAlways
-	case "n":
-		m.approval.reply <- agent.Deny
-	case "esc", "ctrl+c":
-		m.approval.reply <- agent.Deny
-		m.stop()
-	default:
-		return m, nil
-	}
-	m.approval = nil
-	return m, nil
 }
 
 func (m model) submit() (tea.Model, tea.Cmd) {
@@ -524,13 +501,13 @@ func (m model) view(path string) tea.Cmd {
 
 func (m *model) stop() {
 	m.cancel()
-	m.approval = nil
+	m.closeDialog(true)
 }
 
 func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 	m.running = false
 	m.cancel()
-	m.approval = nil
+	m.closeDialog(true)
 	partial := strings.TrimSpace(m.stream)
 	m.addReasoning(m.reasoning)
 	m.clearStream()
@@ -575,7 +552,7 @@ func (m model) View() tea.View {
 	return view
 }
 
-// bottom is what stays on the last rows: the approval or the spinner, the
+// bottom is what stays on the last rows: what the agent asks or the spinner, the
 // input and the status line.
 func (m model) bottom() string {
 	var sections []string
@@ -583,8 +560,8 @@ func (m model) bottom() string {
 		sections = append(sections, panel)
 	}
 	switch {
-	case m.approval != nil:
-		sections = append(sections, m.approvalPrompt())
+	case m.dialog != nil:
+		sections = append(sections, m.dialogView())
 	case m.running:
 		sections = append(sections, m.spinner.View()+workingStyle.Render(" working · esc to stop"))
 	}
@@ -684,34 +661,6 @@ func (m model) liveText() string {
 		parts = append(parts, wrap.Render(tail))
 	}
 	return strings.Join(parts, "\n")
-}
-
-// approvalPrompt is a framed question: the tool, what it will run, and the
-// keys that answer.
-func (m model) approvalPrompt() string {
-	request := m.approval.request
-	question := lipgloss.NewStyle().Bold(true).Render("Run " + request.Call.Name + "?")
-	if request.Warning != "" {
-		question += "  " + errorStyle.Render(request.Warning)
-	}
-	lines := []string{question, m.printer.command(request.Summary)}
-	if request.Reason != "" {
-		lines = append(lines, workingStyle.Render(request.Reason))
-	}
-	if request.Ruled && len(request.Commands) > 0 {
-		lines = append(lines, dimStyle.Render("no rule allows: ")+strings.Join(request.Commands, dimStyle.Render(" · ")))
-	}
-	keys := keyStyle.Render("y") + " yes   " + keyStyle.Render("n") + " no"
-	switch {
-	case request.Warning != "":
-	case request.Ruled && len(request.Commands) > 0:
-		keys += "   " + keyStyle.Render("a") + " always: add a rule…"
-	case !request.Ruled:
-		keys += "   " + keyStyle.Render("a") + " always this session"
-	}
-	body := strings.Join(append(lines, keys), "\n")
-	frame := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(warning).Padding(0, 1).Width(max(m.width-2, 20))
-	return frame.Render(body)
 }
 
 // statusLine shows the permission mode, provider and model, how full the

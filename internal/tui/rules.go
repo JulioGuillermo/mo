@@ -28,30 +28,36 @@ type rulesSavedMsg struct {
 	err   error
 }
 
-// editRules opens the commands no rule allows as rules to edit: put a * where
-// any words may go, then pick where they apply. Saving allows the call.
-func (m model) editRules(pending approvalMsg) (tea.Model, tea.Cmd) {
-	text := strings.Join(pending.request.Commands, "\n")
+// editRules opens the commands of a call no rule allows as rules to edit:
+// put a * where any words may go, then pick where they apply. Saving allows
+// the call, and the other calls waiting that the rules now cover.
+func (m model) editRules(index int) (tea.Model, tea.Cmd) {
+	request := m.dialog.request(m.dialog.items[index])
+	text := strings.Join(request.Commands, "\n")
 	where := everyProject
 	form := huh.NewForm(huh.NewGroup(
 		huh.NewText().Title("Allow from now on").Description(ruleSyntax+"\n"+ruleSyntaxTip).
-			Lines(max(len(pending.request.Commands)+1, 3)).Validate(validRules).Value(&text),
+			Lines(max(len(request.Commands)+1, 3)).Validate(validRules).Value(&text),
 		huh.NewSelect[string]().Title("Where").Options(
 			huh.NewOption("every project", everyProject),
 			huh.NewOption("only "+config.ProjectKey(m.session.WorkDir), thisProject),
 		).Value(&where),
-	).Title("Rules for " + pending.request.Call.Name)).WithShowHelp(false)
+	).Title("Rules for " + request.Call.Name)).WithShowHelp(false)
 	back := func(m model) (tea.Model, tea.Cmd) { return m, nil }
 	next := func(m model) (tea.Model, tea.Cmd) {
 		rules := ruleLines(text)
+		policy := m.session.Agent.Permissions
 		for _, rule := range rules {
-			_ = m.session.Agent.Permissions.Allow(rule)
+			_ = policy.Allow(rule)
 		}
-		if m.approval != nil {
-			m.approval.reply <- agent.Allow
-			m.approval = nil
+		save := saveRules(rules, where, m.session.WorkDir)
+		if m.dialog == nil {
+			return m, save
 		}
-		return m, saveRules(rules, where, m.session.WorkDir)
+		m.dialog.current = index
+		m.allowByRules(policy)
+		updated, cmd := m.decide(agent.Allow)
+		return updated, tea.Batch(save, cmd)
 	}
 	return m.showSettings(&settingsScreen{form: form, layer: config.Config{}, next: next, back: back, help: rulesHelp})
 }
