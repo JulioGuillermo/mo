@@ -121,7 +121,8 @@ func (m model) pickConversation(msg resumeListMsg) (tea.Model, tea.Cmd) {
 	}
 	picked := msg.infos[0].ID
 	list := huh.NewSelect[string]().Title("Resume a conversation").
-		Description("saved in " + config.SessionDir() + " · the current one is saved already").Options(options...).Value(&picked)
+		Description("saved in " + config.SessionDir() + " · the current one is saved already").
+		Filtering(true).Options(options...).Value(&picked)
 	if m.height > 0 {
 		list.Height(min(len(options)+3, max(m.height-4, settingsMinHeight)))
 	}
