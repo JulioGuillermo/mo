@@ -53,6 +53,11 @@ func (m model) click(x, y int) (tea.Model, tea.Cmd) {
 // moves huh's cursor there and presses enter, as huh takes no mouse.
 func (m model) clickSettings(x, y int) (tea.Model, tea.Cmd) {
 	lines := strings.Split(ansi.Strip(m.settings.form.View()), "\n")
+	if m.settings.tab != nil && y >= 0 && y < len(lines) && strings.Contains(lines[y], "tab switches") {
+		screen := m.settings
+		m.settings = nil
+		return screen.tab(m)
+	}
 	if _, isConfirm := m.settings.form.GetFocusedField().(*huh.Confirm); isConfirm && y >= 0 && y < len(lines) {
 		return m.clickButton(lines[y], x)
 	}

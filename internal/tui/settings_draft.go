@@ -81,8 +81,14 @@ func newSettingsDraft(layer config.Config) *settingsDraft {
 	if model == "" {
 		model = cfg.Providers[layer.Provider].Model
 	}
+	return draftFrom(cfg, layer.Provider, model)
+}
+
+// draftFrom is the draft of the settings cfg holds, with the provider and
+// model it names.
+func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 	draft := &settingsDraft{
-		provider:      layer.Provider,
+		provider:      provider,
 		model:         model,
 		mode:          string(cfg.Tools.Mode),
 		load:          string(cfg.Tools.Load),
@@ -114,7 +120,7 @@ func newSettingsDraft(layer config.Config) *settingsDraft {
 		loopStreamRepeats: strconv.Itoa(cfg.Loop.StreamRepeats),
 		loopWarnings:      strconv.Itoa(*cfg.Loop.Warnings),
 
-		initialProvider: layer.Provider,
+		initialProvider: provider,
 		initialModel:    model,
 
 		notifyFinish:   *cfg.Notify.Finish,

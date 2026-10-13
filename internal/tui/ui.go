@@ -33,12 +33,14 @@ import (
 )
 
 type Session struct {
-	Agent     *agent.Agent
-	Provider  string
-	Model     string
-	Config    config.Config
-	WorkDir   string
-	Reload    func(userLayer config.Config) (Session, error)
+	Agent    *agent.Agent
+	Provider string
+	Model    string
+	Config   config.Config
+	WorkDir  string
+	// Reload builds a session from the user file given and the project's:
+	// the one given, which the user made, or the one on disk when nil.
+	Reload    func(userLayer config.Config, projectLayer *config.Config) (Session, error)
 	MCP       []mcphub.Status
 	Plugins   *plugins.Set
 	ToolNames []string
@@ -196,6 +198,11 @@ func (m model) Init() tea.Cmd {
 	for _, status := range m.session.Plugins.Status() {
 		if status.Err != nil {
 			banner += "\n" + m.printer.Error(fmt.Errorf("plugin %s: %v", status.Name, status.Err))
+		}
+	}
+	if user, err := config.ReadUserLayer(); err == nil {
+		if notice := projectNotice(m.session.WorkDir, user); notice != "" {
+			banner += "\n" + m.printer.Note(notice)
 		}
 	}
 	start := printText(banner)
@@ -545,6 +552,9 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 	case "help":
 		return m, drawText(m.helpView)
 	case "settings":
+		if argument == "project" {
+			m.openSection = menuProject
+		}
 		m.settingsInFlight = true
 		return m, tea.Sequence(printText(m.printer.Note("looking for providers…")), loadSettings(m.session, generalSettings))
 	case "providers":

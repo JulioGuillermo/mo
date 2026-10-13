@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"charm.land/huh/v2"
@@ -57,7 +56,7 @@ var settingsSections = []settingsSection{
 	}, items: loopItems},
 	{key: "web", title: "Web search", summary: func(d *settingsDraft) string { return d.search }, items: webItems},
 	{key: "permissions", title: "Permissions", summary: func(d *settingsDraft) string {
-		return fmt.Sprintf("%s · %d allowed · %d never", d.permMode, len(ruleLines(d.allow))+len(ruleLines(d.projectAllow)), len(ruleLines(d.deny))+len(ruleLines(d.projectDeny)))
+		return fmt.Sprintf("%s · %d allowed · %d never", d.permMode, len(ruleLines(d.allow)), len(ruleLines(d.deny)))
 	}, note: func(model, *settingsMenu) string {
 		return "shift+tab changes the mode for the session · " + ruleSyntax
 	}, items: permissionItems},
@@ -83,7 +82,11 @@ func modelItems(m model, menu *settingsMenu) []settingItem {
 	cfg := menu.config(m.session.Config)
 	return []settingItem{
 		{"Provider", func(d *settingsDraft) string { return orDefault(d.provider, "auto") }, func(d *settingsDraft) huh.Field {
-			return huh.NewSelect[string]().Title("Provider").Options(providerOptions(cfg, menu.loaded.findings, d.initialProvider)...).Value(&d.provider)
+			options := providerOptions(cfg, menu.loaded.findings, d.initialProvider)
+			if menu.scope == projectScope && menu.draft.provider != autoProvider {
+				options = options[1:]
+			}
+			return huh.NewSelect[string]().Title("Provider").Options(options...).Value(&d.provider)
 		}},
 		{"Model", modelValue, func(d *settingsDraft) huh.Field {
 			return huh.NewInput().Title("Model").Description("empty: the first model the server lists").
@@ -100,8 +103,11 @@ func modelNote(_ model, menu *settingsMenu) string {
 	if note := unusableNote(menu.loaded.findings); note != "" {
 		notes = append(notes, "Found but not usable: "+strings.ReplaceAll(note, "\n", " · "))
 	}
-	if _, err := os.Stat(config.ProjectFile(".")); err == nil {
-		notes = append(notes, "This project's .mo.toml also applies on top of these settings.")
+	switch {
+	case menu.scope == projectScope:
+		notes = append(notes, "Providers are set up in Global; here you pick one for this project.")
+	case menu.project != nil && (menu.project.set["provider"] || menu.project.set["model"]):
+		notes = append(notes, "This project picks its own model: tab to see it.")
 	}
 	return strings.Join(notes, "\n")
 }
@@ -246,22 +252,7 @@ func permissionItems(model, *settingsMenu) []settingItem {
 		rules("Allowed commands", "run without asking in every project", func(d *settingsDraft) *string { return &d.allow }),
 		rules("Never without asking", "ask in every mode, also in all; wins over allowed", func(d *settingsDraft) *string { return &d.deny }),
 	}
-	items = append(items,
-		settingItem{"Mode in this project", func(d *settingsDraft) string { return orDefault(d.projectMode, "same") }, func(d *settingsDraft) huh.Field {
-			options := append([]huh.Option[string]{huh.NewOption("same as the mode to start in", "")}, modeOptions...)
-			return huh.NewSelect[string]().Title("Mode in this project").Description(dimProject()).Options(options...).Value(&d.projectMode)
-		}},
-		rules("Allowed in this project", "added to the allowed commands here only", func(d *settingsDraft) *string { return &d.projectAllow }),
-		rules("Never without asking here", "added to the never list here only", func(d *settingsDraft) *string { return &d.projectDeny }),
-		settingItem{"Try a command", func(d *settingsDraft) string { return orDefault(d.tryCommand, "see which rule decides") }, func(d *settingsDraft) huh.Field {
-			return huh.NewInput().Title("Try a command").DescriptionFunc(d.tryRules, &d.tryCommand).Value(&d.tryCommand)
-		}},
-	)
-	return items
-}
-
-func dimProject() string {
-	return "kept in your settings for this folder; the project's own .mo.toml can only ask more"
+	return append(items, tryItem)
 }
 
 func ruleCount(text string) string {

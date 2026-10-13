@@ -36,7 +36,7 @@ func TestSettingsMenu(t *testing.T) {
 		updated, _ = updated.(model).Update(keyEsc)
 
 		after := updated.(model)
-		if after.settings == nil || after.settings.help != menuHelp || !menu.changed() {
+		if after.settings == nil || !strings.HasPrefix(after.settings.help, menuHelp) || !menu.changed() {
 			t.Errorf("menu shown = %v changed = %v", after.settings != nil, menu.changed())
 		}
 	})

@@ -23,7 +23,7 @@ var builtinCommands = []command{
 	{name: "fork", description: "go on in a copy of the conversation"},
 	{name: "continue", description: "let the model go on after you stopped it"},
 	{name: "compact", description: "summarize the conversation to free context"},
-	{name: "settings", description: "model, tools, context, web, loop guard, display"},
+	{name: "settings", description: "global settings, and what this project overrides · /settings project"},
 	{name: "providers", description: "add, edit or delete providers"},
 	{name: "mcp", description: "MCP servers: status, add, edit, delete"},
 	{name: "plugins", description: "plugins and their commands"},

@@ -1,6 +1,7 @@
 // Package config loads mo's settings: built-in defaults, then the user file
-// (~/.config/mo/config.toml), then the project file (.mo.toml). The project
-// file comes with the repository, so it can only change what is harmless.
+// (~/.config/mo/config.toml), then the project file (.mo/settings.toml). A
+// project file may come with the repository, so it can only change what is
+// harmless, unless the user saved it from mo and it is unchanged since.
 package config
 
 import (
@@ -201,10 +202,6 @@ func PluginDir() string {
 
 func LogDir() string {
 	return filepath.Join(dataHome(), "mo", "logs")
-}
-
-func ProjectFile(workDir string) string {
-	return filepath.Join(workDir, ".mo.toml")
 }
 
 func Load(workDir string) (Config, error) {

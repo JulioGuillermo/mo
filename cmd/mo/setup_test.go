@@ -259,7 +259,7 @@ func TestMCPReload(t *testing.T) {
 		layer, _ := config.ReadUserLayer()
 		layer.MCP = map[string]config.MCPServer{"broken": {Command: "/nonexistent/server"}}
 
-		fresh, err := session.Reload(layer)
+		fresh, err := session.Reload(layer, nil)
 		before := loaded.hubs.current
 		fresh.Activate()
 

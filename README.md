@@ -66,10 +66,22 @@ Anthropic forbids using Claude subscription tokens outside its own apps. Claude 
 
 ## Config
 
-`~/.config/mo/config.toml`, then `.mo.toml` in the project. Each layer overrides only what it sets.
-The project file comes with the repository, so it can only pick a provider that needs no key, set
-models, `system_prompt`, `max_tokens`, `disabled` and `max_output`, add tools to `confirm`, add
-`deny` rules and pick a stricter permission mode. Providers with URLs or keys go in the user file.
+`~/.config/mo/config.toml`, then `.mo/settings.toml` in the project (the old `.mo.toml` is still
+read when that does not exist). Each layer overrides only what it sets.
+
+`/settings` has two screens, switched with tab: **Global**, for every project, and **This project**
+(`/settings project`), which shows only what a project can override (provider and model, tools,
+context, loop guard) and marks each value `● this project` or `· global`. What the project does not
+set follows Global, also when Global changes later. Providers, MCP servers, web search, memory,
+notifications and display are only global. The project's permission rules are edited there too,
+but kept in the user file for that folder, so a repository never brings its own `allow` rules.
+
+A project file you save from mo is trusted: mo remembers its hash in
+`~/.local/share/mo/trusted-projects.json`. One that came with the repository, or changed since, can
+only pick a provider that needs no key, set models, `system_prompt`, `max_tokens`, `disabled` and
+`max_output`, add tools to `confirm`, add `deny` rules and pick a stricter permission mode; mo says
+so at start when that holds something back, and saving it from `/settings project` trusts it.
+Providers with URLs or keys always go in the user file.
 
 
 ```toml
@@ -256,7 +268,7 @@ trust = true               # run its tools without asking
 Their tools are named `mcp__<server>__<tool>` and ask before running unless the server has
 `trust = true`. In `search` tool mode they stay out of the context until the model looks for them.
 `/mcp` shows which servers answered and edits them. A server's stderr goes to `~/.local/share/mo/logs/mcp-<name>.log`.
-`[web]` and `[mcp]` are read from the user file only, never from a project's `.mo.toml`.
+`[web]` and `[mcp]` are read from the user file only, never from a project's `.mo/settings.toml`.
 
 ## Images and diagrams
 

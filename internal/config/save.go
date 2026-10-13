@@ -24,13 +24,27 @@ func UserSettings(layer Config) Config {
 // LoadWithUserLayer is Load with layer in place of the user file, to try
 // settings before saving them.
 func LoadWithUserLayer(workDir string, layer Config) (Config, error) {
-	cfg := merge(Defaults(), layer)
-	project, err := readOptional(ProjectFile(workDir))
+	project, err := ReadProject(workDir)
 	if err != nil {
-		return cfg, err
+		return merge(Defaults(), layer), err
 	}
+	return combine(workDir, layer, project)
+}
+
+// LoadLayers is Load with both files given, to try them before saving. The
+// project layer is the user's own, so it is trusted.
+func LoadLayers(workDir string, user, project Config) (Config, error) {
+	return combine(workDir, user, Project{Layer: project, Trusted: true})
+}
+
+func combine(workDir string, user Config, project Project) (Config, error) {
+	cfg := merge(Defaults(), user)
 	cfg.Permissions = cfg.Permissions.ForProject(workDir)
-	cfg = mergeProject(cfg, project)
+	if project.Trusted {
+		cfg = WithProject(cfg, project.Layer)
+	} else {
+		cfg = mergeProject(cfg, project.Layer)
+	}
 	return cfg, validate(cfg)
 }
 

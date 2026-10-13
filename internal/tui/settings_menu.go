@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"reflect"
@@ -22,26 +23,41 @@ const (
 	menuHelp      = "↑↓ choose · enter open · esc back"
 )
 
-// settingsMenu is the /settings screen: a menu of sections, each opening its
-// own form that comes back to the menu. Nothing reaches the file until the
-// user picks save; providers and MCP servers edited from here wait too.
+// settingsMenu is the /settings screen: two menus, Global and This project,
+// of sections, each opening its own form that comes back to the menu.
+// Nothing reaches the files until the user picks save; providers and MCP
+// servers edited from here wait too.
 type settingsMenu struct {
-	loaded settingsLoadedMsg
-	layer  config.Config
-	draft  *settingsDraft
-	last   string
-	notice string
+	loaded  settingsLoadedMsg
+	layer   config.Config
+	draft   *settingsDraft
+	last    string
+	notice  string
+	scope   settingsScope
+	project *projectSettings
 }
 
-func (m model) openSettingsMenu(loaded settingsLoadedMsg) (tea.Model, tea.Cmd) {
+func (m model) newSettingsMenu(loaded settingsLoadedMsg) *settingsMenu {
 	draft := newSettingsDraft(loaded.layer)
 	draft.forProject(m.session.WorkDir, loaded.layer)
 	if len(m.session.ToolDescriptions) > 0 {
 		draft.describeTools(m.session.ToolDescriptions)
 	}
-	menu := &settingsMenu{loaded: loaded, layer: loaded.layer, draft: draft, last: settingsSections[0].key}
-	if section := m.openSection; section != "" {
-		m.openSection = ""
+	return &settingsMenu{loaded: loaded, layer: loaded.layer, draft: draft, last: settingsSections[0].key,
+		project: newProjectSettings(m.session.WorkDir, loaded.layer, loaded.project, loaded.projectErr)}
+}
+
+func (m model) openSettingsMenu(loaded settingsLoadedMsg) (tea.Model, tea.Cmd) {
+	menu := m.newSettingsMenu(loaded)
+	section := m.openSection
+	m.openSection = ""
+	switch {
+	case section == menuProject:
+		return m.switchScope(menu)
+	case section == "model" && (menu.project.set["provider"] || menu.project.set["model"]):
+		menu.scope, menu.project.visited = projectScope, true
+		return m.openMenuChoice(menu, section)
+	case section != "":
 		menu.last = section
 		return m.openMenuChoice(menu, section)
 	}
@@ -49,29 +65,35 @@ func (m model) openSettingsMenu(loaded settingsLoadedMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) showMenu(menu *settingsMenu) (tea.Model, tea.Cmd) {
-	choice := menu.last
+	last := &menu.last
+	description := "apply in every project · " + config.UserFile()
+	if menu.scope == projectScope {
+		last = &menu.project.last
+		description = menu.projectDescription()
+	}
+	choice := *last
 	title := "Settings"
 	if menu.changed() {
 		title += "  · unsaved changes"
 	}
-	description := "enter opens a section · esc leaves"
 	if menu.notice != "" {
 		description = menu.notice
 		menu.notice = ""
 	}
 	form := huh.NewForm(huh.NewGroup(
-		huh.NewSelect[string]().Title(title).Description(description).
-			Options(menu.options()...).Value(&choice),
+		huh.NewSelect[string]().Title(title).Description(scopeTabs(menu.scope) + "\n" + description).
+			Options(m.menuOptions(menu)...).Value(&choice),
 	)).WithShowHelp(false)
 	next := func(m model) (tea.Model, tea.Cmd) {
-		menu.last = choice
+		*last = choice
 		return m.openMenuChoice(menu, choice)
 	}
 	back := func(m model) (tea.Model, tea.Cmd) { return m.leaveMenu(menu) }
-	return m.showSettings(&settingsScreen{form: form, layer: menu.layer, next: next, back: back, help: menuHelp})
+	tab := func(m model) (tea.Model, tea.Cmd) { return m.switchScope(menu) }
+	return m.showSettings(&settingsScreen{form: form, layer: menu.layer, next: next, back: back, tab: tab, help: menuHelp + " · tab global/project"})
 }
 
-func (menu *settingsMenu) options() []huh.Option[string] {
+func (m model) menuOptions(menu *settingsMenu) []huh.Option[string] {
 	width := len("MCP servers")
 	for _, section := range settingsSections {
 		width = max(width, len(section.title))
@@ -79,20 +101,33 @@ func (menu *settingsMenu) options() []huh.Option[string] {
 	row := func(title, summary string) string {
 		return fmt.Sprintf("%-*s   %s", width, title, dimStyle.Render(summary))
 	}
+	if menu.scope == projectScope {
+		return m.projectOptions(menu, row)
+	}
 	var options []huh.Option[string]
 	for _, section := range settingsSections {
 		options = append(options, huh.NewOption(row(section.title, section.summary(menu.draft)), section.key))
 	}
-	return append(options,
+	options = append(options,
 		huh.NewOption(row("Providers", "add, edit, delete"), menuProviders),
 		huh.NewOption(row("MCP servers", fmt.Sprintf("%d set up · add, edit, delete", len(menu.layer.MCP))), menuMCP),
+	)
+	if menu.project != nil {
+		options = append(options, huh.NewOption(row("This project ›", fmt.Sprintf("%d set in %s · tab", len(menu.project.set), projectFileName)), menuProject))
+	}
+	return append(options,
 		huh.NewOption(keyStyle.Render("Save and close"), menuSave),
 		huh.NewOption("Close without saving", menuDiscard),
 	)
 }
 
-// changed tells whether saving would change the user file.
+// changed tells whether saving would change a file.
 func (menu *settingsMenu) changed() bool {
+	return menu.userChanged() || menu.projectChanged()
+}
+
+// userChanged tells whether saving would change the user file.
+func (menu *settingsMenu) userChanged() bool {
 	applied, err := menu.apply(menu.layer)
 	return err != nil || !reflect.DeepEqual(applied, menu.loaded.layer)
 }
@@ -127,16 +162,25 @@ func (menu *settingsMenu) config(cfg config.Config) config.Config {
 func (m model) openMenuChoice(menu *settingsMenu, choice string) (tea.Model, tea.Cmd) {
 	switch choice {
 	case menuSave:
-		if _, err := menu.apply(menu.layer); err != nil {
+		_, err := menu.apply(menu.layer)
+		project, projectErr := menu.projectLayer()
+		if err = errors.Join(err, projectErr); err != nil {
 			menu.notice = errorStyle.Render("not saved: " + err.Error())
 			return m.showMenu(menu)
 		}
 		if !menu.changed() {
 			return m, printText(m.printer.Note("settings unchanged"))
 		}
-		return m.saveOrWait(&settingsScreen{layer: menu.layer, apply: menu.apply})
+		if !menu.projectChanged() {
+			project = nil
+		}
+		return m.saveOrWait(&settingsScreen{layer: menu.layer, apply: menu.apply, project: project, keepUser: !menu.userChanged()})
 	case menuDiscard:
 		return m.leaveMenu(menu)
+	case menuProject, menuGlobal:
+		return m.switchScope(menu)
+	case projectPermissions:
+		return m.showSection(menu, projectPermissionSection, "")
 	case menuProviders:
 		return m.pickProvider(menu.loadedNow(), menu)
 	case menuMCP:
@@ -153,14 +197,22 @@ func (m model) openMenuChoice(menu *settingsMenu, choice string) (tea.Model, tea
 // showSection lists the settings of a section with their values; each one
 // opens on its own.
 func (m model) showSection(menu *settingsMenu, section settingsSection, last string) (tea.Model, tea.Cmd) {
+	draft := menu.sectionDraft(section)
+	overriding := menu.overriding(section)
 	items := section.items(m, menu)
+	if overriding {
+		items = overridable(items)
+	}
 	width := 0
 	for _, item := range items {
 		width = max(width, len(item.title))
 	}
 	var options []huh.Option[string]
 	for _, item := range items {
-		label := fmt.Sprintf("%-*s   %s", width, item.title, dimStyle.Render(item.value(menu.draft)))
+		label := fmt.Sprintf("%-*s   %s", width, item.title, dimStyle.Render(item.value(draft)))
+		if overriding {
+			label += menu.overrideMark(item)
+		}
 		options = append(options, huh.NewOption(label, item.title))
 	}
 	options = append(options, huh.NewOption("‹ back", menuBack))
@@ -172,7 +224,10 @@ func (m model) showSection(menu *settingsMenu, section settingsSection, last str
 	if section.note != nil {
 		description = section.note(m, menu)
 	}
-	list := huh.NewSelect[string]().Title("Settings › " + section.title).Description(description).
+	if overriding {
+		description = strings.TrimSpace("what you change is set for this project only\n" + description)
+	}
+	list := huh.NewSelect[string]().Title(menu.crumb(section)).Description(description).
 		Options(options...).Value(&choice)
 	if m.height > 0 {
 		list.Height(min(len(options)+2+lipgloss.Height(description), max(m.height-4, settingsMinHeight)))
@@ -180,7 +235,11 @@ func (m model) showSection(menu *settingsMenu, section settingsSection, last str
 	back := func(m model) (tea.Model, tea.Cmd) { return m.showMenu(menu) }
 	next := func(m model) (tea.Model, tea.Cmd) {
 		for _, item := range items {
-			if item.title == choice {
+			switch {
+			case item.title != choice:
+			case overriding && menu.project.set[projectFields[item.title].key]:
+				return m.chooseOverride(menu, section, item)
+			default:
 				return m.editItem(menu, section, item)
 			}
 		}
@@ -193,15 +252,31 @@ func (m model) showSection(menu *settingsMenu, section settingsSection, last str
 // editItem opens one setting. Enter keeps the new value, esc puts the old
 // one back; both go back to the section.
 func (m model) editItem(menu *settingsMenu, section settingsSection, item settingItem) (tea.Model, tea.Cmd) {
-	restore := menu.draft.snapshot()
-	field := item.field(menu.draft)
+	draft := menu.sectionDraft(section)
+	restore := draft.snapshot()
+	field := item.field(draft)
 	toSection := func(m model) (tea.Model, tea.Cmd) { return m.showSection(menu, section, item.title) }
+	keep := toSection
+	if menu.overriding(section) {
+		keep = func(m model) (tea.Model, tea.Cmd) {
+			menu.project.set[projectFields[item.title].key] = true
+			return toSection(m)
+		}
+	}
 	cancel := func(m model) (tea.Model, tea.Cmd) {
 		restore()
 		return toSection(m)
 	}
-	form := huh.NewForm(huh.NewGroup(field).Title("Settings › " + section.title)).WithShowHelp(false)
-	return m.showSettings(&settingsScreen{form: form, layer: menu.layer, next: toSection, back: cancel, help: fieldHelp(field)})
+	form := huh.NewForm(huh.NewGroup(field).Title(menu.crumb(section))).WithShowHelp(false)
+	return m.showSettings(&settingsScreen{form: form, layer: menu.layer, next: keep, back: cancel, help: fieldHelp(field)})
+}
+
+// crumb is the title of a section's screens, which says which screen it is in.
+func (menu *settingsMenu) crumb(section settingsSection) string {
+	if menu.scope == projectScope {
+		return "This project › " + section.title
+	}
+	return "Settings › " + section.title
 }
 
 func fieldHelp(field huh.Field) string {

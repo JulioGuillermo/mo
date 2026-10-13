@@ -90,10 +90,17 @@
 
 ## Safety
 
-- The project file `.mo.toml` comes with the repository, so it cannot change provider URLs or keys,
-  define providers, pick a provider that needs a key (that would send the code to a paid cloud),
-  move the memory folder, remove tools from `confirm` or `disabled`. It can pick a keyless
-  provider, set models, tool mode and context settings, and add confirmations or disabled tools.
+- The project file `.mo/settings.toml` may come with the repository, so it cannot change provider
+  URLs or keys, define providers, pick a provider that needs a key (that would send the code to a
+  paid cloud), move the memory folder, remove tools from `confirm` or `disabled`. It can pick a
+  keyless provider, set models, tool mode and context settings, and add confirmations or disabled
+  tools.
+- A project file the user saves from `/settings` is trusted while its bytes stay the same: its
+  sha256 is kept by path in `~/.local/share/mo/trusted-projects.json`, outside the repository.
+  Trusted, it may also pick any provider and say which tools to confirm or disable. A pull or an
+  edit by hand changes the hash, and the file is held back again until the user saves it; mo says
+  so at start only when that changes something. Copying a trusted file to another folder does not
+  carry the trust, as the path is part of the key.
 - `write`, `edit`, `mkdir` and `rm` always ask, also with `-y` and after "always", when the path
   lands outside the working directory or on a protected path: mo's config, anything under a `.git`
   directory, or a hidden entry of the home directory. That closes the way from a prompt-injected
@@ -129,7 +136,7 @@
 - `*` alone matches any words or none, so `ls *` takes `ls`; inside a word it does not cross a
   space, so `git log*` does not take `git log -p`. `re:` covers the rest.
 - Per-folder rules live in the user file under `[permissions.projects."<path>"]`, never in the
-  repository: a cloned `.mo.toml` with `allow = ["*"]` would run anything. The project file may add
+  repository, trusted or not: a cloned project file with `allow = ["*"]` would run anything. The project file may add
   deny rules and pick a stricter mode only.
 - Rules added from a question are saved at once, without waiting for `/settings`. With no
   `allow` list in the user file yet, the defaults are written first, so adding one rule does not
@@ -175,7 +182,7 @@
 
 - Every key of the config file has a place in the UI, so the file is never the only way:
   `/settings` holds the single values, `/providers` and `/mcp` the lists, each a picker form that
-  opens an edit form for one entry. Only `.mo.toml` stays a file, as it belongs to the project.
+  opens an edit form for one entry. The project's own settings are the second screen of `/settings`.
 - `/settings` is a huh v2 form embedded in the inline UI: model, tools, context (with the token
   cost of the system prompt and of each tool), tool descriptions, loop guard, web, memory and
   display. Descriptions cover the MCP and plugin tools too, compared with each tool's own; saved
@@ -205,7 +212,7 @@
   404 there counts as an answer; an Anthropic key is only checked when used. One-shot mode keeps
   failing fast instead.
 - The form starts from the defaults plus the user file, not from the session: a provider picked
-  with `-p` or by a project's `.mo.toml` is never copied into the global config. Provider and model
+  with `-p` or by a project's settings is never copied into the global config. Provider and model
   are written only when changed in the form; a typed model goes where the file already keeps one
   (top-level `model`, else the provider's entry); an empty model keeps following the server.
   Everything else is written only when it differs from the defaults.
@@ -609,3 +616,21 @@
   compact, rewind, fork, resume, continue) ask to wait or stop.
 - A stop takes out the tool calls it cut short, not run or stopped running, with their results, as
   if the model had not made them; the calls that ran and the reply's text stay.
+
+## Global and project settings
+
+- `/settings` has two screens, Global and This project, switched with tab or from a row of each
+  menu; save writes both files at once. The project screen shows only what a project overrides:
+  provider and model, max output tokens, tools, context and prompts, the loop guard. Providers,
+  MCP servers, web search, memory, notifications and display are the user's, for every project.
+- A setting is overridden when the project file sets it, even to the global value, so a file
+  shared by a team keeps it whatever each user's global settings are. The rest follows Global as
+  it is edited, also in the same /settings session. "Use the global value" takes the key out.
+- The project file lives in `.mo/` so there is room for more project files later. Saving moves an
+  old `.mo.toml` there; once `.mo/settings.toml` exists the old file is no longer read. Saving a
+  project that sets nothing removes the file, and `.mo/` if it is left empty. Both are protected
+  paths for the model's file tools.
+- Saving only the global settings never writes the project file, even an untrusted one: it is
+  written, and so trusted, only once its screen has been opened.
+- The model is written as the top-level `model`, whatever provider it belongs to, and a project's
+  per-provider models are folded into it on save.

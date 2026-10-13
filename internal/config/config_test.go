@@ -54,6 +54,7 @@ func isolatedHome(t *testing.T) string {
 	t.Helper()
 	configHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", configHome)
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	return configHome
 }
 

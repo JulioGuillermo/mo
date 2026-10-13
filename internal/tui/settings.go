@@ -38,15 +38,18 @@ const (
 )
 
 type settingsLoadedMsg struct {
-	kind     settingsKind
-	findings []detect.Finding
-	layer    config.Config
-	models   []string
-	err      error
+	kind       settingsKind
+	findings   []detect.Finding
+	layer      config.Config
+	project    config.Project
+	projectErr error
+	models     []string
+	err        error
 }
 
 type settingsSavedMsg struct {
 	session Session
+	saved   []string
 	err     error
 }
 
@@ -59,7 +62,13 @@ type settingsScreen struct {
 	apply func(layer config.Config) (config.Config, error)
 	next  func(m model) (tea.Model, tea.Cmd)
 	back  func(m model) (tea.Model, tea.Cmd)
-	help  string
+	// tab, when set, switches between the global and the project screen.
+	tab  func(m model) (tea.Model, tea.Cmd)
+	help string
+	// project is the project file to save with the user file, and keepUser
+	// leaves the user file alone when only the project's changed.
+	project  *config.Config
+	keepUser bool
 }
 
 func (screen *settingsScreen) helpLine() string {
@@ -78,14 +87,15 @@ func loadSettings(session Session, kind settingsKind) tea.Cmd {
 		if err != nil {
 			return settingsLoadedMsg{err: fmt.Errorf("reading %s: %w", config.UserFile(), err)}
 		}
+		project, projectErr := config.ReadProject(session.WorkDir)
 		if kind == mcpSettings {
-			return settingsLoadedMsg{kind: kind, layer: layer}
+			return settingsLoadedMsg{kind: kind, layer: layer, project: project, projectErr: projectErr}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), settingsDetectTimeout)
 		defer cancel()
 		findings := detect.Run(ctx, session.Config)
 		models := append(currentModels(ctx, session), foundModels(findings)...)
-		return settingsLoadedMsg{kind: kind, findings: findings, layer: layer, models: models}
+		return settingsLoadedMsg{kind: kind, findings: findings, layer: layer, project: project, projectErr: projectErr, models: models}
 	}
 }
 
@@ -124,6 +134,11 @@ func (m model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if click, ok := msg.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft {
 		return m.clickSettings(click.X, click.Y)
 	}
+	if key, ok := msg.(tea.KeyPressMsg); ok && key.String() == "tab" && m.settings.tab != nil {
+		screen := m.settings
+		m.settings = nil
+		return screen.tab(m)
+	}
 	if key, ok := msg.(tea.KeyPressMsg); ok && (key.String() == "esc" || key.String() == "ctrl+c") {
 		screen := m.settings
 		m.settings = nil
@@ -157,18 +172,29 @@ func saveSettings(screen *settingsScreen, current Session) tea.Cmd {
 		if err != nil {
 			return settingsSavedMsg{err: err}
 		}
-		fresh, err := current.Reload(layer)
+		fresh, err := current.Reload(layer, screen.project)
 		if err != nil {
 			return settingsSavedMsg{err: fmt.Errorf("not saved, these settings do not work: %w", err)}
 		}
-		if err := config.SaveUserLayer(layer); err != nil {
-			fresh.discard()
-			return settingsSavedMsg{err: err}
+		var saved []string
+		if !screen.keepUser {
+			if err := config.SaveUserLayer(layer); err != nil {
+				fresh.discard()
+				return settingsSavedMsg{err: err}
+			}
+			saved = append(saved, config.UserFile())
+		}
+		if screen.project != nil {
+			if err := config.SaveProject(current.WorkDir, *screen.project); err != nil {
+				fresh.discard()
+				return settingsSavedMsg{err: err}
+			}
+			saved = append(saved, projectFileName)
 		}
 		fresh.activate()
 		fresh.Agent.TakeConversation(current.Agent)
 		keepMode(fresh, current)
-		return settingsSavedMsg{session: fresh}
+		return settingsSavedMsg{session: fresh, saved: saved}
 	}
 }
 
@@ -180,7 +206,7 @@ func (m model) finishSettings(msg settingsSavedMsg) (tea.Model, tea.Cmd) {
 	m.session = msg.session
 	m.usage = m.session.Agent.LastUsage
 	redraw := m.applyScreen(m.printer.isDark())
-	note := fmt.Sprintf("settings saved to %s · %s · %s", config.UserFile(), m.session.Provider, shortModelName(m.session.Model))
+	note := fmt.Sprintf("settings saved to %s · %s · %s", strings.Join(msg.saved, " and "), m.session.Provider, shortModelName(m.session.Model))
 	return m, tea.Batch(redraw, printText(m.printer.Note(note)))
 }
 

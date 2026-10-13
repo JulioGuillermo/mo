@@ -124,11 +124,14 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		RewritePrompt: loaded.plugins.RewritePrompt,
 		BlockToolCall: loaded.plugins.BlockToolCall,
 	}
-	reload := func(userLayer config.Config) (tui.Session, error) {
+	reload := func(userLayer config.Config, projectLayer *config.Config) (tui.Session, error) {
 		if _, err := chooseProvider(context.Background(), config.UserSettings(userLayer), "", ""); err != nil {
 			return tui.Session{}, fmt.Errorf("outside this project: %w", err)
 		}
 		fresh, err := config.LoadWithUserLayer(workDir, userLayer)
+		if projectLayer != nil {
+			fresh, err = config.LoadLayers(workDir, userLayer, *projectLayer)
+		}
 		if err != nil {
 			return tui.Session{}, err
 		}
@@ -195,7 +198,7 @@ func toolDescriptions(hub *mcphub.Hub, loaded *plugins.Set) map[string]string {
 func toolEnv(workDir, memoryDir string) tools.Env {
 	return tools.Env{
 		WorkDir:        workDir,
-		ProtectedPaths: []string{filepath.Dir(config.UserFile()), config.ProjectFile(workDir), memoryDir},
+		ProtectedPaths: []string{filepath.Dir(config.UserFile()), config.ProjectDir(workDir), config.LegacyProjectFile(workDir), memoryDir},
 		MemoryDir:      memoryDir,
 	}
 }

@@ -1,0 +1,240 @@
+package config
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"slices"
+
+	"github.com/BurntSushi/toml"
+)
+
+// Project is a project's settings file as read: what it sets, where it is,
+// and whether the user saved it from mo and it has not changed since.
+type Project struct {
+	Layer   Config
+	Path    string
+	Trusted bool
+}
+
+// ProjectDir is the folder of a project's mo files.
+func ProjectDir(workDir string) string {
+	return filepath.Join(workDir, ".mo")
+}
+
+// ProjectFile is where the project's settings are saved.
+func ProjectFile(workDir string) string {
+	return filepath.Join(ProjectDir(workDir), "settings.toml")
+}
+
+// LegacyProjectFile is where they were kept before .mo/, still read when
+// .mo/settings.toml does not exist.
+func LegacyProjectFile(workDir string) string {
+	return filepath.Join(workDir, ".mo.toml")
+}
+
+func trustFile() string {
+	return filepath.Join(dataHome(), "mo", "trusted-projects.json")
+}
+
+// ReadProject reads .mo/settings.toml, or the old .mo.toml without it.
+func ReadProject(workDir string) (Project, error) {
+	for _, path := range []string{ProjectFile(workDir), LegacyProjectFile(workDir)} {
+		data, err := os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return Project{}, fmt.Errorf("%s: %w", path, err)
+		}
+		var layer Config
+		if _, err := toml.Decode(string(data), &layer); err != nil {
+			return Project{Path: path}, fmt.Errorf("%s: %w", path, err)
+		}
+		return Project{Layer: layer, Path: path, Trusted: isTrusted(path, data)}, nil
+	}
+	return Project{}, nil
+}
+
+// HeldBack tells whether the project file asks for more than applies: it
+// is not trusted, and trusting it would change the settings.
+func (p Project) HeldBack(workDir string, user Config) bool {
+	if p.Path == "" || p.Trusted {
+		return false
+	}
+	restricted, _ := combine(workDir, user, p)
+	trusted := p
+	trusted.Trusted = true
+	full, _ := combine(workDir, user, trusted)
+	return !reflect.DeepEqual(restricted, full)
+}
+
+// SaveProject writes layer as .mo/settings.toml, or removes the file when
+// layer sets nothing, and trusts what it wrote: the user made it.
+func SaveProject(workDir string, layer Config) error {
+	path := ProjectFile(workDir)
+	fields := setFields(reflect.ValueOf(layer))
+	if len(fields) == 0 {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		_ = os.Remove(ProjectDir(workDir))
+		return nil
+	}
+	var encoded bytes.Buffer
+	if err := toml.NewEncoder(&encoded).Encode(fields); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	temporary := path + ".tmp"
+	if err := os.WriteFile(temporary, encoded.Bytes(), 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(temporary, path); err != nil {
+		return err
+	}
+	return trust(path, encoded.Bytes())
+}
+
+func digest(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func trustKey(path string) string {
+	if absolute, err := filepath.Abs(path); err == nil {
+		return absolute
+	}
+	return path
+}
+
+func isTrusted(path string, data []byte) bool {
+	hashes := map[string]string{}
+	ReadJSON(trustFile(), &hashes)
+	return hashes[trustKey(path)] == digest(data)
+}
+
+// trust records the file as the user saved it. Once it changes, by a pull
+// or by hand, it is only trusted again when saved from mo.
+func trust(path string, data []byte) error {
+	hashes := map[string]string{}
+	ReadJSON(trustFile(), &hashes)
+	hashes[trustKey(path)] = digest(data)
+	encoded, err := json.MarshalIndent(hashes, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(trustFile()), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(trustFile(), encoded, 0o600)
+}
+
+// WithProject applies a project file the user trusts: besides what any
+// project file may change, it picks any provider, even one with a key, and
+// says which tools to confirm or disable instead of only adding to them.
+// Provider addresses and keys, the web, MCP and the memory stay the user's.
+func WithProject(base, layer Config) Config {
+	base.Providers = cloneProviders(base.Providers)
+	base = mergeProject(base, layer)
+	base.Provider = override(base.Provider, layer.Provider)
+	if layer.Tools.Confirm != nil {
+		base.Tools.Confirm = slices.Clone(layer.Tools.Confirm)
+	}
+	if layer.Tools.Disabled != nil {
+		base.Tools.Disabled = slices.Clone(layer.Tools.Disabled)
+	}
+	return base
+}
+
+func cloneProviders(providers map[string]ProviderConfig) map[string]ProviderConfig {
+	clone := make(map[string]ProviderConfig, len(providers))
+	for name, settings := range providers {
+		clone[name] = settings
+	}
+	return clone
+}
+
+// EffectiveModel is the model a config asks for: the top-level one, else
+// the provider's.
+func EffectiveModel(cfg Config) string {
+	return override(cfg.Providers[cfg.Provider].Model, cfg.Model)
+}
+
+// ProjectKeys are the settings a project overrides from the settings
+// screen, by their names in the file.
+var ProjectKeys = []string{
+	"provider", "model", "max_tokens", "system_prompt",
+	"tools.mode", "tools.load", "tools.always_loaded", "tools.confirm", "tools.disabled", "tools.max_output",
+	"context.window", "context.compact_at", "context.compact_prompt", "context.strategy", "context.keep_reasoning",
+	"loop.enabled", "loop.replies", "loop.repeats", "loop.stream_repeats", "loop.warnings",
+}
+
+// projectField points at the field a project key names.
+func projectField(cfg *Config, key string) reflect.Value {
+	fields := map[string]any{
+		"provider": &cfg.Provider, "model": &cfg.Model, "max_tokens": &cfg.MaxTokens, "system_prompt": &cfg.SystemPrompt,
+		"tools.mode": &cfg.Tools.Mode, "tools.load": &cfg.Tools.Load, "tools.always_loaded": &cfg.Tools.AlwaysLoaded,
+		"tools.confirm": &cfg.Tools.Confirm, "tools.disabled": &cfg.Tools.Disabled, "tools.max_output": &cfg.Tools.MaxOutput,
+		"context.window": &cfg.Context.Window, "context.compact_at": &cfg.Context.CompactAt,
+		"context.compact_prompt": &cfg.Context.CompactPrompt, "context.strategy": &cfg.Context.Strategy,
+		"context.keep_reasoning": &cfg.Context.KeepReasoning,
+		"loop.enabled":           &cfg.Loop.Enabled, "loop.replies": &cfg.Loop.Replies, "loop.repeats": &cfg.Loop.Repeats,
+		"loop.stream_repeats": &cfg.Loop.StreamRepeats, "loop.warnings": &cfg.Loop.Warnings,
+	}
+	return reflect.ValueOf(fields[key]).Elem()
+}
+
+// ProjectSets tells which of ProjectKeys a project layer sets. A model set
+// for one of the providers counts as the model.
+func ProjectSets(layer Config) map[string]bool {
+	set := map[string]bool{}
+	for _, key := range ProjectKeys {
+		if !projectField(&layer, key).IsZero() {
+			set[key] = true
+		}
+	}
+	for _, provider := range layer.Providers {
+		if provider.Model != "" {
+			set["model"] = true
+		}
+	}
+	return set
+}
+
+// ProjectOverrides puts into a project layer the values target has for the
+// keys set, and clears the other ProjectKeys; what else the layer holds is
+// kept. The model is written as the top-level one, whatever provider it is.
+func ProjectOverrides(target Config, set map[string]bool, into Config) Config {
+	target.Model = EffectiveModel(target)
+	into.Providers = nil
+	for _, key := range ProjectKeys {
+		field := projectField(&into, key)
+		if !set[key] {
+			field.Set(reflect.Zero(field.Type()))
+			continue
+		}
+		value := projectField(&target, key)
+		switch {
+		case value.Kind() == reflect.Slice && value.IsNil():
+			field.Set(reflect.MakeSlice(value.Type(), 0, 0))
+		case value.Kind() == reflect.Slice:
+			field.Set(reflect.AppendSlice(reflect.MakeSlice(value.Type(), 0, value.Len()), value))
+		case value.Kind() == reflect.Pointer && !value.IsNil():
+			copied := reflect.New(value.Type().Elem())
+			copied.Elem().Set(value.Elem())
+			field.Set(copied)
+		default:
+			field.Set(value)
+		}
+	}
+	return into
+}
