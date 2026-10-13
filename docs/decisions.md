@@ -94,6 +94,12 @@
 
 ## TUI
 
+- Full screen (alt screen) instead of inline: the conversation is a viewport that follows the end
+  unless scrolled up, and the input (shaded) and the status line always hold the last rows. The
+  price is the terminal's own scrollback: the conversation is gone from the screen after quitting.
+  Kitty image uploads are sent to the terminal once and only their placeholders stay in the
+  transcript, so redrawing never re-sends an image.
+
 - The user's messages print as a full-width shaded band; commands and approvals show their command
   on shaded lines, and an approval is a framed question with its keys in colour.
 - Attached files are found in the prompt itself (paths, quoted or with escaped spaces, that exist

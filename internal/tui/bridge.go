@@ -12,6 +12,7 @@ import (
 )
 
 type streamMsg llm.Event
+type printMsg string
 type streamEndMsg struct{}
 type usageMsg llm.Usage
 type runDoneMsg struct{ err error }
@@ -34,7 +35,7 @@ type bridge struct {
 func (b *bridge) print(text string) {
 	printed := make(chan struct{})
 	go func() {
-		b.program.Println(text)
+		b.program.Send(printMsg(text))
 		close(printed)
 	}()
 	select {

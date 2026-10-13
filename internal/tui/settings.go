@@ -85,7 +85,7 @@ func loadSettings(session Session, kind settingsKind) tea.Cmd {
 func (m model) openSettings(msg settingsLoadedMsg) (tea.Model, tea.Cmd) {
 	m.settingsInFlight = false
 	if msg.err != nil {
-		return m, tea.Println(m.printer.Error(msg.err))
+		return m, printText(m.printer.Error(msg.err))
 	}
 	switch msg.kind {
 	case providerSettings:
@@ -124,7 +124,7 @@ func (m model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if key, ok := msg.(tea.KeyPressMsg); ok && (key.String() == "esc" || key.String() == "ctrl+c") {
 		m.settings = nil
-		return m, tea.Println(m.printer.Note("settings unchanged"))
+		return m, printText(m.printer.Note("settings unchanged"))
 	}
 	updated, cmd := m.settings.form.Update(msg)
 	m.settings.form = updated.(*huh.Form)
@@ -139,7 +139,7 @@ func (m model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, saveSettings(screen, m.session)
 	case huh.StateAborted:
 		m.settings = nil
-		return m, tea.Println(m.printer.Note("settings unchanged"))
+		return m, printText(m.printer.Note("settings unchanged"))
 	}
 	return m, cmd
 }
@@ -169,17 +169,17 @@ func saveSettings(screen *settingsScreen, current Session) tea.Cmd {
 func (m model) finishSettings(msg settingsSavedMsg) (tea.Model, tea.Cmd) {
 	m.settingsInFlight = false
 	if msg.err != nil {
-		return m, tea.Println(m.printer.Error(msg.err))
+		return m, printText(m.printer.Error(msg.err))
 	}
 	m.session = msg.session
 	m.usage = m.session.Agent.LastUsage
 	note := fmt.Sprintf("settings saved to %s · %s · %s", config.UserFile(), m.session.Provider, shortModelName(m.session.Model))
-	return m, tea.Println(m.printer.Note(note))
+	return m, printText(m.printer.Note(note))
 }
 
 func isAgentMsg(msg tea.Msg) bool {
 	switch msg.(type) {
-	case streamMsg, streamEndMsg, usageMsg, approvalMsg, runDoneMsg, spinner.TickMsg:
+	case streamMsg, streamEndMsg, usageMsg, approvalMsg, runDoneMsg, spinner.TickMsg, printMsg:
 		return true
 	}
 	return false

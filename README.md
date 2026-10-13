@@ -212,5 +212,7 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | esc, ctrl+c | stop the current run |
 | ctrl+c (idle) | clear input, then quit |
 | ctrl+d | quit |
+| pgup, pgdown, shift+up/down, mouse wheel | scroll the conversation |
+| shift+drag | select text (the mouse is mo's while it runs) |
 | `/clear` `/compact` `/settings` `/providers` `/mcp` `/plugins` `/view <file>` `/help` `/quit` | commands |
 | `/<name> text` | a plugin command |

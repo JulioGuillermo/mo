@@ -18,15 +18,16 @@ const toolPreviewLines = 4
 const shownCommandLines = 6
 
 var (
-	accent      = lipgloss.Color("#7aa2f7")
-	warning     = lipgloss.Color("#e0af68")
-	dimStyle    = lipgloss.NewStyle().Faint(true)
-	errorStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e"))
-	userStyle   = lipgloss.NewStyle().Foreground(accent).Bold(true)
-	toolStyle   = lipgloss.NewStyle().Foreground(accent)
-	toolName    = lipgloss.NewStyle().Foreground(accent).Bold(true)
-	keyStyle    = lipgloss.NewStyle().Foreground(warning).Bold(true)
-	commandEdge = lipgloss.NewStyle().Foreground(accent).Faint(true)
+	accent       = lipgloss.Color("#7aa2f7")
+	warning      = lipgloss.Color("#e0af68")
+	dimStyle     = lipgloss.NewStyle().Faint(true)
+	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e"))
+	userStyle    = lipgloss.NewStyle().Foreground(accent).Bold(true)
+	toolStyle    = lipgloss.NewStyle().Foreground(accent)
+	toolName     = lipgloss.NewStyle().Foreground(accent).Bold(true)
+	keyStyle     = lipgloss.NewStyle().Foreground(warning).Bold(true)
+	workingStyle = lipgloss.NewStyle().Foreground(warning)
+	commandEdge  = lipgloss.NewStyle().Foreground(accent).Faint(true)
 )
 
 // panel is the background of the user's messages and of commands, a shade

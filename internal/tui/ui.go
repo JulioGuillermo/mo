@@ -8,12 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
@@ -82,6 +84,10 @@ type model struct {
 	speed            llm.Usage
 	settings         *settingsScreen
 	settingsInFlight bool
+
+	transcript string
+	viewport   viewport.Model
+	scrolled   bool
 }
 
 const agentShutdownWait = 3 * time.Second
@@ -92,11 +98,12 @@ func Run(session Session) error {
 	printer.workDir = session.WorkDir
 	bridge := &bridge{printer: printer, exited: make(chan struct{})}
 	m := model{
-		session: session,
-		bridge:  bridge,
-		printer: printer,
-		input:   newInput(),
-		spinner: spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(toolStyle)),
+		session:  session,
+		bridge:   bridge,
+		printer:  printer,
+		input:    newInput(),
+		viewport: viewport.New(),
+		spinner:  spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(workingStyle)),
 	}
 	program := tea.NewProgram(m)
 	bridge.program = program
@@ -121,13 +128,23 @@ func newInput() textarea.Model {
 	input.MinHeight = 1
 	input.MaxHeight = 10
 	input.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("ctrl+j", "alt+enter", "shift+enter"))
-	styles := input.Styles()
-	styles.Focused.Prompt = userStyle
-	styles.Blurred.Prompt = dimStyle
-	styles.Focused.CursorLine = lipgloss.NewStyle()
-	input.SetStyles(styles)
+	input.SetStyles(inputStyles(input.Styles(), true))
 	input.Focus()
 	return input
+}
+
+// inputStyles shades the whole input, every line to its end.
+func inputStyles(styles textarea.Styles, dark bool) textarea.Styles {
+	shade := panel(dark)
+	for _, state := range []*textarea.StyleState{&styles.Focused, &styles.Blurred} {
+		state.Base = shade
+		state.Text = shade
+		state.CursorLine = shade
+		state.Placeholder = shade.Faint(true)
+		state.EndOfBuffer = shade
+		state.Prompt = shade.Foreground(accent).Bold(true)
+	}
+	return styles
 }
 
 func (m model) Init() tea.Cmd {
@@ -137,7 +154,7 @@ func (m model) Init() tea.Cmd {
 			banner += "\n" + m.printer.Error(fmt.Errorf("plugin %s: %v", status.Name, status.Err))
 		}
 	}
-	return tea.Batch(tea.Println(banner), tea.RequestBackgroundColor, textarea.Blink)
+	return tea.Batch(printText(banner), tea.RequestBackgroundColor, textarea.Blink)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -151,11 +168,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateSettings(msg)
 	}
 	switch msg := msg.(type) {
+	case printMsg:
+		return m.emit(string(msg))
+	case tea.MouseWheelMsg:
+		m.scroll(msg.Button == tea.MouseWheelUp, 3)
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.resize(msg)
 		return m, nil
 	case tea.BackgroundColorMsg:
 		m.printer.setDark(msg.IsDark())
+		m.input.SetStyles(inputStyles(m.input.Styles(), msg.IsDark()))
 		return m, nil
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
@@ -205,6 +228,12 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.answerApproval(msg.String())
 	}
 	switch msg.String() {
+	case "pgup", "shift+up":
+		m.scroll(true, m.pageSize(msg.String()))
+		return m, nil
+	case "pgdown", "shift+down":
+		m.scroll(false, m.pageSize(msg.String()))
+		return m, nil
 	case "ctrl+c":
 		if m.running {
 			m.stop()
@@ -266,7 +295,8 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		return m.runCommand(prompt)
 	}
 
-	echo := tea.Println(m.printer.User(prompt))
+	m.scrolled = false
+	echo := printText(m.printer.User(prompt))
 	return m.start(echo, func(ctx context.Context, hooks agent.Hooks) error {
 		return m.session.Agent.Run(ctx, prompt, hooks)
 	})
@@ -299,31 +329,31 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 	case "clear":
 		m.session.Agent.Clear()
 		m.usage = llm.Usage{}
-		return m, tea.Println(m.printer.Note("conversation cleared"))
+		return m, printText(m.printer.Note("conversation cleared"))
 	case "help":
-		return m, tea.Println(m.printer.Note(helpText))
+		return m, printText(m.printer.Note(helpText))
 	case "settings":
 		m.settingsInFlight = true
-		return m, tea.Sequence(tea.Println(m.printer.Note("looking for providers…")), loadSettings(m.session, generalSettings))
+		return m, tea.Sequence(printText(m.printer.Note("looking for providers…")), loadSettings(m.session, generalSettings))
 	case "providers":
 		m.settingsInFlight = true
-		return m, tea.Sequence(tea.Println(m.printer.Note("looking for providers…")), loadSettings(m.session, providerSettings))
+		return m, tea.Sequence(printText(m.printer.Note("looking for providers…")), loadSettings(m.session, providerSettings))
 	case "view":
 		if argument == "" {
-			return m, tea.Println(m.printer.Note("usage: /view <image, svg or mermaid file>"))
+			return m, printText(m.printer.Note("usage: /view <image, svg or mermaid file>"))
 		}
 		return m, m.view(argument)
 	case "plugins":
-		return m, tea.Println(m.printer.Note(pluginReport(m.session.Plugins)))
+		return m, printText(m.printer.Note(pluginReport(m.session.Plugins)))
 	case "mcp":
 		m.settingsInFlight = true
-		return m, tea.Sequence(tea.Println(m.printer.Note(mcpReport(m.session.MCP))), loadSettings(m.session, mcpSettings))
+		return m, tea.Sequence(printText(m.printer.Note(mcpReport(m.session.MCP))), loadSettings(m.session, mcpSettings))
 	case "compact":
-		return m.start(tea.Println(m.printer.Note("compacting…")), m.session.Agent.Compact)
+		return m.start(printText(m.printer.Note("compacting…")), m.session.Agent.Compact)
 	}
 	run, found := m.session.Plugins.Command(name)
 	if !found {
-		return m, tea.Println(m.printer.Note("unknown command " + command + " · /help"))
+		return m, printText(m.printer.Note("unknown command " + command + " · /help"))
 	}
 	return m.runPluginCommand(command, run, argument)
 }
@@ -332,7 +362,7 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 func (m model) view(path string) tea.Cmd {
 	printer := m.printer
 	return func() tea.Msg {
-		return tea.Println(printer.File(path))()
+		return printText(printer.File(path))()
 	}
 }
 
@@ -362,29 +392,86 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 	if len(lines) == 0 {
 		return m, nil
 	}
-	return m, tea.Println(strings.Join(lines, "\n"))
+	return m, printText(strings.Join(lines, "\n"))
 }
 
 func (m model) View() tea.View {
+	var view tea.View
 	if m.settings != nil {
-		view := tea.NewView(m.settings.form.View() + "\n" + dimStyle.Render(settingsHelp))
+		view = tea.NewView(m.settings.form.View() + "\n" + dimStyle.Render(settingsHelp))
 		view.WindowTitle = "mo · settings"
-		return view
+	} else {
+		bottom := m.bottom()
+		conversation := m.conversation(m.height - lipgloss.Height(bottom))
+		view = tea.NewView(conversation.View() + "\n" + bottom)
+		view.WindowTitle = "mo"
 	}
+	view.AltScreen = true
+	view.MouseMode = tea.MouseModeCellMotion
+	return view
+}
+
+// bottom is what stays on the last rows: the approval or the spinner, the
+// input and the status line.
+func (m model) bottom() string {
 	var sections []string
-	if live := m.liveText(); live != "" {
-		sections = append(sections, live)
-	}
 	switch {
 	case m.approval != nil:
 		sections = append(sections, m.approvalPrompt())
 	case m.running:
-		sections = append(sections, m.spinner.View()+dimStyle.Render(" working · esc to stop"))
+		sections = append(sections, m.spinner.View()+workingStyle.Render(" working · esc to stop"))
 	}
 	sections = append(sections, m.input.View(), m.statusLine())
-	view := tea.NewView(strings.Join(sections, "\n"))
-	view.WindowTitle = "mo"
-	return view
+	return strings.Join(sections, "\n")
+}
+
+// conversation is the transcript and the reply being written, in a viewport
+// of the given height that follows the end unless the user scrolled up.
+func (m model) conversation(height int) viewport.Model {
+	conversation := m.viewport
+	conversation.SetWidth(m.width)
+	conversation.SetHeight(max(height, 1))
+	conversation.SetContent(strings.TrimRight(m.transcript+m.liveText(), "\n"))
+	if !m.scrolled {
+		conversation.GotoBottom()
+	}
+	return conversation
+}
+
+// emit adds printed output to the transcript. Kitty image uploads go to the
+// terminal once, and only their placeholders stay in the transcript.
+func (m model) emit(text string) (tea.Model, tea.Cmd) {
+	uploads := strings.Join(kittyUploads.FindAllString(text, -1), "")
+	m.transcript += kittyUploads.ReplaceAllString(text, "") + "\n"
+	if uploads == "" {
+		return m, nil
+	}
+	return m, tea.Raw(uploads)
+}
+
+var kittyUploads = regexp.MustCompile(`\x1bPtmux;(?:[^\x1b]|\x1b\x1b)*\x1b\\|\x1b_G[^\x1b]*\x1b\\`)
+
+func (m *model) scroll(up bool, lines int) {
+	m.viewport = m.conversation(m.height - lipgloss.Height(m.bottom()))
+	if up {
+		m.viewport.ScrollUp(lines)
+	} else {
+		m.viewport.ScrollDown(lines)
+	}
+	m.scrolled = !m.viewport.AtBottom()
+}
+
+func (m model) pageSize(key string) int {
+	if strings.HasPrefix(key, "shift") {
+		return 3
+	}
+	return max(m.height-lipgloss.Height(m.bottom())-2, 1)
+}
+
+func printText(text string) tea.Cmd {
+	return func() tea.Msg {
+		return printMsg(text)
+	}
 }
 
 // liveText is the tail of what the model is writing right now, kept short so
@@ -455,7 +542,7 @@ func shortModelName(model string) string {
 // as markdown.
 func (m model) runPluginCommand(command string, run func(context.Context, string) (string, error), argument string) (tea.Model, tea.Cmd) {
 	bridge := m.bridge
-	return m.start(tea.Println(m.printer.User(command)), func(ctx context.Context, _ agent.Hooks) error {
+	return m.start(printText(m.printer.User(command)), func(ctx context.Context, _ agent.Hooks) error {
 		output, err := run(ctx, argument)
 		if err != nil {
 			return err
