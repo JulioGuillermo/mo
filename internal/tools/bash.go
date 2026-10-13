@@ -20,10 +20,11 @@ const (
 func bashTool() Tool {
 	return Tool{
 		Name:        "bash",
-		Description: "Run a bash command in the working directory. No stdin.",
+		Description: "Run a bash command in the working directory. No stdin. background: run it as a job, for servers, watchers and long builds; you are told when it ends.",
 		Schema: json.RawMessage(`{"type":"object","properties":{
 "command":{"type":"string"},
-"timeout":{"type":"integer","description":"seconds, default 120"}},"required":["command"]}`),
+"timeout":{"type":"integer","description":"seconds, default 120"},
+"background":{"type":"boolean"}},"required":["command"]}`),
 		Run:     runBash,
 		Summary: func(args json.RawMessage) string { return argField(args, "command") },
 	}
@@ -31,11 +32,22 @@ func bashTool() Tool {
 
 func runBash(ctx context.Context, env Env, raw json.RawMessage) (string, error) {
 	var args struct {
-		Command string `json:"command"`
-		Timeout int    `json:"timeout"`
+		Command    string `json:"command"`
+		Timeout    int    `json:"timeout"`
+		Background bool   `json:"background"`
 	}
 	if err := decodeArgs(raw, &args); err != nil {
 		return "", err
+	}
+	if args.Background {
+		if env.Jobs == nil {
+			return "", errors.New(jobsUnavailable)
+		}
+		status, err := env.Jobs.Start(env, args.Command)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf(jobStartedResult, status.ID, status.ID), nil
 	}
 	timeout := bashDefaultTimeout
 	if args.Timeout > 0 {

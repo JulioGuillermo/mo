@@ -41,6 +41,7 @@ func TestCompaction(t *testing.T) {
 			{Role: llm.RoleAssistant, Text: "tests pass"},
 		}}
 		agent := newAgent(t, provider)
+		onlyRead(t, agent)
 		agent.Window, agent.CompactAt = 1000, 0.75
 		agent.History = longHistory()
 		agent.LastUsage = llm.Usage{InputTokens: 800}

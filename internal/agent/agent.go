@@ -103,7 +103,13 @@ func (a *Agent) Run(ctx context.Context, prompt string, hooks Hooks) error {
 	a.History = append(a.History, a.promptMessage(prompt, hooks))
 	a.currentRequest = prompt
 	a.loops = 0
+	return a.turn(ctx, hooks)
+}
+
+// turn asks the model and answers its tool calls until it ends.
+func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
 	for {
+		a.tellEndedJobs()
 		if a.needsCompaction() {
 			a.makeRoom(ctx, hooks)
 		}

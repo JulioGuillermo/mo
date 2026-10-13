@@ -110,6 +110,7 @@ dir = "~/.local/share/mo/memory"
 [render]
 background = "#00081a"     # painted behind everything so mo looks the same in any terminal;
                            # "terminal" keeps the terminal's own
+sidebar = "auto"           # side panel of tasks and jobs when wide enough; "off" never
 
 [permissions]
 mode = "edits"             # ask | edits | auto | all; shift+tab changes it for the session
@@ -147,8 +148,14 @@ Output is cut to `max_output`, keeping the head and the tail.
 `fetch` reads a URL as markdown (the article of an HTML page, indented JSON, plain text), 8 KB at a
 time. `web_search` uses DuckDuckGo by default, with no key; see `[web]` below for the others.
 
-`todo` is the model's task list for work of several steps. It shows above the input while a task
-is left, the one in progress highlighted; it comes back with the conversation on `/resume`.
+`todo` is the model's task list for work of several steps. On a terminal 110 columns or wider it
+shows in a side panel beside the conversation, whole, with the background jobs; on a narrower one,
+above the input while a task is left. `/sidebar` hides or shows the panel.
+
+`bash` with `background: true` runs a command as a job, for servers, watchers and long builds, and
+returns at once; the `jobs` tool lists them, reads their output and kills them. When a job ends the
+model is told: at its next step if it is working, or in a turn of its own if it is idle, so it can
+react. `/jobs` lists them, `/kill <n>` stops one, and mo kills what is left when it exits.
 
 `ask` lets the model ask you questions, with options or free text. What the calls of one reply
 need from you, approvals and questions, is asked at once in a dialog above the input: tabs show

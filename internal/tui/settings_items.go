@@ -312,6 +312,12 @@ func displayItems(model, *settingsMenu) []settingItem {
 					return nil
 				}).Value(&d.background)
 		}},
+		{"Side panel", func(d *settingsDraft) string { return d.sidebar }, func(d *settingsDraft) huh.Field {
+			return huh.NewSelect[string]().Title("Side panel").Options(
+				huh.NewOption("auto: tasks and background jobs beside the conversation when the terminal is wide enough", "auto"),
+				huh.NewOption("off: tasks above the input instead", "off"),
+			).Value(&d.sidebar)
+		}},
 		{"Images, SVG and Mermaid", func(d *settingsDraft) string { return d.images }, func(d *settingsDraft) huh.Field {
 			return huh.NewSelect[string]().Title("Images, SVG and Mermaid").Options(
 				huh.NewOption("auto: kitty graphics where the terminal has them, else colour blocks", string(render.ModeAuto)),

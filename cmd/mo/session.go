@@ -31,6 +31,9 @@ type extensions struct {
 	mcp     *mcphub.Hub
 	plugins *plugins.Set
 	hubs    *openHubs
+	// jobs are the background jobs of the whole run, kept across settings
+	// changes; nil when mo answers once.
+	jobs *tools.Jobs
 }
 
 // openHubs holds the MCP connection in use. A new one replaces it, and once
@@ -80,6 +83,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		return tui.Session{}, err
 	}
 	env := toolEnv(workDir, cfg.Memory.Dir)
+	env.Jobs = loaded.jobs
 	registry := tools.NewRegistry(env, tools.Options{
 		Searcher:     searcher,
 		Extra:        extraTools(hub, loaded.plugins),

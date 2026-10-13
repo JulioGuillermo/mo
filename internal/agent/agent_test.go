@@ -308,3 +308,16 @@ func TestReasoningSentBack(t *testing.T) {
 		}
 	})
 }
+
+// onlyRead leaves the agent read alone, for tests whose windows are so
+// small that the size of every tool's definition would decide them.
+func onlyRead(t *testing.T, agent *Agent) {
+	t.Helper()
+	var others []string
+	for _, name := range tools.BuiltinNames() {
+		if name != "read" {
+			others = append(others, name)
+		}
+	}
+	agent.Tools = tools.NewRegistry(tools.Env{WorkDir: agent.Tools.WorkDir()}, tools.Options{MaxOutput: 1000, Disabled: others})
+}

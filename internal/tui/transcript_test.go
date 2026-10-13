@@ -115,7 +115,7 @@ func TestResize(t *testing.T) {
 		staleWidth := ansi.StringWidth(stale.(model).blocks[0].text)
 		redrawn, _ := stale.(model).Update(redrawMsg(second.(model).redraws))
 
-		if before != 80 || staleWidth != 80 || ansi.StringWidth(strings.Split(redrawn.(model).blocks[0].text, "\n")[1]) != 140 {
+		if before != 80 || staleWidth != 80 || ansi.StringWidth(strings.Split(redrawn.(model).blocks[0].text, "\n")[1]) != redrawn.(model).mainWidth() {
 			t.Errorf("before = %d stale = %d after = %q", before, staleWidth, redrawn.(model).blocks[0].text)
 		}
 	})

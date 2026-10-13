@@ -436,3 +436,17 @@
   approved is what is shown.
 - Without a user (mo run once), approvals are denied and the model is told to decide its questions
   itself and say what it assumed.
+
+## Background jobs and the side panel
+
+- `bash` with `background: true` starts a job in its own session and returns its number at once;
+  its output is kept like a foreground command's, 1 MB of head and tail. A job outlives the turn
+  that started it. Jobs belong to the run of mo, not to a session: they survive a settings change,
+  and mo kills what is left (SIGTERM, then SIGKILL after 3 s) when it exits. mo run once has none.
+- When a job ends the model is told with a note holding its last 15 lines: before its next step if
+  it is working, appended to the last user-side message so two user messages never follow; and if
+  it is idle, in a turn of its own started from the note, so it can react without waiting for the
+  user. Not after esc: the user stopped it. A job killed on purpose is not told as an end.
+- The side panel follows what is being done: the conversation, the tasks whole and wrapped, and
+  the jobs with their state and time. It shows from 110 columns, 36 wide; the conversation is drawn
+  at the width left. Narrower, the tasks go back above the input.

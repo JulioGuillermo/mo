@@ -27,6 +27,7 @@ func turn(prompt string, resultSize int) []llm.Message {
 func droppingAgent(t *testing.T, provider *scriptedProvider) *Agent {
 	t.Helper()
 	agent := newAgent(t, provider)
+	onlyRead(t, agent)
 	agent.Window, agent.CompactAt, agent.Strategy = 2000, 0.75, StrategyDrop
 	agent.System = ""
 	return agent
@@ -53,7 +54,7 @@ func TestDropOldest(t *testing.T) {
 
 	t.Run("DR-02 what is left starts at a user message, so no tool result is orphaned", func(t *testing.T) {
 		agent := droppingAgent(t, &scriptedProvider{})
-		agent.History = append(turn("one", 3000), turn("two", 100)...)
+		agent.History = append(turn("one", 6000), turn("two", 100)...)
 
 		agent.dropOldest(Hooks{})
 

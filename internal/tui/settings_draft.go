@@ -46,6 +46,7 @@ type settingsDraft struct {
 	forgetKey    bool
 	images       string
 	background   string
+	sidebar      string
 	memoryDir    string
 
 	loopEnabled       bool
@@ -105,6 +106,7 @@ func newSettingsDraft(layer config.Config) *settingsDraft {
 		savedKey:      cfg.Web.SearchKey != "",
 		images:        string(cfg.Render.Images),
 		background:    cfg.Render.Background,
+		sidebar:       cfg.Render.Sidebar,
 
 		loopEnabled:       *cfg.Loop.Enabled,
 		loopReplies:       strconv.Itoa(cfg.Loop.Replies),
@@ -211,6 +213,7 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 		return layer, fmt.Errorf("background %q: use #rrggbb or terminal", d.background)
 	}
 	layer.Render.Background = unlessDefault(strings.TrimSpace(d.background), defaults.Render.Background)
+	layer.Render.Sidebar = unlessDefault(d.sidebar, defaults.Render.Sidebar)
 	layer.Notify = config.Notify{
 		Finish:   unlessDefaultFlag(d.notifyFinish, *defaults.Notify.Finish),
 		Approval: unlessDefaultFlag(d.notifyApproval, *defaults.Notify.Approval),

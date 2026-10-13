@@ -32,6 +32,8 @@ type Env struct {
 	WorkDir        string
 	ProtectedPaths []string
 	MemoryDir      string
+	// Jobs runs bash commands in the background; without it they cannot.
+	Jobs *Jobs
 }
 
 // Resolve turns a path from the model into an absolute one, relative paths
@@ -113,8 +115,16 @@ func builtins() []Tool {
 func builtinsWith(searcher web.Searcher) []Tool {
 	return []Tool{
 		bashTool(), readTool(), writeTool(), editTool(), lsTool(), mkdirTool(), rmTool(), grepTool(),
-		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(),
+		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), jobsTool(),
 	}
+}
+
+// Jobs are the session's background jobs, or nil, also for no registry.
+func (r *Registry) Jobs() *Jobs {
+	if r == nil {
+		return nil
+	}
+	return r.env.Jobs
 }
 
 func (r *Registry) WorkDir() string {

@@ -46,7 +46,7 @@ func (m model) todosFrom(history []llm.Message) []tools.Todo {
 // counts the finished ones and shows what is left.
 func (m model) todoPanel() string {
 	done, _ := tools.TodoProgress(m.todos)
-	if len(m.todos) == 0 || done == len(m.todos) {
+	if len(m.todos) == 0 || done == len(m.todos) || m.sidebarShown() {
 		return ""
 	}
 	colors := statusPalette(m.printer == nil || m.printer.isDark())

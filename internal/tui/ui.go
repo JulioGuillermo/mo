@@ -101,9 +101,12 @@ type model struct {
 	// starts as if it had.
 	focused bool
 	// todos is the model's task list, from its latest todo call.
-	todos    []tools.Todo
-	viewport viewport.Model
-	scrolled bool
+	todos []tools.Todo
+	// sidebarHidden is /sidebar turning the side panel off for the session.
+	sidebarHidden bool
+	jobsTicking   bool
+	viewport      viewport.Model
+	scrolled      bool
 }
 
 const agentShutdownWait = 3 * time.Second
@@ -127,6 +130,9 @@ func Run(session Session) error {
 	}
 	program := tea.NewProgram(m)
 	bridge.program = program
+	if jobs := session.Agent.Tools.Jobs(); jobs != nil {
+		jobs.OnEnd(func(status tools.JobStatus) { bridge.send(jobEndedMsg(status)) })
+	}
 	final, err := program.Run()
 	close(bridge.exited)
 	if last, ok := final.(model); ok && last.running {
@@ -212,6 +218,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case rulesSavedMsg:
 		return m.finishRules(msg)
+	case jobEndedMsg:
+		return m.jobEnded(tools.JobStatus(msg))
+	case jobTickMsg:
+		m.jobsTicking = false
+		return m, m.tickJobs()
 	case savedMsg:
 		if msg.err != nil {
 			return m.emit(m.printer.Error(fmt.Errorf("the conversation was not saved: %w", msg.err)))
@@ -235,7 +246,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case toolDoneMsg:
 		m.finishTool(msg.id, msg.output, msg.isError)
-		return m, nil
+		return m, m.tickJobs()
 	case tea.MouseWheelMsg:
 		m.scroll(msg.Button == tea.MouseWheelUp, 3)
 		return m, nil
@@ -303,7 +314,7 @@ func (m *model) resize(size tea.WindowSizeMsg) tea.Cmd {
 	widthChanged := size.Width != m.width
 	m.width, m.height = size.Width, size.Height
 	m.input.SetWidth(size.Width)
-	m.printer.setWidth(size.Width)
+	m.printer.setWidth(m.mainWidth())
 	m.renderStream(true)
 	if !widthChanged {
 		return nil
@@ -458,6 +469,16 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		return m, listConversations(m.session.WorkDir, false)
 	case "fork":
 		return m.fork()
+	case "sidebar":
+		m.sidebarHidden = !m.sidebarHidden
+		if m.session.Config.Render.Sidebar == sidebarOff {
+			return m, printText(m.printer.Note("the side panel is off in /settings › Memory and display"))
+		}
+		return m, m.fitWidth()
+	case "jobs":
+		return m.listJobs()
+	case "kill":
+		return m.killJob(argument)
 	case "notify":
 		method := notify.Method(m.session.Config.Notify.Method)
 		return m, tea.Batch(sendNotification(method, "test notification"), printText(m.printer.Note("sent a test notification · "+string(method))))
@@ -525,6 +546,11 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 	save := m.saveConversation()
 	if !errors.Is(err, context.Canceled) {
 		save = tea.Batch(save, m.turnEnded(err))
+		if m.session.Agent != nil && m.session.Agent.HasEndedJobs() {
+			reacting, react := m.reactToJobs()
+			m = reacting.(model)
+			save = tea.Batch(save, react)
+		}
 	}
 	if len(lines) == 0 {
 		return m, save
@@ -539,8 +565,12 @@ func (m model) View() tea.View {
 		view.WindowTitle = "mo · settings"
 	} else {
 		bottom := m.bottom()
-		conversation := m.conversation(m.height - lipgloss.Height(bottom) - 1)
-		view = tea.NewView(conversation.View() + "\n\n" + bottom)
+		height := m.height - lipgloss.Height(bottom) - 1
+		conversation := m.conversation(height).View()
+		if m.sidebarShown() {
+			conversation = lipgloss.JoinHorizontal(lipgloss.Top, conversation, " ", m.sidebar(max(height, 1)))
+		}
+		view = tea.NewView(conversation + "\n\n" + bottom)
 		view.WindowTitle = "mo"
 	}
 	view.AltScreen = true
@@ -576,7 +606,7 @@ func (m model) bottom() string {
 // of the given height that follows the end unless the user scrolled up.
 func (m model) conversation(height int) viewport.Model {
 	conversation := m.viewport
-	conversation.SetWidth(m.width)
+	conversation.SetWidth(m.mainWidth())
 	conversation.SetHeight(max(height, 1))
 	transcript, _ := m.transcript()
 	conversation.SetContent(strings.TrimRight(transcript+m.liveText(), "\n"))
@@ -656,7 +686,7 @@ func (m model) liveText() string {
 	if m.streamDone != "" {
 		parts = append(parts, m.streamDone)
 	}
-	wrap := lipgloss.NewStyle().Width(max(m.width-4, 20)).PaddingLeft(2)
+	wrap := lipgloss.NewStyle().Width(max(m.mainWidth()-4, 20)).PaddingLeft(2)
 	if tail := strings.TrimSpace(m.stream[m.streamCut:]); tail != "" {
 		parts = append(parts, wrap.Render(tail))
 	}

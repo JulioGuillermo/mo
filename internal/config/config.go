@@ -127,6 +127,9 @@ type Render struct {
 	// Background is the colour mo paints behind everything, as #rrggbb, so
 	// it looks the same in any terminal; "terminal" keeps the terminal's.
 	Background string `toml:"background,omitempty"`
+	// Sidebar shows the side panel of tasks and background jobs when the
+	// terminal is wide enough ("auto"), or never ("off").
+	Sidebar string `toml:"sidebar,omitempty"`
 }
 
 type Memory struct {
@@ -172,7 +175,7 @@ func Defaults() Config {
 		Context:     Context{CompactAt: ptr(0.75), Strategy: "compact", KeepReasoning: ptr(false)},
 		Memory:      Memory{Dir: defaultMemoryDir()},
 		Web:         Web{Search: web.SearchDuckDuckGo},
-		Render:      Render{Images: render.ModeAuto, Background: "#00081a"},
+		Render:      Render{Images: render.ModeAuto, Background: "#00081a", Sidebar: "auto"},
 		Loop:        Loop{Enabled: ptr(true), Replies: 10, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2)},
 		Permissions: Permissions{Mode: "edits", Allow: DefaultAllow},
 		Notify:      Notify{Finish: ptr(true), Approval: ptr(true), Method: "auto", Focused: ptr(false)},
@@ -226,6 +229,9 @@ func validate(cfg Config) error {
 	}
 	if cfg.Context.Strategy != "compact" && cfg.Context.Strategy != "drop" {
 		return fmt.Errorf("context.strategy %q: use compact or drop", cfg.Context.Strategy)
+	}
+	if cfg.Render.Sidebar != "auto" && cfg.Render.Sidebar != "off" {
+		return fmt.Errorf("render.sidebar %q: use auto or off", cfg.Render.Sidebar)
 	}
 	if !ValidBackground(cfg.Render.Background) {
 		return fmt.Errorf("render.background %q: use #rrggbb or terminal", cfg.Render.Background)
@@ -428,6 +434,7 @@ func mergeHarmless(base, layer Config) Config {
 	}
 	base.Render.Images = override(base.Render.Images, layer.Render.Images)
 	base.Render.Background = override(base.Render.Background, layer.Render.Background)
+	base.Render.Sidebar = override(base.Render.Sidebar, layer.Render.Sidebar)
 	base.Loop = mergeLoop(base.Loop, layer.Loop)
 	return base
 }

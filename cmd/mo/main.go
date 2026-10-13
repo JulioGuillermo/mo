@@ -17,6 +17,7 @@ import (
 	"github.com/jg/mo/internal/mcphub"
 	"github.com/jg/mo/internal/plugins"
 	"github.com/jg/mo/internal/render"
+	"github.com/jg/mo/internal/tools"
 	"github.com/jg/mo/internal/tui"
 )
 
@@ -75,6 +76,7 @@ func run() error {
 		}
 		return runOnce(ctx, session.Agent, prompt)
 	}
+	defer startJobs(&loaded)()
 	session, err := startSession(ctx, workDir, cfg, choice, loaded, tui.AskProvider)
 	if err != nil {
 		return err
@@ -82,6 +84,13 @@ func run() error {
 	stop()
 	session.Continue = *continueFlag
 	return tui.Run(session)
+}
+
+// startJobs gives the interactive session its background jobs, killed when
+// mo exits.
+func startJobs(loaded *extensions) func() {
+	loaded.jobs = tools.NewJobs()
+	return loaded.jobs.Close
 }
 
 // connectMCP connects to the configured servers before the UI starts and
