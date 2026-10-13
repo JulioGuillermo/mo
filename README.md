@@ -166,7 +166,8 @@ shows whole and coloured, ↑↓ scroll it, and a bash one lists each of its par
 rules say of it.
 
 `git` works without the git command: status, diff, log, show, blame, branches and check read and never
-ask; add, commit, branch, switch, merge and cherry_pick change the repository. A merge or cherry-pick
+ask; add, commit, branch, switch, merge, cherry_pick, rebase and pull change the repository, and push
+always asks, never forces. fetch, pull and push take an SSH agent or key, or GIT_TOKEN/GITHUB_TOKEN for HTTPS. A merge or cherry-pick
 with conflicts leaves markers in the files for the model to resolve, then `continue`; `commit` and
 `continue` refuse while a marker is left, and `check` says where. Hooks do not run.
 

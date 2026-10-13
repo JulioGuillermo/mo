@@ -515,7 +515,19 @@
 - A file deleted on one side and changed on the other keeps the changed one; a binary changed on
   both keeps ours; both are reported as conflicts. Renames are not followed yet.
 - Hooks do not run, and the result of a commit says so.
-- Not yet: rebase, push, pull and fetch.
+- `rebase` replays the branch's commits onto the target as picks, each with its author and message,
+  and stops at a conflict like a merge: `continue` commits the resolved one and replays the rest,
+  `abort` puts the branch back. Merge commits are not rebased. A commit whose changes are already
+  there is dropped, as git drops it. The rebase state is mo's own (`MO_REBASE`).
+- `fetch`, `pull` and `push` use go-git: an SSH agent or a key without passphrase, or a token from
+  `GIT_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN` or `GITLAB_TOKEN` for HTTPS. go-git does not use git's
+  credential helpers, so when it cannot get in and the git command is installed, that runs
+  instead. `pull` is a fetch and the three-way merge, so it is not limited to a fast-forward.
+- `push` never forces; a push behind the remote is refused with "pull first". It warns, so it asks
+  in every mode but all: it publishes outside the machine.
+- go-git runs `git-upload-pack` for remotes that are folders. Without git installed, mo serves them
+  with go-git's own server, which can leave objects out of a fetch that is not a fast-forward, so
+  git's is used wherever it is installed. SSH and HTTPS remotes need neither.
 
 ## Tool calls that change files
 

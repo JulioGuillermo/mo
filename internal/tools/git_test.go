@@ -5,6 +5,7 @@ package tools
 // | GT-01 | Happy    | The git tool reads and commits in the working directory, no git command needed | P0 |
 // | GT-02 | Happy    | Reading actions change nothing; the others count as changes          | P0       |
 // | GT-03 | Error    | Outside a repository it says so                                      | P2       |
+// | GT-04 | Security | A push warns, so it asks in every mode but all                        | P0       |
 
 import (
 	"context"
@@ -71,6 +72,17 @@ func TestGitTool(t *testing.T) {
 
 		if !isError || !strings.Contains(output, "not a git repository") {
 			t.Errorf("output = %q", output)
+		}
+	})
+
+	t.Run("GT-04 a push warns, so it asks in every mode but all", func(t *testing.T) {
+		registry := NewRegistry(Env{WorkDir: t.TempDir()}, Options{})
+
+		push := registry.Warning(llm.ToolCall{Name: "git", Args: args(t, map[string]any{"action": "push", "remote": "upstream"})})
+		pull := registry.Warning(llm.ToolCall{Name: "git", Args: args(t, map[string]any{"action": "pull"})})
+
+		if push != "publishes to upstream" || pull != "" {
+			t.Errorf("push = %q pull = %q", push, pull)
 		}
 	})
 }

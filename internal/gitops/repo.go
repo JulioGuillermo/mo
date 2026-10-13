@@ -27,6 +27,7 @@ const (
 	cherryPickHead = "CHERRY_PICK_HEAD"
 	conflictsFile  = "MO_CONFLICTS"
 	writtenFile    = "MO_WRITTEN"
+	rebaseFile     = "MO_REBASE"
 	shownLog       = 20
 	shownBlame     = 400
 	fallbackName   = "mo"
@@ -46,6 +47,7 @@ type Repo struct {
 
 // Open finds the repository dir is in.
 func Open(dir string) (*Repo, error) {
+	serveLocalRemotes()
 	repo, err := git.PlainOpenWithOptions(dir, &git.PlainOpenOptions{DetectDotGit: true})
 	if errors.Is(err, git.ErrRepositoryNotExists) {
 		return nil, ErrNotRepository
@@ -91,6 +93,8 @@ func (r *Repo) inProgress() *operation {
 	switch {
 	case r.readState(mergeHead) != "":
 		op.kind, op.theirs = "merge", plumbing.NewHash(r.readState(mergeHead))
+	case r.readState(cherryPickHead) != "" && r.readState(rebaseFile) != "":
+		op.kind, op.theirs = "rebase", plumbing.NewHash(r.readState(cherryPickHead))
 	case r.readState(cherryPickHead) != "":
 		op.kind, op.theirs = "cherry-pick", plumbing.NewHash(r.readState(cherryPickHead))
 	default:
@@ -106,7 +110,7 @@ func nonEmpty(items []string) []string {
 }
 
 func (r *Repo) clearState() {
-	for _, name := range []string{mergeHead, mergeMessage, cherryPickHead, conflictsFile, writtenFile} {
+	for _, name := range []string{mergeHead, mergeMessage, cherryPickHead, conflictsFile, writtenFile, rebaseFile} {
 		_ = os.Remove(r.stateFile(name))
 	}
 }
@@ -608,7 +612,8 @@ func (r *Repo) Merge(revision string) (string, error) {
 	}
 	message := fmt.Sprintf("Merge %s into %s", revision, oursName)
 	op := &operation{kind: "merge", theirs: theirs.Hash, message: message}
-	return r.threeWay(op, base, ours, theirs, oursName, revision)
+	result, _, err := r.threeWay(op, base, ours, theirs, oursName, revision)
+	return result, err
 }
 
 func (r *Repo) fastForward(theirs *object.Commit, revision string) (string, error) {
@@ -650,18 +655,19 @@ func (r *Repo) CherryPick(revision string) (string, error) {
 	}
 	message := strings.TrimRight(picked.Message, "\n") + fmt.Sprintf("\n\n(cherry picked from commit %s)\n", picked.Hash)
 	op := &operation{kind: "cherry-pick", theirs: picked.Hash, message: message}
-	return r.threeWay(op, parent, ours, picked, oursName, picked.Hash.String()[:7])
+	result, _, err := r.threeWay(op, parent, ours, picked, oursName, picked.Hash.String()[:7])
+	return result, err
 }
 
 // threeWay merges theirs into ours from base, file by file, writes the
 // result to the working tree, stages what merged cleanly, and commits when
 // nothing conflicted.
-func (r *Repo) threeWay(op *operation, base, ours, theirs *object.Commit, oursName, theirsName string) (string, error) {
+func (r *Repo) threeWay(op *operation, base, ours, theirs *object.Commit, oursName, theirsName string) (string, bool, error) {
 	files := map[string][3]*object.File{}
 	for side, commit := range []*object.Commit{base, ours, theirs} {
 		tree, err := commit.Tree()
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
 		err = tree.Files().ForEach(func(file *object.File) error {
 			entry := files[file.Name]
@@ -670,7 +676,7 @@ func (r *Repo) threeWay(op *operation, base, ours, theirs *object.Commit, oursNa
 			return nil
 		})
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
 	}
 	var conflicts, notes []string
@@ -688,7 +694,7 @@ func (r *Repo) threeWay(op *operation, base, ours, theirs *object.Commit, oursNa
 			continue
 		case sameFile(o, b):
 			if err := r.takeTheirs(path, t); err != nil {
-				return "", err
+				return "", false, err
 			}
 			op.written = append(op.written, path)
 			continue
@@ -701,36 +707,37 @@ func (r *Repo) threeWay(op *operation, base, ours, theirs *object.Commit, oursNa
 				kept = t
 			}
 			if err := r.writeFile(path, fileText(kept), kept.Mode); err != nil {
-				return "", err
+				return "", false, err
 			}
 			conflicts = append(conflicts, path)
 			notes = append(notes, path+": deleted on one side, changed on the other; the changed one is kept")
 		case isBinary(o) || isBinary(t):
 			if err := r.writeFile(path, fileText(o), o.Mode); err != nil {
-				return "", err
+				return "", false, err
 			}
 			conflicts = append(conflicts, path)
 			notes = append(notes, path+": binary, changed on both sides; ours is kept")
 		default:
 			merged, conflicted := Merge3(fileText(b), fileText(o), fileText(t), oursName, "base", theirsName)
 			if err := r.writeFile(path, merged, o.Mode); err != nil {
-				return "", err
+				return "", false, err
 			}
 			if conflicted {
 				conflicts = append(conflicts, path)
 				continue
 			}
 			if _, err := r.tree.Add(path); err != nil {
-				return "", err
+				return "", false, err
 			}
 		}
 	}
 	op.conflicts = conflicts
 	if len(conflicts) == 0 {
-		return r.finish(op)
+		result, err := r.finish(op)
+		return result, false, err
 	}
 	if err := r.saveState(op); err != nil {
-		return "", err
+		return "", false, err
 	}
 	var out strings.Builder
 	fmt.Fprintf(&out, "%s stopped at conflicts in %d files: %s\n", op.kind, len(conflicts), strings.Join(conflicts, ", "))
@@ -741,7 +748,7 @@ func (r *Repo) threeWay(op *operation, base, ours, theirs *object.Commit, oursNa
 		out.WriteString(conflictExcerpt(path, r.diskContent(path)))
 	}
 	out.WriteString("Edit each file to what it should be, without the markers, then git continue; git check shows what is left; git abort drops the " + op.kind + ".")
-	return out.String(), nil
+	return out.String(), true, nil
 }
 
 // conflictExcerpt shows each conflict of a file with the line it starts on.
@@ -804,7 +811,7 @@ func (r *Repo) writeFile(path, content string, _ filemode.FileMode) error {
 
 func (r *Repo) saveState(op *operation) error {
 	head := mergeHead
-	if op.kind == "cherry-pick" {
+	if op.kind == "cherry-pick" || op.kind == "rebase" {
 		head = cherryPickHead
 	}
 	for name, content := range map[string]string{
@@ -823,6 +830,9 @@ func (r *Repo) Continue() (string, error) {
 	op := r.inProgress()
 	if op == nil {
 		return "", errors.New("nothing in progress to continue")
+	}
+	if op.kind == "rebase" {
+		return r.continueRebase(op)
 	}
 	return r.finish(op)
 }
@@ -850,16 +860,40 @@ func (r *Repo) finish(op *operation) (string, error) {
 	options := &git.CommitOptions{Author: r.signature(), AllowEmptyCommits: true}
 	if op.kind == "merge" {
 		options.Parents = []plumbing.Hash{head.Hash, op.theirs}
-	} else if picked, err := r.repo.CommitObject(op.theirs); err == nil {
-		author := picked.Author
-		options.Author, options.Committer = &author, r.signature()
+	} else {
+		if empty, err := r.nothingStaged(); err == nil && empty {
+			if op.kind != "rebase" {
+				r.clearState()
+			}
+			return fmt.Sprintf("%s of %s left nothing to commit: its changes are already here", op.kind, op.theirs.String()[:7]), nil
+		}
+		if picked, err := r.repo.CommitObject(op.theirs); err == nil {
+			author := picked.Author
+			options.Author, options.Committer = &author, r.signature()
+		}
 	}
 	hash, err := r.tree.Commit(op.message, options)
 	if err != nil {
 		return "", err
 	}
-	r.clearState()
+	if op.kind != "rebase" {
+		r.clearState()
+	}
 	return fmt.Sprintf("%s committed as %s; hooks do not run here", op.kind, hash.String()[:7]), nil
+}
+
+// nothingStaged tells whether the index matches HEAD.
+func (r *Repo) nothingStaged() (bool, error) {
+	status, err := r.tree.Status()
+	if err != nil {
+		return false, err
+	}
+	for _, file := range status {
+		if file.Staging != git.Unmodified && file.Staging != git.Untracked {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // Abort drops a merge or cherry-pick in progress: back to HEAD, and the
@@ -868,6 +902,9 @@ func (r *Repo) Abort() (string, error) {
 	op := r.inProgress()
 	if op == nil {
 		return "", errors.New("nothing in progress to abort")
+	}
+	if op.kind == "rebase" {
+		return r.abortRebase(op)
 	}
 	head, _, err := r.head()
 	if err != nil {

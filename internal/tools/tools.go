@@ -24,7 +24,10 @@ type Tool struct {
 	ChangesPathArg bool
 	// Changes tells, for a tool whose actions differ, whether a call changes
 	// files; such calls ask in ask mode.
-	Changes          func(args json.RawMessage) bool
+	Changes func(args json.RawMessage) bool
+	// Warning names a risk that asks in every mode but all, as pushing
+	// leaves the machine.
+	Warning          func(args json.RawMessage) string
 	AlreadyConfirmed func(args json.RawMessage) bool
 	LooseArgs        bool
 }

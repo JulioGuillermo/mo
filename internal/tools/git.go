@@ -12,16 +12,17 @@ import (
 
 // gitChanges are the actions that change the repository: they ask like
 // file changes do; the others only read.
-var gitChanges = []string{"add", "commit", "branch", "switch", "merge", "cherry_pick", "continue", "abort"}
+var gitChanges = []string{"add", "commit", "branch", "switch", "merge", "cherry_pick", "rebase", "continue", "abort", "pull", "push"}
 
 func gitTool() Tool {
 	return Tool{
 		Name: "git",
 		Description: "Git in the working directory, without the git command. Read: status, diff (staged: the index), log (path, limit), show (revision), blame (path), branches, " +
-			"check (conflicts left). Change: add (paths; none: all), commit (message), branch (name), switch (branch, create), merge (revision), cherry_pick (revision), continue, abort. " +
+			"check (conflicts left), fetch (remote). Change: add (paths; none: all), commit (message), branch (name), switch (branch, create), merge (revision), cherry_pick (revision), " +
+			"rebase (revision to replay onto), continue, abort, pull (remote), push (remote; never forced). " +
 			"Conflicts are left as markers in the files: edit them away, then continue; commit and continue refuse while markers are left. Hooks do not run.",
 		Schema: json.RawMessage(`{"type":"object","properties":{
-"action":{"type":"string","enum":["status","diff","log","show","blame","branches","check","add","commit","branch","switch","merge","cherry_pick","continue","abort"]},
+"action":{"type":"string","enum":["status","diff","log","show","blame","branches","check","fetch","add","commit","branch","switch","merge","cherry_pick","rebase","continue","abort","pull","push"]},"remote":{"type":"string"},
 "paths":{"type":"array","items":{"type":"string"}},"path":{"type":"string"},"revision":{"type":"string"},"message":{"type":"string"},
 "branch":{"type":"string"},"name":{"type":"string"},"create":{"type":"boolean"},"staged":{"type":"boolean"},"limit":{"type":"integer"}},"required":["action"]}`),
 		Run: runGit,
@@ -35,15 +36,21 @@ func gitTool() Tool {
 			return firstLineOf(strings.Join(parts, " "))
 		},
 		Changes: func(args json.RawMessage) bool { return slices.Contains(gitChanges, argField(args, "action")) },
+		Warning: func(args json.RawMessage) string {
+			if argField(args, "action") == "push" {
+				return "publishes to " + firstNonEmpty(argField(args, "remote"), "origin")
+			}
+			return ""
+		},
 	}
 }
 
 func runGit(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	var args struct {
-		Action, Path, Revision, Message, Branch, Name string
-		Paths                                         []string
-		Create, Staged                                bool
-		Limit                                         int
+		Action, Path, Revision, Message, Branch, Name, Remote string
+		Paths                                                 []string
+		Create, Staged                                        bool
+		Limit                                                 int
 	}
 	if err := decodeArgs(raw, &args); err != nil {
 		return "", err
@@ -79,6 +86,14 @@ func runGit(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 		return repo.Merge(args.Revision)
 	case "cherry_pick":
 		return repo.CherryPick(args.Revision)
+	case "rebase":
+		return repo.Rebase(args.Revision)
+	case "fetch":
+		return repo.Fetch(args.Remote)
+	case "pull":
+		return repo.Pull(args.Remote)
+	case "push":
+		return repo.Push(args.Remote)
 	case "continue":
 		return repo.Continue()
 	case "abort":

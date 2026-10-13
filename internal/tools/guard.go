@@ -26,6 +26,11 @@ func (r *Registry) Warning(call llm.ToolCall) string {
 	if !ok || checkArgNames(tool, call.Args) != nil {
 		return ""
 	}
+	if tool.Warning != nil {
+		if warning := tool.Warning(call.Args); warning != "" {
+			return warning
+		}
+	}
 	if tool.Name == "memory" && changesGlobalMemory(call.Args) {
 		return warningGlobalMemory
 	}
