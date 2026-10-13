@@ -25,6 +25,7 @@ import (
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
+	"github.com/jg/mo/internal/gitops"
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/mcphub"
 	"github.com/jg/mo/internal/notify"
@@ -923,6 +924,13 @@ func (m model) status(show statusParts) (string, []region) {
 		regions = append(regions, region{y: 0, x0: x, x1: x + ansi.StringWidth(part), do: do})
 		parts = append(parts, part)
 	}
+	// folder
+	basename := filepath.Base(m.session.WorkDir)
+	parts = append(parts, paint(colors.low, basename))
+	// branch (not clickable)
+	if branch, err := repoBranch(m.session.WorkDir); err == nil && branch != "" && branch != "master" && branch != "main" {
+		parts = append(parts, paint(colors.model, branch))
+	}
 	if m.running {
 		parts = append(parts, m.currentState().label(false))
 	}
@@ -1097,4 +1105,14 @@ func formatTokens(count int) string {
 		return fmt.Sprint(count)
 	}
 	return fmt.Sprintf("%.1fk", float64(count)/1000)
+}
+
+// repoBranch returns the git branch name of the working directory, or an
+// empty string if it's not a git repo or on master/main.
+func repoBranch(workDir string) (string, error) {
+	repo, err := gitops.Open(workDir)
+	if err != nil {
+		return "", err
+	}
+	return repo.CurrentBranch()
 }
