@@ -87,9 +87,10 @@ func run() error {
 }
 
 // startJobs gives the interactive session its background jobs, killed when
-// mo exits.
+// mo exits, and the title tool, which only it can take.
 func startJobs(loaded *extensions) func() {
 	loaded.jobs = tools.NewJobs()
+	loaded.titles = tools.NewTitles()
 	return loaded.jobs.Close
 }
 

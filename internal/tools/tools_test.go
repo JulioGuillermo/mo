@@ -27,6 +27,7 @@ package tools
 // | TL-23 | Security | mo config, .git and hidden home entries are flagged           | P0       |
 // | TL-24 | Security | rm through a symlinked directory still protects the workdir   | P0       |
 // | TL-25 | Happy    | read of an image answers its format, size and a marker        | P1       |
+// | TL-26 | Happy    | The title tool hands the title over, and only exists where it can | P1       |
 
 import (
 	"bytes"
@@ -47,7 +48,7 @@ import (
 
 func newEnv(t *testing.T) Env {
 	t.Helper()
-	return Env{WorkDir: t.TempDir()}
+	return Env{WorkDir: t.TempDir(), Titles: NewTitles()}
 }
 
 func writeFile(t *testing.T, env Env, name, content string) string {
@@ -445,6 +446,23 @@ func TestReadImage(t *testing.T) {
 
 		if err != nil || !strings.HasPrefix(output, "[image png 5x3: /") || len(render.MarkedImages(output)) != 1 {
 			t.Errorf("output = %q err = %v", output, err)
+		}
+	})
+}
+
+func TestTitleTool(t *testing.T) {
+	t.Run("TL-26 the title tool hands the title over, and only exists where it can", func(t *testing.T) {
+		env := newEnv(t)
+		var got string
+		env.Titles.OnSet(func(title string) { got = title })
+		registry := NewRegistry(env, Options{})
+		bare := NewRegistry(Env{WorkDir: env.WorkDir}, Options{})
+
+		output, isError := registry.Run(context.Background(), llm.ToolCall{Name: "title", Args: args(t, map[string]any{"title": "  Arreglar\n el login "})})
+		_, missing := bare.find("title")
+
+		if isError || got != "Arreglar el login" || !strings.Contains(output, "Arreglar el login") || missing {
+			t.Errorf("output %q got %q in bare registry %v", output, got, missing)
 		}
 	})
 }

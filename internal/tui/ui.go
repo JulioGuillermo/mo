@@ -31,6 +31,7 @@ import (
 	"github.com/jg/mo/internal/permissions"
 	"github.com/jg/mo/internal/plugins"
 	"github.com/jg/mo/internal/render"
+	"github.com/jg/mo/internal/sessions"
 	"github.com/jg/mo/internal/tools"
 )
 
@@ -96,6 +97,8 @@ type model struct {
 	// lastEvent is the kind of what the model sent last, and runningTool
 	// the call running now: they say what the agent is doing.
 	lastEvent llm.EventKind
+	// titling is the title the model is working out, after /title auto.
+	titling *titling
 	// promptRead is how far the server is in reading the prompt, when it
 	// says so.
 	promptRead       llm.PromptProgress
@@ -157,6 +160,9 @@ func Run(session Session) error {
 	}
 	program := tea.NewProgram(m)
 	bridge.program = program
+	if titles := session.Agent.Tools.Titles(); titles != nil {
+		titles.OnSet(func(title string) { bridge.send(titleSetMsg(title)) })
+	}
 	if jobs := session.Agent.Tools.Jobs(); jobs != nil {
 		jobs.OnEnd(func(status tools.JobStatus) { bridge.send(jobEndedMsg(status)) })
 	}
@@ -257,6 +263,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.tickJobs()
 	case titledMsg:
 		return m.titled(msg)
+	case titleSetMsg:
+		return m.setTitle(sessions.Title(string(msg)))
+	case titleEventMsg:
+		if m.titling != nil {
+			m.titling.follow(llm.Event(msg))
+		}
+		return m, nil
 	case savedMsg:
 		if msg.err != nil {
 			return m.emit(m.printer.Error(fmt.Errorf("the conversation was not saved: %w", msg.err)))
@@ -350,7 +363,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case runDoneMsg:
 		return m.finishRun(msg.err)
 	case spinner.TickMsg:
-		if !m.running {
+		if !m.running && m.titling == nil {
 			return m, nil
 		}
 		var cmd tea.Cmd
@@ -423,6 +436,10 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		if m.running {
 			m.stop()
+			return m, nil
+		}
+		if m.titling != nil {
+			m.titling.cancel()
 			return m, nil
 		}
 		if m.input.Value() == "" && time.Since(m.lastEsc) < doubleEscWindow {
@@ -729,6 +746,16 @@ func (m model) upperLayout() (string, []region) {
 			queued = fmt.Sprintf(" · %d queued", count)
 		}
 		add(m.spinner.View()+" "+m.currentState().label(true)+dimStyle.Render(queued+" · esc to stop"), nil)
+	}
+	if m.titling != nil {
+		stop := ""
+		if !m.running && m.dialog == nil {
+			stop = " · esc to stop"
+		}
+		add(m.spinner.View()+" "+m.titleState().label(true)+dimStyle.Render(stop), nil)
+		if said := m.saidLines(); said != "" {
+			add(said, nil)
+		}
 	}
 	if matches := m.suggestions(); len(matches) > 0 {
 		add(m.suggestionLayout(matches))
