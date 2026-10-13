@@ -261,7 +261,7 @@ func TestRegistry(t *testing.T) {
 		writeFile(t, env, "big.txt", strings.Repeat("x", 500))
 		registry := NewRegistry(env, Options{MaxOutput: 100, Disabled: []string{"bash", "rm"}})
 
-		for _, spec := range registry.Specs() {
+		for _, spec := range registry.Specs(nil) {
 			if spec.Name == "bash" || spec.Name == "rm" {
 				t.Errorf("%s should be disabled", spec.Name)
 			}

@@ -121,6 +121,12 @@ func toolItems(m model, _ *settingsMenu) []settingItem {
 				huh.NewOption("search: load tools on demand", string(tools.ModeSearch)),
 			).Value(&d.mode)
 		}},
+		{"Found tools in search mode", func(d *settingsDraft) string { return d.load }, func(d *settingsDraft) huh.Field {
+			return huh.NewSelect[string]().Title("Found tools in search mode").Options(
+				huh.NewOption("context: stay as the search result, called through tool_call; the request never changes", string(tools.LoadContext)),
+				huh.NewOption("declare: declared from the next request on; restarts the prompt cache once", string(tools.LoadDeclare)),
+			).Value(&d.load)
+		}},
 		choice("Loaded from the start in search mode", func(d *settingsDraft) *[]string { return &d.alwaysLoaded }),
 		choice("Ask before running", func(d *settingsDraft) *[]string { return &d.confirm }),
 		choice("Disabled", func(d *settingsDraft) *[]string { return &d.disabled }),
@@ -295,6 +301,16 @@ func displayItems(model, *settingsMenu) []settingItem {
 	return []settingItem{
 		{"Memory folder", func(d *settingsDraft) string { return d.memoryDir }, func(d *settingsDraft) huh.Field {
 			return huh.NewInput().Title("Memory folder").Value(&d.memoryDir)
+		}},
+		{"Background", func(d *settingsDraft) string { return d.background }, func(d *settingsDraft) huh.Field {
+			return huh.NewInput().Title("Background").
+				Description("painted behind everything so mo looks the same in any terminal: #rrggbb, or terminal to keep its own").
+				Validate(func(text string) error {
+					if !config.ValidBackground(text) {
+						return fmt.Errorf("use #rrggbb or terminal")
+					}
+					return nil
+				}).Value(&d.background)
 		}},
 		{"Images, SVG and Mermaid", func(d *settingsDraft) string { return d.images }, func(d *settingsDraft) huh.Field {
 			return huh.NewSelect[string]().Title("Images, SVG and Mermaid").Options(

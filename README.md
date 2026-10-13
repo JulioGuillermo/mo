@@ -79,7 +79,9 @@ max_tokens = 0             # 0: provider default
 system_prompt = ""         # empty: built-in prompt (~80 tokens)
 
 [tools]
-mode = "full"              # full | compact (no descriptions) | search (load tools on demand)
+mode = "full"              # full | compact (no descriptions) | search (find tools on demand)
+load = "context"           # search mode: context (found tools stay in the conversation, called
+                           # through tool_call) | declare (found tools are declared from then on)
 always_loaded = ["bash", "read", "edit"]   # search mode: tools sent from the start
 confirm = ["bash", "rm", "fetch"]   # ask before these; [] never asks. A list of your own
                                     # replaces this one: keep "fetch" in it to be asked
@@ -104,6 +106,10 @@ warnings = 2               # loops the model is told about per turn; the next on
 
 [memory]
 dir = "~/.local/share/mo/memory"
+
+[render]
+background = "#00081a"     # painted behind everything so mo looks the same in any terminal;
+                           # "terminal" keeps the terminal's own
 
 [permissions]
 mode = "edits"             # ask | edits | auto | all; shift+tab changes it for the session
@@ -134,12 +140,15 @@ model = "qwen3-coder"
 
 ## Tools
 
-`bash` `read` `write` `edit` `ls` `mkdir` `rm` `grep` `memory` `fetch` `web_search`, plus `tool_search` in
+`bash` `read` `write` `edit` `ls` `mkdir` `rm` `grep` `memory` `fetch` `web_search` `todo`, plus `tool_search` in
 search mode and the tools of your MCP servers.
 Output is cut to `max_output`, keeping the head and the tail.
 
 `fetch` reads a URL as markdown (the article of an HTML page, indented JSON, plain text), 8 KB at a
 time. `web_search` uses DuckDuckGo by default, with no key; see `[web]` below for the others.
+
+`todo` is the model's task list for work of several steps. It shows above the input while a task
+is left, the one in progress highlighted; it comes back with the conversation on `/resume`.
 
 `memory` keeps notes across sessions, per project or global. Their first lines go into the system
 prompt so the model knows what it saved.

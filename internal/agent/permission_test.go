@@ -9,6 +9,7 @@ package agent
 // | AP-05 | Security | Auto mode asks when the model says unsafe or answers unclearly       | P0       |
 // | AP-06 | Security | A command writing to a file asks though a rule allows it             | P1       |
 // | AP-07 | Edge     | A fetch is checked as "fetch <url>"                                  | P1       |
+// | AP-08 | Security | A tool reached through tool_call asks as itself; the UI sees the tool | P0      |
 
 import (
 	"context"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/permissions"
+	"github.com/jg/mo/internal/tools"
 )
 
 func ruledAgent(t *testing.T, mode permissions.Mode, allow, deny []string, provider llm.Provider) *Agent {
@@ -125,6 +127,31 @@ func TestPermissions(t *testing.T) {
 
 		if agent.approvalFor(ctx, fetch("https://go.dev/doc"), Hooks{}).ask || !agent.approvalFor(ctx, fetch("https://evil.example/x"), Hooks{}).ask {
 			t.Error("fetch rules did not decide")
+		}
+	})
+
+	t.Run("AP-08 a tool reached through tool_call asks as itself; the UI sees the tool", func(t *testing.T) {
+		provider := &scriptedProvider{replies: []llm.Message{
+			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "w", Name: "tool_call", Args: json.RawMessage(`{"name":"bash","args":{"command":"git push origin main"}}`)}}},
+			{Role: llm.RoleAssistant, Text: "done"},
+		}}
+		agent, _ := newAgentIn(t, provider, "bash")
+		agent.Tools = tools.NewRegistry(tools.Env{WorkDir: t.TempDir()}, tools.Options{Mode: tools.ModeSearch, MaxOutput: 1000})
+		agent.Permissions, _ = permissions.New(permissions.ModeAll, nil, []string{"git push *"})
+		var asked []ApprovalRequest
+		var started []string
+		hooks := Hooks{
+			Approve:     func(_ context.Context, request ApprovalRequest) Decision { asked = append(asked, request); return Deny },
+			OnToolStart: func(call llm.ToolCall, _ string) { started = append(started, call.Name) },
+		}
+
+		_ = agent.Run(ctx, "push it", hooks)
+
+		if len(asked) != 1 || asked[0].Call.Name != "bash" || asked[0].Warning != "deny rule: git push *" || len(started) != 0 {
+			t.Errorf("asked = %+v started = %v", asked, started)
+		}
+		if result := agent.History[2]; result.ToolCallID != "w" || result.Text != deniedResult {
+			t.Errorf("result = %+v", result)
 		}
 	})
 }

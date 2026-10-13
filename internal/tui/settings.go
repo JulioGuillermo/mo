@@ -177,8 +177,9 @@ func (m model) finishSettings(msg settingsSavedMsg) (tea.Model, tea.Cmd) {
 	}
 	m.session = msg.session
 	m.usage = m.session.Agent.LastUsage
+	redraw := m.applyScreen(m.printer.isDark())
 	note := fmt.Sprintf("settings saved to %s · %s · %s", config.UserFile(), m.session.Provider, shortModelName(m.session.Model))
-	return m, printText(m.printer.Note(note))
+	return m, tea.Batch(redraw, printText(m.printer.Note(note)))
 }
 
 func isAgentMsg(msg tea.Msg) bool {

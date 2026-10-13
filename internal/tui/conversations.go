@@ -198,6 +198,7 @@ func (m *model) newConversation() {
 	m.session.Agent.Clear()
 	m.usage = llm.Usage{}
 	m.thread = conversation{}
+	m.todos = nil
 }
 
 func oneLine(text string, length int) string {

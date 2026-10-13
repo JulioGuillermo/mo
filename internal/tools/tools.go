@@ -51,6 +51,7 @@ func (e Env) Resolve(path string) string {
 
 type Options struct {
 	Mode         Mode
+	Load         Load
 	AlwaysLoaded []string
 	Disabled     []string
 	MaxOutput    int
@@ -63,11 +64,10 @@ type Registry struct {
 	env     Env
 	options Options
 	tools   []Tool
-	loaded  map[string]bool
 }
 
 func NewRegistry(env Env, options Options) *Registry {
-	registry := &Registry{env: env, options: options, loaded: map[string]bool{}}
+	registry := &Registry{env: env, options: options}
 	for _, tool := range append(builtinsWith(options.Searcher), options.Extra...) {
 		if slices.Contains(options.Disabled, tool.Name) {
 			continue
@@ -78,7 +78,7 @@ func NewRegistry(env Env, options Options) *Registry {
 		registry.tools = append(registry.tools, tool)
 	}
 	if options.Mode == ModeSearch {
-		registry.tools = append(registry.tools, searchTool(registry))
+		registry.tools = append(registry.tools, searchTools(registry)...)
 	}
 	return registry
 }
@@ -95,7 +95,7 @@ func BuiltinDescriptions() map[string]string {
 // ReservedNames are the names no added tool may take: the built-in tools
 // and tool_search.
 func ReservedNames() []string {
-	return append(BuiltinNames(), searchToolName)
+	return append(BuiltinNames(), searchToolName, listToolName, callToolName)
 }
 
 func BuiltinNames() []string {
@@ -113,7 +113,7 @@ func builtins() []Tool {
 func builtinsWith(searcher web.Searcher) []Tool {
 	return []Tool{
 		bashTool(), readTool(), writeTool(), editTool(), lsTool(), mkdirTool(), rmTool(), grepTool(),
-		memoryTool(), fetchTool(), webSearchTool(searcher),
+		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(),
 	}
 }
 

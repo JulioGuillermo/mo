@@ -19,8 +19,8 @@ type tableColors struct {
 func tablePalette(dark bool) tableColors {
 	if dark {
 		return tableColors{
-			header: lipgloss.Color("#3b4261"), even: lipgloss.Color("#292e42"), odd: lipgloss.Color("#1f2335"),
-			text: lipgloss.Color("#c0caf5"), code: lipgloss.Color("#ff9e64"), link: accent,
+			header: lipgloss.Color("#26335e"), even: lipgloss.Color("#16213f"), odd: lipgloss.Color("#0e1630"),
+			text: lipgloss.Color("#c0caf5"), code: lipgloss.Color("#7dcfff"), link: accent,
 		}
 	}
 	return tableColors{

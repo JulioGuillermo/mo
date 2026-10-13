@@ -203,6 +203,10 @@ func (a *Agent) answerToolCall(ctx context.Context, call llm.ToolCall, hooks Hoo
 	if call.ArgsError != "" {
 		return call.ArgsError, true
 	}
+	call, _, err := a.Tools.Unwrap(call)
+	if err != nil {
+		return err.Error(), true
+	}
 	if a.looping() {
 		return stoppedCallResult, true
 	}
@@ -266,7 +270,7 @@ func (a *Agent) request() llm.Request {
 		Model:     a.Model,
 		System:    a.System,
 		Messages:  a.sentHistory(),
-		Tools:     a.Tools.Specs(),
+		Tools:     a.Tools.Specs(a.History),
 		MaxTokens: a.MaxTokens,
 	}
 }

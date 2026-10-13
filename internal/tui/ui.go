@@ -29,6 +29,7 @@ import (
 	"github.com/jg/mo/internal/permissions"
 	"github.com/jg/mo/internal/plugins"
 	"github.com/jg/mo/internal/render"
+	"github.com/jg/mo/internal/tools"
 )
 
 type Session struct {
@@ -98,7 +99,9 @@ type model struct {
 	lastEsc      time.Time
 	// focused is whether the terminal has the focus, as it reports it; mo
 	// starts as if it had.
-	focused  bool
+	focused bool
+	// todos is the model's task list, from its latest todo call.
+	todos    []tools.Todo
 	viewport viewport.Model
 	scrolled bool
 }
@@ -108,6 +111,9 @@ const agentShutdownWait = 3 * time.Second
 func Run(session Session) error {
 	printer := newPrinter()
 	printer.setImages(render.Detect(session.Config.Render.Images))
+	if screen := screenFor(session.Config.Render.Background); screen.set {
+		printer.setDark(screen.dark)
+	}
 	printer.workDir = session.WorkDir
 	bridge := &bridge{printer: printer, exited: make(chan struct{})}
 	m := model{
@@ -221,6 +227,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case toolStartMsg:
+		m.followTodos(msg.call)
 		m.addTool(msg.call, msg.summary)
 		return m, nil
 	case toolDoneMsg:
@@ -239,9 +246,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case drawMsg:
 		return m.emitDrawn(msg)
 	case tea.BackgroundColorMsg:
-		m.printer.setDark(msg.IsDark())
-		m.input.SetStyles(inputStyles(m.input.Styles(), msg.IsDark()))
-		return m, m.scheduleRedraw()
+		return m, m.applyScreen(msg.IsDark())
 	case tea.KeyPressMsg:
 		m.focused = true
 		return m.handleKey(msg)
@@ -564,6 +569,9 @@ func (m model) View() tea.View {
 	view.AltScreen = true
 	view.MouseMode = tea.MouseModeCellMotion
 	view.ReportFocus = true
+	if screen := screenFor(m.session.Config.Render.Background); screen.set {
+		view.BackgroundColor, view.ForegroundColor = screen.background, screen.foreground
+	}
 	return view
 }
 
@@ -571,6 +579,9 @@ func (m model) View() tea.View {
 // input and the status line.
 func (m model) bottom() string {
 	var sections []string
+	if panel := m.todoPanel(); panel != "" {
+		sections = append(sections, panel)
+	}
 	switch {
 	case m.approval != nil:
 		sections = append(sections, m.approvalPrompt())

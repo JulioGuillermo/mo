@@ -58,7 +58,7 @@ func (a *Agent) ContextUsed() int {
 
 func (a *Agent) fixedPartTokens() int {
 	size := len(a.System)
-	for _, spec := range a.Tools.Specs() {
+	for _, spec := range a.Tools.Specs(a.History) {
 		size += len(spec.Name) + len(spec.Description) + len(spec.Schema)
 	}
 	return size / bytesPerTokenGuess

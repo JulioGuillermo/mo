@@ -84,6 +84,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		Searcher:     searcher,
 		Extra:        extraTools(hub, loaded.plugins),
 		Mode:         cfg.Tools.Mode,
+		Load:         cfg.Tools.Load,
 		AlwaysLoaded: cfg.Tools.AlwaysLoaded,
 		Disabled:     cfg.Tools.Disabled,
 		MaxOutput:    cfg.Tools.MaxOutput,

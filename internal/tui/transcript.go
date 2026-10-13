@@ -220,6 +220,7 @@ func (m *model) clickDetails(y int) bool {
 // results. mo's own notes to the model are left out.
 func (m *model) replay(history []llm.Message) {
 	m.blocks = nil
+	m.todos = m.todosFrom(history)
 	printer := m.printer
 	for _, message := range history {
 		switch {
@@ -237,12 +238,24 @@ func (m *model) replay(history []llm.Message) {
 				m.blocks = append(m.blocks, block{text: printer.Answer(text), draw: func(bool) string { return printer.Answer(text) }})
 			}
 			for _, call := range message.ToolCalls {
+				call = m.unwrap(call)
 				m.addTool(call, m.toolSummary(call))
 			}
 		case message.Role == llm.RoleTool:
 			m.finishTool(message.ToolCallID, message.Text, message.IsError)
 		}
 	}
+}
+
+// unwrap shows a tool_call as the tool it ran, the way it was shown live.
+func (m model) unwrap(call llm.ToolCall) llm.ToolCall {
+	if m.session.Agent == nil || m.session.Agent.Tools == nil {
+		return call
+	}
+	if inner, _, err := m.session.Agent.Tools.Unwrap(call); err == nil {
+		return inner
+	}
+	return call
 }
 
 func (m model) toolSummary(call llm.ToolCall) string {

@@ -39,6 +39,7 @@ type Config struct {
 
 type Tools struct {
 	Mode         tools.Mode        `toml:"mode,omitempty"`
+	Load         tools.Load        `toml:"load,omitempty"`
 	AlwaysLoaded []string          `toml:"always_loaded,omitempty"`
 	Confirm      []string          `toml:"confirm,omitempty"`
 	Disabled     []string          `toml:"disabled,omitempty"`
@@ -123,6 +124,9 @@ type MCPServer struct {
 
 type Render struct {
 	Images render.Mode `toml:"images,omitempty"`
+	// Background is the colour mo paints behind everything, as #rrggbb, so
+	// it looks the same in any terminal; "terminal" keeps the terminal's.
+	Background string `toml:"background,omitempty"`
 }
 
 type Memory struct {
@@ -160,6 +164,7 @@ func Defaults() Config {
 	return Config{
 		Tools: Tools{
 			Mode:         tools.ModeFull,
+			Load:         tools.LoadContext,
 			AlwaysLoaded: []string{"bash", "read", "edit"},
 			Confirm:      []string{"bash", "rm", "fetch"},
 			MaxOutput:    10000,
@@ -167,7 +172,7 @@ func Defaults() Config {
 		Context:     Context{CompactAt: ptr(0.75), Strategy: "compact", KeepReasoning: ptr(false)},
 		Memory:      Memory{Dir: defaultMemoryDir()},
 		Web:         Web{Search: web.SearchDuckDuckGo},
-		Render:      Render{Images: render.ModeAuto},
+		Render:      Render{Images: render.ModeAuto, Background: "#00081a"},
 		Loop:        Loop{Enabled: ptr(true), Replies: 10, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2)},
 		Permissions: Permissions{Mode: "edits", Allow: DefaultAllow},
 		Notify:      Notify{Finish: ptr(true), Approval: ptr(true), Method: "auto", Focused: ptr(false)},
@@ -212,12 +217,18 @@ func validate(cfg Config) error {
 	if !slices.Contains(modes, cfg.Tools.Mode) {
 		return fmt.Errorf("tools.mode %q: use full, compact or search", cfg.Tools.Mode)
 	}
+	if cfg.Tools.Load != tools.LoadContext && cfg.Tools.Load != tools.LoadDeclare {
+		return fmt.Errorf("tools.load %q: use context or declare", cfg.Tools.Load)
+	}
 	imageModes := []render.Mode{render.ModeAuto, render.ModeKitty, render.ModeBlocks, render.ModeOff}
 	if !slices.Contains(imageModes, cfg.Render.Images) {
 		return fmt.Errorf("render.images %q: use auto, kitty, blocks or off", cfg.Render.Images)
 	}
 	if cfg.Context.Strategy != "compact" && cfg.Context.Strategy != "drop" {
 		return fmt.Errorf("context.strategy %q: use compact or drop", cfg.Context.Strategy)
+	}
+	if !ValidBackground(cfg.Render.Background) {
+		return fmt.Errorf("render.background %q: use #rrggbb or terminal", cfg.Render.Background)
 	}
 	if err := validatePermissions(cfg.Permissions); err != nil {
 		return err
@@ -229,6 +240,23 @@ func validate(cfg Config) error {
 		return fmt.Errorf("context.compact_at %v: use a fraction from 0 (never) to below 1", compactAt)
 	}
 	return validateLoop(cfg.Loop)
+}
+
+// ValidBackground accepts a #rrggbb colour or "terminal".
+func ValidBackground(text string) bool {
+	text = strings.TrimSpace(text)
+	if text == "terminal" {
+		return true
+	}
+	if len(text) != 7 || text[0] != '#' {
+		return false
+	}
+	for _, digit := range strings.ToLower(text[1:]) {
+		if !strings.ContainsRune("0123456789abcdef", digit) {
+			return false
+		}
+	}
+	return true
 }
 
 func validatePermissions(rules Permissions) error {
@@ -378,6 +406,7 @@ func mergeHarmless(base, layer Config) Config {
 	base.SystemPrompt = override(base.SystemPrompt, layer.SystemPrompt)
 	base.MaxTokens = override(base.MaxTokens, layer.MaxTokens)
 	base.Tools.Mode = override(base.Tools.Mode, layer.Tools.Mode)
+	base.Tools.Load = override(base.Tools.Load, layer.Tools.Load)
 	base.Tools.MaxOutput = override(base.Tools.MaxOutput, layer.Tools.MaxOutput)
 	if layer.Tools.AlwaysLoaded != nil {
 		base.Tools.AlwaysLoaded = layer.Tools.AlwaysLoaded
@@ -398,6 +427,7 @@ func mergeHarmless(base, layer Config) Config {
 		base.Context.KeepReasoning = layer.Context.KeepReasoning
 	}
 	base.Render.Images = override(base.Render.Images, layer.Render.Images)
+	base.Render.Background = override(base.Render.Background, layer.Render.Background)
 	base.Loop = mergeLoop(base.Loop, layer.Loop)
 	return base
 }

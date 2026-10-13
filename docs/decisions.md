@@ -14,12 +14,23 @@
 ## Tool modes
 
 - `full` sends every tool with its description, `compact` drops tool and parameter descriptions
-  (names and schemas usually say enough to a capable model), `search` sends only `tool_search`,
-  the `always_loaded` tools and those loaded so far. `tool_search` names the tools not loaded yet in
-  its own description: names are cheap and let the model `select:` them without guessing.
-- In search mode a newly loaded tool changes the tool list, which ends the Anthropic prompt cache
-  prefix for that request. Accepted: loading happens a few times per session.
-- A call to a tool that exists but is not loaded still runs, with the usual approvals.
+  (names and schemas usually say enough to a capable model), `search` declares only the
+  `always_loaded` tools and the search tools.
+- Search mode has `tool_list` (names only, filtered by words of the name or description), and
+  `tool_search` (what the matching tools do and their parameters, by keywords or `select:`). Names
+  are cheap, so the model can look around before paying for descriptions. `tool_search` no longer
+  lists the hidden tools in its own description: that list grew with every MCP server.
+- `tools.load = "context"` (default): what `tool_search` returns stays in the conversation as its
+  result, and the model calls those tools through `tool_call {name, args}`. The system prompt and
+  the declared tools never change, so the prompt cache holds and no request carries more. A
+  wrapper is needed because llama-server and Anthropic only take calls to declared tools.
+- `tool_call` is unwrapped before anything else: approvals, rules, the loop guard and the UI see
+  the tool it stands for, so it is no way around a confirmation.
+- `tools.load = "declare"`: the tools found are declared from the next request on, as before, for
+  providers that handle the wrapper badly. What is declared is read from the `tool_search` calls
+  in the history, not kept apart, so resume, rewind, fork and `/clear` declare what that
+  conversation found. After a compaction the search calls are gone and so are the declarations.
+- A call to a tool that exists but is not declared still runs, with the usual approvals.
 
 ## Context and compaction
 
@@ -383,3 +394,22 @@
   noise. Focus comes from the terminal's focus reports; a key press also means focus, for
   terminals that do not report it.
 - No notification after esc: the user is there.
+
+## Todo
+
+- The model sends the whole list on every `todo` call, with the statuses models already know
+  (`pending`, `in_progress`, `completed`); "done" and "doing" are taken too. A list that is all
+  sent at once cannot drift from a stored copy, and small models get it right more often than
+  edits by id.
+- The tool keeps no state: the list in force is the latest call's, read from the history. Resume,
+  rewind and fork therefore show the list as it was at that point with nothing else saved.
+- ~70 more tokens of tool definitions in full mode. `disabled = ["todo"]` takes them back.
+
+## Colours
+
+- mo paints its own background (`render.background`, `#00081a` by default) through the terminal's
+  background colour sequence, restored on exit, so it looks the same in any terminal theme.
+  Whether the text is drawn for a dark or light screen follows that colour, not the terminal's.
+  `terminal` keeps the terminal's background and asks it whether it is dark.
+- Inline code and code blocks are on blue, table stripes too; glamour's grey did not sit on a
+  blue screen.

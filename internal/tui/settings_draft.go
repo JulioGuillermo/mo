@@ -21,6 +21,7 @@ type settingsDraft struct {
 	provider      string
 	model         string
 	mode          string
+	load          string
 	alwaysLoaded  []string
 	confirm       []string
 	disabled      []string
@@ -44,6 +45,7 @@ type settingsDraft struct {
 	savedKey     bool
 	forgetKey    bool
 	images       string
+	background   string
 	memoryDir    string
 
 	loopEnabled       bool
@@ -82,6 +84,7 @@ func newSettingsDraft(layer config.Config) *settingsDraft {
 		provider:      layer.Provider,
 		model:         model,
 		mode:          string(cfg.Tools.Mode),
+		load:          string(cfg.Tools.Load),
 		alwaysLoaded:  slices.Clone(cfg.Tools.AlwaysLoaded),
 		confirm:       slices.Clone(cfg.Tools.Confirm),
 		disabled:      slices.Clone(cfg.Tools.Disabled),
@@ -101,6 +104,7 @@ func newSettingsDraft(layer config.Config) *settingsDraft {
 		searchKeyEnv:  cfg.Web.SearchKeyEnv,
 		savedKey:      cfg.Web.SearchKey != "",
 		images:        string(cfg.Render.Images),
+		background:    cfg.Render.Background,
 
 		loopEnabled:       *cfg.Loop.Enabled,
 		loopReplies:       strconv.Itoa(cfg.Loop.Replies),
@@ -172,6 +176,7 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	layer = d.applyProvider(layer, findings)
 	defaults := config.Defaults()
 	layer.Tools.Mode = unlessDefault(tools.Mode(d.mode), defaults.Tools.Mode)
+	layer.Tools.Load = unlessDefault(tools.Load(d.load), defaults.Tools.Load)
 	layer.Tools.AlwaysLoaded = unlessDefaultList(d.alwaysLoaded, defaults.Tools.AlwaysLoaded)
 	layer.Tools.Confirm = unlessDefaultList(d.confirm, defaults.Tools.Confirm)
 	layer.Tools.Disabled = unlessDefaultList(d.disabled, defaults.Tools.Disabled)
@@ -202,6 +207,10 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 		layer.Web.SearchKey = key
 	}
 	layer.Render.Images = unlessDefault(render.Mode(d.images), defaults.Render.Images)
+	if !config.ValidBackground(d.background) {
+		return layer, fmt.Errorf("background %q: use #rrggbb or terminal", d.background)
+	}
+	layer.Render.Background = unlessDefault(strings.TrimSpace(d.background), defaults.Render.Background)
 	layer.Notify = config.Notify{
 		Finish:   unlessDefaultFlag(d.notifyFinish, *defaults.Notify.Finish),
 		Approval: unlessDefaultFlag(d.notifyApproval, *defaults.Notify.Approval),

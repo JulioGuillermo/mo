@@ -272,7 +272,7 @@ func TestBudget(t *testing.T) {
 
 		items := agent.Budget()
 
-		if items[0].Name != "system prompt" || items[0].Tokens != 100 || len(items) != len(agent.Tools.Specs())+1 {
+		if items[0].Name != "system prompt" || items[0].Tokens != 100 || len(items) != len(agent.Tools.Specs(nil))+1 {
 			t.Errorf("items = %+v", items)
 		}
 		if items[1].Name != "tool bash" || items[1].Tokens == 0 {

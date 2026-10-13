@@ -160,11 +160,7 @@ func (p *printer) glamour(text string) string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.markdown == nil {
-		style := "dark"
-		if !p.dark {
-			style = "light"
-		}
-		renderer, err := glamour.NewTermRenderer(glamour.WithStandardStyle(style), glamour.WithWordWrap(p.width-4))
+		renderer, err := glamour.NewTermRenderer(glamour.WithStyles(markdownStyle(p.dark)), glamour.WithWordWrap(p.width-4))
 		if err != nil {
 			return text
 		}
