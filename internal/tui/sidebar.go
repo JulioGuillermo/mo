@@ -138,8 +138,9 @@ func (m model) sidebar(height int) string {
 	add("")
 	add(paint(colors.title).Bold(true).Render("Background"))
 	statuses := []tools.JobStatus{}
+	untold := map[int]bool{}
 	if jobs := m.jobs(); jobs != nil {
-		statuses = jobs.List()
+		statuses, untold = jobs.List(), jobs.Untold()
 	}
 	if len(statuses) == 0 {
 		add(paint(colors.dim).Render("no jobs"))
@@ -159,6 +160,9 @@ func (m model) sidebar(height int) string {
 			mark, tint, state = "⊘", colors.dim, "killed"
 		}
 		add(paint(tint).Render(fmt.Sprintf("%s %d ", mark, status.ID)) + base.Render(oneLine(status.Command, width-4)))
+		if untold[status.ID] && !m.running {
+			state += " · /jobs tell"
+		}
 		add(paint(colors.dim).Render("    " + state))
 	}
 
@@ -201,11 +205,32 @@ func (m model) listJobs() (tea.Model, tea.Cmd) {
 	if jobs == nil || len(jobs.List()) == 0 {
 		return m.emit(m.printer.Note("no background jobs"))
 	}
+	untold := jobs.Untold()
 	var lines []string
 	for _, status := range jobs.List() {
-		lines = append(lines, status.Describe())
+		line := status.Describe()
+		if untold[status.ID] {
+			line += " · the model was not told yet"
+		}
+		lines = append(lines, line)
 	}
-	return m.emit(m.printer.Note(strings.Join(lines, "\n") + "\n/kill <n> stops one"))
+	hint := "/kill <n> stops one"
+	if len(untold) > 0 {
+		hint = "/jobs tell lets the model hear the endings now, else it does with your next message · " + hint
+	}
+	return m.emit(m.printer.Note(strings.Join(lines, "\n") + "\n" + hint))
+}
+
+// tellJobs lets the model hear of the jobs that ended, as after a stop it
+// does not on its own: in a turn now, instead of with the next message.
+func (m model) tellJobs() (tea.Model, tea.Cmd) {
+	switch {
+	case m.running:
+		return m.emit(m.printer.Note("the model is working; it hears of ended jobs at its next step"))
+	case m.session.Agent == nil || !m.session.Agent.HasEndedJobs():
+		return m.emit(m.printer.Note("no job ended that the model has not heard of"))
+	}
+	return m.reactToJobs()
 }
 
 func (m model) killJob(argument string) (tea.Model, tea.Cmd) {

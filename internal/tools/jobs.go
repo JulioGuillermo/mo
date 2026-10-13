@@ -148,6 +148,17 @@ func (j *Jobs) HasEnded() bool {
 	return len(j.ended) > 0
 }
 
+// Untold names the jobs that ended without the model being told yet.
+func (j *Jobs) Untold() map[int]bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	untold := map[int]bool{}
+	for _, status := range j.ended {
+		untold[status.ID] = true
+	}
+	return untold
+}
+
 // Output returns the last lines a job wrote.
 func (j *Jobs) Output(id, lines int) (JobStatus, string, error) {
 	j.mu.Lock()

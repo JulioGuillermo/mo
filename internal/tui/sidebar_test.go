@@ -5,12 +5,16 @@ package tui
 // | SB-01 | Happy    | A wide terminal shows tasks and jobs beside the conversation, narrower | P0     |
 // | SB-02 | Happy    | A narrow terminal, /sidebar or the setting off keep the tasks above the input | P1 |
 // | SB-03 | Happy    | A job ending while idle starts a turn; while working it is only noted | P0       |
+// | SB-04 | Happy    | After a stop, /jobs tell lets the model hear the jobs that ended      | P1       |
+// | SB-05 | Happy    | A job that ended in a turn stopped with esc still starts a turn, with a note | P0 |
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/agent"
@@ -82,6 +86,68 @@ func TestSidebar(t *testing.T) {
 		}
 		if cmd != nil || !strings.Contains(shown(noted.(model)), "failed with exit 2") {
 			t.Error("a job ending mid-turn started something")
+		}
+	})
+}
+
+func TestTellJobs(t *testing.T) {
+	t.Run("SB-04 after a stop, /jobs tell lets the model hear the jobs that ended; nothing new, no turn", func(t *testing.T) {
+		m := sidebarModel(t, 140)
+		jobs := m.jobs()
+		ended := make(chan tools.JobStatus, 1)
+		jobs.OnEnd(func(status tools.JobStatus) { ended <- status })
+		_, _ = jobs.Start(tools.Env{WorkDir: t.TempDir()}, "exit 1")
+		select {
+		case <-ended:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the job did not end")
+		}
+		listed, _ := m.runCommand("/jobs")
+		panel := ansi.Strip(m.sidebar(30))
+
+		told, _ := m.runCommand("/jobs tell")
+		_ = jobs.TakeEnded()
+		nothing, _ := m.runCommand("/jobs tell")
+
+		if !strings.Contains(shown(listed.(model)), "the model was not told yet") || !strings.Contains(panel, "/jobs tell") {
+			t.Errorf("listed:\n%s", shown(listed.(model)))
+		}
+		if !told.(model).running || nothing.(model).running || !strings.Contains(shown(nothing.(model)), "no job ended") {
+			t.Errorf("told running = %v nothing running = %v", told.(model).running, nothing.(model).running)
+		}
+	})
+}
+
+func TestJobsAfterStop(t *testing.T) {
+	t.Run("SB-05 a job that ended in a turn stopped with esc still starts a turn, with a note", func(t *testing.T) {
+		m := sidebarModel(t, 140)
+		jobs := m.jobs()
+		ended := make(chan tools.JobStatus, 1)
+		jobs.OnEnd(func(status tools.JobStatus) { ended <- status })
+		_, _ = jobs.Start(tools.Env{WorkDir: t.TempDir()}, "exit 0")
+		select {
+		case <-ended:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the job did not end")
+		}
+		m.running, m.cancel = true, func() {}
+
+		stopped, cmd := m.finishRun(context.Canceled)
+
+		if !stopped.(model).running || cmd == nil {
+			t.Fatal("no turn started after esc")
+		}
+		var noted bool
+		for _, each := range cmd().(tea.BatchMsg) {
+			if each == nil {
+				continue
+			}
+			if text, ok := each().(printMsg); ok && strings.Contains(string(text), "the model goes on to hear of it") {
+				noted = true
+			}
+		}
+		if !noted {
+			t.Error("no note said why the model goes on")
 		}
 	})
 }

@@ -27,7 +27,7 @@ var builtinCommands = []command{
 	{name: "plugins", description: "plugins and their commands"},
 	{name: "notify", description: "send a test notification"},
 	{name: "sidebar", description: "show or hide the side panel of tasks and jobs"},
-	{name: "jobs", description: "background jobs and how they stand"},
+	{name: "jobs", argument: "[tell]", description: "background jobs; tell: let the model hear the ones that ended now"},
 	{name: "kill", argument: "<n>", description: "stop a background job"},
 	{name: "view", argument: "<file>", description: "show an image, SVG or Mermaid file"},
 	{name: "help", description: "commands and keys"},

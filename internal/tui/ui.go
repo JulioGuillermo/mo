@@ -476,6 +476,9 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		}
 		return m, m.fitWidth()
 	case "jobs":
+		if argument == "tell" {
+			return m.tellJobs()
+		}
 		return m.listJobs()
 	case "kill":
 		return m.killJob(argument)
@@ -544,13 +547,17 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 		lines = append(lines, m.printer.Error(err))
 	}
 	save := m.saveConversation()
-	if !errors.Is(err, context.Canceled) {
+	stopped := errors.Is(err, context.Canceled)
+	if !stopped {
 		save = tea.Batch(save, m.turnEnded(err))
-		if m.session.Agent != nil && m.session.Agent.HasEndedJobs() {
-			reacting, react := m.reactToJobs()
-			m = reacting.(model)
-			save = tea.Batch(save, react)
+	}
+	if m.session.Agent != nil && m.session.Agent.HasEndedJobs() {
+		if stopped {
+			lines = append(lines, m.printer.Note("a background job ended: the model goes on to hear of it · esc stops it again"))
 		}
+		reacting, react := m.reactToJobs()
+		m = reacting.(model)
+		save = tea.Batch(save, react)
 	}
 	if len(lines) == 0 {
 		return m, save

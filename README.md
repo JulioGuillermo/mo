@@ -155,7 +155,8 @@ above the input while a task is left. `/sidebar` hides or shows the panel.
 `bash` with `background: true` runs a command as a job, for servers, watchers and long builds, and
 returns at once; the `jobs` tool lists them, reads their output and kills them. When a job ends the
 model is told: at its next step if it is working, or in a turn of its own if it is idle, so it can
-react. `/jobs` lists them, `/kill <n>` stops one, and mo kills what is left when it exits.
+react, also after you stop it with esc. `/jobs tell` lets it hear one that is waiting, as when a
+settings screen was open. `/jobs` lists them, `/kill <n>` stops one, and mo kills what is left when it exits.
 
 `ask` lets the model ask you questions, with options or free text. What the calls of one reply
 need from you, approvals and questions, is asked at once in a dialog above the input: tabs show
