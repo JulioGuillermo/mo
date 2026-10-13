@@ -926,11 +926,38 @@ func (m model) statusLayout() (string, []region) {
 		{},
 	} {
 		if status, regions := m.status(parts); ansi.StringWidth(status) <= m.width {
-			return status, regions
+			return m.appendSuffix(status, regions)
 		}
 	}
 	status, regions := m.status(statusParts{})
-	return ansi.Truncate(status, m.width, "…"), regions
+	status = ansi.Truncate(status, m.width, "…")
+	return m.appendSuffix(status, regions)
+}
+
+// appendSuffix pads the status to m.width and appends branch/folder.
+func (m model) appendSuffix(status string, regions []region) (string, []region) {
+	if m.width <= 0 || m.width <= ansi.StringWidth(status) {
+		return status, regions
+	}
+	branch := ""
+	if b, err := repoBranch(m.session.WorkDir); err == nil && b != "" && b != "master" && b != "main" {
+		branch = b
+	}
+	folder := filepath.Base(m.session.WorkDir)
+	totalSuffix := ansi.StringWidth(branch) + 3 + ansi.StringWidth(folder) // " · " = 3
+	if totalSuffix > m.width-ansi.StringWidth(status) {
+		totalSuffix = m.width - ansi.StringWidth(status)
+	}
+	pad := m.width - ansi.StringWidth(status) - totalSuffix
+	if pad < 0 {
+		pad = 0
+	}
+	paint := func(color color.Color, text string) string {
+		return lipgloss.NewStyle().Foreground(color).Render(text)
+	}
+	colors := statusPalette(m.printer == nil || m.printer.isDark())
+	status += strings.Repeat(" ", pad) + paint(colors.model, branch) + paint(colors.label, " · ") + paint(colors.low, folder)
+	return status, regions
 }
 
 // statusParts says which parts of the status line to show.
@@ -954,9 +981,6 @@ func (m model) status(show statusParts) (string, []region) {
 		}
 		regions = append(regions, region{y: 0, x0: x, x1: x + ansi.StringWidth(part), do: do})
 		parts = append(parts, part)
-	}
-	if m.running {
-		parts = append(parts, m.currentState().label(false))
 	}
 	if policy := m.session.Agent.Permissions; policy != nil {
 		mode := policy.Mode()
@@ -1012,15 +1036,6 @@ func (m model) status(show statusParts) (string, []region) {
 	}
 	if m.flash != "" {
 		parts = append(parts, lipgloss.NewStyle().Foreground(colors.low).Bold(true).Render("✓ "+m.flash))
-	}
-	// branch (left of folder)
-	if branch, err := repoBranch(m.session.WorkDir); err == nil && branch != "" && branch != "master" && branch != "main" {
-		parts = append(parts, paint(colors.model, branch))
-	}
-	// folder (rightmost)
-	basename := filepath.Base(m.session.WorkDir)
-	if basename != "" {
-		parts = append(parts, paint(colors.low, basename))
 	}
 	return strings.Join(parts, separator), regions
 }
