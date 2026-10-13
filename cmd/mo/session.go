@@ -71,6 +71,13 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		CompactAt:     *cfg.Context.CompactAt,
 		CompactPrompt: cfg.Context.CompactPrompt,
 		Strategy:      cfg.Context.Strategy,
+		Loop: agent.LoopGuard{
+			Enabled:       *cfg.Loop.Enabled,
+			Replies:       cfg.Loop.Replies,
+			Repeats:       cfg.Loop.Repeats,
+			StreamRepeats: cfg.Loop.StreamRepeats,
+			Warnings:      *cfg.Loop.Warnings,
+		},
 		RewritePrompt: loaded.plugins.RewritePrompt,
 		BlockToolCall: loaded.plugins.BlockToolCall,
 	}

@@ -24,6 +24,9 @@ package config
 // | CF-20 | Security | The project file cannot change the web search backend or its key  | P0       |
 // | CF-21 | Security | The project file cannot add or change MCP servers                 | P0       |
 // | CF-22 | Happy    | context.strategy defaults to compact, takes drop, refuses others  | P1       |
+// | CF-23 | Happy    | The loop guard is on by default; a file turns it off or tunes it  | P1       |
+// | CF-24 | Error    | Loop limits out of range are refused                              | P1       |
+// | CF-25 | Happy    | The project file can tune the loop guard too                      | P2       |
 
 import (
 	"os"
@@ -376,6 +379,48 @@ func TestContextStrategy(t *testing.T) {
 
 		if cfg.Context.Strategy != "compact" || err != nil || dropping.Context.Strategy != "drop" || badErr == nil {
 			t.Errorf("default = %q drop = %q (%v) bad = %v", cfg.Context.Strategy, dropping.Context.Strategy, err, badErr)
+		}
+	})
+}
+
+func TestLoopSettings(t *testing.T) {
+	t.Run("CF-23 the loop guard is on by default; a file turns it off or tunes it", func(t *testing.T) {
+		configHome := isolatedHome(t)
+		cfg, _ := Load(t.TempDir())
+		writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), "[loop]\nenabled = false\nrepeats = 4\nwarnings = 0\n")
+		tuned, err := Load(t.TempDir())
+
+		if !*cfg.Loop.Enabled || cfg.Loop.Repeats != 3 || *cfg.Loop.Warnings != 2 {
+			t.Errorf("defaults = %+v", cfg.Loop)
+		}
+		if err != nil || *tuned.Loop.Enabled || tuned.Loop.Repeats != 4 || *tuned.Loop.Warnings != 0 || tuned.Loop.Replies != 10 {
+			t.Errorf("tuned = %+v err = %v", tuned.Loop, err)
+		}
+	})
+
+	t.Run("CF-24 loop limits out of range are refused", func(t *testing.T) {
+		configHome := isolatedHome(t)
+		writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), "[loop]\nrepeats = 1\n")
+		_, repeatsErr := Load(t.TempDir())
+		writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), "[loop]\nwarnings = -1\n")
+		_, warningsErr := Load(t.TempDir())
+		writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), "[loop]\nreplies = -1\nstream_repeats = 1\n")
+		_, othersErr := Load(t.TempDir())
+
+		if repeatsErr == nil || warningsErr == nil || othersErr == nil {
+			t.Errorf("repeats = %v warnings = %v others = %v", repeatsErr, warningsErr, othersErr)
+		}
+	})
+
+	t.Run("CF-25 the project file can tune the loop guard too", func(t *testing.T) {
+		isolatedHome(t)
+		workDir := t.TempDir()
+		writeConfig(t, ProjectFile(workDir), "[loop]\nstream_repeats = 9\n")
+
+		cfg, err := Load(workDir)
+
+		if err != nil || cfg.Loop.StreamRepeats != 9 || !*cfg.Loop.Enabled {
+			t.Errorf("loop = %+v err = %v", cfg.Loop, err)
 		}
 	})
 }

@@ -46,7 +46,7 @@ func (a *Agent) dropOldest(hooks Hooks) {
 // progress is left.
 func (a *Agent) nextTurnStart() int {
 	for i := 1; i < len(a.History); i++ {
-		if a.History[i].Role == llm.RoleUser {
+		if isPrompt(a.History[i]) {
 			return i
 		}
 	}

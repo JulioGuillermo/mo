@@ -46,6 +46,8 @@ type Agent struct {
 	CompactPrompt string
 	Strategy      string
 
+	Loop LoopGuard
+
 	RewritePrompt func(ctx context.Context, prompt string) string
 	BlockToolCall func(ctx context.Context, call llm.ToolCall) string
 
@@ -55,6 +57,8 @@ type Agent struct {
 	historyAtUsage      int
 	sizeAfterCompaction int
 	currentRequest      string
+
+	loops int
 
 	alwaysAllowed map[string]bool
 }
@@ -69,6 +73,7 @@ type Hooks struct {
 	OnUsage     func(llm.Usage)
 	OnCompact   func(before, after int)
 	OnNotice    func(text string)
+	OnLoopCut   func(repeated string)
 	Approve     func(ctx context.Context, request ApprovalRequest) Decision
 }
 
@@ -78,20 +83,23 @@ func (a *Agent) Run(ctx context.Context, prompt string, hooks Hooks) error {
 	}
 	a.History = append(a.History, llm.Message{Role: llm.RoleUser, Text: prompt})
 	a.currentRequest = prompt
+	a.loops = 0
 	for {
 		if a.needsCompaction() {
 			a.makeRoom(ctx, hooks)
 		}
-		response, err := a.Provider.Stream(ctx, a.request(), func(event llm.Event) {
-			if hooks.OnEvent != nil {
-				hooks.OnEvent(event)
-			}
-		})
+		response, repeated, err := a.stream(ctx, hooks)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
 			return err
+		}
+		if repeated != "" {
+			if err := a.cutLoopingReply(repeated, hooks); err != nil {
+				return err
+			}
+			continue
 		}
 		a.History = append(a.History, response.Message)
 		a.LastUsage = response.Usage
@@ -109,7 +117,43 @@ func (a *Agent) Run(ctx context.Context, prompt string, hooks Hooks) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		if a.looping() {
+			return ErrLooping
+		}
 	}
+}
+
+// stream sends the request and, with the loop guard on, cuts the reply as
+// soon as it repeats itself, returning the repeated piece instead of it.
+func (a *Agent) stream(ctx context.Context, hooks Hooks) (llm.Response, string, error) {
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var watch *repeatWatch
+	if a.Loop.Enabled {
+		watch = newRepeatWatch(a.Loop.StreamRepeats)
+	}
+	repeated := ""
+	response, err := a.Provider.Stream(streamCtx, a.request(), func(event llm.Event) {
+		if repeated != "" {
+			return
+		}
+		if hooks.OnEvent != nil {
+			hooks.OnEvent(event)
+		}
+		if watch != nil {
+			repeated = watch.add(event)
+		}
+		if repeated != "" {
+			cancel()
+		}
+	})
+	if repeated == "" {
+		return response, "", err
+	}
+	if ctx.Err() != nil {
+		return llm.Response{}, "", ctx.Err()
+	}
+	return llm.Response{}, repeated, nil
 }
 
 // answerToolCalls gives every call a result, also the ones skipped after a
@@ -132,6 +176,12 @@ func (a *Agent) answerToolCall(ctx context.Context, call llm.ToolCall, hooks Hoo
 	}
 	if call.ArgsError != "" {
 		return call.ArgsError, true
+	}
+	if a.looping() {
+		return stoppedCallResult, true
+	}
+	if earlier, repeated := a.repeatedCall(call); repeated {
+		return a.blockRepeatedCall(call, earlier, hooks), true
 	}
 	if a.BlockToolCall != nil {
 		if reason := a.BlockToolCall(ctx, call); reason != "" {

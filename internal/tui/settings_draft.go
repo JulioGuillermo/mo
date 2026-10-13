@@ -30,6 +30,12 @@ type settingsDraft struct {
 	descriptions map[string]*string
 	memoryDir    string
 
+	loopEnabled       bool
+	loopReplies       string
+	loopRepeats       string
+	loopStreamRepeats string
+	loopWarnings      string
+
 	initialProvider string
 	initialModel    string
 }
@@ -41,19 +47,26 @@ func newSettingsDraft(layer config.Config) *settingsDraft {
 		model = cfg.Providers[layer.Provider].Model
 	}
 	draft := &settingsDraft{
-		provider:        layer.Provider,
-		model:           model,
-		mode:            string(cfg.Tools.Mode),
-		alwaysLoaded:    slices.Clone(cfg.Tools.AlwaysLoaded),
-		confirm:         slices.Clone(cfg.Tools.Confirm),
-		disabled:        slices.Clone(cfg.Tools.Disabled),
-		maxOutput:       strconv.Itoa(cfg.Tools.MaxOutput),
-		window:          strconv.Itoa(cfg.Context.Window),
-		compactAt:       strconv.FormatFloat(*cfg.Context.CompactAt, 'f', -1, 64),
-		strategy:        cfg.Context.Strategy,
-		systemPrompt:    cfg.SystemPrompt,
-		descriptions:    map[string]*string{},
-		memoryDir:       cfg.Memory.Dir,
+		provider:     layer.Provider,
+		model:        model,
+		mode:         string(cfg.Tools.Mode),
+		alwaysLoaded: slices.Clone(cfg.Tools.AlwaysLoaded),
+		confirm:      slices.Clone(cfg.Tools.Confirm),
+		disabled:     slices.Clone(cfg.Tools.Disabled),
+		maxOutput:    strconv.Itoa(cfg.Tools.MaxOutput),
+		window:       strconv.Itoa(cfg.Context.Window),
+		compactAt:    strconv.FormatFloat(*cfg.Context.CompactAt, 'f', -1, 64),
+		strategy:     cfg.Context.Strategy,
+		systemPrompt: cfg.SystemPrompt,
+		descriptions: map[string]*string{},
+		memoryDir:    cfg.Memory.Dir,
+
+		loopEnabled:       *cfg.Loop.Enabled,
+		loopReplies:       strconv.Itoa(cfg.Loop.Replies),
+		loopRepeats:       strconv.Itoa(cfg.Loop.Repeats),
+		loopStreamRepeats: strconv.Itoa(cfg.Loop.StreamRepeats),
+		loopWarnings:      strconv.Itoa(*cfg.Loop.Warnings),
+
 		initialProvider: layer.Provider,
 		initialModel:    model,
 	}
@@ -85,6 +98,10 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	if err != nil {
 		return layer, fmt.Errorf("compact at: %w", err)
 	}
+	loop, err := d.loop()
+	if err != nil {
+		return layer, err
+	}
 
 	layer = d.applyProvider(layer, findings)
 	defaults := config.Defaults()
@@ -102,7 +119,42 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	layer.Context.Strategy = unlessDefault(d.strategy, defaults.Context.Strategy)
 	layer.SystemPrompt = unlessDefault(strings.TrimSpace(d.systemPrompt), agent.DefaultSystemPrompt)
 	layer.Memory.Dir = unlessDefault(strings.TrimSpace(d.memoryDir), defaults.Memory.Dir)
+	layer.Loop = loop
 	return layer, nil
+}
+
+// loop reads the loop guard fields, keeping only what differs from the
+// built-in defaults.
+func (d *settingsDraft) loop() (config.Loop, error) {
+	defaults := config.Defaults().Loop
+	replies, err := parseAtLeast(d.loopReplies, 1)
+	if err != nil {
+		return config.Loop{}, fmt.Errorf("loop replies: %w", err)
+	}
+	repeats, err := parseAtLeast(d.loopRepeats, 2)
+	if err != nil {
+		return config.Loop{}, fmt.Errorf("loop repeats: %w", err)
+	}
+	streamRepeats, err := parseAtLeast(d.loopStreamRepeats, 2)
+	if err != nil {
+		return config.Loop{}, fmt.Errorf("loop stream repeats: %w", err)
+	}
+	warnings, err := parseAtLeast(d.loopWarnings, 0)
+	if err != nil {
+		return config.Loop{}, fmt.Errorf("loop warnings: %w", err)
+	}
+	loop := config.Loop{
+		Replies:       unlessDefault(replies, defaults.Replies),
+		Repeats:       unlessDefault(repeats, defaults.Repeats),
+		StreamRepeats: unlessDefault(streamRepeats, defaults.StreamRepeats),
+	}
+	if d.loopEnabled != *defaults.Enabled {
+		loop.Enabled = &d.loopEnabled
+	}
+	if warnings != *defaults.Warnings {
+		loop.Warnings = &warnings
+	}
+	return loop, nil
 }
 
 // applyProvider records a changed provider, adding a detected one to the
@@ -158,6 +210,14 @@ func parseCount(text string) (int, error) {
 	value, err := strconv.Atoi(strings.TrimSpace(text))
 	if err != nil || value < 0 {
 		return 0, fmt.Errorf("use a whole number, 0 for the default")
+	}
+	return value, nil
+}
+
+func parseAtLeast(text string, least int) (int, error) {
+	value, err := strconv.Atoi(strings.TrimSpace(text))
+	if err != nil || value < least {
+		return 0, fmt.Errorf("use a whole number, %d or more", least)
 	}
 	return value, nil
 }

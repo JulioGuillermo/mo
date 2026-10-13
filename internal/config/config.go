@@ -29,6 +29,7 @@ type Config struct {
 	Web          Web                       `toml:"web,omitempty"`
 	MCP          map[string]MCPServer      `toml:"mcp,omitempty"`
 	Render       Render                    `toml:"render,omitempty"`
+	Loop         Loop                      `toml:"loop,omitempty"`
 	Providers    map[string]ProviderConfig `toml:"providers,omitempty"`
 }
 
@@ -46,6 +47,14 @@ type Context struct {
 	CompactAt     *float64 `toml:"compact_at,omitempty"`
 	CompactPrompt string   `toml:"compact_prompt,omitempty"`
 	Strategy      string   `toml:"strategy,omitempty"`
+}
+
+type Loop struct {
+	Enabled       *bool `toml:"enabled,omitempty"`
+	Replies       int   `toml:"replies,omitzero"`
+	Repeats       int   `toml:"repeats,omitzero"`
+	StreamRepeats int   `toml:"stream_repeats,omitzero"`
+	Warnings      *int  `toml:"warnings,omitempty"`
 }
 
 type Web struct {
@@ -120,6 +129,7 @@ func Defaults() Config {
 		Memory:    Memory{Dir: defaultMemoryDir()},
 		Web:       Web{Search: web.SearchDuckDuckGo},
 		Render:    Render{Images: render.ModeAuto},
+		Loop:      Loop{Enabled: ptr(true), Replies: 10, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2)},
 		Providers: presets(),
 	}
 }
@@ -170,6 +180,22 @@ func validate(cfg Config) error {
 	}
 	if compactAt := *cfg.Context.CompactAt; compactAt < 0 || compactAt >= 1 {
 		return fmt.Errorf("context.compact_at %v: use a fraction from 0 (never) to below 1", compactAt)
+	}
+	return validateLoop(cfg.Loop)
+}
+
+func validateLoop(loop Loop) error {
+	if loop.Replies < 1 {
+		return fmt.Errorf("loop.replies %d: use 1 or more", loop.Replies)
+	}
+	if loop.Repeats < 2 {
+		return fmt.Errorf("loop.repeats %d: use 2 or more", loop.Repeats)
+	}
+	if loop.StreamRepeats < 2 {
+		return fmt.Errorf("loop.stream_repeats %d: use 2 or more", loop.StreamRepeats)
+	}
+	if *loop.Warnings < 0 {
+		return fmt.Errorf("loop.warnings %d: use 0 or more", *loop.Warnings)
 	}
 	return nil
 }
@@ -258,6 +284,20 @@ func mergeHarmless(base, layer Config) Config {
 	base.Context.CompactPrompt = override(base.Context.CompactPrompt, layer.Context.CompactPrompt)
 	base.Context.Strategy = override(base.Context.Strategy, layer.Context.Strategy)
 	base.Render.Images = override(base.Render.Images, layer.Render.Images)
+	base.Loop = mergeLoop(base.Loop, layer.Loop)
+	return base
+}
+
+func mergeLoop(base, layer Loop) Loop {
+	if layer.Enabled != nil {
+		base.Enabled = layer.Enabled
+	}
+	base.Replies = override(base.Replies, layer.Replies)
+	base.Repeats = override(base.Repeats, layer.Repeats)
+	base.StreamRepeats = override(base.StreamRepeats, layer.StreamRepeats)
+	if layer.Warnings != nil {
+		base.Warnings = layer.Warnings
+	}
 	return base
 }
 

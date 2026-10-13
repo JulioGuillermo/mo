@@ -157,7 +157,7 @@ func withSummary(summary string, kept []llm.Message, request string) []llm.Messa
 
 func (a *Agent) lastUserMessage() int {
 	for i := len(a.History) - 1; i >= 0; i-- {
-		if a.History[i].Role == llm.RoleUser {
+		if isPrompt(a.History[i]) {
 			return i
 		}
 	}

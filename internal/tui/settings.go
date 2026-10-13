@@ -152,6 +152,7 @@ func buildSettingsForm(session Session, draft *settingsDraft, findings []detect.
 		toolsGroup(draft, toolNames(session)),
 		contextGroup(session.Agent, draft),
 		descriptionsGroup(draft),
+		loopGroup(draft),
 		huh.NewGroup(
 			huh.NewInput().Title("Memory folder").Value(&draft.memoryDir),
 		).Title("Memory"),
@@ -219,6 +220,27 @@ func contextGroup(current *agent.Agent, draft *settingsDraft) *huh.Group {
 		).Value(&draft.strategy),
 		huh.NewText().Title("System prompt").Lines(6).Value(&draft.systemPrompt),
 	).Title("Context")
+}
+
+func loopGroup(draft *settingsDraft) *huh.Group {
+	return huh.NewGroup(
+		huh.NewConfirm().Title("Watch for loops").Value(&draft.loopEnabled),
+		huh.NewInput().Title("Same tool call, same result").Description("times before it is not run").
+			Validate(atLeast(2)).Value(&draft.loopRepeats),
+		huh.NewInput().Title("Within the last").Description("replies of the model in this turn").
+			Validate(atLeast(1)).Value(&draft.loopReplies),
+		huh.NewInput().Title("Same text in a row").Description("times before the reply is cut").
+			Validate(atLeast(2)).Value(&draft.loopStreamRepeats),
+		huh.NewInput().Title("Warnings to the model").Description("per turn; the next loop stops the turn").
+			Validate(atLeast(0)).Value(&draft.loopWarnings),
+	).Title("Loop guard")
+}
+
+func atLeast(least int) func(string) error {
+	return func(text string) error {
+		_, err := parseAtLeast(text, least)
+		return err
+	}
 }
 
 func descriptionsGroup(draft *settingsDraft) *huh.Group {

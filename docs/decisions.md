@@ -230,3 +230,45 @@
   reported. Names start with a letter or `_`, which every provider accepts. They run without
   asking unless declared with `confirm = true`: the user wrote them.
 - A blocked call is shown like any other, with its reason, and the model receives the reason.
+
+## Loop guard
+
+- **A tool loop is the same call with the same result**, not the same call alone. Only a call
+  whose arguments (keys sorted) and output both match earlier ones counts, and a different call
+  that may change something (anything but read, ls, grep, fetch, web_search, tool_search) ends
+  the count: running the tests again after an edit is progress even when they fail the same way.
+  A read-only call in between does not, so an A, B, A, B cycle of lookups is still caught; a cycle
+  of two bash commands is not, and is left to the stream guard and `warnings`. The
+  blocked call gets an error result saying so, which keeps the history valid for every provider
+  and needs no extra message. Results pair with calls by position, since local servers reuse ids.
+- **Only the current turn counts.** The look-back stops at the user's last prompt: when the user
+  asks to run something again, that is not the model looping. `replies` bounds it further, so a
+  long turn that comes back to the same file much later is not punished.
+- **A stream loop is one piece written `stream_repeats` times back to back** at the end of the
+  stream: a phrase, a line or a paragraph, 16 to 2000 bytes, starting on a whole character, with
+  at least 8 different letters. A piece with only 2 to 7, such as `Wait, ` or `ha ha `, needs four
+  times the copies; one with fewer never counts, so rules (ASCII or `═`), table borders, blank
+  lines, zero-filled arrays and base64 padding are left alone. The piece is quoted from where
+  its run of copies begins, the way it reads. Scattered repeats are not loops; a model that
+  writes the same line between other lines is not stuck. Text and reasoning are watched apart.
+  Each delta checks every piece size against the last copies; mismatches exit on the first
+  bytes and a letters-from-the-end table skips the rest, so it stays cheap per token.
+- **A cut reply is dropped whole** and the model gets a user message, prefixed `[mo loop guard]`,
+  quoting what it repeated. A system message is not used: Anthropic has no system messages mid
+  conversation and several llama.cpp chat templates reject one that is not first. When the last
+  message is already the user's, the note is appended to it, since some templates also refuse
+  two user messages in a row; after tool results it goes as its own user message, the same shape
+  as a prompt sent after a cancel.
+- **`warnings` loops are told to the model per turn, the next one stops the turn** with
+  `ErrLooping`, so a model that cannot get out does not burn the context. Every pending tool call
+  still gets a result, as after a cancel.
+- A loop note is never taken for the user's prompt: dropping and compacting look for the turn
+  start past them.
+- The project file may tune or turn off the guard: at worst it costs tokens, nothing leaves the
+  machine.
+- In one-shot mode the cut text is already on stdout; mo only adds a line break and says so on
+  stderr. The TUI clears it, since streamed text is only drawn live until the reply ends.
+- Ceiling: identical rows of code, five in a row, shown in a reply are cut too; `stream_repeats`
+  raises the bar. A user who asks for repeated text on purpose needs it raised or the guard off.
+- Ceiling: exact repeats only. A model that loops with a changing counter or reworded sentences
+  is not caught; fuzzy matching would be the way out, at the price of false positives.

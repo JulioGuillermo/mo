@@ -36,6 +36,10 @@ func runOnce(ctx context.Context, a *agent.Agent, prompt string) error {
 		OnNotice: func(text string) {
 			fmt.Fprintf(os.Stderr, "(%s)\n", text)
 		},
+		OnLoopCut: func(repeated string) {
+			fmt.Println()
+			fmt.Fprintf(os.Stderr, "\n(loop: reply cut, it kept repeating %s)\n", agent.Quote(repeated))
+		},
 		OnCompact: func(before, after int) {
 			fmt.Fprintf(os.Stderr, "(context compacted: %d → %d tokens)\n", before, after)
 		},

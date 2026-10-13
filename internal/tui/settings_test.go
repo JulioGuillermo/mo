@@ -18,6 +18,8 @@ package tui
 // | SD-14 | Happy    | With auto, a typed model becomes the top-level model                 | P1       |
 // | SD-15 | Edge     | A resize while the form is open refits it and the input              | P2       |
 // | SD-16 | Happy    | Choosing to drop old messages is saved; the default is not           | P1       |
+// | SD-17 | Happy    | Changed loop settings are saved, untouched ones and defaults are not | P1       |
+// | SD-18 | Error    | A loop repeat count below 2 is refused with the field name           | P2       |
 
 import (
 	"strings"
@@ -241,6 +243,35 @@ func TestStrategySetting(t *testing.T) {
 
 		if untouched.Context.Strategy != "" || dropping.Context.Strategy != "drop" {
 			t.Errorf("untouched = %q dropping = %q", untouched.Context.Strategy, dropping.Context.Strategy)
+		}
+	})
+}
+
+func TestLoopSetting(t *testing.T) {
+	t.Run("SD-17 changed loop settings are saved, untouched ones and defaults are not", func(t *testing.T) {
+		untouched, _ := defaultDraft().applyTo(config.Config{Provider: "llama-server"}, nil)
+		draft := defaultDraft()
+		draft.loopEnabled = false
+		draft.loopWarnings = "0"
+		draft.loopStreamRepeats = "8"
+		changed, err := draft.applyTo(config.Config{Provider: "llama-server"}, nil)
+
+		if untouched.Loop != (config.Loop{}) {
+			t.Errorf("untouched = %+v", untouched.Loop)
+		}
+		if err != nil || *changed.Loop.Enabled || *changed.Loop.Warnings != 0 || changed.Loop.StreamRepeats != 8 || changed.Loop.Repeats != 0 {
+			t.Errorf("changed = %+v err = %v", changed.Loop, err)
+		}
+	})
+
+	t.Run("SD-18 a loop repeat count below 2 is refused with the field name", func(t *testing.T) {
+		draft := defaultDraft()
+		draft.loopRepeats = "1"
+
+		_, err := draft.applyTo(config.Config{Provider: "llama-server"}, nil)
+
+		if err == nil || !strings.Contains(err.Error(), "loop repeats") {
+			t.Errorf("err = %v", err)
 		}
 	})
 }

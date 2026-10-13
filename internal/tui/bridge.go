@@ -69,6 +69,10 @@ func (b *bridge) hooks() agent.Hooks {
 		OnNotice: func(text string) {
 			b.print(b.printer.Note(text))
 		},
+		OnLoopCut: func(repeated string) {
+			b.program.Send(streamEndMsg{})
+			b.print(b.printer.Note("loop: reply cut and left out, it kept repeating " + agent.Quote(repeated)))
+		},
 		OnCompact: func(before, after int) {
 			b.program.Send(usageMsg(llm.Usage{InputTokens: after}))
 			b.print(b.printer.Note(fmt.Sprintf("context compacted: %s → %s tokens", formatTokens(before), formatTokens(after))))

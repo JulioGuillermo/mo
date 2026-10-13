@@ -79,6 +79,13 @@ compact_at = 0.75          # make room at this share of the window; 0 = never
 strategy = "compact"       # compact: summarize older messages · drop: remove the oldest turns
 compact_prompt = ""        # empty: built-in summary prompt
 
+[loop]
+enabled = true             # watch for a model going round in circles
+repeats = 3                # the same tool call with the same result this many times is not run
+replies = 10               # ... counted within the last replies of the model in this turn
+stream_repeats = 5         # the same text this many times in a row cuts the reply
+warnings = 2               # loops the model is told about per turn; the next one stops the turn
+
 [memory]
 dir = "~/.local/share/mo/memory"
 
