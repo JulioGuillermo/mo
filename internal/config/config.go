@@ -13,6 +13,8 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/jg/mo/internal/notify"
+	"github.com/jg/mo/internal/permissions"
 	"github.com/jg/mo/internal/render"
 	"github.com/jg/mo/internal/tools"
 	"github.com/jg/mo/internal/web"
@@ -30,6 +32,8 @@ type Config struct {
 	MCP          map[string]MCPServer      `toml:"mcp,omitempty"`
 	Render       Render                    `toml:"render,omitempty"`
 	Loop         Loop                      `toml:"loop,omitempty"`
+	Permissions  Permissions               `toml:"permissions,omitempty"`
+	Notify       Notify                    `toml:"notify,omitempty"`
 	Providers    map[string]ProviderConfig `toml:"providers,omitempty"`
 }
 
@@ -48,6 +52,40 @@ type Context struct {
 	CompactPrompt string   `toml:"compact_prompt,omitempty"`
 	Strategy      string   `toml:"strategy,omitempty"`
 	KeepReasoning *bool    `toml:"keep_reasoning,omitempty"`
+}
+
+// Notify says when mo calls the user back and how: at the end of a turn,
+// when it asks for permission; by default only while the terminal is not
+// focused.
+type Notify struct {
+	Finish   *bool  `toml:"finish,omitempty"`
+	Approval *bool  `toml:"approval,omitempty"`
+	Method   string `toml:"method,omitempty"`
+	Focused  *bool  `toml:"focused,omitempty"`
+}
+
+// Permissions are the mode tool calls start in and the rules for shell
+// commands and fetches. Projects holds rules that apply only in one
+// working directory; it lives in the user file, never in a project's.
+type Permissions struct {
+	Mode     string                  `toml:"mode,omitempty"`
+	Allow    []string                `toml:"allow,omitempty"`
+	Deny     []string                `toml:"deny,omitempty"`
+	Projects map[string]ProjectRules `toml:"projects,omitempty"`
+}
+
+// ProjectRules add to the user's rules in one project, and may pick another
+// mode there.
+type ProjectRules struct {
+	Mode  string   `toml:"mode,omitempty"`
+	Allow []string `toml:"allow,omitempty"`
+	Deny  []string `toml:"deny,omitempty"`
+}
+
+// DefaultAllow are the commands that only read and run without asking.
+var DefaultAllow = []string{
+	"ls *", "pwd", "cat *", "head *", "tail *", "wc *", "grep *", "rg *", "tree *", "file *", "stat *",
+	"which *", "echo *", "git status *", "git diff *", "git log *", "git show *", "git branch",
 }
 
 type Loop struct {
@@ -126,12 +164,14 @@ func Defaults() Config {
 			Confirm:      []string{"bash", "rm", "fetch"},
 			MaxOutput:    10000,
 		},
-		Context:   Context{CompactAt: ptr(0.75), Strategy: "compact", KeepReasoning: ptr(false)},
-		Memory:    Memory{Dir: defaultMemoryDir()},
-		Web:       Web{Search: web.SearchDuckDuckGo},
-		Render:    Render{Images: render.ModeAuto},
-		Loop:      Loop{Enabled: ptr(true), Replies: 10, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2)},
-		Providers: presets(),
+		Context:     Context{CompactAt: ptr(0.75), Strategy: "compact", KeepReasoning: ptr(false)},
+		Memory:      Memory{Dir: defaultMemoryDir()},
+		Web:         Web{Search: web.SearchDuckDuckGo},
+		Render:      Render{Images: render.ModeAuto},
+		Loop:        Loop{Enabled: ptr(true), Replies: 10, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2)},
+		Permissions: Permissions{Mode: "edits", Allow: DefaultAllow},
+		Notify:      Notify{Finish: ptr(true), Approval: ptr(true), Method: "auto", Focused: ptr(false)},
+		Providers:   presets(),
 	}
 }
 
@@ -179,10 +219,28 @@ func validate(cfg Config) error {
 	if cfg.Context.Strategy != "compact" && cfg.Context.Strategy != "drop" {
 		return fmt.Errorf("context.strategy %q: use compact or drop", cfg.Context.Strategy)
 	}
+	if err := validatePermissions(cfg.Permissions); err != nil {
+		return err
+	}
+	if !slices.Contains(notify.Methods, notify.Method(cfg.Notify.Method)) {
+		return fmt.Errorf("notify.method %q: use auto, terminal, desktop, bell or off", cfg.Notify.Method)
+	}
 	if compactAt := *cfg.Context.CompactAt; compactAt < 0 || compactAt >= 1 {
 		return fmt.Errorf("context.compact_at %v: use a fraction from 0 (never) to below 1", compactAt)
 	}
 	return validateLoop(cfg.Loop)
+}
+
+func validatePermissions(rules Permissions) error {
+	if !permissions.Mode(rules.Mode).Valid() {
+		return fmt.Errorf("permissions.mode %q: use ask, edits, auto or all", rules.Mode)
+	}
+	for _, text := range slices.Concat(rules.Allow, rules.Deny) {
+		if err := permissions.Compile(text); err != nil {
+			return fmt.Errorf("permissions: %w", err)
+		}
+	}
+	return nil
 }
 
 func validateLoop(loop Loop) error {
@@ -239,7 +297,57 @@ func merge(base, layer Config) Config {
 	for name, provider := range layer.Providers {
 		base.Providers[name] = mergeProvider(base.Providers[name], provider)
 	}
+	base.Permissions = mergePermissions(base.Permissions, layer.Permissions)
+	base.Notify = mergeNotify(base.Notify, layer.Notify)
 	return base
+}
+
+func mergeNotify(base, layer Notify) Notify {
+	base.Method = override(base.Method, layer.Method)
+	for _, field := range []struct{ base, layer **bool }{
+		{&base.Finish, &layer.Finish}, {&base.Approval, &layer.Approval}, {&base.Focused, &layer.Focused},
+	} {
+		if *field.layer != nil {
+			*field.base = *field.layer
+		}
+	}
+	return base
+}
+
+func mergePermissions(base, layer Permissions) Permissions {
+	base.Mode = override(base.Mode, layer.Mode)
+	if layer.Allow != nil {
+		base.Allow = layer.Allow
+	}
+	if layer.Deny != nil {
+		base.Deny = layer.Deny
+	}
+	for dir, rules := range layer.Projects {
+		if base.Projects == nil {
+			base.Projects = map[string]ProjectRules{}
+		}
+		base.Projects[dir] = rules
+	}
+	return base
+}
+
+// ForProject is the mode and rules in force in workDir: the user's, with
+// those the user set for that directory added.
+func (p Permissions) ForProject(workDir string) Permissions {
+	rules := p.Projects[ProjectKey(workDir)]
+	p.Mode = override(p.Mode, rules.Mode)
+	p.Allow = append(slices.Clone(p.Allow), rules.Allow...)
+	p.Deny = append(slices.Clone(p.Deny), rules.Deny...)
+	p.Projects = nil
+	return p
+}
+
+// ProjectKey is how a working directory is named in permissions.projects.
+func ProjectKey(workDir string) string {
+	if absolute, err := filepath.Abs(workDir); err == nil {
+		return absolute
+	}
+	return filepath.Clean(workDir)
 }
 
 // mergeProject applies a project file without letting it redirect requests,
@@ -259,6 +367,8 @@ func mergeProject(base, layer Config) Config {
 			base.Providers[name] = known
 		}
 	}
+	base.Permissions.Mode = string(permissions.Stricter(permissions.Mode(base.Permissions.Mode), permissions.Mode(layer.Permissions.Mode)))
+	base.Permissions.Deny = union(base.Permissions.Deny, layer.Permissions.Deny)
 	return base
 }
 
@@ -346,4 +456,9 @@ func override[T comparable](current, next T) T {
 		return current
 	}
 	return next
+}
+
+// SessionDir is where conversations are saved to resume them.
+func SessionDir() string {
+	return filepath.Join(dataHome(), "mo", "sessions")
 }

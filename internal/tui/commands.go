@@ -16,12 +16,16 @@ type command struct {
 }
 
 var builtinCommands = []command{
-	{name: "clear", description: "forget the conversation"},
+	{name: "clear", description: "start a new conversation; the last one stays saved"},
+	{name: "resume", description: "go back to a saved conversation of this folder"},
+	{name: "rewind", description: "go back to one of your prompts to edit it, in a fork (esc esc)"},
+	{name: "fork", description: "go on in a copy of the conversation"},
 	{name: "compact", description: "summarize the conversation to free context"},
 	{name: "settings", description: "model, tools, context, web, loop guard, display"},
 	{name: "providers", description: "add, edit or delete providers"},
 	{name: "mcp", description: "MCP servers: status, add, edit, delete"},
 	{name: "plugins", description: "plugins and their commands"},
+	{name: "notify", description: "send a test notification"},
 	{name: "view", argument: "<file>", description: "show an image, SVG or Mermaid file"},
 	{name: "help", description: "commands and keys"},
 	{name: "quit", description: "exit mo"},
@@ -33,7 +37,8 @@ var keyHelp = [][2]string{
 	{"tab, ↑ ↓", "complete a command"},
 	{"esc, ctrl+c", "stop the current run"},
 	{"pgup, pgdown, wheel", "scroll the conversation"},
-	{"ctrl+o, click", "open or fold the reasoning"},
+	{"shift+tab", "change the permission mode"},
+	{"ctrl+o, click", "open or fold reasoning and tool calls"},
 	{"ctrl+v", "paste a copied image or files as attachments"},
 	{"shift+drag", "select text"},
 	{"ctrl+d", "quit"},

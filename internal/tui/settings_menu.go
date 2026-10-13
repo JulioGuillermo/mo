@@ -35,6 +35,7 @@ type settingsMenu struct {
 
 func (m model) openSettingsMenu(loaded settingsLoadedMsg) (tea.Model, tea.Cmd) {
 	draft := newSettingsDraft(loaded.layer)
+	draft.forProject(m.session.WorkDir, loaded.layer)
 	if len(m.session.ToolDescriptions) > 0 {
 		draft.describeTools(m.session.ToolDescriptions)
 	}

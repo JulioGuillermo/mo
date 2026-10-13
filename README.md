@@ -68,8 +68,9 @@ Anthropic forbids using Claude subscription tokens outside its own apps. Claude 
 
 `~/.config/mo/config.toml`, then `.mo.toml` in the project. Each layer overrides only what it sets.
 The project file comes with the repository, so it can only pick a provider that needs no key, set
-models, `system_prompt`, `max_tokens`, `disabled` and `max_output`, and add tools to `confirm`.
-Providers with URLs or keys go in the user file.
+models, `system_prompt`, `max_tokens`, `disabled` and `max_output`, add tools to `confirm`, add
+`deny` rules and pick a stricter permission mode. Providers with URLs or keys go in the user file.
+
 
 ```toml
 provider = "llama-server"
@@ -104,6 +105,21 @@ warnings = 2               # loops the model is told about per turn; the next on
 [memory]
 dir = "~/.local/share/mo/memory"
 
+[permissions]
+mode = "edits"             # ask | edits | auto | all; shift+tab changes it for the session
+allow = ["ls *", "git status *", "re:^npm (test|run lint)$", "fetch https://go.dev/*"]
+deny = ["git push *"]      # asks in every mode, also in all
+
+[notify]
+finish = true              # when a turn ends, with the start of the answer (or its question)
+approval = true            # when a call asks for permission
+method = "auto"            # auto | terminal | desktop | bell | off
+focused = false            # true: also while the terminal has the focus
+
+[permissions.projects."/home/me/work/app"]   # in this folder only, added to the above
+mode = "auto"
+allow = ["make *"]
+
 [providers.llama-server]
 base_url = "http://10.106.122.191:8081/v1"
 
@@ -129,7 +145,57 @@ time. `web_search` uses DuckDuckGo by default, with no key; see `[web]` below fo
 prompt so the model knows what it saved.
 
 Changes outside the working directory, to mo's config, under `.git` or to hidden files in your home
-always ask, even with `-y` or after answering "always". So do changes to global memories.
+always ask, even with `-y` or after answering "always", in every mode but `all`. So do changes to
+global memories.
+
+## Conversations
+
+Every conversation is saved after each turn in `~/.local/share/mo/sessions/`, readable by you only.
+
+- `/resume` lists the conversations of this folder, the latest first; `mo -c` continues the latest.
+- `/rewind`, or esc twice with an empty input, lists your prompts: the one you pick comes back into
+  the input to edit and send, and the conversation goes on from before it, in a fork. The
+  conversation as it was stays in `/resume`.
+- `/fork` goes on in a copy; `/clear` starts a new conversation. Neither loses the old one.
+
+Going back does not undo what tools changed on disk since that prompt.
+
+Tool calls show their first lines; ctrl+o, or a click on one, shows the whole call and output.
+
+## Notifications
+
+mo calls you back when a turn ends and when a call asks for permission, only while its terminal is
+not focused. `auto` uses the terminal's own notifications where it has them (Ghostty, WezTerm,
+foot, kitty, iTerm2; they work over ssh and through tmux), else `notify-send` or macOS
+notifications, else the bell. `/notify` sends a test. A terminal that does not report focus
+counts as focused once you type: set `focused = true` there.
+
+## Permissions
+
+The status line shows the mode; shift+tab changes it for the session.
+
+| Mode | What runs without asking |
+|---|---|
+| `ask` | reading; everything that changes files or runs asks |
+| `edits` | reading and file changes in the working directory (the default) |
+| `auto` | as `edits`, and the commands and fetches the model judges safe for your request |
+| `all` | everything, except what a `deny` rule names |
+
+In every mode a `bash` command runs when rules allow each of its parts: the commands joined by
+pipes, `&&` or `;`, inside loops, and inside `$(...)`. A part that writes to a file with `>` asks
+even when a rule allows it. A fetch is checked as `fetch <url>`.
+
+A rule is a command where `*` stands for anything: alone it is any words or none (`ls *` also
+takes `ls`, `ls * /home` takes `ls -la /home`), inside a word any characters of it (`git log*`).
+`re:` starts a regular expression. `deny` wins over `allow`. A wildcard on a command that runs
+others (`find *`, `xargs *`, `env *`, `sudo *`) lets those through too.
+
+When a command asks, `a` opens the parts no rule allows as rules: put the `*` where you want, then
+save them for every project or for this folder only. `/settings` › Permissions edits the lists, one
+rule per line, and has a field to try a command against them.
+
+In `auto` the model is asked in a separate request that holds only your request and the commands,
+not what tools returned, so a page or a file cannot argue for itself. An unclear answer asks you.
 
 ## Web search
 
@@ -212,7 +278,11 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | esc, ctrl+c | stop the current run |
 | ctrl+c (idle) | clear input, then quit |
 | ctrl+d | quit |
+| shift+tab | change the permission mode |
+| ctrl+o, click | open or fold reasoning and tool calls |
+| esc esc (empty input) | go back to one of your prompts |
+| ctrl+v | paste a copied image or files as attachments |
 | pgup, pgdown, shift+up/down, mouse wheel | scroll the conversation |
 | shift+drag | select text (the mouse is mo's while it runs) |
-| `/clear` `/compact` `/settings` `/providers` `/mcp` `/plugins` `/view <file>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
+| `/clear` `/resume` `/rewind` `/fork` `/compact` `/settings` `/providers` `/mcp` `/plugins` `/view <file>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
 | `/<name> text` | a plugin command |

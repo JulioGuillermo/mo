@@ -92,6 +92,40 @@
   ends the call after 2 s as a success.
 - Only `y` approves. Enter does not, so typing into the prompt cannot approve a command by accident.
 
+## Permissions
+
+- Four modes, strictest first: `ask`, `edits`, `auto`, `all`. `edits` is the default and is what mo
+  did before modes: `tools.confirm` asks, file changes in the working directory do not. `ask` adds
+  file changes and memory writes; reading never asks, it is what the model needs to do anything.
+- Rules apply to the tools that run arbitrary things, `bash` and `fetch`. Other tools in `confirm`
+  (`rm`, MCP tools) keep "always this session", per tool.
+- A script is split with mvdan.cc/sh, the parser of shfmt, not by hand: quotes, `$(...)`,
+  backquotes, loops and heredocs are where hand splitting lets a second command slip past a rule
+  for the first. Every simple command must be allowed. A script that does not parse asks.
+- Words are matched with their quotes removed; a word with an expansion stays as written
+  (`"$HOME/x"`), so a rule naming a path cannot be met by a variable that points elsewhere.
+- A command writing to a file through a redirection asks even when a rule allows it, since
+  `echo *` would otherwise allow `echo x >> ~/.bashrc`. `/dev/null` and `2>&1` do not count.
+- Deny rules ask in every mode, also `all`, and the question offers no "always". They do not block:
+  the user may still want to run the command once.
+- `*` alone matches any words or none, so `ls *` takes `ls`; inside a word it does not cross a
+  space, so `git log*` does not take `git log -p`. `re:` covers the rest.
+- Per-folder rules live in the user file under `[permissions.projects."<path>"]`, never in the
+  repository: a cloned `.mo.toml` with `allow = ["*"]` would run anything. The project file may add
+  deny rules and pick a stricter mode only.
+- Rules added from a question are saved at once, without waiting for `/settings`. With no
+  `allow` list in the user file yet, the defaults are written first, so adding one rule does not
+  drop the built-in read-only ones.
+- `auto` asks the session's model in a separate request with only the user's request (cut to
+  2000 characters), the working directory and the commands; no tool output, so injected text
+  cannot vouch for itself. The answer must start with SAFE or UNSAFE; anything else asks. A command
+  judged safe is not judged again in the session. Each judgement costs one request; rules avoid it.
+- The mode chosen with shift+tab stays when `/settings` is saved, unless the saved settings change
+  the mode to start in.
+- On a narrow terminal the status line drops, in order: the shift+tab hint, the provider, the
+  prompt speed, the token counts, the generation speed, then shortens the context bar; the mode,
+  model and context share stay.
+
 ## TUI
 
 - Full screen (alt screen) instead of inline: the conversation is a viewport that follows the end
@@ -319,3 +353,33 @@
   raises the bar. A user who asks for repeated text on purpose needs it raised or the guard off.
 - Ceiling: exact repeats only. A model that loops with a changing counter or reworded sentences
   is not caught; fuzzy matching would be the way out, at the price of false positives.
+
+## Conversations
+
+- One JSON file per conversation, the whole history in it, rewritten after each turn: a turn adds
+  little next to what a model reads, and one file per conversation needs no index to keep in step.
+  Files are 0600 in a 0700 folder; they hold everything said and every file read.
+- Conversations belong to the folder they ran in; `/resume` lists only those of the working
+  directory, so a fix in one project does not show up in another.
+- The transcript is drawn again from the history on resume and rewind instead of being saved: it
+  depends on the width and theme, and mo's notes to the model are left out of it.
+- Going back is a fork, never an edit in place: the new branch gets a new id once its first turn
+  ends, and names the conversation it came from. Nothing is saved until then, so going back and
+  changing one's mind loses nothing.
+- Going back does not restore files. `write` and `edit` could keep copies, but `bash` changes
+  (commits, installs, deletions) cannot be undone that way, and a partial undo would mislead.
+- A prompt holding a compaction summary is not offered to go back to: what came before it is gone.
+- Tool calls are one block, started when the call starts and filled when it ends, matched by call
+  id from the end, since some servers reuse ids like `call_0` in every reply.
+
+## Notifications
+
+- The terminal's own notification sequences come first (OSC 777 for Ghostty, WezTerm, foot and
+  urxvt; OSC 9 for iTerm2; OSC 99 for kitty): they reach the user's desktop over ssh, where
+  `notify-send` would run on the remote machine. Inside tmux they are wrapped for passthrough.
+- The body comes from the model, so control characters, C1 codes and invalid UTF-8 are removed and
+  it is kept to one line: an answer cannot end the sequence early and write its own.
+- Only while the terminal is not focused, by default: a notification for what one is watching is
+  noise. Focus comes from the terminal's focus reports; a key press also means focus, for
+  terminals that do not report it.
+- No notification after esc: the user is there.

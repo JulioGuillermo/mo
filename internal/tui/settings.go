@@ -11,6 +11,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
@@ -103,7 +104,7 @@ func (m model) openSettings(msg settingsLoadedMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) showSettings(screen *settingsScreen) (tea.Model, tea.Cmd) {
-	screen.form = fitForm(screen.form, m.width, m.height)
+	screen.form = fitForm(screen.form.WithTheme(huh.ThemeFunc(settingsTheme)), m.width, m.height)
 	m.settings = screen
 	return m, screen.form.Init()
 }
@@ -164,6 +165,7 @@ func saveSettings(screen *settingsScreen, current Session) tea.Cmd {
 		}
 		fresh.activate()
 		fresh.Agent.TakeConversation(current.Agent)
+		keepMode(fresh, current)
 		return settingsSavedMsg{session: fresh}
 	}
 }
@@ -181,7 +183,7 @@ func (m model) finishSettings(msg settingsSavedMsg) (tea.Model, tea.Cmd) {
 
 func isAgentMsg(msg tea.Msg) bool {
 	switch msg.(type) {
-	case streamMsg, streamEndMsg, usageMsg, approvalMsg, runDoneMsg, spinner.TickMsg, printMsg, reasoningMsg, drawMsg, redrawMsg:
+	case streamMsg, streamEndMsg, usageMsg, approvalMsg, runDoneMsg, spinner.TickMsg, printMsg, reasoningMsg, drawMsg, redrawMsg, rulesSavedMsg, toolStartMsg, toolDoneMsg, savedMsg, tea.FocusMsg, tea.BlurMsg:
 		return true
 	}
 	return false
@@ -299,4 +301,29 @@ func foundModels(findings []detect.Finding) []string {
 		models = append(models, found.Models...)
 	}
 	return models
+}
+
+// keepMode keeps the mode shift+tab picked in the session, unless the saved
+// settings changed the mode to start in.
+func keepMode(fresh, current Session) {
+	if fresh.Agent.Permissions == nil || current.Agent.Permissions == nil {
+		return
+	}
+	if fresh.Config.Permissions.Mode == current.Config.Permissions.Mode {
+		fresh.Agent.Permissions.SetMode(current.Agent.Permissions.Mode())
+	}
+}
+
+// settingsTheme is huh's own, with descriptions and notes in grey so they
+// stand apart from the settings and their values.
+func settingsTheme(isDark bool) *huh.Styles {
+	styles := huh.ThemeCharm(isDark)
+	grey := lipgloss.Color("#737aa2")
+	if !isDark {
+		grey = lipgloss.Color("#8990b3")
+	}
+	styles.Focused.Description = styles.Focused.Description.Foreground(grey)
+	styles.Blurred.Description = styles.Blurred.Description.Foreground(grey)
+	styles.Group.Description = styles.Group.Description.Foreground(grey)
+	return styles
 }

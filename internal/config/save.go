@@ -29,6 +29,7 @@ func LoadWithUserLayer(workDir string, layer Config) (Config, error) {
 	if err != nil {
 		return cfg, err
 	}
+	cfg.Permissions = cfg.Permissions.ForProject(workDir)
 	cfg = mergeProject(cfg, project)
 	return cfg, validate(cfg)
 }

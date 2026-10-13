@@ -123,6 +123,12 @@ func (p *printer) setWidth(width int) {
 	}
 }
 
+func (p *printer) isDark() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.dark
+}
+
 func (p *printer) setDark(dark bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -199,21 +205,103 @@ func (p *printer) ToolStart(name, summary string) string {
 }
 
 func (p *printer) command(text string) string {
+	return p.commandLines(text, false)
+}
+
+// commandLines shades a command, its first lines cut to the width, or all
+// of it wrapped.
+func (p *printer) commandLines(text string, all bool) string {
 	p.mu.Lock()
 	width, dark := p.width, p.dark
 	p.mu.Unlock()
 	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
 	hidden := len(lines) - shownCommandLines
-	if hidden > 0 {
+	if hidden > 0 && !all {
 		lines = lines[:shownCommandLines]
 	}
 	shade := panel(dark).Width(max(width-4, 16)).Padding(0, 1)
 	var out []string
 	for _, line := range lines {
-		out = append(out, commandEdge.Render("  ▌")+shade.Render(p.clip(line)))
+		pieces := []string{p.clip(line)}
+		if all {
+			pieces = p.wrapped(line, 8)
+		}
+		for _, piece := range pieces {
+			out = append(out, commandEdge.Render("  ▌")+shade.Render(piece))
+		}
 	}
-	if hidden > 0 {
+	if hidden > 0 && !all {
 		out = append(out, dimStyle.Render(fmt.Sprintf("    … +%d lines", hidden)))
+	}
+	return strings.Join(out, "\n")
+}
+
+// wrapped splits a line, without its styles, into pieces that fit the width
+// less margin.
+func (p *printer) wrapped(line string, margin int) []string {
+	p.mu.Lock()
+	limit := max(p.width-margin, 10)
+	p.mu.Unlock()
+	line = strings.ReplaceAll(ansi.Strip(line), "\t", "    ")
+	return strings.Split(ansi.Hardwrap(line, limit, true), "\n")
+}
+
+// Tool shows a tool call and its result: folded, the first lines of each
+// and a hint when there is more; open, all of both.
+func (p *printer) Tool(run toolRun, open bool) string {
+	var parts []string
+	if open {
+		parts = append(parts, "\n"+toolName.Render("● "+run.name)+"\n"+p.commandLines(run.summary, true))
+	} else {
+		parts = append(parts, p.ToolStart(run.name, run.summary))
+	}
+	switch {
+	case !run.done:
+		parts = append(parts, dimStyle.Render("  ⎿ running…"))
+	case open:
+		parts = append(parts, p.fullResult(run.output, run.isError))
+	default:
+		parts = append(parts, p.ToolResult(run.output, run.isError))
+	}
+	switch {
+	case open:
+		parts = append(parts, dimStyle.Render("    ▾ ctrl+o or click to fold"))
+	case p.toolHidesSome(run):
+		parts = append(parts, dimStyle.Render("    ▸ ctrl+o or click for the whole call and output"))
+	}
+	return strings.Join(parts, "\n")
+}
+
+// toolHidesSome tells whether the folded view leaves lines out or cuts them.
+func (p *printer) toolHidesSome(run toolRun) bool {
+	command := strings.Split(strings.TrimRight(run.summary, "\n"), "\n")
+	output := strings.Split(strings.TrimRight(run.output, "\n"), "\n")
+	if len(command) > shownCommandLines || len(output) > toolPreviewLines {
+		return true
+	}
+	for _, line := range append(command, output...) {
+		if p.clip(line) != strings.ReplaceAll(ansi.Strip(line), "\t", "    ") {
+			return true
+		}
+	}
+	return false
+}
+
+// fullResult is every line of a result, wrapped to the width.
+func (p *printer) fullResult(output string, isError bool) string {
+	style := dimStyle
+	if isError {
+		style = errorStyle
+	}
+	var out []string
+	for i, line := range strings.Split(strings.TrimRight(output, "\n"), "\n") {
+		for j, piece := range p.wrapped(line, 6) {
+			prefix := "    "
+			if i == 0 && j == 0 {
+				prefix = "  ⎿ "
+			}
+			out = append(out, style.Render(prefix+piece))
+		}
 	}
 	return strings.Join(out, "\n")
 }

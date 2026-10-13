@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image/color"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -18,11 +19,14 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/mcphub"
+	"github.com/jg/mo/internal/notify"
+	"github.com/jg/mo/internal/permissions"
 	"github.com/jg/mo/internal/plugins"
 	"github.com/jg/mo/internal/render"
 )
@@ -39,6 +43,9 @@ type Session struct {
 	ToolNames []string
 
 	ToolDescriptions map[string]string
+
+	// Continue resumes the latest conversation of the working directory.
+	Continue bool
 
 	Activate func()
 	Discard  func()
@@ -81,14 +88,19 @@ type model struct {
 	settings         *settingsScreen
 	settingsInFlight bool
 
-	suggestion    int
-	blocks        []block
-	redraws       int
-	attachments   map[string]string
-	pastedImages  int
-	showReasoning bool
-	viewport      viewport.Model
-	scrolled      bool
+	suggestion   int
+	blocks       []block
+	redraws      int
+	attachments  map[string]string
+	pastedImages int
+	showDetails  bool
+	thread       conversation
+	lastEsc      time.Time
+	// focused is whether the terminal has the focus, as it reports it; mo
+	// starts as if it had.
+	focused  bool
+	viewport viewport.Model
+	scrolled bool
 }
 
 const agentShutdownWait = 3 * time.Second
@@ -105,6 +117,7 @@ func Run(session Session) error {
 		input:    newInput(),
 		viewport: viewport.New(),
 		spinner:  spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(workingStyle)),
+		focused:  true,
 	}
 	program := tea.NewProgram(m)
 	bridge.program = program
@@ -155,7 +168,11 @@ func (m model) Init() tea.Cmd {
 			banner += "\n" + m.printer.Error(fmt.Errorf("plugin %s: %v", status.Name, status.Err))
 		}
 	}
-	return tea.Batch(printText(banner), tea.RequestBackgroundColor, textarea.Blink)
+	start := printText(banner)
+	if m.session.Continue {
+		start = tea.Sequence(start, listConversations(m.session.WorkDir, true))
+	}
+	return tea.Batch(start, tea.RequestBackgroundColor, textarea.Blink)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -184,13 +201,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.approval == nil && m.pastedPaths(msg.Content) {
 			return m, nil
 		}
+	case rulesSavedMsg:
+		return m.finishRules(msg)
+	case savedMsg:
+		if msg.err != nil {
+			return m.emit(m.printer.Error(fmt.Errorf("the conversation was not saved: %w", msg.err)))
+		}
+		return m, nil
+	case resumeListMsg:
+		return m.pickConversation(msg)
+	case resumedMsg:
+		return m.resume(msg)
 	case reasoningMsg:
 		m.addReasoning(string(msg))
 		return m, nil
 	case tea.MouseClickMsg:
 		if msg.Button == tea.MouseLeft && m.approval == nil {
-			m.clickReasoning(msg.Y)
+			m.clickDetails(msg.Y)
 		}
+		return m, nil
+	case toolStartMsg:
+		m.addTool(msg.call, msg.summary)
+		return m, nil
+	case toolDoneMsg:
+		m.finishTool(msg.id, msg.output, msg.isError)
 		return m, nil
 	case tea.MouseWheelMsg:
 		m.scroll(msg.Button == tea.MouseWheelUp, 3)
@@ -209,6 +243,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.input.SetStyles(inputStyles(m.input.Styles(), msg.IsDark()))
 		return m, m.scheduleRedraw()
 	case tea.KeyPressMsg:
+		m.focused = true
 		return m.handleKey(msg)
 	case streamMsg:
 		if msg.Kind == llm.EventReasoning {
@@ -229,6 +264,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case approvalMsg:
 		m.approval = &msg
+		return m, m.permissionAsked(msg)
+	case tea.FocusMsg:
+		m.focused = true
+		return m, nil
+	case tea.BlurMsg:
+		m.focused = false
 		return m, nil
 	case runDoneMsg:
 		return m.finishRun(msg.err)
@@ -275,8 +316,13 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+v":
 		return m, pasteClipboard()
+	case "shift+tab":
+		if policy := m.session.Agent.Permissions; policy != nil {
+			policy.SetMode(policy.Mode().Next())
+		}
+		return m, nil
 	case "ctrl+o":
-		m.toggleReasoning()
+		m.toggleDetails()
 		return m, nil
 	case "pgup", "shift+up":
 		m.scroll(true, m.pageSize(msg.String()))
@@ -297,7 +343,13 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		if m.running {
 			m.stop()
+			return m, nil
 		}
+		if m.input.Value() == "" && time.Since(m.lastEsc) < doubleEscWindow {
+			m.lastEsc = time.Time{}
+			return m.pickPrompt()
+		}
+		m.lastEsc = time.Now()
 		return m, nil
 	case "ctrl+d":
 		if m.input.Value() == "" {
@@ -348,10 +400,17 @@ func (m model) handleSuggestionKey(key string, matches []command) (bool, tea.Mod
 }
 
 func (m model) answerApproval(pressed string) (tea.Model, tea.Cmd) {
+	request := m.approval.request
 	switch pressed {
 	case "y":
 		m.approval.reply <- agent.Allow
 	case "a":
+		if request.Ruled {
+			if len(request.Commands) == 0 || request.Warning != "" {
+				return m, nil
+			}
+			return m.editRules(*m.approval)
+		}
 		m.approval.reply <- agent.AllowAlways
 	case "n":
 		m.approval.reply <- agent.Deny
@@ -408,9 +467,20 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 	case "quit", "exit":
 		return m, tea.Quit
 	case "clear":
-		m.session.Agent.Clear()
-		m.usage = llm.Usage{}
-		return m, printText(m.printer.Note("conversation cleared"))
+		m.newConversation()
+		return m, printText(m.printer.Note("new conversation · the last one stays in /resume"))
+	case "resume":
+		if m.running {
+			return m.emit(m.printer.Note("stop the current run first"))
+		}
+		return m, listConversations(m.session.WorkDir, false)
+	case "fork":
+		return m.fork()
+	case "notify":
+		method := notify.Method(m.session.Config.Notify.Method)
+		return m, tea.Batch(sendNotification(method, "test notification"), printText(m.printer.Note("sent a test notification · "+string(method))))
+	case "rewind":
+		return m.pickPrompt()
 	case "help":
 		return m, drawText(m.helpView)
 	case "settings":
@@ -470,10 +540,14 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 	case err != nil:
 		lines = append(lines, m.printer.Error(err))
 	}
-	if len(lines) == 0 {
-		return m, nil
+	save := m.saveConversation()
+	if !errors.Is(err, context.Canceled) {
+		save = tea.Batch(save, m.turnEnded(err))
 	}
-	return m, printText(strings.Join(lines, "\n"))
+	if len(lines) == 0 {
+		return m, save
+	}
+	return m, tea.Batch(save, printText(strings.Join(lines, "\n")))
 }
 
 func (m model) View() tea.View {
@@ -489,6 +563,7 @@ func (m model) View() tea.View {
 	}
 	view.AltScreen = true
 	view.MouseMode = tea.MouseModeCellMotion
+	view.ReportFocus = true
 	return view
 }
 
@@ -584,11 +659,11 @@ func (m model) liveText() string {
 		if reasoning == "" {
 			return ""
 		}
-		return m.reasoningText(reasoning, m.showReasoning, true)
+		return m.printer.fold("reasoning", reasoning, m.showDetails, true)
 	}
 	parts := []string{""}
 	if reasoning != "" {
-		parts = []string{m.reasoningText(reasoning, m.showReasoning, false), ""}
+		parts = []string{m.printer.fold("reasoning", reasoning, m.showDetails, false), ""}
 	}
 	if m.streamDone != "" {
 		parts = append(parts, m.streamDone)
@@ -608,32 +683,152 @@ func (m model) approvalPrompt() string {
 	if request.Warning != "" {
 		question += "  " + errorStyle.Render(request.Warning)
 	}
+	lines := []string{question, m.printer.command(request.Summary)}
+	if request.Reason != "" {
+		lines = append(lines, workingStyle.Render(request.Reason))
+	}
+	if request.Ruled && len(request.Commands) > 0 {
+		lines = append(lines, dimStyle.Render("no rule allows: ")+strings.Join(request.Commands, dimStyle.Render(" · ")))
+	}
 	keys := keyStyle.Render("y") + " yes   " + keyStyle.Render("n") + " no"
-	if request.Warning == "" {
+	switch {
+	case request.Warning != "":
+	case request.Ruled && len(request.Commands) > 0:
+		keys += "   " + keyStyle.Render("a") + " always: add a rule…"
+	case !request.Ruled:
 		keys += "   " + keyStyle.Render("a") + " always this session"
 	}
-	body := question + "\n" + m.printer.command(request.Summary) + "\n" + keys
+	body := strings.Join(append(lines, keys), "\n")
 	frame := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(warning).Padding(0, 1).Width(max(m.width-2, 20))
 	return frame.Render(body)
 }
 
+// statusLine shows the permission mode, provider and model, how full the
+// context is, with a bar that turns yellow and then red, and the last
+// speeds, each in its colour. On a narrow terminal the least needed parts go
+// first, down to the mode, model and how full the context is.
 func (m model) statusLine() string {
-	status := fmt.Sprintf("%s · %s", m.session.Provider, shortModelName(m.session.Model))
+	if m.width <= 0 {
+		return m.status(statusParts{provider: true, hint: true, tokens: true, prompt: true, generation: true, bar: contextBarCells})
+	}
+	for _, parts := range []statusParts{
+		{provider: true, hint: true, tokens: true, prompt: true, generation: true, bar: contextBarCells},
+		{provider: true, tokens: true, prompt: true, generation: true, bar: contextBarCells},
+		{tokens: true, prompt: true, generation: true, bar: contextBarCells},
+		{tokens: true, generation: true, bar: contextBarCells},
+		{generation: true, bar: contextBarCells},
+		{bar: contextBarCells},
+		{bar: 5},
+		{},
+	} {
+		if status := m.status(parts); ansi.StringWidth(status) <= m.width {
+			return status
+		}
+	}
+	return ansi.Truncate(m.status(statusParts{}), m.width, "…")
+}
+
+// statusParts says which parts of the status line to show.
+type statusParts struct {
+	provider, hint, tokens, prompt, generation bool
+	bar                                        int
+}
+
+func (m model) status(show statusParts) string {
+	colors := statusPalette(m.printer == nil || m.printer.isDark())
+	paint := func(color color.Color, text string) string {
+		return lipgloss.NewStyle().Foreground(color).Render(text)
+	}
+	var parts []string
+	if policy := m.session.Agent.Permissions; policy != nil {
+		mode := policy.Mode()
+		part := lipgloss.NewStyle().Foreground(colors.mode(mode)).Bold(true).Render("● " + string(mode))
+		if show.hint {
+			part += paint(colors.label, " shift+tab")
+		}
+		parts = append(parts, part)
+	}
+	if show.provider {
+		parts = append(parts, lipgloss.NewStyle().Foreground(colors.provider).Bold(true).Render(m.session.Provider))
+	}
+	parts = append(parts, paint(colors.model, shortModelName(m.session.Model)))
 	used := m.usage.InputTokens + m.usage.OutputTokens
 	window := m.session.Agent.Window
 	switch {
 	case window > 0:
-		status += fmt.Sprintf(" · ctx %s/%s", formatTokens(used), formatTokens(window))
+		share := float64(used) / float64(window)
+		fill := colors.low
+		switch {
+		case share >= 0.8:
+			fill = colors.high
+		case share >= 0.5:
+			fill = colors.mid
+		}
+		context := ""
+		if show.tokens || show.bar > 0 {
+			context = paint(colors.label, "ctx ")
+		}
+		if show.tokens {
+			context += paint(fill, fmt.Sprintf("%s/%s ", formatTokens(used), formatTokens(window)))
+		}
+		if show.bar > 0 {
+			context += contextBar(share, show.bar, fill, colors.empty) + " "
+		}
+		parts = append(parts, context+paint(fill, fmt.Sprintf("%.0f%%", share*100)))
 	case used > 0:
-		status += " · ctx " + formatTokens(used)
+		parts = append(parts, paint(colors.label, "ctx ")+paint(colors.low, formatTokens(used)))
 	}
-	if m.speed.PromptRate > 0 {
-		status += fmt.Sprintf(" · pp %.0f t/s", m.speed.PromptRate)
+	if show.prompt && m.speed.PromptRate > 0 {
+		parts = append(parts, paint(colors.label, "pp ")+paint(colors.prompt, fmt.Sprintf("%.0f t/s", m.speed.PromptRate)))
 	}
-	if m.speed.GenerationRate > 0 {
-		status += fmt.Sprintf(" · tg %.1f t/s", m.speed.GenerationRate)
+	if show.generation && m.speed.GenerationRate > 0 {
+		parts = append(parts, paint(colors.label, "tg ")+paint(colors.generation, fmt.Sprintf("%.1f t/s", m.speed.GenerationRate)))
 	}
-	return dimStyle.Render(status)
+	return strings.Join(parts, paint(colors.label, " · "))
+}
+
+const contextBarCells = 10
+
+// contextBar draws how full the context is in cells, the used ones in fill.
+func contextBar(share float64, cells int, fill, empty color.Color) string {
+	used := min(int(share*float64(cells)+0.5), cells)
+	if share > 0 && used == 0 {
+		used = 1
+	}
+	return lipgloss.NewStyle().Foreground(fill).Render(strings.Repeat("▰", used)) +
+		lipgloss.NewStyle().Foreground(empty).Render(strings.Repeat("▱", cells-used))
+}
+
+type statusColors struct {
+	provider, model, label, low, mid, high, empty, prompt, generation color.Color
+}
+
+// mode colours a permission mode by how much it lets through.
+func (c statusColors) mode(mode permissions.Mode) color.Color {
+	switch mode {
+	case permissions.ModeAsk:
+		return c.provider
+	case permissions.ModeEdits:
+		return c.low
+	case permissions.ModeAuto:
+		return c.mid
+	}
+	return c.high
+}
+
+func statusPalette(dark bool) statusColors {
+	if dark {
+		return statusColors{
+			provider: accent, model: lipgloss.Color("#bb9af7"), label: lipgloss.Color("#565f89"),
+			low: lipgloss.Color("#9ece6a"), mid: warning, high: lipgloss.Color("#f7768e"), empty: lipgloss.Color("#3b4261"),
+			prompt: lipgloss.Color("#7dcfff"), generation: lipgloss.Color("#73daca"),
+		}
+	}
+	return statusColors{
+		provider: lipgloss.Color("#2e7de9"), model: lipgloss.Color("#9854f1"), label: lipgloss.Color("#8990b3"),
+		low: lipgloss.Color("#587539"), mid: lipgloss.Color("#8c6c3e"), high: lipgloss.Color("#f52a65"), empty: lipgloss.Color("#c4c8da"),
+		prompt: lipgloss.Color("#007197"), generation: lipgloss.Color("#118c74"),
+	}
 }
 
 // shortModelName drops the directories and the extension from model ids that

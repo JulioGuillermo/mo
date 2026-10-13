@@ -32,8 +32,9 @@ func run() error {
 	modelFlag := flag.String("m", "", "model name")
 	yesFlag := flag.Bool("y", false, "run tools without asking, except changes outside the working directory")
 	detectFlag := flag.Bool("detect", false, "list the providers mo can find and exit")
+	continueFlag := flag.Bool("c", false, "continue the latest conversation of this folder")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: mo [-p provider] [-m model] [-y] [-detect] [prompt]")
+		fmt.Fprintln(os.Stderr, "usage: mo [-p provider] [-m model] [-y] [-c] [-detect] [prompt]")
 		fmt.Fprintln(os.Stderr, "With a prompt, or with input on stdin, mo answers once and exits.")
 		flag.PrintDefaults()
 	}
@@ -79,6 +80,7 @@ func run() error {
 		return err
 	}
 	stop()
+	session.Continue = *continueFlag
 	return tui.Run(session)
 }
 

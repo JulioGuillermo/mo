@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/permissions"
 	"github.com/jg/mo/internal/tools"
 )
 
@@ -31,6 +32,12 @@ type ApprovalRequest struct {
 	Call    llm.ToolCall
 	Summary string
 	Warning string
+	// Reason says why a call that rules check was not let through.
+	Reason string
+	// Commands are the parts of a shell command or fetch no rule allows,
+	// to offer as new rules; Ruled is set for every call rules check.
+	Commands []string
+	Ruled    bool
 }
 
 type Agent struct {
@@ -52,6 +59,10 @@ type Agent struct {
 
 	Loop LoopGuard
 
+	// Permissions is the mode and rules in force; without it the calls in
+	// ConfirmTools and those with a warning ask.
+	Permissions *permissions.Policy
+
 	RewritePrompt func(ctx context.Context, prompt string) string
 	BlockToolCall func(ctx context.Context, call llm.ToolCall) string
 
@@ -65,6 +76,7 @@ type Agent struct {
 	loops int
 
 	alwaysAllowed map[string]bool
+	judgedSafe    map[string]bool
 }
 
 // Hooks lets the caller follow a run. Every field is optional. Without
@@ -221,16 +233,17 @@ func (a *Agent) answerToolCall(ctx context.Context, call llm.ToolCall, hooks Hoo
 }
 
 func (a *Agent) approved(ctx context.Context, call llm.ToolCall, summary string, hooks Hooks) bool {
-	warning := a.Tools.Warning(call)
-	listed := slices.Contains(a.ConfirmTools, call.Name) && !a.alwaysAllowed[call.Name] && !a.Tools.AlreadyConfirmed(call)
-	if warning == "" && !listed {
+	need := a.approvalFor(ctx, call, hooks)
+	if !need.ask {
 		return true
 	}
 	if hooks.Approve == nil {
 		return false
 	}
-	decision := hooks.Approve(ctx, ApprovalRequest{Call: call, Summary: summary, Warning: warning})
-	if decision == AllowAlways && warning == "" {
+	decision := hooks.Approve(ctx, ApprovalRequest{
+		Call: call, Summary: summary, Warning: need.warning, Reason: need.reason, Commands: need.commands, Ruled: need.ruled,
+	})
+	if decision == AllowAlways && need.warning == "" && !need.ruled {
 		if a.alwaysAllowed == nil {
 			a.alwaysAllowed = map[string]bool{}
 		}

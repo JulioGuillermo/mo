@@ -24,6 +24,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/render"
@@ -119,9 +121,9 @@ func TestStatusLine(t *testing.T) {
 		m := model{session: Session{Agent: &agent.Agent{Window: 32000}, Provider: "llama-server", Model: "/models/Qwen3-8B.gguf"}}
 		m.usage = llm.Usage{InputTokens: 1200, OutputTokens: 34}
 
-		status := m.statusLine()
+		status := ansi.Strip(m.statusLine())
 
-		if !strings.Contains(status, "llama-server · Qwen3-8B · ctx 1.2k/32.0k") {
+		if !strings.Contains(status, "llama-server · Qwen3-8B · ctx 1.2k/32.0k ▰▱▱▱▱▱▱▱▱▱ 4%") {
 			t.Errorf("status = %q", status)
 		}
 	})

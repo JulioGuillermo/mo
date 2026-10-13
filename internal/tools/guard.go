@@ -132,3 +132,14 @@ func checkArgNames(tool Tool, raw json.RawMessage) error {
 	}
 	return nil
 }
+
+// Changes tells whether a call changes files: a tool that writes the path it
+// is given, or memory writing or deleting a note.
+func (r *Registry) Changes(call llm.ToolCall) bool {
+	tool, ok := r.find(call.Name)
+	if !ok {
+		return false
+	}
+	action := argField(call.Args, "action")
+	return tool.ChangesPathArg || (tool.Name == "memory" && (action == "write" || action == "delete"))
+}

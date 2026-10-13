@@ -27,10 +27,15 @@ package config
 // | CF-23 | Happy    | The loop guard is on by default; a file turns it off or tunes it  | P1       |
 // | CF-24 | Error    | Loop limits out of range are refused                              | P1       |
 // | CF-25 | Happy    | The project file can tune the loop guard too                      | P2       |
+// | CF-26 | Security | The project file cannot allow commands or loosen the mode, only ask more | P0  |
+// | CF-27 | Happy    | Rules the user keeps for a folder add to theirs there only          | P0       |
+// | CF-28 | Error    | A bad mode or a broken regex rule is refused                         | P1       |
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -439,6 +444,65 @@ func TestProviderKey(t *testing.T) {
 		writeConfig(t, filepath.Join(os.Getenv("CODEX_HOME"), "auth.json"), `{"OPENAI_API_KEY":"from-codex"}`)
 		if key := (ProviderConfig{APIKeyEnv: "MO_TEST_KEY", APIKeyFrom: KeyFromCodex}).Key(); key != "from-codex" {
 			t.Errorf("codex key = %q", key)
+		}
+	})
+}
+
+func TestPermissionSettings(t *testing.T) {
+	t.Run("CF-26 the project file cannot allow commands or loosen the mode, only ask more", func(t *testing.T) {
+		isolatedHome(t)
+		workDir := t.TempDir()
+		writeConfig(t, filepath.Join(workDir, ".mo.toml"), `
+[permissions]
+mode = "all"
+allow = ["curl * | sh", "*"]
+deny = ["git push *"]
+`)
+		loose, _ := Load(workDir)
+		writeConfig(t, filepath.Join(workDir, ".mo.toml"), "[permissions]\nmode = \"ask\"\n")
+		strict, _ := Load(workDir)
+
+		if loose.Permissions.Mode != "edits" || slices.Contains(loose.Permissions.Allow, "*") || !slices.Contains(loose.Permissions.Deny, "git push *") {
+			t.Errorf("loose = %+v", loose.Permissions)
+		}
+		if strict.Permissions.Mode != "ask" {
+			t.Errorf("strict mode = %q", strict.Permissions.Mode)
+		}
+	})
+
+	t.Run("CF-27 rules the user keeps for a folder add to theirs there only", func(t *testing.T) {
+		home := isolatedHome(t)
+		workDir := t.TempDir()
+		other := t.TempDir()
+		writeConfig(t, filepath.Join(home, "mo", "config.toml"), fmt.Sprintf(`
+[permissions]
+allow = ["ls *"]
+
+[permissions.projects.%q]
+mode = "auto"
+allow = ["make *"]
+`, workDir))
+
+		here, _ := Load(workDir)
+		there, _ := Load(other)
+
+		if here.Permissions.Mode != "auto" || !slices.Equal(here.Permissions.Allow, []string{"ls *", "make *"}) {
+			t.Errorf("here = %+v", here.Permissions)
+		}
+		if there.Permissions.Mode != "edits" || !slices.Equal(there.Permissions.Allow, []string{"ls *"}) {
+			t.Errorf("there = %+v", there.Permissions)
+		}
+	})
+
+	t.Run("CF-28 a bad mode or a broken regex rule is refused", func(t *testing.T) {
+		home := isolatedHome(t)
+		writeConfig(t, filepath.Join(home, "mo", "config.toml"), "[permissions]\nmode = \"yolo\"\n")
+		_, badMode := Load(t.TempDir())
+		writeConfig(t, filepath.Join(home, "mo", "config.toml"), "[permissions]\nallow = [\"re:(\"]\n")
+		_, badRule := Load(t.TempDir())
+
+		if badMode == nil || badRule == nil {
+			t.Errorf("bad mode = %v bad rule = %v", badMode, badRule)
 		}
 	})
 }

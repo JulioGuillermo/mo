@@ -10,6 +10,7 @@ import (
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/detect"
+	"github.com/jg/mo/internal/permissions"
 	"github.com/jg/mo/internal/render"
 	"github.com/jg/mo/internal/tools"
 )
@@ -53,6 +54,22 @@ type settingsDraft struct {
 
 	initialProvider string
 	initialModel    string
+
+	permMode string
+	allow    string
+	deny     string
+	project  string
+	// projectMode, projectAllow and projectDeny are the rules of the
+	// working directory, kept in the user file under project.
+	projectMode  string
+	projectAllow string
+	projectDeny  string
+	tryCommand   string
+
+	notifyFinish   bool
+	notifyApproval bool
+	notifyMethod   string
+	notifyFocused  bool
 }
 
 func newSettingsDraft(layer config.Config) *settingsDraft {
@@ -93,6 +110,15 @@ func newSettingsDraft(layer config.Config) *settingsDraft {
 
 		initialProvider: layer.Provider,
 		initialModel:    model,
+
+		notifyFinish:   *cfg.Notify.Finish,
+		notifyApproval: *cfg.Notify.Approval,
+		notifyMethod:   cfg.Notify.Method,
+		notifyFocused:  *cfg.Notify.Focused,
+
+		permMode: cfg.Permissions.Mode,
+		allow:    strings.Join(cfg.Permissions.Allow, "\n"),
+		deny:     strings.Join(cfg.Permissions.Deny, "\n"),
 	}
 	if draft.systemPrompt == "" {
 		draft.systemPrompt = agent.DefaultSystemPrompt
@@ -176,7 +202,102 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 		layer.Web.SearchKey = key
 	}
 	layer.Render.Images = unlessDefault(render.Mode(d.images), defaults.Render.Images)
+	layer.Notify = config.Notify{
+		Finish:   unlessDefaultFlag(d.notifyFinish, *defaults.Notify.Finish),
+		Approval: unlessDefaultFlag(d.notifyApproval, *defaults.Notify.Approval),
+		Method:   unlessDefault(d.notifyMethod, defaults.Notify.Method),
+		Focused:  unlessDefaultFlag(d.notifyFocused, *defaults.Notify.Focused),
+	}
+	return d.applyPermissions(layer)
+}
+
+// unlessDefaultFlag is nil for a flag left at its default, so the file
+// keeps only what was changed.
+func unlessDefaultFlag(value, builtin bool) *bool {
+	if value == builtin {
+		return nil
+	}
+	return &value
+}
+
+// forProject adds the rules the user file keeps for workDir to the draft.
+func (d *settingsDraft) forProject(workDir string, layer config.Config) {
+	d.project = config.ProjectKey(workDir)
+	rules := layer.Permissions.Projects[d.project]
+	d.projectMode = rules.Mode
+	d.projectAllow = strings.Join(rules.Allow, "\n")
+	d.projectDeny = strings.Join(rules.Deny, "\n")
+}
+
+// applyPermissions writes the mode and rules, refusing a rule that does not
+// compile, and the working directory's rules when there are any.
+func (d *settingsDraft) applyPermissions(layer config.Config) (config.Config, error) {
+	for _, field := range []struct{ name, text string }{
+		{"allowed commands", d.allow}, {"never without asking", d.deny},
+		{"allowed in this project", d.projectAllow}, {"never without asking in this project", d.projectDeny},
+	} {
+		if err := validRules(field.text); err != nil {
+			return layer, fmt.Errorf("%s: %w", field.name, err)
+		}
+	}
+	defaults := config.Defaults().Permissions
+	allow := ruleLines(d.allow)
+	if allow == nil {
+		allow = []string{}
+	}
+	layer.Permissions.Mode = unlessDefault(d.permMode, defaults.Mode)
+	layer.Permissions.Allow = unlessDefaultList(allow, defaults.Allow)
+	layer.Permissions.Deny = unlessDefaultList(ruleLines(d.deny), defaults.Deny)
+	if d.project == "" {
+		return layer, nil
+	}
+	rules := config.ProjectRules{Mode: d.projectMode, Allow: ruleLines(d.projectAllow), Deny: ruleLines(d.projectDeny)}
+	if rules.Mode == "" && rules.Allow == nil && rules.Deny == nil {
+		layer.Permissions.Projects = withoutEntry(layer.Permissions.Projects, d.project)
+	} else {
+		layer.Permissions.Projects = withEntry(layer.Permissions.Projects, d.project, rules)
+	}
+	if len(layer.Permissions.Projects) == 0 {
+		layer.Permissions.Projects = nil
+	}
 	return layer, nil
+}
+
+// tryRules says what the draft's rules do with a command typed to try them.
+func (d *settingsDraft) tryRules() string {
+	if strings.TrimSpace(d.tryCommand) == "" {
+		return "type a command to see which rule decides it"
+	}
+	mode := permissions.Mode(orDefault(d.projectMode, d.permMode))
+	policy, err := permissions.New(mode, append(ruleLines(d.allow), ruleLines(d.projectAllow)...), append(ruleLines(d.deny), ruleLines(d.projectDeny)...))
+	if err != nil {
+		return err.Error()
+	}
+	commands, err := permissions.Commands(d.tryCommand)
+	if err != nil {
+		return "does not parse, so it asks: " + err.Error()
+	}
+	var lines []string
+	for _, command := range commands {
+		verdict, rule := policy.Check(command.Text)
+		line := command.Text + " → "
+		switch {
+		case verdict == permissions.Denied:
+			line += "asks always (deny: " + rule + ")"
+		case verdict == permissions.Allowed && command.Writes:
+			line += "asks: it writes to a file (allow: " + rule + ")"
+		case verdict == permissions.Allowed:
+			line += "runs (allow: " + rule + ")"
+		case mode == permissions.ModeAll:
+			line += "runs: mode all"
+		case mode == permissions.ModeAuto:
+			line += "the model judges it"
+		default:
+			line += "asks"
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // loop reads the loop guard fields, keeping only what differs from the

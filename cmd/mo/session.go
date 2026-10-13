@@ -11,6 +11,7 @@ import (
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/mcphub"
+	"github.com/jg/mo/internal/permissions"
 	"github.com/jg/mo/internal/plugins"
 	"github.com/jg/mo/internal/tools"
 	"github.com/jg/mo/internal/tui"
@@ -92,6 +93,10 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	if !slices.Contains(cfg.Tools.Disabled, "memory") {
 		memoryIndex = tools.MemoryIndex(env)
 	}
+	policy, err := permissions.New(permissions.Mode(cfg.Permissions.Mode), cfg.Permissions.Allow, cfg.Permissions.Deny)
+	if err != nil {
+		return tui.Session{}, err
+	}
 	assistant := &agent.Agent{
 		Provider:      chosen.provider,
 		Model:         chosen.model,
@@ -104,6 +109,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		CompactPrompt: cfg.Context.CompactPrompt,
 		Strategy:      cfg.Context.Strategy,
 		KeepReasoning: *cfg.Context.KeepReasoning,
+		Permissions:   policy,
 		Loop: agent.LoopGuard{
 			Enabled:       *cfg.Loop.Enabled,
 			Replies:       cfg.Loop.Replies,

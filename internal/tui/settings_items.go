@@ -8,6 +8,8 @@ import (
 	"charm.land/huh/v2"
 
 	"github.com/jg/mo/internal/config"
+	"github.com/jg/mo/internal/notify"
+	"github.com/jg/mo/internal/permissions"
 	"github.com/jg/mo/internal/render"
 	"github.com/jg/mo/internal/tools"
 	"github.com/jg/mo/internal/web"
@@ -54,6 +56,24 @@ var settingsSections = []settingsSection{
 		return fmt.Sprintf("on · same call %s× · same text %s×", d.loopRepeats, d.loopStreamRepeats)
 	}, items: loopItems},
 	{key: "web", title: "Web search", summary: func(d *settingsDraft) string { return d.search }, items: webItems},
+	{key: "permissions", title: "Permissions", summary: func(d *settingsDraft) string {
+		return fmt.Sprintf("%s · %d allowed · %d never", d.permMode, len(ruleLines(d.allow))+len(ruleLines(d.projectAllow)), len(ruleLines(d.deny))+len(ruleLines(d.projectDeny)))
+	}, note: func(model, *settingsMenu) string {
+		return "shift+tab changes the mode for the session · " + ruleSyntax
+	}, items: permissionItems},
+	{key: "notify", title: "Notifications", summary: func(d *settingsDraft) string {
+		var when []string
+		if d.notifyFinish {
+			when = append(when, "turn ends")
+		}
+		if d.notifyApproval {
+			when = append(when, "permission")
+		}
+		if len(when) == 0 || d.notifyMethod == string(notify.MethodOff) {
+			return "off"
+		}
+		return d.notifyMethod + " · " + strings.Join(when, ", ")
+	}, note: func(model, *settingsMenu) string { return "/notify sends a test" }, items: notifyItems},
 	{key: "display", title: "Memory and display", summary: func(d *settingsDraft) string {
 		return "images " + d.images
 	}, items: displayItems},
@@ -197,6 +217,78 @@ func webItems(_ model, menu *settingsMenu) []settingItem {
 		}})
 	}
 	return items
+}
+
+var modeOptions = []huh.Option[string]{
+	huh.NewOption("ask: before every change and command; reading never asks", string(permissions.ModeAsk)),
+	huh.NewOption("edits: file changes go through, commands and fetches ask", string(permissions.ModeEdits)),
+	huh.NewOption("auto: like edits, and the model lets through what it judges safe", string(permissions.ModeAuto)),
+	huh.NewOption("all: nothing asks, except deny rules", string(permissions.ModeAll)),
+}
+
+func permissionItems(model, *settingsMenu) []settingItem {
+	rules := func(title, description string, value func(d *settingsDraft) *string) settingItem {
+		return settingItem{title, func(d *settingsDraft) string { return ruleCount(*value(d)) }, func(d *settingsDraft) huh.Field {
+			return huh.NewText().Title(title).Description(description + "\n" + ruleSyntax + "\n" + ruleSyntaxTip).
+				Lines(14).Validate(validRules).Value(value(d))
+		}}
+	}
+	items := []settingItem{
+		{"Mode to start in", func(d *settingsDraft) string { return d.permMode }, func(d *settingsDraft) huh.Field {
+			return huh.NewSelect[string]().Title("Mode to start in").Options(modeOptions...).Value(&d.permMode)
+		}},
+		rules("Allowed commands", "run without asking in every project", func(d *settingsDraft) *string { return &d.allow }),
+		rules("Never without asking", "ask in every mode, also in all; wins over allowed", func(d *settingsDraft) *string { return &d.deny }),
+	}
+	items = append(items,
+		settingItem{"Mode in this project", func(d *settingsDraft) string { return orDefault(d.projectMode, "same") }, func(d *settingsDraft) huh.Field {
+			options := append([]huh.Option[string]{huh.NewOption("same as the mode to start in", "")}, modeOptions...)
+			return huh.NewSelect[string]().Title("Mode in this project").Description(dimProject()).Options(options...).Value(&d.projectMode)
+		}},
+		rules("Allowed in this project", "added to the allowed commands here only", func(d *settingsDraft) *string { return &d.projectAllow }),
+		rules("Never without asking here", "added to the never list here only", func(d *settingsDraft) *string { return &d.projectDeny }),
+		settingItem{"Try a command", func(d *settingsDraft) string { return orDefault(d.tryCommand, "see which rule decides") }, func(d *settingsDraft) huh.Field {
+			return huh.NewInput().Title("Try a command").DescriptionFunc(d.tryRules, &d.tryCommand).Value(&d.tryCommand)
+		}},
+	)
+	return items
+}
+
+func dimProject() string {
+	return "kept in your settings for this folder; the project's own .mo.toml can only ask more"
+}
+
+func ruleCount(text string) string {
+	switch count := len(ruleLines(text)); count {
+	case 0:
+		return "none"
+	case 1:
+		return ruleLines(text)[0]
+	default:
+		return fmt.Sprintf("%d rules", count)
+	}
+}
+
+func notifyItems(model, *settingsMenu) []settingItem {
+	flag := func(title, description string, value func(d *settingsDraft) *bool) settingItem {
+		return settingItem{title, func(d *settingsDraft) string { return yesNo(*value(d)) }, func(d *settingsDraft) huh.Field {
+			return huh.NewConfirm().Title(title).Description(description).Value(value(d))
+		}}
+	}
+	return []settingItem{
+		flag("When a turn ends", "also when the model ends asking you something", func(d *settingsDraft) *bool { return &d.notifyFinish }),
+		flag("When it asks for permission", "", func(d *settingsDraft) *bool { return &d.notifyApproval }),
+		{"How", func(d *settingsDraft) string { return d.notifyMethod }, func(d *settingsDraft) huh.Field {
+			return huh.NewSelect[string]().Title("How").Options(
+				huh.NewOption("auto: the terminal's own when it has them, else the desktop's, else the bell", string(notify.MethodAuto)),
+				huh.NewOption("terminal: Ghostty, kitty, WezTerm, iTerm2, foot; works over ssh", string(notify.MethodTerminal)),
+				huh.NewOption("desktop: notify-send or macOS notifications", string(notify.MethodDesktop)),
+				huh.NewOption("bell", string(notify.MethodBell)),
+				huh.NewOption("off", string(notify.MethodOff)),
+			).Value(&d.notifyMethod)
+		}},
+		flag("Also while you look at mo", "no: only when the terminal is not focused", func(d *settingsDraft) *bool { return &d.notifyFocused }),
+	}
 }
 
 func displayItems(model, *settingsMenu) []settingItem {

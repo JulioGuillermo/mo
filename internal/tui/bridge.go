@@ -68,10 +68,10 @@ func (b *bridge) hooks() agent.Hooks {
 			}
 		},
 		OnToolStart: func(call llm.ToolCall, summary string) {
-			b.draw(func() string { return b.printer.ToolStart(call.Name, summary) })
+			b.send(toolStartMsg{call: call, summary: summary})
 		},
 		OnToolDone: func(call llm.ToolCall, output string, isError bool) {
-			b.draw(func() string { return b.printer.ToolResult(output, isError) })
+			b.send(toolDoneMsg{id: call.ID, output: output, isError: isError})
 			if images := b.printer.Images(output); images != "" {
 				b.print(images)
 			}
