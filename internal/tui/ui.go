@@ -955,13 +955,6 @@ func (m model) status(show statusParts) (string, []region) {
 		regions = append(regions, region{y: 0, x0: x, x1: x + ansi.StringWidth(part), do: do})
 		parts = append(parts, part)
 	}
-	// folder
-	basename := filepath.Base(m.session.WorkDir)
-	parts = append(parts, paint(colors.low, basename))
-	// branch (not clickable)
-	if branch, err := repoBranch(m.session.WorkDir); err == nil && branch != "" && branch != "master" && branch != "main" {
-		parts = append(parts, paint(colors.model, branch))
-	}
 	if m.running {
 		parts = append(parts, m.currentState().label(false))
 	}
@@ -1019,6 +1012,15 @@ func (m model) status(show statusParts) (string, []region) {
 	}
 	if m.flash != "" {
 		parts = append(parts, lipgloss.NewStyle().Foreground(colors.low).Bold(true).Render("✓ "+m.flash))
+	}
+	// branch (left of folder)
+	if branch, err := repoBranch(m.session.WorkDir); err == nil && branch != "" && branch != "master" && branch != "main" {
+		parts = append(parts, paint(colors.model, branch))
+	}
+	// folder (rightmost)
+	basename := filepath.Base(m.session.WorkDir)
+	if basename != "" {
+		parts = append(parts, paint(colors.low, basename))
 	}
 	return strings.Join(parts, separator), regions
 }
