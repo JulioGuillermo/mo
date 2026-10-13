@@ -34,6 +34,8 @@ type Env struct {
 	MemoryDir      string
 	// Jobs runs bash commands in the background; without it they cannot.
 	Jobs *Jobs
+	// Recall searches memories and past conversations.
+	Recall *Recall
 }
 
 // Resolve turns a path from the model into an absolute one, relative paths
@@ -115,8 +117,16 @@ func builtins() []Tool {
 func builtinsWith(searcher web.Searcher) []Tool {
 	return []Tool{
 		bashTool(), readTool(), writeTool(), editTool(), lsTool(), mkdirTool(), rmTool(), grepTool(),
-		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), jobsTool(),
+		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), jobsTool(), recallTool(),
 	}
+}
+
+// Recall is the search of memories and past conversations, or nil.
+func (r *Registry) Recall() *Recall {
+	if r == nil {
+		return nil
+	}
+	return r.env.Recall
 }
 
 // Jobs are the session's background jobs, or nil, also for no registry.

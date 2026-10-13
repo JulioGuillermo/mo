@@ -34,6 +34,8 @@ type extensions struct {
 	// jobs are the background jobs of the whole run, kept across settings
 	// changes; nil when mo answers once.
 	jobs *tools.Jobs
+	// recall searches memories and saved conversations.
+	recall *tools.Recall
 }
 
 // openHubs holds the MCP connection in use. A new one replaces it, and once
@@ -84,6 +86,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	}
 	env := toolEnv(workDir, cfg.Memory.Dir)
 	env.Jobs = loaded.jobs
+	env.Recall = loaded.recall
 	registry := tools.NewRegistry(env, tools.Options{
 		Searcher:     searcher,
 		Extra:        extraTools(hub, loaded.plugins),
@@ -94,10 +97,6 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		MaxOutput:    cfg.Tools.MaxOutput,
 		Descriptions: cfg.Tools.Descriptions,
 	})
-	memoryIndex := ""
-	if !slices.Contains(cfg.Tools.Disabled, "memory") {
-		memoryIndex = tools.MemoryIndex(env)
-	}
 	policy, err := permissions.New(permissions.Mode(cfg.Permissions.Mode), cfg.Permissions.Allow, cfg.Permissions.Deny)
 	if err != nil {
 		return tui.Session{}, err
@@ -105,7 +104,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	assistant := &agent.Agent{
 		Provider:      chosen.provider,
 		Model:         chosen.model,
-		System:        agent.SystemPrompt(cfg.SystemPrompt, workDir, memoryIndex),
+		System:        agent.SystemPrompt(cfg.SystemPrompt, workDir),
 		MaxTokens:     cfg.MaxTokens,
 		Tools:         registry,
 		ConfirmTools:  confirm,

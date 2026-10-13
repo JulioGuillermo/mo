@@ -62,7 +62,18 @@ func (m *model) saveConversation() tea.Cmd {
 		Parent: m.thread.parent, Forked: m.thread.forked, Prompts: len(prompts),
 		Created: m.thread.created, Updated: now, Usage: m.session.Agent.LastUsage,
 	}}
+	m.trackThread()
 	return func() tea.Msg { return savedMsg{err: sessions.Save(config.SessionDir(), record)} }
+}
+
+// trackThread tells recall which conversation is in progress, to leave it
+// out of what the model searches.
+func (m *model) trackThread() {
+	if m.session.Agent != nil {
+		if recall := m.session.Agent.Tools.Recall(); recall != nil {
+			recall.SetCurrent(m.thread.id)
+		}
+	}
 }
 
 // listConversations reads the conversations of the working directory.
@@ -133,6 +144,7 @@ func (m model) resume(msg resumedMsg) (tea.Model, tea.Cmd) {
 	m.session.Agent.Restore(record.History, record.Usage)
 	m.usage = record.Usage
 	m.thread = conversation{id: record.ID, title: record.Title, parent: record.Parent, forked: record.Forked, created: record.Created}
+	m.trackThread()
 	m.replay(record.History)
 	m.scrolled = false
 	return m.emit(m.printer.Note(fmt.Sprintf("resumed: %s · %d prompts · %s", orDefault(record.Title, record.ID), record.Prompts, ago(record.Updated))))
@@ -198,6 +210,7 @@ func (m *model) newConversation() {
 	m.session.Agent.Clear()
 	m.usage = llm.Usage{}
 	m.thread = conversation{}
+	m.trackThread()
 	m.todos = nil
 }
 

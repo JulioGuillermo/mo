@@ -5,12 +5,12 @@ package tools
 // | ME-01 | Happy    | write, read, list and delete a project memory                     | P0       |
 // | ME-02 | Happy    | global and project scopes live in separate folders                | P1       |
 // | ME-03 | Security | a name with a path or dots is refused                             | P0       |
-// | ME-04 | Happy    | MemoryIndex lists scope/name: first line, stripping # from titles | P1       |
+// | ME-04 | Happy    | list shows scope/name: first line, stripping # from titles        | P1       |
 // | ME-05 | Security | write and edit on the memory folder ask, as a protected path      | P0       |
 // | ME-06 | Edge     | projects in different folders do not share memories               | P1       |
 // | ME-07 | Security | writing or deleting a global memory asks; project ones do not     | P0       |
 // | ME-08 | Edge     | /x/a-b and /x/a/b get different project folders                   | P1       |
-// | ME-09 | Happy    | list shows every memory; the prompt index stops at the limit      | P2       |
+// | ME-09 | Happy    | list shows every memory, however many there are                   | P2       |
 // | ME-10 | Edge     | a project folder with [ ] in its name still lists its memories    | P2       |
 
 import (
@@ -81,12 +81,12 @@ func TestMemory(t *testing.T) {
 		}
 	})
 
-	t.Run("ME-04 MemoryIndex lists scope/name: first line, stripping # from titles", func(t *testing.T) {
+	t.Run("ME-04 list shows scope/name: first line, stripping # from titles", func(t *testing.T) {
 		env := memoryEnv(t)
 		memory(t, env, map[string]any{"action": "write", "name": "lab", "content": "# Lab network\nIPs..."})
 		memory(t, env, map[string]any{"action": "write", "name": "me", "content": "Prefers Spanish", "scope": "global"})
 
-		index := MemoryIndex(env)
+		index := memoryList(env)
 
 		if index != "project/lab: Lab network\nglobal/me: Prefers Spanish" {
 			t.Errorf("index = %q", index)
@@ -148,20 +148,16 @@ func TestMemoryGuards(t *testing.T) {
 		}
 	})
 
-	t.Run("ME-09 list shows every memory; the prompt index stops at the limit", func(t *testing.T) {
+	t.Run("ME-09 list shows every memory, however many there are", func(t *testing.T) {
 		env := memoryEnv(t)
-		for i := range memoryIndexLimit + 3 {
+		for i := range 53 {
 			memory(t, env, map[string]any{"action": "write", "name": fmt.Sprintf("note-%02d", i), "content": "n"})
 		}
 
 		list, _ := memory(t, env, map[string]any{"action": "list"})
-		index := MemoryIndex(env)
 
-		if strings.Count(list, "\n")+1 != memoryIndexLimit+3 {
+		if strings.Count(list, "\n")+1 != 53 {
 			t.Errorf("list has %d lines", strings.Count(list, "\n")+1)
-		}
-		if !strings.HasSuffix(index, "(3 more; use memory list)") {
-			t.Errorf("index ends with %q", index[len(index)-40:])
 		}
 	})
 }
@@ -171,7 +167,7 @@ func TestMemoryOddFolderNames(t *testing.T) {
 		env := Env{WorkDir: filepath.Join(t.TempDir(), "proj[1]"), MemoryDir: t.TempDir()}
 		memory(t, env, map[string]any{"action": "write", "name": "note", "content": "kept"})
 
-		if index := MemoryIndex(env); index != "project/note: kept" {
+		if index := memoryList(env); index != "project/note: kept" {
 			t.Errorf("index = %q", index)
 		}
 	})

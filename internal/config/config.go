@@ -168,7 +168,7 @@ func Defaults() Config {
 		Tools: Tools{
 			Mode:         tools.ModeFull,
 			Load:         tools.LoadContext,
-			AlwaysLoaded: []string{"bash", "read", "edit"},
+			AlwaysLoaded: []string{"read", "edit", "write", "bash", "ask", "recall"},
 			Confirm:      []string{"bash", "rm", "fetch"},
 			MaxOutput:    10000,
 		},

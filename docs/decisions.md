@@ -31,6 +31,11 @@
   in the history, not kept apart, so resume, rewind, fork and `/clear` declare what that
   conversation found. After a compaction the search calls are gone and so are the declarations.
 - A call to a tool that exists but is not declared still runs, with the usual approvals.
+- `always_loaded` is `read`, `edit`, `write`, `bash`, `ask` and `recall` by default: the core of
+  editing code; `write` because `edit` cannot create a file; `bash` covers `ls`, `grep`, `mkdir`
+  and `rm`, and the default allow rules let its reading commands through; `ask` and `recall`
+  because a model that does not see them does not think of looking for them, so it guesses
+  instead of asking and never finds what earlier conversations and memories hold.
 
 ## Context and compaction
 
@@ -63,8 +68,9 @@
 - One `memory` tool (list/read/write/delete) instead of four, to keep the tool list small.
 - Files live in `memory.dir` (`~/.local/share/mo/memory`): `global/` and `projects/<dir>-<hash>/`.
   The hash of the full path keeps `/x/a-b` and `/x/a/b` apart.
-- The first line of each memory goes into the system prompt, up to 50, labelled as notes rather
-  than instructions; `memory list` shows them all.
+- Memories are not put in the system prompt, not even their first lines: most are of no use to a
+  given request and every request would carry them. The model finds them with `recall`, or
+  `memory list`, when it needs them.
 - Writing or deleting a global memory always asks: a prompt-injected model could otherwise plant a
   note that reaches every future session in every project. Project memories do not ask.
 - The memory folder is a protected path for `write`/`edit`, and the project file cannot move it.
@@ -469,3 +475,21 @@
 - Beside the side panel, what sits over the input (the dialog, the spinner, the commands that
   match) takes the conversation's width, and the panel runs down to the input. Without the panel
   the tasks sit over the input on the panel's background.
+
+## Recall
+
+- `recall` searches memories and saved conversations with BM25 and returns ids with a piece of text
+  around the match; `read` gives a memory whole, a conversation's turns, or one turn whole. The
+  model decides what to look for and what to read, instead of carrying an index it rarely needs.
+- A conversation is split at the user's prompts: a turn is the prompt, the answers and the tool
+  calls with the start of their results (300 characters when searching, 1500 when read). mo's own
+  notes stay with the turn they belong to; a compaction summary is a turn of its own.
+- `scope = here` (default) keeps to this folder's conversations and to this project's and the
+  global memories; `all` takes every folder. The conversation in progress is left out: the model
+  has it already.
+- Conversations are parsed once and kept until their file changes, so a search after the first
+  reads only what was saved since.
+- No embeddings for now. BM25 is pure Go and finds names, errors and commands well; an embeddings
+  endpoint could be added later and the two rankings merged.
+- Ids are checked: a memory id must name a scope folder and a memory name, a conversation id is
+  refused when it holds a path, so `read` cannot leave the memory or session folder.

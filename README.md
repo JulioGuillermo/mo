@@ -82,7 +82,7 @@ system_prompt = ""         # empty: built-in prompt (~80 tokens)
 mode = "full"              # full | compact (no descriptions) | search (find tools on demand)
 load = "context"           # search mode: context (found tools stay in the conversation, called
                            # through tool_call) | declare (found tools are declared from then on)
-always_loaded = ["bash", "read", "edit"]   # search mode: tools sent from the start
+always_loaded = ["read", "edit", "write", "bash", "ask", "recall"]   # search mode: declared from the start
 confirm = ["bash", "rm", "fetch"]   # ask before these; [] never asks. A list of your own
                                     # replaces this one: keep "fetch" in it to be asked
 disabled = []              # e.g. ["mkdir", "ls"] to save context
@@ -165,8 +165,10 @@ all are answered. Enter presses the selected button, "No" at first; `y` approves
 shows whole and coloured, ↑↓ scroll it, and a bash one lists each of its parts with what the
 rules say of it.
 
-`memory` keeps notes across sessions, per project or global. Their first lines go into the system
-prompt so the model knows what it saved.
+`memory` keeps notes across sessions, per project or global. They are not put in the prompt:
+`recall` searches them and the saved conversations (BM25, by words) and reads one whole, a memory,
+a conversation's turns, or one turn, when the model decides it needs it. It keeps to this folder
+unless asked for all.
 
 Changes outside the working directory, to mo's config, under `.git` or to hidden files in your home
 always ask, even with `-y` or after answering "always", in every mode but `all`. So do changes to

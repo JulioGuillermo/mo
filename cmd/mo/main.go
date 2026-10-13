@@ -63,7 +63,7 @@ func run() error {
 	loadedPlugins := loadPlugins(workDir)
 	defer loadedPlugins.Close()
 	choice := sessionChoice{provider: *providerFlag, model: *modelFlag, yes: *yesFlag}
-	loaded := extensions{mcp: hub, plugins: loadedPlugins, hubs: hubs}
+	loaded := extensions{mcp: hub, plugins: loadedPlugins, hubs: hubs, recall: tools.NewRecall(config.SessionDir())}
 
 	prompt, err := oneShotPrompt(flag.Args())
 	if err != nil {
