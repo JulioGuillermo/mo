@@ -187,7 +187,7 @@ func (m model) finishSettings(msg settingsSavedMsg) (tea.Model, tea.Cmd) {
 
 func isAgentMsg(msg tea.Msg) bool {
 	switch msg.(type) {
-	case streamMsg, streamEndMsg, usageMsg, interactionMsg, runDoneMsg, spinner.TickMsg, printMsg, reasoningMsg, drawMsg, redrawMsg, rulesSavedMsg, toolStartMsg, toolDoneMsg, savedMsg, jobEndedMsg, jobTickMsg, flashDoneMsg, tea.FocusMsg, tea.BlurMsg:
+	case streamMsg, streamEndMsg, usageMsg, interactionMsg, runDoneMsg, spinner.TickMsg, printMsg, reasoningMsg, drawMsg, redrawMsg, rulesSavedMsg, toolStartMsg, toolDoneMsg, savedMsg, jobEndedMsg, jobTickMsg, flashDoneMsg, activityMsg, tea.FocusMsg, tea.BlurMsg:
 		return true
 	}
 	return false

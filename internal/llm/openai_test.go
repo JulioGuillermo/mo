@@ -15,6 +15,7 @@ package llm
 // | LO-11 | Happy    | ContextWindow reads n_ctx from llama-server /props              | P1       |
 // | LO-12 | Edge     | ContextWindow is 0 when the server has no /props                | P1       |
 // | LO-13 | Error    | A request cut by the network on a new connection is sent again  | P1       |
+// | LO-14 | Happy    | Tool calls stream as pieces: the name, then the arguments        | P1       |
 
 import (
 	"context"
@@ -322,6 +323,28 @@ func TestNetworkRetry(t *testing.T) {
 
 		if err != nil || response.Message.Text != "ok" || attempts != 2 {
 			t.Errorf("text = %q attempts = %d err = %v", response.Message.Text, attempts, err)
+		}
+	})
+}
+
+func TestOpenAIToolStream(t *testing.T) {
+	t.Run("LO-14 tool calls stream as pieces: the name, then the arguments", func(t *testing.T) {
+		server := sseServer(t, []string{
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","function":{"name":"bash","arguments":""}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"command\":"}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"ls\"}"}}]}}]}`,
+			`[DONE]`,
+		}, nil)
+		var name, args string
+		_, err := (&OpenAI{BaseURL: server.URL}).Stream(context.Background(), Request{}, func(event Event) {
+			if event.Kind == EventToolCall && event.Call == 0 {
+				name += event.Name
+				args += event.Text
+			}
+		})
+
+		if err != nil || name != "bash" || args != `{"command":"ls"}` {
+			t.Errorf("name = %q args = %q err = %v", name, args, err)
 		}
 	})
 }

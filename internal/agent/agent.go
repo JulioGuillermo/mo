@@ -88,9 +88,13 @@ type Hooks struct {
 	OnToolDone  func(call llm.ToolCall, output string, isError bool)
 	OnUsage     func(llm.Usage)
 	OnCompact   func(before, after int)
-	OnNotice    func(text string)
-	OnLoopCut   func(repeated string)
-	Approve     func(ctx context.Context, request ApprovalRequest) Decision
+	// OnActivity says what the agent waits on besides the reply, to show
+	// in place of a plain "working": compacting, judging a command. An
+	// empty text says it is back to the reply.
+	OnActivity func(text string)
+	OnNotice   func(text string)
+	OnLoopCut  func(repeated string)
+	Approve    func(ctx context.Context, request ApprovalRequest) Decision
 	// Interact asks the user everything the calls of a reply need at once;
 	// it takes the place of Approve.
 	Interact func(ctx context.Context, interaction Interaction) Reply
@@ -260,4 +264,11 @@ func (a *Agent) Clear() {
 	a.historyAtUsage = 0
 	a.sizeAfterCompaction = 0
 	a.currentRequest = ""
+}
+
+// activity tells the caller what the agent waits on, when it listens.
+func (h Hooks) activity(text string) {
+	if h.OnActivity != nil {
+		h.OnActivity(text)
+	}
 }

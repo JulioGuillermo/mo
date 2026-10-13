@@ -2,6 +2,7 @@ package llm
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -37,6 +38,7 @@ func (s *anthropicStream) handle(event anthropicEvent) error {
 			toolUse := &pendingToolUse{id: event.ContentBlock.ID, name: event.ContentBlock.Name}
 			s.toolUses = append(s.toolUses, toolUse)
 			s.byIndex[event.Index] = toolUse
+			s.onEvent(Event{Kind: EventToolCall, Call: len(s.toolUses) - 1, Name: toolUse.name})
 		}
 	case "content_block_delta":
 		s.handleDelta(event)
@@ -62,6 +64,7 @@ func (s *anthropicStream) handleDelta(event anthropicEvent) {
 	case "input_json_delta":
 		if toolUse, ok := s.byIndex[event.Index]; ok {
 			toolUse.args.WriteString(event.Delta.PartialJSON)
+			s.onEvent(Event{Kind: EventToolCall, Call: slices.Index(s.toolUses, toolUse), Text: event.Delta.PartialJSON})
 		}
 	}
 }

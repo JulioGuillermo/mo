@@ -16,6 +16,7 @@ package agent
 // | CP-12 | Edge     | Two full compactions in one turn do not nest their summaries           | P0       |
 // | CP-13 | Error    | A full window compacts again even right after a failed attempt         | P0       |
 // | CP-14 | Happy    | Budget lists the system prompt, then each tool the model sees          | P2       |
+// | CP-90 | Happy    | Compacting says so while the summary is asked, and stops saying it after | P1    |
 
 import (
 	"context"
@@ -278,6 +279,21 @@ func TestBudget(t *testing.T) {
 		}
 		if items[1].Name != "tool bash" || items[1].Tokens == 0 {
 			t.Errorf("first tool = %+v", items[1])
+		}
+	})
+}
+
+func TestCompactActivity(t *testing.T) {
+	t.Run("CP-90 compacting says so while the summary is asked, and stops saying it after", func(t *testing.T) {
+		provider := &scriptedProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Text: "- summary"}}}
+		agent := newAgent(t, provider)
+		agent.History = longHistory()
+		var said []string
+
+		err := agent.Compact(context.Background(), Hooks{OnActivity: func(text string) { said = append(said, text) }})
+
+		if err != nil || len(said) != 2 || said[0] != "compacting the conversation" || said[1] != "" {
+			t.Errorf("said = %q err = %v", said, err)
 		}
 	})
 }

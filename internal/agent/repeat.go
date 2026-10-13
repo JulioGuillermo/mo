@@ -32,6 +32,9 @@ func newRepeatWatch(times int) *repeatWatch {
 // add takes the next delta and returns the repeated piece once the end of
 // the stream repeats, or "" while it does not.
 func (w *repeatWatch) add(event llm.Event) string {
+	if event.Kind == llm.EventToolCall {
+		return ""
+	}
 	text := w.texts[event.Kind] + event.Text
 	if keep := w.times * fewLettersCopiesTimes * longestRepeat; len(text) > keep {
 		text = text[len(text)-keep:]

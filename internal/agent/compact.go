@@ -78,7 +78,9 @@ func (a *Agent) Compact(ctx context.Context, hooks Hooks) error {
 		kept = nil
 	}
 
+	hooks.activity("compacting the conversation")
 	summary, err := a.summarize(ctx, a.History[:cut])
+	hooks.activity("")
 	if err != nil {
 		return err
 	}

@@ -569,3 +569,16 @@
   (`~/.git-credentials` or its `--file`), others run as `git-credential-<name> get`, or the
   command a `!` helper names, with git's protocol. Git Credential Manager, libsecret and the macOS
   keychain work that way without git. `cache` needs git's own daemon and is left to it.
+
+## Tool calls as they form
+
+- Providers stream a tool call in pieces, the name then its JSON arguments; those pieces now reach
+  the UI as events. A call shows as soon as its tool is named, with a spinner, and what it is about
+  to do forms below it: a bash command, or the last 12 lines of a file being written or edited,
+  coloured by its language, with how many lines so far. A call through `tool_call` shows the tool
+  it stands for. When the call is whole the view gives way to the usual block.
+- The arguments are JSON not finished yet, so a field is read as far as it came: the string being
+  written is taken without its closing quote, escapes decoded, a cut escape left out.
+- The loop guard leaves the pieces of tool calls alone: a file with repeated lines is no loop.
+- The spinner says what the agent waits on besides the reply: compacting the conversation, or the
+  model judging a command in auto mode.

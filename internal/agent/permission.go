@@ -75,7 +75,9 @@ func (a *Agent) approvalFor(ctx context.Context, call llm.ToolCall, hooks Hooks)
 	}
 	reason := ""
 	if mode == permissions.ModeAuto {
+		hooks.activity("checking whether " + firstOf(unknown) + " is safe")
 		safe, why := a.judge(ctx, unknown)
+		hooks.activity("")
 		if safe {
 			if hooks.OnNotice != nil {
 				hooks.OnNotice(fmt.Sprintf("auto: %s · %s", firstOf(unknown), why))

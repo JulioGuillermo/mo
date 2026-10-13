@@ -76,11 +76,15 @@ type model struct {
 	width   int
 	height  int
 
-	running          bool
-	cancel           context.CancelFunc
-	finished         chan struct{}
-	stream           string
-	streamCut        int
+	running   bool
+	cancel    context.CancelFunc
+	finished  chan struct{}
+	stream    string
+	streamCut int
+	// forming are the tool calls the model is writing now.
+	forming []formingCall
+	// activity is what the agent waits on, said by the spinner.
+	activity         string
 	streamDone       string
 	reasoning        string
 	dialog           *dialog
@@ -285,15 +289,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focused = true
 		return m.handleKey(msg)
 	case streamMsg:
-		if msg.Kind == llm.EventReasoning {
+		switch msg.Kind {
+		case llm.EventToolCall:
+			m.growCall(msg.Call, msg.Name, msg.Text)
+		case llm.EventReasoning:
 			m.reasoning += msg.Text
-		} else {
+		default:
 			m.stream += msg.Text
 			m.renderStream(false)
 		}
 		return m, nil
 	case streamEndMsg:
 		m.clearStream()
+		return m, nil
+	case activityMsg:
+		m.activity = string(msg)
 		return m, nil
 	case usageMsg:
 		m.usage = llm.Usage(msg)
@@ -554,6 +564,7 @@ func (m *model) stop() {
 
 func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 	m.running = false
+	m.activity = ""
 	m.cancel()
 	m.closeDialog(true)
 	partial := strings.TrimSpace(m.stream)
@@ -648,7 +659,7 @@ func (m model) upperLayout() (string, []region) {
 	case m.dialog != nil:
 		add(m.dialogLayout())
 	case m.running:
-		add(m.spinner.View()+workingStyle.Render(" working · esc to stop"), nil)
+		add(m.spinner.View()+workingStyle.Render(" "+orDefault(m.activity, "working")+"… · esc to stop"), nil)
 	}
 	if matches := m.suggestions(); len(matches) > 0 && !m.running {
 		add(m.suggestionLayout(matches))
@@ -758,6 +769,7 @@ func (m *model) renderStream(again bool) {
 
 func (m *model) clearStream() {
 	m.stream, m.streamCut, m.streamDone = "", 0, ""
+	m.forming = nil
 	m.reasoning = ""
 }
 
@@ -766,7 +778,8 @@ func (m *model) clearStream() {
 // being written as it comes. Before any of it, its reasoning shows dimmed.
 func (m model) liveText() string {
 	reasoning := strings.TrimSpace(m.reasoning)
-	if m.stream == "" {
+	forming := m.formingView()
+	if m.stream == "" && forming == "" {
 		if reasoning == "" {
 			return ""
 		}
@@ -782,6 +795,9 @@ func (m model) liveText() string {
 	wrap := lipgloss.NewStyle().Width(max(m.mainWidth()-4, 20)).PaddingLeft(2)
 	if tail := strings.TrimSpace(m.stream[m.streamCut:]); tail != "" {
 		parts = append(parts, wrap.Render(tail))
+	}
+	if forming != "" {
+		parts = append(parts, forming)
 	}
 	return strings.Join(parts, "\n")
 }

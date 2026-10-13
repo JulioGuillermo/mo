@@ -34,9 +34,16 @@ func TestAnthropicStream(t *testing.T) {
 		}, nil)
 		provider := &Anthropic{BaseURL: server.URL, APIKey: "k"}
 
-		var texts []string
+		var texts, args []string
+		var named string
 		response, err := provider.Stream(context.Background(), Request{Model: "m"}, func(event Event) {
-			texts = append(texts, event.Text)
+			switch event.Kind {
+			case EventText:
+				texts = append(texts, event.Text)
+			case EventToolCall:
+				named += event.Name
+				args = append(args, event.Text)
+			}
 		})
 
 		if err != nil {
@@ -48,6 +55,9 @@ func TestAnthropicStream(t *testing.T) {
 		calls := response.Message.ToolCalls
 		if len(calls) != 1 || calls[0].ID != "t1" || calls[0].Name != "read" || string(calls[0].Args) != `{"path":"go.mod"}` {
 			t.Errorf("calls = %+v", calls)
+		}
+		if named != "read" || strings.Join(args, "") != `{"path":"go.mod"}` {
+			t.Errorf("the call was not streamed: name = %q args = %q", named, args)
 		}
 		if usage := response.Usage; usage.InputTokens != 125 || usage.OutputTokens != 9 {
 			t.Errorf("usage = %+v", response.Usage)

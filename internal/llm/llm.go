@@ -66,11 +66,18 @@ type EventKind int
 const (
 	EventText EventKind = iota
 	EventReasoning
+	// EventToolCall is a piece of a tool call as the model writes it: its
+	// name once known, then pieces of its JSON arguments.
+	EventToolCall
 )
 
 type Event struct {
 	Kind EventKind
 	Text string
+	// Call numbers the tool call a piece belongs to, in the reply, and
+	// Name is its tool when the piece names it.
+	Call int
+	Name string
 }
 
 type Response struct {

@@ -14,6 +14,9 @@ type streamMsg llm.Event
 type printMsg string
 type streamEndMsg struct{}
 type usageMsg llm.Usage
+
+// activityMsg says what the agent waits on besides the reply.
+type activityMsg string
 type runDoneMsg struct{ err error }
 
 // bridge turns agent callbacks, which run on the agent goroutine, into
@@ -69,6 +72,9 @@ func (b *bridge) hooks() agent.Hooks {
 			if images := b.printer.Images(output); images != "" {
 				b.print(images)
 			}
+		},
+		OnActivity: func(text string) {
+			b.program.Send(activityMsg(text))
 		},
 		OnUsage: func(usage llm.Usage) {
 			b.program.Send(usageMsg(usage))
