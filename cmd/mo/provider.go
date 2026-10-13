@@ -69,9 +69,11 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 			}
 			model = first
 		}
+		size, llama := probeProps(ctx, provider)
+		provider.PromptProgress = llama
 		window := cfg.Context.Window
 		if window == 0 {
-			window = probeWindow(ctx, provider)
+			window = size
 		}
 		return chosenProvider{name: name, model: model, window: window, provider: provider}, nil
 	case "anthropic":
@@ -112,13 +114,16 @@ func keyOrigin(settings config.ProviderConfig) string {
 	return "api_key"
 }
 
-func probeWindow(ctx context.Context, provider *llm.OpenAI) int {
+// probeProps asks the server for its context size, the default one when it
+// does not say, and whether it is llama-server, which streams how far it
+// is in reading the prompt.
+func probeProps(ctx context.Context, provider *llm.OpenAI) (int, bool) {
 	ctx, cancel := context.WithTimeout(ctx, windowProbeTimeout)
 	defer cancel()
-	if window := provider.ContextWindow(ctx); window > 0 {
-		return window
+	if window, llama := provider.Props(ctx); window > 0 {
+		return window, llama
 	}
-	return defaultLocalWindow
+	return defaultLocalWindow, false
 }
 
 func findLocalServer(ctx context.Context, cfg config.Config) (string, error) {

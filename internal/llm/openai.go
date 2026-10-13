@@ -15,6 +15,9 @@ type OpenAI struct {
 	BaseURL string
 	APIKey  string
 	Client  *http.Client
+	// PromptProgress asks for how far the server is in reading the prompt.
+	// Only for llama-server: other servers may refuse the field.
+	PromptProgress bool
 }
 
 type openAIMessage struct {
@@ -52,8 +55,11 @@ type openAIRequest struct {
 	// ReasoningEffort is OpenAI's name for the effort, also taken by many
 	// compatible servers; others ignore it.
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
-	Stream          bool   `json:"stream"`
-	StreamOptions   struct {
+	// ReturnProgress is llama-server's: stream prompt_progress chunks
+	// while the prompt is read.
+	ReturnProgress bool `json:"return_progress,omitempty"`
+	Stream         bool `json:"stream"`
+	StreamOptions  struct {
 		IncludeUsage bool `json:"include_usage"`
 	} `json:"stream_options"`
 }
@@ -72,6 +78,11 @@ type openAIChunk struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
 	} `json:"usage"`
+	PromptProgress *struct {
+		Total     int `json:"total"`
+		Cache     int `json:"cache"`
+		Processed int `json:"processed"`
+	} `json:"prompt_progress"`
 	Timings *struct {
 		PromptPerSecond    float64 `json:"prompt_per_second"`
 		PredictedPerSecond float64 `json:"predicted_per_second"`
@@ -114,6 +125,9 @@ func (p *OpenAI) Stream(ctx context.Context, req Request, onEvent func(Event)) (
 		}
 		if chunk.Error != nil {
 			return fmt.Errorf("provider error: %s", chunk.Error.Message)
+		}
+		if progress := chunk.PromptProgress; progress != nil {
+			onEvent(Event{Kind: EventPromptProgress, Progress: PromptProgress{Done: progress.Processed, Total: progress.Total, Cached: progress.Cache}})
 		}
 		if chunk.Usage != nil {
 			usage.InputTokens, usage.OutputTokens = chunk.Usage.PromptTokens, chunk.Usage.CompletionTokens
@@ -194,7 +208,7 @@ func deltaIndex(delta openAIToolCall, callCount int) int {
 }
 
 func (p *OpenAI) buildRequest(req Request) openAIRequest {
-	out := openAIRequest{Model: req.Model, MaxTokens: req.MaxTokens, ReasoningEffort: req.Effort, Stream: true}
+	out := openAIRequest{Model: req.Model, MaxTokens: req.MaxTokens, ReasoningEffort: req.Effort, ReturnProgress: p.PromptProgress, Stream: true}
 	out.StreamOptions.IncludeUsage = true
 	if req.System != "" {
 		out.Messages = append(out.Messages, openAIMessage{Role: "system", Content: req.System})

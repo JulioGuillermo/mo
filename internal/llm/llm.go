@@ -73,7 +73,26 @@ const (
 	// EventToolCall is a piece of a tool call as the model writes it: its
 	// name once known, then pieces of its JSON arguments.
 	EventToolCall
+	// EventPromptProgress says how far the server is in reading the prompt,
+	// before the answer starts. Only llama-server sends it.
+	EventPromptProgress
 )
+
+// PromptProgress is how much of the prompt the server has read: Done of
+// Total tokens, Cached of them taken from its cache without reading.
+type PromptProgress struct {
+	Done, Total, Cached int
+}
+
+// Share is the part of the prompt read, leaving out what came cached, as
+// that is the part that takes time.
+func (p PromptProgress) Share() float64 {
+	work := p.Total - p.Cached
+	if work <= 0 {
+		return 1
+	}
+	return min(1, max(0, float64(p.Done-p.Cached)/float64(work)))
+}
 
 type Event struct {
 	Kind EventKind
@@ -82,6 +101,8 @@ type Event struct {
 	// Name is its tool when the piece names it.
 	Call int
 	Name string
+	// Progress is set on EventPromptProgress.
+	Progress PromptProgress
 }
 
 type Response struct {

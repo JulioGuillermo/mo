@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"image/color"
 
 	"charm.land/lipgloss/v2"
@@ -18,7 +19,7 @@ type state struct {
 }
 
 type stateColors struct {
-	reasoning, writing, reading, changing, compacting, waiting, yours color.Color
+	reasoning, writing, reading, changing, compacting, waiting, yours, prompt color.Color
 }
 
 func statePalette(dark bool) stateColors {
@@ -26,11 +27,13 @@ func statePalette(dark bool) stateColors {
 		return stateColors{
 			reasoning: accent, writing: warning, reading: lipgloss.Color("#9ece6a"), changing: lipgloss.Color("#f7768e"),
 			compacting: lipgloss.Color("#bb9af7"), waiting: lipgloss.Color("#737aa2"), yours: lipgloss.Color("#7dcfff"),
+			prompt: lipgloss.Color("#73daca"),
 		}
 	}
 	return stateColors{
 		reasoning: lipgloss.Color("#2e7de9"), writing: lipgloss.Color("#8c6c3e"), reading: lipgloss.Color("#587539"), changing: lipgloss.Color("#f52a65"),
 		compacting: lipgloss.Color("#9854f1"), waiting: lipgloss.Color("#8990b3"), yours: lipgloss.Color("#007197"),
+		prompt: lipgloss.Color("#118c74"),
 	}
 }
 
@@ -50,6 +53,8 @@ func (m model) currentState() state {
 		return m.toolState(last.name, last.args, colors)
 	case m.runningTool != nil:
 		return m.toolState(m.runningTool.Name, string(m.runningTool.Args), colors)
+	case m.lastEvent == llm.EventPromptProgress && m.promptRead.Total > 0:
+		return state{word: "prompt", detail: promptDetail(m.promptRead), tint: colors.prompt}
 	case m.lastEvent == llm.EventReasoning && m.reasoning != "":
 		return state{word: "reasoning", tint: colors.reasoning}
 	case m.lastEvent == llm.EventText && m.stream != "":
@@ -85,3 +90,13 @@ func (s state) label(withDetail bool) string {
 // alwaysChanging are the built-in tools that change something whatever
 // their arguments; others the registry decides, as git by its action.
 var alwaysChanging = map[string]bool{"write": true, "edit": true, "mkdir": true, "rm": true, "bash": true}
+
+// promptDetail is how far the prompt is read, leaving out the part the
+// server had cached: "42% · 3.1k/7.4k", and how much came cached.
+func promptDetail(read llm.PromptProgress) string {
+	detail := fmt.Sprintf("%d%% · %s/%s", int(read.Share()*100), formatTokens(max(0, read.Done-read.Cached)), formatTokens(read.Total-read.Cached))
+	if read.Cached > 0 {
+		detail += " · " + formatTokens(read.Cached) + " cached"
+	}
+	return detail
+}

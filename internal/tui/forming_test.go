@@ -8,6 +8,7 @@ package tui
 // | LT-04 | Edge     | The forming view goes when the call is whole                         | P1       |
 // | LT-05 | Happy    | The spinner says what the agent waits on, compacting, and goes back to working | P1 |
 // | LT-06 | Happy    | Each thing the agent does has its word and colour, in spinner and status | P1    |
+// | LT-07 | Happy    | While llama-server reads the prompt, the state says how far, cache left out | P1   |
 
 import (
 	"strings"
@@ -134,6 +135,9 @@ func TestStates(t *testing.T) {
 			{"reading", func(m model) model { return streaming(m, piece(0, "read", `{"path":"a.go"}`)) }, "reading", colors.reading},
 			{"changing", func(m model) model { return streaming(m, piece(0, "edit", `{"path":"a.go"}`)) }, "changing", colors.changing},
 			{"bash", func(m model) model { return streaming(m, piece(0, "bash", `{"command":"ls"}`)) }, "changing", colors.changing},
+			{"prompt", func(m model) model {
+				return streaming(m, llm.Event{Kind: llm.EventPromptProgress, Progress: llm.PromptProgress{Done: 600, Total: 1000}})
+			}, "prompt", colors.prompt},
 			{"compacting", func(m model) model {
 				updated, _ := m.Update(activityMsg("compacting the conversation"))
 				return updated.(model)
@@ -147,6 +151,18 @@ func TestStates(t *testing.T) {
 			if !strings.Contains(ansi.Strip(c.setup(m).statusLine()), c.word) {
 				t.Errorf("%s: the status line does not say %q", c.name, c.word)
 			}
+		}
+	})
+
+	t.Run("LT-07 while llama-server reads the prompt, the state says how far, cache left out", func(t *testing.T) {
+		m := conversationModel()
+		m.running, m.cancel = true, func() {}
+
+		reading := streaming(m, llm.Event{Kind: llm.EventPromptProgress, Progress: llm.PromptProgress{Done: 5000, Total: 9000, Cached: 1000}}).currentState()
+		answering := streaming(streaming(m, llm.Event{Kind: llm.EventPromptProgress, Progress: llm.PromptProgress{Done: 9000, Total: 9000}}), llm.Event{Kind: llm.EventText, Text: "Hi"}).currentState()
+
+		if reading.detail != "50% · 4.0k/8.0k · 1.0k cached" || answering.word != "writing" {
+			t.Errorf("reading %q answering %q", reading.detail, answering.word)
 		}
 	})
 }

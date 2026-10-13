@@ -95,7 +95,10 @@ type model struct {
 	pendingSave *settingsScreen
 	// lastEvent is the kind of what the model sent last, and runningTool
 	// the call running now: they say what the agent is doing.
-	lastEvent        llm.EventKind
+	lastEvent llm.EventKind
+	// promptRead is how far the server is in reading the prompt, when it
+	// says so.
+	promptRead       llm.PromptProgress
 	runningTool      *llm.ToolCall
 	streamDone       string
 	reasoning        string
@@ -313,6 +316,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.Kind {
 		case llm.EventToolCall:
 			m.growCall(msg.Call, msg.Name, msg.Text)
+		case llm.EventPromptProgress:
+			m.promptRead = msg.Progress
 		case llm.EventReasoning:
 			m.reasoning += msg.Text
 		default:

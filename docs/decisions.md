@@ -598,7 +598,7 @@
 - While the agent works, the spinner and the start of the status line say what it does in a word
   with its colour: reasoning (blue), writing (yellow), reading with a tool (green), changing with
   one (red: write, edit, mkdir, rm, bash, and what the registry counts as a change or a warning),
-  compacting (purple), waiting for the model (grey), and your turn when a dialog waits on the user.
+  compacting (purple), reading the prompt with how far it is (teal, llama-server only), waiting for the model (grey), and your turn when a dialog waits on the user.
 - Images and diagrams start where the text beside them does, two columns in for an answer, four
   for a tool result after its ⎿, and are drawn in the width left. They are lines of placeholder
   cells or colour blocks, so the indent is spaces before each line; a kitty upload at the start of
@@ -668,3 +668,12 @@
   not take the one set answers with an error, which mo shows. It applies to the turns only:
   compaction and the auto-mode judge keep the model's default.
 - A project may set it like the model, so a large repository can think harder than a script.
+
+## Prompt progress
+
+- llama-server streams how far it is in reading the prompt when asked with `return_progress`; mo
+  asks only a server whose `/props` answers with a context size, as only llama-server has it and
+  OpenAI rejects fields it does not know. The state says `prompt` and the share read, counting
+  only what was not cached, since the cached part costs no time: `prompt 42% · 3.1k/7.4k · 1.0k
+  cached`. Other servers say nothing while they read, so the state stays `waiting`.
+
