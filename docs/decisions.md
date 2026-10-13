@@ -513,7 +513,7 @@
 - Merge, cherry-pick and switch refuse over uncommitted changes to tracked files: a merge could
   write over them, and go-git's checkout keeping changes carries the old branch's index along.
 - A file deleted on one side and changed on the other keeps the changed one; a binary changed on
-  both keeps ours; both are reported as conflicts. Renames are not followed yet.
+  both keeps ours; both are reported as conflicts. 
 - Hooks do not run, and the result of a commit says so.
 - `rebase` replays the branch's commits onto the target as picks, each with its author and message,
   and stops at a conflict like a merge: `continue` commits the resolved one and replays the rest,
@@ -556,3 +556,16 @@
 - The setup screen that runs before mo starts still asks a new provider's fields in one form, built
   from the same entries.
 - Yes/no questions take a click too: the first button accepts and the second rejects, as y and n.
+
+## Git renames and credentials
+
+- A merge follows renames on either side: a file gone from its path and the same, or with half its
+  lines in common (git's default), at a new one is the same file. Its versions merge into the new
+  name, so an edit on one side and a rename on the other merge cleanly. Renamed apart on both
+  sides, the content merges into ours and the clash is reported. Pairs beyond 10000 are matched
+  only by identical content, and files over 1 MB or binary only that way too.
+- HTTPS remotes ask git's credential helpers first, as git does, from the user's config then the
+  repository's, a `credential.<url>` section before the general one: `store` is read in Go
+  (`~/.git-credentials` or its `--file`), others run as `git-credential-<name> get`, or the
+  command a `!` helper names, with git's protocol. Git Credential Manager, libsecret and the macOS
+  keychain work that way without git. `cache` needs git's own daemon and is left to it.

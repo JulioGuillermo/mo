@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
+	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 )
@@ -722,60 +723,70 @@ func (r *Repo) mergeTrees(base, ours, theirs *object.Commit, oursName, theirsNam
 			return merged, err
 		}
 	}
-	for _, path := range slices.Sorted(func(yield func(string) bool) {
-		for path := range files {
-			if !yield(path) {
-				return
-			}
-		}
-	}) {
-		sides := files[path]
-		b, o, t := sides[0], sides[1], sides[2]
-		switch {
-		case sameFile(o, t), sameFile(t, b):
-			continue
-		case sameFile(o, b):
-			if err := r.takeTheirs(path, t); err != nil {
-				return merged, err
-			}
-			merged.written = append(merged.written, path)
-			continue
-		}
-		merged.written = append(merged.written, path)
-		switch {
-		case o == nil || t == nil:
-			kept := o
-			if kept == nil {
-				kept = t
-			}
-			if err := r.writeFile(path, fileText(kept), kept.Mode); err != nil {
-				return merged, err
-			}
-			merged.conflicts = append(merged.conflicts, path)
-			merged.notes = append(merged.notes, path+": deleted on one side, changed on the other; the changed one is kept")
-		case isBinary(o) || isBinary(t):
-			if err := r.writeFile(path, fileText(o), o.Mode); err != nil {
-				return merged, err
-			}
-			merged.conflicts = append(merged.conflicts, path)
-			merged.notes = append(merged.notes, path+": binary, changed on both sides; ours is kept")
-		default:
-			text, conflicted := Merge3(fileText(b), fileText(o), fileText(t), oursName, "base", theirsName)
-			if err := r.writeFile(path, text, o.Mode); err != nil {
-				return merged, err
-			}
-			if conflicted {
-				merged.conflicts = append(merged.conflicts, path)
-				continue
-			}
-			if stage {
-				if _, err := r.tree.Add(path); err != nil {
-					return merged, err
-				}
-			}
+	for _, unit := range mergeUnits(files) {
+		if err := r.mergeUnit(&merged, unit, oursName, theirsName, stage); err != nil {
+			return merged, err
 		}
 	}
 	return merged, nil
+}
+
+// mergeUnit merges one file's three versions into its target path, and
+// removes the old path a rename on their side left.
+func (r *Repo) mergeUnit(merged *treeMerge, unit mergeUnit, oursName, theirsName string, stage bool) error {
+	b, o, t := unit.base, unit.ours, unit.theirs
+	if unit.note != "" {
+		merged.notes = append(merged.notes, unit.note)
+		merged.conflicts = append(merged.conflicts, unit.target)
+	}
+	moved := len(unit.gone) > 0
+	var content string
+	var conflicted bool
+	switch {
+	case (sameFile(o, t) || sameFile(t, b)) && !moved:
+		return nil
+	case sameFile(o, t) || sameFile(t, b):
+		content = fileText(o)
+	case sameFile(o, b) && t == nil:
+		merged.written = append(merged.written, unit.target)
+		return r.takeTheirs(unit.target, nil)
+	case sameFile(o, b):
+		content = fileText(t)
+	case o == nil || t == nil:
+		kept := o
+		if kept == nil {
+			kept = t
+		}
+		content, conflicted = fileText(kept), true
+		merged.notes = append(merged.notes, unit.target+": deleted on one side, changed on the other; the changed one is kept")
+	case isBinary(o) || isBinary(t):
+		content, conflicted = fileText(o), true
+		merged.notes = append(merged.notes, unit.target+": binary, changed on both sides; ours is kept")
+	default:
+		content, conflicted = Merge3(fileText(b), fileText(o), fileText(t), oursName, "base", theirsName)
+	}
+	merged.written = append(merged.written, unit.target)
+	if err := r.writeFile(unit.target, content, 0); err != nil {
+		return err
+	}
+	for _, gone := range unit.gone {
+		merged.written = append(merged.written, gone)
+		if _, err := r.tree.Remove(gone); err != nil {
+			_ = os.Remove(filepath.Join(r.root, gone))
+		}
+	}
+	if conflicted {
+		if !slices.Contains(merged.conflicts, unit.target) {
+			merged.conflicts = append(merged.conflicts, unit.target)
+		}
+		return nil
+	}
+	if stage {
+		if _, err := r.tree.Add(unit.target); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // conflictExcerpt shows each conflict of a file with the line it starts on.
@@ -876,7 +887,7 @@ func (r *Repo) finish(op *operation) (string, error) {
 			if _, err := r.tree.Add(path); err != nil {
 				return "", err
 			}
-		} else if _, err := r.tree.Remove(path); err != nil {
+		} else if _, err := r.tree.Remove(path); err != nil && !errors.Is(err, index.ErrEntryNotFound) {
 			return "", err
 		}
 	}

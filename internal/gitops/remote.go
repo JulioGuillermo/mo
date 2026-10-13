@@ -44,10 +44,10 @@ func serveLocalRemotes() {
 // tokenVariables hold an HTTPS token, checked in this order.
 var tokenVariables = []string{"GIT_TOKEN", "GITHUB_TOKEN", "GH_TOKEN", "GITLAB_TOKEN"}
 
-// auth finds credentials for a remote URL the way a user has them without
-// git's helpers: an SSH agent or a key without passphrase for SSH, a token
-// from the environment for HTTPS. Nil when none is found.
-func auth(url string) transport.AuthMethod {
+// auth finds credentials for a remote URL: an SSH agent or a key without
+// passphrase for SSH; for HTTPS git's credential helpers, then a token from
+// the environment. Nil when none is found.
+func (r *Repo) auth(url string) transport.AuthMethod {
 	endpoint, err := transport.NewEndpoint(url)
 	if err != nil {
 		return nil
@@ -70,6 +70,9 @@ func auth(url string) transport.AuthMethod {
 			}
 		}
 	case "http", "https":
+		if login := r.helperAuth(url); login != nil {
+			return login
+		}
 		for _, variable := range tokenVariables {
 			if token := os.Getenv(variable); token != "" {
 				return &http.BasicAuth{Username: "x-access-token", Password: token}
@@ -131,7 +134,7 @@ func (r *Repo) Fetch(remote string) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), networkTimeout)
 	defer cancel()
-	err = r.repo.FetchContext(ctx, &git.FetchOptions{RemoteName: remote, Auth: auth(url), Tags: git.AllTags})
+	err = r.repo.FetchContext(ctx, &git.FetchOptions{RemoteName: remote, Auth: r.auth(url), Tags: git.AllTags})
 	switch {
 	case errors.Is(err, git.NoErrAlreadyUpToDate):
 		return "already up to date with " + remote, nil
@@ -191,7 +194,7 @@ func (r *Repo) Push(remote string) (string, error) {
 	spec := config.RefSpec(ref.Name().String() + ":" + ref.Name().String())
 	ctx, cancel := context.WithTimeout(context.Background(), networkTimeout)
 	defer cancel()
-	err = r.repo.PushContext(ctx, &git.PushOptions{RemoteName: remote, Auth: auth(url), RefSpecs: []config.RefSpec{spec}})
+	err = r.repo.PushContext(ctx, &git.PushOptions{RemoteName: remote, Auth: r.auth(url), RefSpecs: []config.RefSpec{spec}})
 	switch {
 	case errors.Is(err, git.NoErrAlreadyUpToDate):
 		return remote + " already has " + ref.Name().Short(), nil
