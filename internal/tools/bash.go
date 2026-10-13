@@ -46,7 +46,7 @@ func runBash(ctx context.Context, env Env, raw json.RawMessage) (string, error) 
 
 	cmd := exec.CommandContext(ctx, "bash", "-c", args.Command)
 	cmd.Dir = env.WorkDir
-	output := newHeadTailBuffer(bashKeptOutput)
+	output := NewHeadTailBuffer(bashKeptOutput)
 	cmd.Stdout = output
 	cmd.Stderr = output
 	detachFromTerminal(cmd)

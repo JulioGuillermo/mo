@@ -21,21 +21,25 @@ import (
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/mcphub"
+	"github.com/jg/mo/internal/plugins"
 	"github.com/jg/mo/internal/render"
 )
 
 const helpText = `enter send · ctrl+j / alt+enter new line · esc / ctrl+c stop · ctrl+d quit
 /clear forget the conversation · /compact summarize it · /settings provider, tools, context
-/view <file> show an image, svg or mermaid file · /mcp MCP servers · /help this help · /quit exit`
+/view <file> show an image, svg or mermaid file · /mcp MCP servers · /plugins plugins and their commands
+/help this help · /quit exit`
 
 type Session struct {
-	Agent    *agent.Agent
-	Provider string
-	Model    string
-	Config   config.Config
-	WorkDir  string
-	Reload   func(userLayer config.Config) (Session, error)
-	MCP      []mcphub.Status
+	Agent     *agent.Agent
+	Provider  string
+	Model     string
+	Config    config.Config
+	WorkDir   string
+	Reload    func(userLayer config.Config) (Session, error)
+	MCP       []mcphub.Status
+	Plugins   *plugins.Set
+	ToolNames []string
 }
 
 type model struct {
@@ -102,6 +106,11 @@ func newInput() textarea.Model {
 
 func (m model) Init() tea.Cmd {
 	banner := m.printer.Note(fmt.Sprintf("mo · %s · %s · /help", m.session.Provider, shortModelName(m.session.Model)))
+	for _, status := range m.session.Plugins.Status() {
+		if status.Err != nil {
+			banner += "\n" + m.printer.Error(fmt.Errorf("plugin %s: %v", status.Name, status.Err))
+		}
+	}
 	return tea.Batch(tea.Println(banner), tea.RequestBackgroundColor, textarea.Blink)
 }
 
@@ -250,30 +259,40 @@ func (m model) start(first tea.Cmd, work func(context.Context, agent.Hooks) erro
 	return m, tea.Batch(tea.Sequence(first, runAgent), m.spinner.Tick)
 }
 
+// runCommand dispatches on the command's first word, so mo's own commands
+// always win over a plugin's.
 func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
-	if path, isView := strings.CutPrefix(command, "/view "); isView {
-		return m, m.view(strings.TrimSpace(path))
-	}
-	switch command {
-	case "/quit", "/exit":
+	name, argument, _ := strings.Cut(strings.TrimPrefix(command, "/"), " ")
+	argument = strings.TrimSpace(argument)
+	switch name {
+	case "quit", "exit":
 		return m, tea.Quit
-	case "/clear":
+	case "clear":
 		m.session.Agent.Clear()
 		m.usage = llm.Usage{}
 		return m, tea.Println(m.printer.Note("conversation cleared"))
-	case "/help":
+	case "help":
 		return m, tea.Println(m.printer.Note(helpText))
-	case "/settings":
+	case "settings":
 		m.settingsInFlight = true
 		return m, tea.Sequence(tea.Println(m.printer.Note("looking for providers…")), loadSettings(m.session))
-	case "/view":
-		return m, tea.Println(m.printer.Note("usage: /view <image, svg or mermaid file>"))
-	case "/mcp":
+	case "view":
+		if argument == "" {
+			return m, tea.Println(m.printer.Note("usage: /view <image, svg or mermaid file>"))
+		}
+		return m, m.view(argument)
+	case "plugins":
+		return m, tea.Println(m.printer.Note(pluginReport(m.session.Plugins)))
+	case "mcp":
 		return m, tea.Println(m.printer.Note(mcpReport(m.session.MCP)))
-	case "/compact":
+	case "compact":
 		return m.start(tea.Println(m.printer.Note("compacting…")), m.session.Agent.Compact)
 	}
-	return m, tea.Println(m.printer.Note("unknown command " + command + " · /help"))
+	run, found := m.session.Plugins.Command(name)
+	if !found {
+		return m, tea.Println(m.printer.Note("unknown command " + command + " · /help"))
+	}
+	return m.runPluginCommand(command, run, argument)
 }
 
 // view draws a file off the UI goroutine.
@@ -384,6 +403,44 @@ func (m model) statusLine() string {
 // are file paths, as llama-server reports them.
 func shortModelName(model string) string {
 	return strings.TrimSuffix(filepath.Base(model), ".gguf")
+}
+
+// runPluginCommand runs a plugin's command like a turn of the agent: Esc
+// stops it, and no prompt can start meanwhile. What it returns is printed
+// as markdown.
+func (m model) runPluginCommand(command string, run func(context.Context, string) (string, error), argument string) (tea.Model, tea.Cmd) {
+	bridge := m.bridge
+	return m.start(tea.Println(m.printer.User(command)), func(ctx context.Context, _ agent.Hooks) error {
+		output, err := run(ctx, argument)
+		if err != nil {
+			return err
+		}
+		bridge.print(bridge.printer.Answer(output))
+		return nil
+	})
+}
+
+func pluginReport(loaded *plugins.Set) string {
+	statuses := loaded.Status()
+	if len(statuses) == 0 {
+		return "no plugins; put .lua files in " + config.PluginDir()
+	}
+	var lines []string
+	for _, status := range statuses {
+		if status.Err != nil {
+			lines = append(lines, fmt.Sprintf("✗ %s: %v", status.Name, status.Err))
+			continue
+		}
+		var parts []string
+		parts = append(parts, status.Tools...)
+		parts = append(parts, status.Commands...)
+		parts = append(parts, status.Hooks...)
+		lines = append(lines, fmt.Sprintf("✓ %s: %s", status.Name, strings.Join(parts, ", ")))
+		for _, warning := range status.Warnings {
+			lines = append(lines, "  ! "+warning)
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func mcpReport(statuses []mcphub.Status) string {

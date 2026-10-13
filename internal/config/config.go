@@ -136,6 +136,10 @@ func defaultMemoryDir() string {
 	return filepath.Join(dataHome(), "mo", "memory")
 }
 
+func PluginDir() string {
+	return filepath.Join(ConfigHome(), "mo", "plugins")
+}
+
 func LogDir() string {
 	return filepath.Join(dataHome(), "mo", "logs")
 }

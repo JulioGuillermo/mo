@@ -9,9 +9,12 @@ package tui
 // | TU-05 | Happy    | The status line shows context used over the window          | P1       |
 // | TU-06 | Happy    | An answer's mermaid block is drawn, its text rendered       | P1       |
 // | TU-07 | Happy    | Images a tool result marks are drawn; others give nothing   | P1       |
+// | TU-08 | Security | mo's own commands win even with an argument after them      | P1       |
+// | TU-09 | Happy    | A plugin command runs like a turn: Esc can stop it          | P1       |
 
 import (
 	"bytes"
+	"context"
 	"image"
 	"image/png"
 	"os"
@@ -148,5 +151,30 @@ func TestPrinterVisuals(t *testing.T) {
 		if drawn == "" || printer.Images("no images here") != "" {
 			t.Errorf("drawn = %q", drawn)
 		}
+	})
+}
+
+func TestCommandDispatch(t *testing.T) {
+	t.Run("TU-08 mo's own commands win even with an argument after them", func(t *testing.T) {
+		m := model{session: Session{Agent: &agent.Agent{}}, printer: newPrinter(), input: newInput()}
+
+		updated, _ := m.runCommand("/settings now")
+
+		if !updated.(model).settingsInFlight {
+			t.Error("/settings with an argument did not open the settings")
+		}
+	})
+
+	t.Run("TU-09 a plugin command runs like a turn: Esc can stop it", func(t *testing.T) {
+		m := model{session: Session{Agent: &agent.Agent{}}, printer: newPrinter(), input: newInput(), bridge: &bridge{printer: newPrinter()}}
+		run := func(ctx context.Context, _ string) (string, error) { <-ctx.Done(); return "", ctx.Err() }
+
+		updated, cmd := m.runPluginCommand("/slow", run, "")
+
+		running := updated.(model)
+		if !running.running || cmd == nil {
+			t.Fatal("the command did not start as a turn")
+		}
+		running.stop()
 	})
 }

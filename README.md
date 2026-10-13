@@ -152,6 +152,35 @@ coloured half blocks in other truecolor terminals, and text otherwise. SVG is dr
 into mo; Mermaid flowcharts and sequence diagrams are drawn with box characters, or as an image when
 `mmdc` (mermaid-cli) is installed.
 
+## Plugins
+
+Lua files in `~/.config/mo/plugins/` load at start; `/plugins` lists them. A plugin can add tools
+for the model, commands for you and hooks:
+
+```lua
+mo.tool{
+  name = "git_log", description = "Recent commits.",
+  params = { count = { type = "integer" } },
+  confirm = false,                       -- true: ask before it runs
+  run = function(args) return (mo.exec("git log --oneline -n " .. (args.count or 10))) end,
+}
+mo.command{ name = "standup", run = function(text) return "**markdown** to print" end }
+mo.on("prompt", function(text) return text .. " (be brief)" end)   -- rewrite every prompt
+mo.on("tool_call", function(call)                                    -- return a reason to block
+  if call.name == "bash" and call.args.command:find("push %-%-force") then return "no force pushes" end
+end)
+```
+
+They get `mo.exec(cmd)` (output, exit code), `mo.read(path)`, `mo.write(path, text)`,
+`mo.json_encode`, `mo.json_decode`, `mo.env(name)`, `mo.workdir` and `mo.log` (`print` goes to the
+log too, in `~/.local/share/mo/logs/plugin-<name>.log`). The Lua `io`, `os` and `require` are not
+there. A full example is in `docs/examples/plugins/git.lua`.
+
+The language is Lua 5.1 as gopher-lua implements it: patterns have no `%f` frontier (it finds
+nothing, without an error), and there is no `goto` or integer division.
+
+Plugins are your code and run with your rights; they are never loaded from a project.
+
 ## Keys
 
 | Key | Action |
@@ -161,4 +190,5 @@ into mo; Mermaid flowcharts and sequence diagrams are drawn with box characters,
 | esc, ctrl+c | stop the current run |
 | ctrl+c (idle) | clear input, then quit |
 | ctrl+d | quit |
-| `/clear` `/compact` `/settings` `/mcp` `/view <file>` `/help` `/quit` | commands |
+| `/clear` `/compact` `/settings` `/mcp` `/plugins` `/view <file>` `/help` `/quit` | commands |
+| `/<name> text` | a plugin command |

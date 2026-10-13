@@ -199,3 +199,34 @@
   /tmp/mo-images would let another user read them or plant links.
 - Code blocks are tracked when splitting an answer: an image line or a mermaid fence inside, say,
   a README in a markdown block stays text.
+
+## Plugins
+
+- Lua through gopher-lua: pure Go, so the binary stays single and cgo-free. JavaScript (goja) was
+  the other candidate; Lua is smaller to embed and to learn for short scripts.
+- Only the user's `~/.config/mo/plugins/*.lua` load, in name order; a project never brings code to
+  run. The folder is a protected path, so the model cannot write a plugin without being asked.
+- Each plugin has its own Lua state with base, table, string and math; `io`, `os`, `require`,
+  `dofile` and `loadfile` are removed and the system is reached through the `mo` table instead.
+  That is not a sandbox against the user's own code (`mo.exec` runs bash); it keeps the surface
+  small and every effect visible in one place.
+- A Lua state is not safe to share, so calls into one plugin take turns, each with a time limit:
+  10 s to load, 5 s per hook, 2 minutes per tool or command. Waiting for the turn also ends with
+  the caller's context, so a busy plugin cannot freeze a prompt and Esc works. Lua code stops at
+  its limit; work stuck inside Go (a runaway pattern match) is abandoned 3 s later, longer than
+  `mo.exec` waits for its output, and the plugin is turned off for the run, since its state can no
+  longer be trusted. A guard turned off keeps blocking, like one that failed to load.
+- Plugin output is bounded: `mo.exec` keeps 1 MB of head and tail, `string.rep` refuses results
+  over 16 MB, converting a Lua value visits at most 100 000 parts, command output is cut to 64 KB
+  and a prompt hook result over 256 KB is ignored.
+- Declarations (`mo.tool`, `mo.command`, `mo.on`) only work while the file loads; afterwards other
+  goroutines read them without locks.
+- A `tool_call` hook that fails blocks the call, and so does a plugin that guards tool calls and
+  failed to load: a guard that broke should not let everything through. Load errors are shown in
+  the UI when it starts. A `prompt` hook that fails leaves the prompt as it was.
+- mo's own command names are refused for plugin commands, and commands dispatch on their first
+  word, so `/settings x` is always mo's. A plugin command runs like a turn of the agent.
+- Plugin tools whose name another tool already has, `tool_search` included, are left out and
+  reported. Names start with a letter or `_`, which every provider accepts. They run without
+  asking unless declared with `confirm = true`: the user wrote them.
+- A blocked call is shown like any other, with its reason, and the model receives the reason.

@@ -9,6 +9,7 @@ import (
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/mcphub"
+	"github.com/jg/mo/internal/plugins"
 	"github.com/jg/mo/internal/tools"
 	"github.com/jg/mo/internal/tui"
 	"github.com/jg/mo/internal/web"
@@ -20,16 +21,24 @@ type sessionChoice struct {
 	yes      bool
 }
 
+// extensions are what a run loads once and keeps across settings changes.
+type extensions struct {
+	mcp     *mcphub.Hub
+	plugins *plugins.Set
+}
+
 // buildSession puts together the agent the config describes. Its Reload
 // builds a session from a new user layer, as the settings screen edits it,
 // after checking that the layer works on its own, outside any project; the
 // provider and model given on the command line no longer apply then.
-func buildSession(ctx context.Context, workDir string, cfg config.Config, choice sessionChoice, hub *mcphub.Hub) (tui.Session, error) {
+func buildSession(ctx context.Context, workDir string, cfg config.Config, choice sessionChoice, loaded extensions) (tui.Session, error) {
+	hub := loaded.mcp
 	chosen, err := chooseProvider(ctx, cfg, choice.provider, choice.model)
 	if err != nil {
 		return tui.Session{}, err
 	}
 	confirm := append(slices.Clone(cfg.Tools.Confirm), hub.NeedConfirmation()...)
+	confirm = append(confirm, loaded.plugins.NeedConfirmation()...)
 	if choice.yes {
 		confirm = nil
 	}
@@ -40,7 +49,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	env := toolEnv(workDir, cfg.Memory.Dir)
 	registry := tools.NewRegistry(env, tools.Options{
 		Searcher:     searcher,
-		Extra:        hub.Tools(),
+		Extra:        extraTools(hub, loaded.plugins),
 		Mode:         cfg.Tools.Mode,
 		AlwaysLoaded: cfg.Tools.AlwaysLoaded,
 		Disabled:     cfg.Tools.Disabled,
@@ -62,6 +71,8 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		CompactAt:     *cfg.Context.CompactAt,
 		CompactPrompt: cfg.Context.CompactPrompt,
 		Strategy:      cfg.Context.Strategy,
+		RewritePrompt: loaded.plugins.RewritePrompt,
+		BlockToolCall: loaded.plugins.BlockToolCall,
 	}
 	reload := func(userLayer config.Config) (tui.Session, error) {
 		if _, err := chooseProvider(context.Background(), config.UserSettings(userLayer), "", ""); err != nil {
@@ -71,17 +82,40 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		if err != nil {
 			return tui.Session{}, err
 		}
-		return buildSession(context.Background(), workDir, fresh, sessionChoice{yes: choice.yes}, hub)
+		return buildSession(context.Background(), workDir, fresh, sessionChoice{yes: choice.yes}, loaded)
 	}
 	return tui.Session{
-		Agent:    assistant,
-		Provider: chosen.name,
-		Model:    chosen.model,
-		Config:   cfg,
-		WorkDir:  workDir,
-		Reload:   reload,
-		MCP:      hub.Status(),
+		Agent:     assistant,
+		Provider:  chosen.name,
+		Model:     chosen.model,
+		Config:    cfg,
+		WorkDir:   workDir,
+		Reload:    reload,
+		MCP:       hub.Status(),
+		Plugins:   loaded.plugins,
+		ToolNames: allToolNames(hub, loaded.plugins),
 	}, nil
+}
+
+// extraTools puts the MCP tools first and then the plugin tools whose names
+// are still free.
+func extraTools(hub *mcphub.Hub, loaded *plugins.Set) []tools.Tool {
+	mcpTools := hub.Tools()
+	taken := tools.ReservedNames()
+	for _, tool := range mcpTools {
+		taken = append(taken, tool.Name)
+	}
+	return append(mcpTools, loaded.Tools(taken)...)
+}
+
+// allToolNames lists every tool a session can have, also the disabled ones,
+// for the settings screen.
+func allToolNames(hub *mcphub.Hub, loaded *plugins.Set) []string {
+	names := tools.BuiltinNames()
+	for _, tool := range hub.Tools() {
+		names = append(names, tool.Name)
+	}
+	return append(names, loaded.ToolNames()...)
 }
 
 func toolEnv(workDir, memoryDir string) tools.Env {

@@ -92,6 +92,12 @@ func BuiltinDescriptions() map[string]string {
 	return descriptions
 }
 
+// ReservedNames are the names no added tool may take: the built-in tools
+// and tool_search.
+func ReservedNames() []string {
+	return append(BuiltinNames(), searchToolName)
+}
+
 func BuiltinNames() []string {
 	var names []string
 	for _, tool := range builtins() {

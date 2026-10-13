@@ -5,9 +5,9 @@ import (
 	"sync"
 )
 
-// headTailBuffer is a writer that keeps the first and the last bytes written,
+// HeadTailBuffer is a writer that keeps the first and the last bytes written,
 // up to limit in total, and counts what it drops in between.
-type headTailBuffer struct {
+type HeadTailBuffer struct {
 	mu      sync.Mutex
 	limit   int
 	head    []byte
@@ -15,11 +15,11 @@ type headTailBuffer struct {
 	dropped int
 }
 
-func newHeadTailBuffer(limit int) *headTailBuffer {
-	return &headTailBuffer{limit: limit}
+func NewHeadTailBuffer(limit int) *HeadTailBuffer {
+	return &HeadTailBuffer{limit: limit}
 }
 
-func (b *headTailBuffer) Write(data []byte) (int, error) {
+func (b *HeadTailBuffer) Write(data []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	written := len(data)
@@ -37,7 +37,7 @@ func (b *headTailBuffer) Write(data []byte) (int, error) {
 	return written, nil
 }
 
-func (b *headTailBuffer) String() string {
+func (b *HeadTailBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.dropped == 0 {

@@ -10,6 +10,8 @@ package agent
 // | AG-06 | Security | A write outside the working directory asks even when not listed    | P0       |
 // | AG-07 | Security | AllowAlways stops asking for that tool, but not outside the workdir | P0       |
 // | AG-08 | Error    | A call with cut-off arguments gets its error, without running      | P1       |
+// | AG-09 | Happy    | RewritePrompt changes the prompt before it enters the history      | P1       |
+// | AG-10 | Security | BlockToolCall stops a call before anyone is asked to approve it    | P0       |
 
 import (
 	"context"
@@ -237,6 +239,48 @@ func TestRun(t *testing.T) {
 
 		if result := agent.History[2]; !result.IsError || result.Text != "cut off" {
 			t.Errorf("result = %+v", result)
+		}
+	})
+}
+
+func TestPluginHooks(t *testing.T) {
+	t.Run("AG-09 RewritePrompt changes the prompt before it enters the history", func(t *testing.T) {
+		provider := &scriptedProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Text: "ok"}}}
+		agent := newAgent(t, provider)
+		agent.RewritePrompt = func(_ context.Context, prompt string) string { return prompt + " (be brief)" }
+
+		if err := agent.Run(context.Background(), "explain", Hooks{}); err != nil {
+			t.Fatal(err)
+		}
+
+		if agent.History[0].Text != "explain (be brief)" {
+			t.Errorf("first = %q", agent.History[0].Text)
+		}
+	})
+
+	t.Run("AG-10 BlockToolCall stops a call before anyone is asked to approve it", func(t *testing.T) {
+		provider := &scriptedProvider{replies: []llm.Message{
+			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("c1", "bash", `{"command":"git push --force"}`)}},
+			{Role: llm.RoleAssistant, Text: "understood"},
+		}}
+		agent := newAgent(t, provider, "bash")
+		agent.BlockToolCall = func(context.Context, llm.ToolCall) string { return "blocked by plugin guard: no force pushes" }
+		asked := false
+		var shown string
+		hooks := Hooks{
+			Approve:    func(context.Context, ApprovalRequest) Decision { asked = true; return Allow },
+			OnToolDone: func(_ llm.ToolCall, output string, isError bool) { shown = output },
+		}
+
+		if err := agent.Run(context.Background(), "push", hooks); err != nil {
+			t.Fatal(err)
+		}
+
+		if result := agent.History[2]; asked || !result.IsError || !strings.Contains(result.Text, "no force pushes") {
+			t.Errorf("asked = %v result = %+v", asked, result)
+		}
+		if !strings.Contains(shown, "no force pushes") {
+			t.Errorf("the block was not shown: %q", shown)
 		}
 	})
 }

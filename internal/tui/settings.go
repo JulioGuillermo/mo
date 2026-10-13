@@ -24,6 +24,7 @@ const (
 	settingsDetectTimeout = 3 * time.Second
 	modelListTimeout      = 2 * time.Second
 	settingsMinHeight     = 3
+	maxToolChoiceHeight   = 14
 	autoProvider          = ""
 	settingsHelp          = "enter next · shift+tab back · space toggle · esc cancel"
 )
@@ -148,7 +149,7 @@ func isAgentMsg(msg tea.Msg) bool {
 func buildSettingsForm(session Session, draft *settingsDraft, findings []detect.Finding, models []string) *huh.Form {
 	return huh.NewForm(
 		modelGroup(session.Config, draft, findings, models),
-		toolsGroup(draft),
+		toolsGroup(draft, toolNames(session)),
 		contextGroup(session.Agent, draft),
 		descriptionsGroup(draft),
 		huh.NewGroup(
@@ -172,8 +173,7 @@ func modelGroup(cfg config.Config, draft *settingsDraft, findings []detect.Findi
 	return huh.NewGroup(fields...).Title("Model")
 }
 
-func toolsGroup(draft *settingsDraft) *huh.Group {
-	names := tools.BuiltinNames()
+func toolsGroup(draft *settingsDraft, names []string) *huh.Group {
 	return huh.NewGroup(
 		huh.NewSelect[string]().Title("Tool mode").Options(
 			huh.NewOption("full: every tool with its description", string(tools.ModeFull)),
@@ -187,8 +187,23 @@ func toolsGroup(draft *settingsDraft) *huh.Group {
 	).Title("Tools")
 }
 
+// toolNames is every tool the session can have, built-in first, each once.
+func toolNames(session Session) []string {
+	if len(session.ToolNames) == 0 {
+		return tools.BuiltinNames()
+	}
+	var names []string
+	for _, name := range session.ToolNames {
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 func toolChoice(title string, names []string, value *[]string) *huh.MultiSelect[string] {
-	return huh.NewMultiSelect[string]().Title(title).Options(huh.NewOptions(names...)...).Height(len(names) + 1).Value(value)
+	height := min(len(names)+1, maxToolChoiceHeight)
+	return huh.NewMultiSelect[string]().Title(title).Options(huh.NewOptions(names...)...).Height(height).Value(value)
 }
 
 func contextGroup(current *agent.Agent, draft *settingsDraft) *huh.Group {

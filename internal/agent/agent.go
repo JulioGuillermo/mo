@@ -46,6 +46,9 @@ type Agent struct {
 	CompactPrompt string
 	Strategy      string
 
+	RewritePrompt func(ctx context.Context, prompt string) string
+	BlockToolCall func(ctx context.Context, call llm.ToolCall) string
+
 	History   []llm.Message
 	LastUsage llm.Usage
 
@@ -70,6 +73,9 @@ type Hooks struct {
 }
 
 func (a *Agent) Run(ctx context.Context, prompt string, hooks Hooks) error {
+	if a.RewritePrompt != nil {
+		prompt = a.RewritePrompt(ctx, prompt)
+	}
 	a.History = append(a.History, llm.Message{Role: llm.RoleUser, Text: prompt})
 	a.currentRequest = prompt
 	for {
@@ -127,6 +133,12 @@ func (a *Agent) answerToolCall(ctx context.Context, call llm.ToolCall, hooks Hoo
 	if call.ArgsError != "" {
 		return call.ArgsError, true
 	}
+	if a.BlockToolCall != nil {
+		if reason := a.BlockToolCall(ctx, call); reason != "" {
+			a.announceBlocked(call, reason, hooks)
+			return reason, true
+		}
+	}
 	summary := a.Tools.Summary(call)
 	if !a.approved(ctx, call, summary, hooks) {
 		if ctx.Err() != nil {
@@ -161,6 +173,15 @@ func (a *Agent) approved(ctx context.Context, call llm.ToolCall, summary string,
 		a.alwaysAllowed[call.Name] = true
 	}
 	return decision != Deny
+}
+
+func (a *Agent) announceBlocked(call llm.ToolCall, reason string, hooks Hooks) {
+	if hooks.OnToolStart != nil {
+		hooks.OnToolStart(call, a.Tools.Summary(call))
+	}
+	if hooks.OnToolDone != nil {
+		hooks.OnToolDone(call, reason, true)
+	}
 }
 
 func (a *Agent) request() llm.Request {
