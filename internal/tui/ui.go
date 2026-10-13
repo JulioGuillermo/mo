@@ -84,7 +84,11 @@ type model struct {
 	// forming are the tool calls the model is writing now.
 	forming []formingCall
 	// activity is what the agent waits on, said by the spinner.
-	activity         string
+	activity string
+	// lastEvent is the kind of what the model sent last, and runningTool
+	// the call running now: they say what the agent is doing.
+	lastEvent        llm.EventKind
+	runningTool      *llm.ToolCall
 	streamDone       string
 	reasoning        string
 	dialog           *dialog
@@ -267,8 +271,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case toolStartMsg:
 		m.followTodos(msg.call)
 		m.addTool(msg.call, msg.summary)
+		running := msg.call
+		m.runningTool = &running
 		return m, nil
 	case toolDoneMsg:
+		m.runningTool = nil
 		m.finishTool(msg.id, msg.output, msg.isError)
 		return m, m.tickJobs()
 	case tea.MouseWheelMsg:
@@ -289,6 +296,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focused = true
 		return m.handleKey(msg)
 	case streamMsg:
+		m.lastEvent = msg.Kind
 		switch msg.Kind {
 		case llm.EventToolCall:
 			m.growCall(msg.Call, msg.Name, msg.Text)
@@ -565,6 +573,7 @@ func (m *model) stop() {
 func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 	m.running = false
 	m.activity = ""
+	m.runningTool = nil
 	m.cancel()
 	m.closeDialog(true)
 	partial := strings.TrimSpace(m.stream)
@@ -659,7 +668,7 @@ func (m model) upperLayout() (string, []region) {
 	case m.dialog != nil:
 		add(m.dialogLayout())
 	case m.running:
-		add(m.spinner.View()+workingStyle.Render(" "+orDefault(m.activity, "working")+"… · esc to stop"), nil)
+		add(m.spinner.View()+" "+m.currentState().label(true)+dimStyle.Render(" · esc to stop"), nil)
 	}
 	if matches := m.suggestions(); len(matches) > 0 && !m.running {
 		add(m.suggestionLayout(matches))
@@ -857,6 +866,9 @@ func (m model) status(show statusParts) (string, []region) {
 		}
 		regions = append(regions, region{y: 0, x0: x, x1: x + ansi.StringWidth(part), do: do})
 		parts = append(parts, part)
+	}
+	if m.running {
+		parts = append(parts, m.currentState().label(false))
 	}
 	if policy := m.session.Agent.Permissions; policy != nil {
 		mode := policy.Mode()

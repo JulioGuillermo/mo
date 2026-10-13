@@ -12,6 +12,8 @@ import (
 )
 
 const (
+	// CompactingActivity is what OnActivity says while a summary is asked.
+	CompactingActivity   = "compacting the conversation"
 	DefaultCompactPrompt = `You summarize a coding session so the work can continue from the summary alone.
 Keep the user's goals and constraints, decisions taken, files changed and their state, commands that worked or failed, and what is left to do.
 Use short bullet points.`
@@ -78,7 +80,7 @@ func (a *Agent) Compact(ctx context.Context, hooks Hooks) error {
 		kept = nil
 	}
 
-	hooks.activity("compacting the conversation")
+	hooks.activity(CompactingActivity)
 	summary, err := a.summarize(ctx, a.History[:cut])
 	hooks.activity("")
 	if err != nil {

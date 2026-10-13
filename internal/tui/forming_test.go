@@ -7,6 +7,7 @@ package tui
 // | LT-03 | Happy    | A file being written shows its path, line count and last lines; tool_call shows the tool | P1 |
 // | LT-04 | Edge     | The forming view goes when the call is whole                         | P1       |
 // | LT-05 | Happy    | The spinner says what the agent waits on, compacting, and goes back to working | P1 |
+// | LT-06 | Happy    | Each thing the agent does has its word and colour, in spinner and status | P1    |
 
 import (
 	"strings"
@@ -110,8 +111,42 @@ func TestActivity(t *testing.T) {
 		back, _ := compacting.(model).Update(activityMsg(""))
 		done, _ := compacting.(model).finishRun(nil)
 
-		if !strings.Contains(ansi.Strip(compacting.(model).bottom()), "compacting the conversation…") || !strings.Contains(ansi.Strip(back.(model).bottom()), "working…") || done.(model).activity != "" {
+		if !strings.Contains(ansi.Strip(compacting.(model).bottom()), "compacting") || !strings.Contains(ansi.Strip(back.(model).bottom()), "waiting") || done.(model).activity != "" {
 			t.Errorf("compacting:\n%s\nback:\n%s", ansi.Strip(compacting.(model).bottom()), ansi.Strip(back.(model).bottom()))
+		}
+	})
+}
+
+func TestStates(t *testing.T) {
+	t.Run("LT-06 each thing the agent does has its word and colour, in spinner and status", func(t *testing.T) {
+		m := conversationModel()
+		m.running, m.cancel = true, func() {}
+		colors := statePalette(true)
+		cases := []struct {
+			name  string
+			setup func(model) model
+			word  string
+			tint  any
+		}{
+			{"waiting", func(m model) model { return m }, "waiting", colors.waiting},
+			{"reasoning", func(m model) model { return streaming(m, llm.Event{Kind: llm.EventReasoning, Text: "hmm"}) }, "reasoning", colors.reasoning},
+			{"writing", func(m model) model { return streaming(m, llm.Event{Kind: llm.EventText, Text: "Sure"}) }, "writing", colors.writing},
+			{"reading", func(m model) model { return streaming(m, piece(0, "read", `{"path":"a.go"}`)) }, "reading", colors.reading},
+			{"changing", func(m model) model { return streaming(m, piece(0, "edit", `{"path":"a.go"}`)) }, "changing", colors.changing},
+			{"bash", func(m model) model { return streaming(m, piece(0, "bash", `{"command":"ls"}`)) }, "changing", colors.changing},
+			{"compacting", func(m model) model {
+				updated, _ := m.Update(activityMsg("compacting the conversation"))
+				return updated.(model)
+			}, "compacting", colors.compacting},
+		}
+		for _, c := range cases {
+			got := c.setup(m).currentState()
+			if got.word != c.word || got.tint != c.tint {
+				t.Errorf("%s: word = %q", c.name, got.word)
+			}
+			if !strings.Contains(ansi.Strip(c.setup(m).statusLine()), c.word) {
+				t.Errorf("%s: the status line does not say %q", c.name, c.word)
+			}
 		}
 	})
 }

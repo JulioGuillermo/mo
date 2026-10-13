@@ -11,6 +11,7 @@ package tui
 // | TU-07 | Happy    | Images a tool result marks are drawn; others give nothing   | P1       |
 // | TU-08 | Security | mo's own commands win even with an argument after them      | P1       |
 // | TU-09 | Happy    | A plugin command runs like a turn: Esc can stop it          | P1       |
+// | TU-10 | Happy    | Images line up with their text and keep inside the width    | P1       |
 
 import (
 	"bytes"
@@ -184,5 +185,30 @@ func TestCommandDispatch(t *testing.T) {
 			t.Fatal("the command did not start as a turn")
 		}
 		running.stop()
+	})
+}
+
+func TestImageIndent(t *testing.T) {
+	t.Run("TU-10 images line up with their text and keep inside the width", func(t *testing.T) {
+		printer := newPrinter()
+		printer.setWidth(40)
+		printer.setImages(render.ModeBlocks)
+		path := filepath.Join(t.TempDir(), "wide.png")
+		var encoded bytes.Buffer
+		_ = png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 400, 40)))
+		_ = os.WriteFile(path, encoded.Bytes(), 0o644)
+
+		fromTool := printer.Images("shot " + render.ImageMarker("png 400x40", path))
+		inAnswer := printer.File(path)
+
+		for name, drawn := range map[string]string{"tool": fromTool, "answer": inAnswer} {
+			indent := map[string]string{"tool": "    ", "answer": "  "}[name]
+			for _, line := range strings.Split(drawn, "\n") {
+				if !strings.HasPrefix(line, indent+"\x1b[") || ansi.StringWidth(line) > 40 {
+					t.Errorf("%s line starts %q, %d wide", name, line[:min(len(line), 12)], ansi.StringWidth(line))
+					break
+				}
+			}
+		}
 	})
 }

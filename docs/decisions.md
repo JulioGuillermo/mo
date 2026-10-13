@@ -582,3 +582,11 @@
 - The loop guard leaves the pieces of tool calls alone: a file with repeated lines is no loop.
 - The spinner says what the agent waits on besides the reply: compacting the conversation, or the
   model judging a command in auto mode.
+- While the agent works, the spinner and the start of the status line say what it does in a word
+  with its colour: reasoning (blue), writing (yellow), reading with a tool (green), changing with
+  one (red: write, edit, mkdir, rm, bash, and what the registry counts as a change or a warning),
+  compacting (purple), waiting for the model (grey), and your turn when a dialog waits on the user.
+- Images and diagrams start where the text beside them does, two columns in for an answer, four
+  for a tool result after its ⎿, and are drawn in the width left. They are lines of placeholder
+  cells or colour blocks, so the indent is spaces before each line; a kitty upload at the start of
+  the first line takes no room.

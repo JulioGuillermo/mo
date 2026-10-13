@@ -15,6 +15,13 @@ import (
 
 const toolPreviewLines = 4
 
+// Images and diagrams start where the text beside them does: an answer's
+// two columns in, a tool result's four, after its ⎿.
+const (
+	answerIndent = 2
+	toolIndent   = 4
+)
+
 const shownCommandLines = 6
 
 var (
@@ -77,16 +84,16 @@ func (p *printer) Answer(text string) string {
 }
 
 func (p *printer) segment(segment render.Segment) string {
-	renderer := p.renderer()
+	renderer := p.rendererAt(answerIndent)
 	switch segment.Kind {
 	case render.SegmentMermaid:
-		return renderer.Mermaid(segment.Content)
+		return indentLines(renderer.Mermaid(segment.Content), answerIndent)
 	case render.SegmentSVG:
 		drawn, err := renderer.SVG([]byte(segment.Content))
 		if err != nil {
 			return p.Markdown("```svg\n"+segment.Content+"```") + "\n" + p.Error(err)
 		}
-		return drawn
+		return indentLines(drawn, answerIndent)
 	case render.SegmentImageFile:
 		return p.File(segment.Content)
 	}
@@ -95,21 +102,47 @@ func (p *printer) segment(segment render.Segment) string {
 
 // File draws an image, SVG or Mermaid file, or says why it cannot.
 func (p *printer) File(path string) string {
+	return p.fileAt(path, answerIndent)
+}
+
+// fileAt draws a file indented as the text around it, in the width left.
+func (p *printer) fileAt(path string, indent int) string {
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(p.workDir, path)
 	}
-	drawn, err := p.renderer().File(path)
+	drawn, err := p.rendererAt(indent).File(path)
 	if err != nil {
 		return p.Error(err)
 	}
-	return drawn
+	return indentLines(drawn, indent)
+}
+
+// rendererAt draws in the width left beside an indent.
+func (p *printer) rendererAt(indent int) render.Renderer {
+	renderer := p.renderer()
+	renderer.Width = max(renderer.Width-indent, 10)
+	return renderer
+}
+
+// indentLines moves every drawn line right, so an image or diagram lines
+// up with the text it belongs to. Escape sequences at a line's start, as a
+// kitty upload, stay where they are: they take no room.
+func indentLines(text string, indent int) string {
+	pad := strings.Repeat(" ", indent)
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if line != "" {
+			lines[i] = pad + line
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // Images draws the images a tool result points at.
 func (p *printer) Images(output string) string {
 	var drawn []string
 	for _, path := range render.MarkedImages(output) {
-		drawn = append(drawn, p.File(path))
+		drawn = append(drawn, p.fileAt(path, toolIndent))
 	}
 	return strings.Join(drawn, "\n")
 }
