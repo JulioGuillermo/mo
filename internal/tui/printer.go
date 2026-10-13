@@ -246,9 +246,15 @@ func (p *printer) wrapped(line string, margin int) []string {
 // and a hint when there is more; open, all of both.
 func (p *printer) Tool(run toolRun, open bool) string {
 	var parts []string
-	if open {
+	change, changed := fileChangeOf(run.name, run.args)
+	switch {
+	case open && changed:
+		parts = append(parts, "\n"+toolName.Render("● "+run.name)+" "+run.summary+dimStyle.Render("  "+change.summary())+"\n"+p.fileChangeLines(change))
+	case open:
 		parts = append(parts, "\n"+toolName.Render("● "+run.name)+"\n"+p.commandLines(run.summary, true))
-	} else {
+	case changed:
+		parts = append(parts, p.ToolStart(run.name, run.summary+dimStyle.Render("  "+change.summary())))
+	default:
 		parts = append(parts, p.ToolStart(run.name, run.summary))
 	}
 	switch {
@@ -270,6 +276,9 @@ func (p *printer) Tool(run toolRun, open bool) string {
 
 // toolHidesSome tells whether the folded view leaves lines out or cuts them.
 func (p *printer) toolHidesSome(run toolRun) bool {
+	if _, changed := fileChangeOf(run.name, run.args); changed {
+		return true
+	}
 	command := strings.Split(strings.TrimRight(run.summary, "\n"), "\n")
 	output := strings.Split(strings.TrimRight(run.output, "\n"), "\n")
 	if len(command) > shownCommandLines || len(output) > toolPreviewLines {

@@ -16,12 +16,15 @@ import (
 )
 
 type Tool struct {
-	Name             string
-	Description      string
-	Schema           json.RawMessage
-	Run              func(ctx context.Context, env Env, args json.RawMessage) (string, error)
-	Summary          func(args json.RawMessage) string
-	ChangesPathArg   bool
+	Name           string
+	Description    string
+	Schema         json.RawMessage
+	Run            func(ctx context.Context, env Env, args json.RawMessage) (string, error)
+	Summary        func(args json.RawMessage) string
+	ChangesPathArg bool
+	// Changes tells, for a tool whose actions differ, whether a call changes
+	// files; such calls ask in ask mode.
+	Changes          func(args json.RawMessage) bool
 	AlreadyConfirmed func(args json.RawMessage) bool
 	LooseArgs        bool
 }
@@ -117,7 +120,7 @@ func builtins() []Tool {
 func builtinsWith(searcher web.Searcher) []Tool {
 	return []Tool{
 		bashTool(), readTool(), writeTool(), editTool(), lsTool(), mkdirTool(), rmTool(), grepTool(),
-		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), jobsTool(), recallTool(),
+		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), jobsTool(), recallTool(), gitTool(),
 	}
 }
 

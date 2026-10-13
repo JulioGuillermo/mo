@@ -493,3 +493,32 @@
   endpoint could be added later and the two rankings merged.
 - Ids are checked: a memory id must name a scope folder and a memory name, a conversation id is
   refused when it holds a path, so `read` cannot leave the memory or session folder.
+
+## Git
+
+- A `git` tool on go-git, pure Go: it works where the git command is missing, and its reading
+  actions (`status`, `diff`, `log`, `show`, `blame`, `branches`, `check`) never ask. The others
+  count as file changes: they ask in ask mode. go-git adds about 3.4 MB to the binary, measured.
+- go-git merges only by fast-forward, so mo has its own three-way merge: Myers line diffs and a
+  diff3 merge. Merge and cherry-pick use it; a cherry-pick is a merge whose base is the picked
+  commit's parent, committed with its author and a "cherry picked from" line.
+- Conflicts are left in the files as diff3 markers (ours, base, theirs) for the model to resolve
+  with `edit`. The state is written as git writes it (`MERGE_HEAD`, `CHERRY_PICK_HEAD`,
+  `MERGE_MSG`), so the git command can take over a merge mo left half done, and mo keeps the
+  conflicted and written paths beside them.
+- `check` lists what is in progress and where markers are left. A marker is the whole sequence,
+  `<<<<<<<`, `=======`, `>>>>>>>`, so a markdown heading underlined with `=======` is not one.
+  `commit` and `continue` refuse while any changed or conflicted file holds one, naming file and
+  line, so the model cannot commit half a resolution.
+- Merge, cherry-pick and switch refuse over uncommitted changes to tracked files: a merge could
+  write over them, and go-git's checkout keeping changes carries the old branch's index along.
+- A file deleted on one side and changed on the other keeps the changed one; a binary changed on
+  both keeps ours; both are reported as conflicts. Renames are not followed yet.
+- Hooks do not run, and the result of a commit says so.
+- Not yet: rebase, push, pull and fetch.
+
+## Tool calls that change files
+
+- An opened `write` shows what it wrote and an opened `edit` the diff from old to new, both
+  coloured by the file's language; folded they say how many lines were written, added and
+  removed. Each diff line is coloured on its own, so a string spanning lines may colour wrong.

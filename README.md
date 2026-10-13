@@ -141,7 +141,7 @@ model = "qwen3-coder"
 
 ## Tools
 
-`bash` `read` `write` `edit` `ls` `mkdir` `rm` `grep` `memory` `fetch` `web_search` `todo`, plus `tool_search` in
+`bash` `read` `write` `edit` `ls` `mkdir` `rm` `grep` `memory` `fetch` `web_search` `todo` `ask` `jobs` `recall` `git`, plus `tool_search` in
 search mode and the tools of your MCP servers.
 Output is cut to `max_output`, keeping the head and the tail.
 
@@ -164,6 +164,11 @@ how many there are and which one you are on, tab moves between them, and the age
 all are answered. Enter presses the selected button, "No" at first; `y` approves. A command
 shows whole and coloured, ↑↓ scroll it, and a bash one lists each of its parts with what the
 rules say of it.
+
+`git` works without the git command: status, diff, log, show, blame, branches and check read and never
+ask; add, commit, branch, switch, merge and cherry_pick change the repository. A merge or cherry-pick
+with conflicts leaves markers in the files for the model to resolve, then `continue`; `commit` and
+`continue` refuse while a marker is left, and `check` says where. Hooks do not run.
 
 `memory` keeps notes across sessions, per project or global. They are not put in the prompt:
 `recall` searches them and the saved conversations (BM25, by words) and reads one whole, a memory,

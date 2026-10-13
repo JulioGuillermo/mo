@@ -7,6 +7,10 @@ package tui
 // | DG-03 | Happy    | "Always this session" also answers the other calls to that tool waiting | P1     |
 // | DG-04 | Happy    | Rules added from one call let through the others they cover          | P1       |
 // | DG-05 | Happy    | The dialog stays above the input, the conversation scrolled or not   | P1       |
+// | DG-06 | Happy    | A long command scrolls to its end; a long line wraps instead of being cut | P1   |
+// | DG-07 | Happy    | Each part of a bash command shows what the rules say of it            | P1       |
+// | HL-01 | Happy    | Bash is coloured by what each piece is, on the block's background     | P2       |
+// | FC-01 | Happy    | An opened edit shows its diff highlighted; an opened write what it wrote | P1    |
 
 import (
 	"strings"
@@ -198,6 +202,34 @@ func TestCommandView(t *testing.T) {
 		}
 		if strings.Contains(plain[0], "187;154;247") {
 			t.Errorf("plain text was coloured: %q", plain[0])
+		}
+	})
+}
+
+func TestFileChanges(t *testing.T) {
+	t.Run("FC-01 an opened edit shows its diff highlighted; an opened write shows what it wrote", func(t *testing.T) {
+		m := conversationModel()
+		editArgs := []byte(`{"path":"a.go","old":"x := 1\n","new":"x := 2\ny := 3\n"}`)
+		writeArgs := []byte(`{"path":"b.py","content":"def f():\n    return 1\n"}`)
+		for _, call := range []llm.ToolCall{{ID: "e", Name: "edit", Args: editArgs}, {ID: "w", Name: "write", Args: writeArgs}} {
+			updated, _ := m.Update(toolStartMsg{call: call, summary: "file"})
+			updated, _ = updated.(model).Update(toolDoneMsg{id: call.ID, output: "done"})
+			m = updated.(model)
+		}
+		folded := shown(m)
+		opened, _ := m.Update(tea.KeyPressMsg{Code: 'o', Mod: tea.ModCtrl})
+		view := shown(opened.(model))
+
+		if !strings.Contains(folded, "+2 −1") || !strings.Contains(folded, "2 lines") || strings.Contains(folded, "y := 3") {
+			t.Errorf("folded:\n%s", folded)
+		}
+		for _, want := range []string{"- x := 1", "+ x := 2", "+ y := 3", "def f():", "return 1"} {
+			if !strings.Contains(view, want) {
+				t.Errorf("missing %q in:\n%s", want, view)
+			}
+		}
+		if strings.Contains(view, "▌ \n") {
+			t.Errorf("an empty line slipped into the change:\n%s", view)
 		}
 	})
 }

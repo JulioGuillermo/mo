@@ -141,5 +141,8 @@ func (r *Registry) Changes(call llm.ToolCall) bool {
 		return false
 	}
 	action := argField(call.Args, "action")
+	if tool.Changes != nil && tool.Changes(call.Args) {
+		return true
+	}
 	return tool.ChangesPathArg || (tool.Name == "memory" && (action == "write" || action == "delete"))
 }

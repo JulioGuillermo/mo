@@ -90,5 +90,9 @@ func highlightLines(code, language string, width int, background color.Color, da
 		}
 		flush()
 	}
-	return append(lines, line.String())
+	lines = append(lines, line.String())
+	if len(lines) > 1 && ansi.Strip(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
 }

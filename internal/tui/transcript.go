@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -31,6 +32,7 @@ type block struct {
 type toolRun struct {
 	id, name, summary, output string
 	isError, done             bool
+	args                      json.RawMessage
 }
 
 type reasoningMsg string
@@ -88,7 +90,7 @@ func (m *model) addReasoning(text string) {
 
 // addTool adds a tool call, its result to come.
 func (m *model) addTool(call llm.ToolCall, summary string) {
-	run := &toolRun{id: call.ID, name: call.Name, summary: summary}
+	run := &toolRun{id: call.ID, name: call.Name, summary: summary, args: call.Args}
 	printer := m.printer
 	m.addFoldable(block{tool: run, draw: func(open bool) string { return printer.Tool(*run, open) }})
 }
