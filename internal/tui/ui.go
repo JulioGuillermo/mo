@@ -256,6 +256,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case jobTickMsg:
 		m.jobsTicking = false
 		return m, m.tickJobs()
+	case titledMsg:
+		return m.titled(msg)
 	case savedMsg:
 		if msg.err != nil {
 			return m.emit(m.printer.Error(fmt.Errorf("the conversation was not saved: %w", msg.err)))
@@ -536,6 +538,8 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		return m, listConversations(m.session.WorkDir, false)
 	case "fork":
 		return m.fork()
+	case "title":
+		return m.retitle(argument)
 	case "continue":
 		if m.running {
 			return m.emit(m.printer.Note("the model is working already"))
