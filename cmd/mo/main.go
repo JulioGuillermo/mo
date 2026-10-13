@@ -14,6 +14,7 @@ import (
 
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/detect"
+	"github.com/jg/mo/internal/mcphub"
 	"github.com/jg/mo/internal/tui"
 )
 
@@ -51,8 +52,10 @@ func run() error {
 		return nil
 	}
 
+	hub := connectMCP(ctx, cfg)
+	defer hub.Close()
 	choice := sessionChoice{provider: *providerFlag, model: *modelFlag, yes: *yesFlag}
-	session, err := buildSession(ctx, workDir, cfg, choice)
+	session, err := buildSession(ctx, workDir, cfg, choice, hub)
 	if err != nil {
 		return err
 	}
@@ -66,6 +69,23 @@ func run() error {
 	}
 	stop()
 	return tui.Run(session)
+}
+
+// connectMCP connects to the configured servers before the UI starts and
+// reports the ones that failed. They are connected once per run: settings
+// changes keep the same servers.
+func connectMCP(ctx context.Context, cfg config.Config) *mcphub.Hub {
+	if len(cfg.MCP) == 0 {
+		return mcphub.Connect(ctx, nil, "")
+	}
+	fmt.Fprintf(os.Stderr, "connecting to %d MCP server(s)…\n", len(cfg.MCP))
+	hub := mcphub.Connect(ctx, cfg.MCP, config.LogDir())
+	for _, status := range hub.Status() {
+		if status.Err != nil {
+			fmt.Fprintf(os.Stderr, "mo: MCP %s: %v\n", status.Name, status.Err)
+		}
+	}
+	return hub
 }
 
 // oneShotPrompt returns the prompt from the arguments, or from stdin when it

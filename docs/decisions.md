@@ -125,3 +125,39 @@
 - An imported provider keeps the preset's address but none of mo's own key settings, so the key
   it uses is the imported one.
 - An opencode provider with a literal `apiKey` is listed but not imported, to avoid copying it.
+
+## Web
+
+- `fetch` keeps the article readability finds, else the whole page, converted to markdown with
+  absolute links, and serves it 8 KB at a time with an offset, so a long page costs what the model
+  actually reads. The last 16 pages are cached per session.
+- `fetch` asks by default: a prompt-injected model could send what it read to any URL. Reading on
+  in a page already fetched does not ask again. Redirects are followed within the same host only;
+  one to another host ends the fetch with its target, which then goes through approval itself,
+  so an approved public URL cannot bounce to localhost or a metadata address.
+  A hostname that resolves to a private or loopback address is not refused: the approval shows the
+  host, and refusing them would keep fetch away from the user's own dev servers.
+- `web_search` does not ask: its queries go to the configured engine only. Its client never
+  follows redirects, since a DuckDuckGo `!bang` answers with a redirect that would carry the query
+  to another site. Searches stop after 30 s and read at most 2 MB.
+- DuckDuckGo's HTML page is the default search because it needs no key; it can answer with a bot
+  check, and the error says which backend to configure instead.
+- `[web]` is user-only: a project could otherwise point searches, and a key, at its own server.
+
+## MCP
+
+- The official Go SDK. Servers are connected in parallel once at startup (20 s each) and kept
+  across settings changes; a failing server is reported and leaves no tools.
+- Tools are named `mcp__<server>__<tool>` with unsafe characters replaced, which every provider
+  accepts. A name over 64 characters, or one another tool already took after that cleaning, is cut
+  and ends in a hash of the original server and tool, so no two tools share a name.
+- Calls stop after 5 minutes. A server whose connection broke shows as failed in `/mcp`.
+- Closing signals each stdio server's whole process group: started in its own session, the
+  helpers it spawns (npx, browsers) would otherwise outlive mo.
+- `${NAME}` in env and header values reads the environment; any other `$` stays, so tokens with a
+  `$` in them survive.
+- They ask before running unless the server has `trust = true`: an MCP tool can do anything.
+- stdio servers run in their own session (`setsid`), so they cannot read the terminal, and their
+  stderr goes to a log file instead of the screen.
+- `[mcp]` is user-only: a project adding a server would be running any command it likes.
+- Images and audio in tool results are only named for now.

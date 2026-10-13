@@ -65,7 +65,8 @@ system_prompt = ""         # empty: built-in prompt (~80 tokens)
 [tools]
 mode = "full"              # full | compact (no descriptions) | search (load tools on demand)
 always_loaded = ["bash", "read", "edit"]   # search mode: tools sent from the start
-confirm = ["bash", "rm"]   # ask before these; [] never asks
+confirm = ["bash", "rm", "fetch"]   # ask before these; [] never asks. A list of your own
+                                    # replaces this one: keep "fetch" in it to be asked
 disabled = []              # e.g. ["mkdir", "ls"] to save context
 max_output = 10000         # bytes of tool output sent to the model
 
@@ -94,14 +95,45 @@ model = "qwen3-coder"
 
 ## Tools
 
-`bash` `read` `write` `edit` `ls` `mkdir` `rm` `grep` `memory`, plus `tool_search` in search mode.
+`bash` `read` `write` `edit` `ls` `mkdir` `rm` `grep` `memory` `fetch` `web_search`, plus `tool_search` in
+search mode and the tools of your MCP servers.
 Output is cut to `max_output`, keeping the head and the tail.
+
+`fetch` reads a URL as markdown (the article of an HTML page, indented JSON, plain text), 8 KB at a
+time. `web_search` uses DuckDuckGo by default, with no key; see `[web]` below for the others.
 
 `memory` keeps notes across sessions, per project or global. Their first lines go into the system
 prompt so the model knows what it saved.
 
 Changes outside the working directory, to mo's config, under `.git` or to hidden files in your home
 always ask, even with `-y` or after answering "always". So do changes to global memories.
+
+## Web search
+
+```toml
+[web]
+search = "duckduckgo"      # duckduckgo | searxng | brave | tavily
+search_url = ""            # searxng: https://your-searxng
+search_key_env = ""        # brave / tavily: the variable holding the key (or search_key = "...")
+```
+
+## MCP servers
+
+```toml
+[mcp.playwright]
+command = "npx"
+args = ["@playwright/mcp@latest"]
+
+[mcp.docs]
+url = "https://example.com/mcp"
+headers = { Authorization = "Bearer ${DOCS_TOKEN}" }   # ${NAME} reads the environment
+trust = true               # run its tools without asking
+```
+
+Their tools are named `mcp__<server>__<tool>` and ask before running unless the server has
+`trust = true`. In `search` tool mode they stay out of the context until the model looks for them.
+`/mcp` shows which servers answered. A server's stderr goes to `~/.local/share/mo/logs/mcp-<name>.log`.
+`[web]` and `[mcp]` are read from the user file only, never from a project's `.mo.toml`.
 
 ## Keys
 
@@ -112,4 +144,4 @@ always ask, even with `-y` or after answering "always". So do changes to global 
 | esc, ctrl+c | stop the current run |
 | ctrl+c (idle) | clear input, then quit |
 | ctrl+d | quit |
-| `/clear` `/compact` `/settings` `/help` `/quit` | commands |
+| `/clear` `/compact` `/settings` `/mcp` `/help` `/quit` | commands |

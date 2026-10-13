@@ -104,14 +104,22 @@ func isInside(path, dir string) bool {
 }
 
 // checkArgNames rejects any argument whose name is not exactly one of the
-// schema's properties. JSON decoding into a struct matches names without
-// case, so "Path" would otherwise reach the tool unchecked.
+// schema's properties, when the schema lists them, unless the tool takes
+// loose arguments, as MCP tools do. JSON decoding into a
+// struct matches names without case, so "Path" would otherwise reach the
+// tool unchecked.
 func checkArgNames(tool Tool, raw json.RawMessage) error {
+	if tool.LooseArgs {
+		return nil
+	}
 	var schema struct {
 		Properties map[string]json.RawMessage `json:"properties"`
 	}
 	if err := json.Unmarshal(tool.Schema, &schema); err != nil {
 		return err
+	}
+	if schema.Properties == nil {
+		return nil
 	}
 	var args map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &args); err != nil {

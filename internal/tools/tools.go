@@ -12,15 +12,18 @@ import (
 	"unicode/utf8"
 
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/web"
 )
 
 type Tool struct {
-	Name           string
-	Description    string
-	Schema         json.RawMessage
-	Run            func(ctx context.Context, env Env, args json.RawMessage) (string, error)
-	Summary        func(args json.RawMessage) string
-	ChangesPathArg bool
+	Name             string
+	Description      string
+	Schema           json.RawMessage
+	Run              func(ctx context.Context, env Env, args json.RawMessage) (string, error)
+	Summary          func(args json.RawMessage) string
+	ChangesPathArg   bool
+	AlreadyConfirmed func(args json.RawMessage) bool
+	LooseArgs        bool
 }
 
 const truncateHeadPercent = 60
@@ -52,6 +55,8 @@ type Options struct {
 	Disabled     []string
 	MaxOutput    int
 	Descriptions map[string]string
+	Searcher     web.Searcher
+	Extra        []Tool
 }
 
 type Registry struct {
@@ -63,7 +68,7 @@ type Registry struct {
 
 func NewRegistry(env Env, options Options) *Registry {
 	registry := &Registry{env: env, options: options, loaded: map[string]bool{}}
-	for _, tool := range builtins() {
+	for _, tool := range append(builtinsWith(options.Searcher), options.Extra...) {
 		if slices.Contains(options.Disabled, tool.Name) {
 			continue
 		}
@@ -96,7 +101,14 @@ func BuiltinNames() []string {
 }
 
 func builtins() []Tool {
-	return []Tool{bashTool(), readTool(), writeTool(), editTool(), lsTool(), mkdirTool(), rmTool(), grepTool(), memoryTool()}
+	return builtinsWith(nil)
+}
+
+func builtinsWith(searcher web.Searcher) []Tool {
+	return []Tool{
+		bashTool(), readTool(), writeTool(), editTool(), lsTool(), mkdirTool(), rmTool(), grepTool(),
+		memoryTool(), fetchTool(), webSearchTool(searcher),
+	}
 }
 
 func (r *Registry) Summary(call llm.ToolCall) string {
@@ -105,6 +117,13 @@ func (r *Registry) Summary(call llm.ToolCall) string {
 		return string(call.Args)
 	}
 	return tool.Summary(call.Args)
+}
+
+// AlreadyConfirmed tells whether a call repeats one that was approved, like
+// reading on in a page that fetch already brought.
+func (r *Registry) AlreadyConfirmed(call llm.ToolCall) bool {
+	tool, ok := r.find(call.Name)
+	return ok && tool.AlreadyConfirmed != nil && tool.AlreadyConfirmed(call.Args)
 }
 
 // Run executes a call and returns what goes back to the model, cut to the

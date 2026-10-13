@@ -145,7 +145,7 @@ func (a *Agent) answerToolCall(ctx context.Context, call llm.ToolCall, hooks Hoo
 
 func (a *Agent) approved(ctx context.Context, call llm.ToolCall, summary string, hooks Hooks) bool {
 	warning := a.Tools.Warning(call)
-	listed := slices.Contains(a.ConfirmTools, call.Name) && !a.alwaysAllowed[call.Name]
+	listed := slices.Contains(a.ConfirmTools, call.Name) && !a.alwaysAllowed[call.Name] && !a.Tools.AlreadyConfirmed(call)
 	if warning == "" && !listed {
 		return true
 	}

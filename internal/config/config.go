@@ -14,6 +14,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/jg/mo/internal/tools"
+	"github.com/jg/mo/internal/web"
 )
 
 type Config struct {
@@ -24,6 +25,8 @@ type Config struct {
 	Tools        Tools                     `toml:"tools,omitempty"`
 	Context      Context                   `toml:"context,omitempty"`
 	Memory       Memory                    `toml:"memory,omitempty"`
+	Web          Web                       `toml:"web,omitempty"`
+	MCP          map[string]MCPServer      `toml:"mcp,omitempty"`
 	Providers    map[string]ProviderConfig `toml:"providers,omitempty"`
 }
 
@@ -40,6 +43,31 @@ type Context struct {
 	Window        int      `toml:"window,omitzero"`
 	CompactAt     *float64 `toml:"compact_at,omitempty"`
 	CompactPrompt string   `toml:"compact_prompt,omitempty"`
+}
+
+type Web struct {
+	Search       string `toml:"search,omitempty"`
+	SearchURL    string `toml:"search_url,omitempty"`
+	SearchKey    string `toml:"search_key,omitempty"`
+	SearchKeyEnv string `toml:"search_key_env,omitempty"`
+}
+
+func (w Web) Key() string {
+	if w.SearchKey != "" {
+		return w.SearchKey
+	}
+	return os.Getenv(w.SearchKeyEnv)
+}
+
+// MCPServer starts a server with command and args, or reaches one at url.
+// Values in env and headers may use $VAR to read the environment.
+type MCPServer struct {
+	Command string            `toml:"command,omitempty"`
+	Args    []string          `toml:"args,omitempty"`
+	Env     map[string]string `toml:"env,omitempty"`
+	URL     string            `toml:"url,omitempty"`
+	Headers map[string]string `toml:"headers,omitempty"`
+	Trust   bool              `toml:"trust,omitempty"`
 }
 
 type Memory struct {
@@ -78,11 +106,12 @@ func Defaults() Config {
 		Tools: Tools{
 			Mode:         tools.ModeFull,
 			AlwaysLoaded: []string{"bash", "read", "edit"},
-			Confirm:      []string{"bash", "rm"},
+			Confirm:      []string{"bash", "rm", "fetch"},
 			MaxOutput:    10000,
 		},
 		Context:   Context{CompactAt: ptr(0.75)},
 		Memory:    Memory{Dir: defaultMemoryDir()},
+		Web:       Web{Search: web.SearchDuckDuckGo},
 		Providers: presets(),
 	}
 }
@@ -97,6 +126,10 @@ func UserFile() string {
 
 func defaultMemoryDir() string {
 	return filepath.Join(dataHome(), "mo", "memory")
+}
+
+func LogDir() string {
+	return filepath.Join(dataHome(), "mo", "logs")
 }
 
 func ProjectFile(workDir string) string {
@@ -141,6 +174,16 @@ func merge(base, layer Config) Config {
 	base = mergeHarmless(base, layer)
 	base.Provider = override(base.Provider, layer.Provider)
 	base.Memory.Dir = override(base.Memory.Dir, expandHome(layer.Memory.Dir))
+	base.Web.Search = override(base.Web.Search, layer.Web.Search)
+	base.Web.SearchURL = override(base.Web.SearchURL, layer.Web.SearchURL)
+	base.Web.SearchKey = override(base.Web.SearchKey, layer.Web.SearchKey)
+	base.Web.SearchKeyEnv = override(base.Web.SearchKeyEnv, layer.Web.SearchKeyEnv)
+	for name, server := range layer.MCP {
+		if base.MCP == nil {
+			base.MCP = map[string]MCPServer{}
+		}
+		base.MCP[name] = server
+	}
 	if layer.Tools.Confirm != nil {
 		base.Tools.Confirm = layer.Tools.Confirm
 	}

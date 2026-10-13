@@ -20,11 +20,12 @@ import (
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/mcphub"
 )
 
 const helpText = `enter send · ctrl+j / alt+enter new line · esc / ctrl+c stop · ctrl+d quit
 /clear forget the conversation · /compact summarize it · /settings provider, tools, context
-/help this help · /quit exit`
+/mcp MCP servers · /help this help · /quit exit`
 
 type Session struct {
 	Agent    *agent.Agent
@@ -32,6 +33,7 @@ type Session struct {
 	Model    string
 	Config   config.Config
 	Reload   func(userLayer config.Config) (Session, error)
+	MCP      []mcphub.Status
 }
 
 type model struct {
@@ -257,6 +259,8 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 	case "/settings":
 		m.settingsInFlight = true
 		return m, tea.Sequence(tea.Println(m.printer.Note("looking for providers…")), loadSettings(m.session))
+	case "/mcp":
+		return m, tea.Println(m.printer.Note(mcpReport(m.session.MCP)))
 	case "/compact":
 		return m.start(tea.Println(m.printer.Note("compacting…")), m.session.Agent.Compact)
 	}
@@ -363,6 +367,21 @@ func (m model) statusLine() string {
 // are file paths, as llama-server reports them.
 func shortModelName(model string) string {
 	return strings.TrimSuffix(filepath.Base(model), ".gguf")
+}
+
+func mcpReport(statuses []mcphub.Status) string {
+	if len(statuses) == 0 {
+		return "no MCP servers; add them under [mcp.<name>] in " + config.UserFile()
+	}
+	var lines []string
+	for _, status := range statuses {
+		if status.Err != nil {
+			lines = append(lines, fmt.Sprintf("✗ %s: %v", status.Name, status.Err))
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("✓ %s: %d tools", status.Name, status.Tools))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func formatTokens(count int) string {

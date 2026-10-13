@@ -8,8 +8,10 @@ import (
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
+	"github.com/jg/mo/internal/mcphub"
 	"github.com/jg/mo/internal/tools"
 	"github.com/jg/mo/internal/tui"
+	"github.com/jg/mo/internal/web"
 )
 
 type sessionChoice struct {
@@ -22,17 +24,23 @@ type sessionChoice struct {
 // builds a session from a new user layer, as the settings screen edits it,
 // after checking that the layer works on its own, outside any project; the
 // provider and model given on the command line no longer apply then.
-func buildSession(ctx context.Context, workDir string, cfg config.Config, choice sessionChoice) (tui.Session, error) {
+func buildSession(ctx context.Context, workDir string, cfg config.Config, choice sessionChoice, hub *mcphub.Hub) (tui.Session, error) {
 	chosen, err := chooseProvider(ctx, cfg, choice.provider, choice.model)
 	if err != nil {
 		return tui.Session{}, err
 	}
-	confirm := cfg.Tools.Confirm
+	confirm := append(slices.Clone(cfg.Tools.Confirm), hub.NeedConfirmation()...)
 	if choice.yes {
 		confirm = nil
 	}
+	searcher, err := web.NewSearcher(web.SearchSettings{Backend: cfg.Web.Search, URL: cfg.Web.SearchURL, Key: cfg.Web.Key()}, web.SearchClient)
+	if err != nil {
+		return tui.Session{}, err
+	}
 	env := toolEnv(workDir, cfg.Memory.Dir)
 	registry := tools.NewRegistry(env, tools.Options{
+		Searcher:     searcher,
+		Extra:        hub.Tools(),
 		Mode:         cfg.Tools.Mode,
 		AlwaysLoaded: cfg.Tools.AlwaysLoaded,
 		Disabled:     cfg.Tools.Disabled,
@@ -62,7 +70,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		if err != nil {
 			return tui.Session{}, err
 		}
-		return buildSession(context.Background(), workDir, fresh, sessionChoice{yes: choice.yes})
+		return buildSession(context.Background(), workDir, fresh, sessionChoice{yes: choice.yes}, hub)
 	}
 	return tui.Session{
 		Agent:    assistant,
@@ -70,6 +78,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		Model:    chosen.model,
 		Config:   cfg,
 		Reload:   reload,
+		MCP:      hub.Status(),
 	}, nil
 }
 
