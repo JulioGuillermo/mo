@@ -307,6 +307,7 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | esc esc (empty input) | go back to one of your prompts |
 | ctrl+v | paste a copied image or files as attachments |
 | pgup, pgdown, shift+up/down, mouse wheel | scroll the conversation |
-| shift+drag | select text (the mouse is mo's while it runs) |
+| drag | select text and copy it; the shared indent is taken off |
+| click | buttons, options and tabs of a dialog, a suggested command, the mode (next), the provider and model (their settings), a job (its last lines), a settings option |
 | `/clear` `/resume` `/rewind` `/fork` `/compact` `/settings` `/providers` `/mcp` `/plugins` `/view <file>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
 | `/<name> text` | a plugin command |

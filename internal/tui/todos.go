@@ -2,9 +2,11 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/tools"
@@ -80,5 +82,24 @@ func (m model) todoPanel() string {
 	if hidden > 0 {
 		lines = append(lines, dimStyle.Render(fmt.Sprintf("    … +%d more", hidden)))
 	}
-	return strings.Join(lines, "\n")
+	return onPanel(lines, max(m.width, 20), sidebarPalette(m.printer == nil || m.printer.isDark()).background)
+}
+
+// onPanel puts lines on a background the whole width, as the side panel
+// has: their own styles end where they do, so each is laid on it again.
+func onPanel(lines []string, width int, background color.Color) string {
+	base := lipgloss.NewStyle().Background(background)
+	out := []string{base.Render(strings.Repeat(" ", width))}
+	for _, line := range lines {
+		line = strings.ReplaceAll(line, "\x1b[m", "\x1b[m"+backgroundCode(background))
+		line = strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m"+backgroundCode(background))
+		out = append(out, backgroundCode(background)+line+base.Render(strings.Repeat(" ", max(width-ansi.StringWidth(line), 0))))
+	}
+	return strings.Join(append(out, base.Render(strings.Repeat(" ", width))), "\n")
+}
+
+// backgroundCode is the sequence that sets a background colour.
+func backgroundCode(background color.Color) string {
+	r, g, b, _ := background.RGBA()
+	return fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r>>8, g>>8, b>>8)
 }

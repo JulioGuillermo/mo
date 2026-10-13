@@ -66,7 +66,7 @@ func TestReasoningBlocks(t *testing.T) {
 		conversation := m.conversation(m.height - 1)
 		row -= conversation.YOffset()
 
-		updated, _ := m.Update(tea.MouseClickMsg{X: 3, Y: row, Button: tea.MouseLeft})
+		updated := mouseClick(m, 3, row)
 
 		after := shown(updated.(model))
 		if !strings.Contains(after, "alpha") || strings.Contains(after, "beta\n") || updated.(model).blocks[3].open {

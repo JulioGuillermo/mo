@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
 
@@ -43,7 +44,8 @@ var keyHelp = [][2]string{
 	{"shift+tab", "change the permission mode"},
 	{"ctrl+o, click", "open or fold reasoning and tool calls"},
 	{"ctrl+v", "paste a copied image or files as attachments"},
-	{"shift+drag", "select text"},
+	{"drag", "select text and copy it"},
+	{"click", "buttons, options, tabs, commands, the mode, the model, a job"},
 	{"ctrl+d", "quit"},
 }
 
@@ -84,6 +86,13 @@ func (m *model) completeCommand(chosen command) bool {
 }
 
 func (m model) suggestionList(matches []command) string {
+	list, _ := m.suggestionLayout(matches)
+	return list
+}
+
+// suggestionLayout draws the commands that match and runs the one clicked,
+// as enter would.
+func (m model) suggestionLayout(matches []command) (string, []region) {
 	selected := m.suggestion % len(matches)
 	first := max(0, selected-shownSuggestions+1)
 	shown := matches[first:min(len(matches), first+shownSuggestions)]
@@ -92,7 +101,15 @@ func (m model) suggestionList(matches []command) string {
 		width = max(width, len(candidate.name)+len(candidate.argument)+2)
 	}
 	var lines []string
+	var regions []region
 	for i, candidate := range shown {
+		chosen := candidate
+		regions = append(regions, row(i, func(m model) (tea.Model, tea.Cmd) {
+			if !m.completeCommand(chosen) || m.settingsInFlight {
+				return m, nil
+			}
+			return m.submit()
+		}))
 		name := "/" + candidate.name
 		if candidate.argument != "" {
 			name += " " + candidate.argument
@@ -104,7 +121,7 @@ func (m model) suggestionList(matches []command) string {
 		}
 		lines = append(lines, toolStyle.Render(fmt.Sprintf(" %-*s ", width, name))+dimStyle.Render(" "+candidate.description))
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(lines, "\n"), regions
 }
 
 var (

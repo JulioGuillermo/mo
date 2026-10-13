@@ -19,6 +19,7 @@ const (
 	sidebarOff        = "off"
 	shownJobs         = 8
 	jobRefresh        = time.Second
+	jobShownLines     = 20
 	sidebarConversion = "new conversation"
 )
 
@@ -97,11 +98,18 @@ func sidebarPalette(dark bool) sidebarColors {
 // sidebar draws the side panel at a height: the conversation's title, the
 // model's tasks, whole, and the background jobs.
 func (m model) sidebar(height int) string {
+	panel, _ := m.sidebarLayout(height)
+	return panel
+}
+
+// sidebarLayout draws the side panel; a click on a job shows its last lines.
+func (m model) sidebarLayout(height int) (string, []region) {
 	colors := sidebarPalette(m.printer == nil || m.printer.isDark())
 	width := sidebarWidth - 2
 	base := lipgloss.NewStyle().Background(colors.background).Foreground(colors.text)
 	paint := func(c color.Color) lipgloss.Style { return base.Foreground(c) }
 	var lines []string
+	var regions []region
 	add := func(line string) { lines = append(lines, line) }
 	wrapped := func(style lipgloss.Style, first, rest, text string) {
 		for i, piece := range strings.Split(ansi.Wrap(text, width-ansi.StringWidth(first), " "), "\n") {
@@ -159,6 +167,9 @@ func (m model) sidebar(height int) string {
 		case tools.JobKilled:
 			mark, tint, state = "⊘", colors.dim, "killed"
 		}
+		id := status.ID
+		show := func(m model) (tea.Model, tea.Cmd) { return m.showJob(id) }
+		regions = append(regions, row(len(lines), show), row(len(lines)+1, show))
 		add(paint(tint).Render(fmt.Sprintf("%s %d ", mark, status.ID)) + base.Render(oneLine(status.Command, width-4)))
 		if untold[status.ID] && !m.running {
 			state += " · /jobs tell"
@@ -176,7 +187,20 @@ func (m model) sidebar(height int) string {
 	for i, line := range lines {
 		lines[i] = pad + line + base.Render(strings.Repeat(" ", max(width-ansi.StringWidth(line), 0))) + pad
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(lines, "\n"), regions
+}
+
+// showJob prints how a job stands and its last lines.
+func (m model) showJob(id int) (tea.Model, tea.Cmd) {
+	jobs := m.jobs()
+	if jobs == nil {
+		return m, nil
+	}
+	status, output, err := jobs.Output(id, jobShownLines)
+	if err != nil {
+		return m.emit(m.printer.Error(err))
+	}
+	return m.emit(m.printer.Note(status.Describe()) + "\n" + m.printer.ToolResult(output, status.State == tools.JobFailed))
 }
 
 // jobEnded refreshes the panel and, when the model is idle, lets it react

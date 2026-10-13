@@ -89,7 +89,7 @@ func TestToolBlocks(t *testing.T) {
 		viewport := m.conversation(m.height - 1)
 		row = strings.Count(shown(m)[:row], "\n") - viewport.YOffset()
 
-		clicked, _ := m.Update(tea.MouseClickMsg{X: 2, Y: row, Button: tea.MouseLeft})
+		clicked := mouseClick(m, 2, row)
 
 		if !clicked.(model).blocks[0].open || clicked.(model).blocks[1].open {
 			t.Errorf("open = %v %v", clicked.(model).blocks[0].open, clicked.(model).blocks[1].open)

@@ -104,9 +104,17 @@ type model struct {
 	todos []tools.Todo
 	// sidebarHidden is /sidebar turning the side panel off for the session.
 	sidebarHidden bool
-	jobsTicking   bool
-	viewport      viewport.Model
-	scrolled      bool
+	// openSection is the settings section to open once settings load, as
+	// a click on the model asks.
+	openSection string
+	// selected is text being picked with the mouse; flash says for a moment
+	// what was copied.
+	selected    *selection
+	flash       string
+	flashes     int
+	jobsTicking bool
+	viewport    viewport.Model
+	scrolled    bool
 }
 
 const agentShutdownWait = 3 * time.Second
@@ -236,8 +244,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.addReasoning(string(msg))
 		return m, nil
 	case tea.MouseClickMsg:
-		if msg.Button == tea.MouseLeft && m.dialog == nil {
-			m.clickDetails(msg.Y)
+		if msg.Button != tea.MouseLeft {
+			return m, nil
+		}
+		return m.press(msg.X, msg.Y)
+	case tea.MouseMotionMsg:
+		if msg.Button != tea.MouseLeft {
+			return m, nil
+		}
+		return m.drag(msg.X, msg.Y)
+	case tea.MouseReleaseMsg:
+		return m.release(msg.X, msg.Y)
+	case flashDoneMsg:
+		if int(msg) == m.flashes {
+			m.flash = ""
 		}
 		return m, nil
 	case toolStartMsg:
@@ -571,13 +591,8 @@ func (m model) View() tea.View {
 		view = tea.NewView(m.settings.form.View() + "\n" + dimStyle.Render(m.settings.helpLine()))
 		view.WindowTitle = "mo · settings"
 	} else {
-		bottom := m.bottom()
-		height := m.height - lipgloss.Height(bottom) - 1
-		conversation := m.conversation(height).View()
-		if m.sidebarShown() {
-			conversation = lipgloss.JoinHorizontal(lipgloss.Top, conversation, " ", m.sidebar(max(height, 1)))
-		}
-		view = tea.NewView(conversation + "\n\n" + bottom)
+		screen, _ := m.screenLayout()
+		view = tea.NewView(m.highlight(screen))
 		view.WindowTitle = "mo"
 	}
 	view.AltScreen = true
@@ -592,21 +607,85 @@ func (m model) View() tea.View {
 // bottom is what stays on the last rows: what the agent asks or the spinner, the
 // input and the status line.
 func (m model) bottom() string {
+	bottom, _ := m.bottomLayout()
+	return bottom
+}
+
+// bottomLayout is the rows under the conversation and what can be clicked
+// in them, counted from the first of them.
+func (m model) bottomLayout() (string, []region) {
+	upper, upperRegions := m.upperLayout()
+	lower, lowerRegions := m.lowerLayout()
+	if upper == "" {
+		return lower, lowerRegions
+	}
+	return upper + "\n" + lower, append(upperRegions, shifted(lowerRegions, lipgloss.Height(upper))...)
+}
+
+// upperLayout is what sits between the conversation and the input: the
+// tasks when there is no side panel, what the agent asks, the spinner, the
+// commands that match. Beside the side panel it takes the conversation's
+// width.
+func (m model) upperLayout() (string, []region) {
 	var sections []string
+	var regions []region
+	add := func(section string, sectionRegions []region) {
+		lines := 0
+		if len(sections) > 0 {
+			lines = lipgloss.Height(strings.Join(sections, "\n"))
+		}
+		regions = append(regions, shifted(sectionRegions, lines)...)
+		sections = append(sections, section)
+	}
 	if panel := m.todoPanel(); panel != "" {
-		sections = append(sections, panel)
+		add(panel, nil)
 	}
 	switch {
 	case m.dialog != nil:
-		sections = append(sections, m.dialogView())
+		add(m.dialogLayout())
 	case m.running:
-		sections = append(sections, m.spinner.View()+workingStyle.Render(" working · esc to stop"))
+		add(m.spinner.View()+workingStyle.Render(" working · esc to stop"), nil)
 	}
 	if matches := m.suggestions(); len(matches) > 0 && !m.running {
-		sections = append(sections, m.suggestionList(matches))
+		add(m.suggestionLayout(matches))
 	}
-	sections = append(sections, m.input.View(), m.statusLine())
-	return strings.Join(sections, "\n")
+	return strings.Join(sections, "\n"), regions
+}
+
+// lowerLayout is the input and the status line, the whole width.
+func (m model) lowerLayout() (string, []region) {
+	status, regions := m.statusLayout()
+	input := m.input.View()
+	return input + "\n" + status, shifted(regions, lipgloss.Height(input))
+}
+
+// screenLayout is the whole screen and what can be clicked on it: the
+// conversation, and beside it the side panel down to the input, then the
+// input and the status line.
+func (m model) screenLayout() (string, []region) {
+	upper, upperRegions := m.upperLayout()
+	lower, lowerRegions := m.lowerLayout()
+	height := m.conversationHeight()
+	left := m.conversation(height).View() + "\n"
+	regions := shifted(upperRegions, height+1)
+	if upper != "" {
+		left += "\n" + upper
+	}
+	if m.sidebarShown() {
+		panel, panelRegions := m.sidebarLayout(lipgloss.Height(left))
+		left = lipgloss.JoinHorizontal(lipgloss.Top, left, " ", panel)
+		for _, r := range panelRegions {
+			r.x0, r.x1 = r.x0+m.mainWidth()+1, r.x1+m.mainWidth()+1
+			regions = append(regions, r)
+		}
+	}
+	return left + "\n" + lower, append(regions, shifted(lowerRegions, lipgloss.Height(left))...)
+}
+
+// conversationHeight is the rows left for the conversation over a blank
+// line and what goes under it.
+func (m model) conversationHeight() int {
+	return max(m.height-lipgloss.Height(m.bottom())-1, 1)
 }
 
 // conversation is the transcript and the reply being written, in a viewport
@@ -637,7 +716,7 @@ func (m model) emit(text string) (tea.Model, tea.Cmd) {
 var kittyUploads = regexp.MustCompile(`\x1bPtmux;(?:[^\x1b]|\x1b\x1b)*\x1b\\|\x1b_G[^\x1b]*\x1b\\`)
 
 func (m *model) scroll(up bool, lines int) {
-	m.viewport = m.conversation(m.height - lipgloss.Height(m.bottom()) - 1)
+	m.viewport = m.conversation(m.conversationHeight())
 	if up {
 		m.viewport.ScrollUp(lines)
 	} else {
@@ -705,6 +784,14 @@ func (m model) liveText() string {
 // speeds, each in its colour. On a narrow terminal the least needed parts go
 // first, down to the mode, model and how full the context is.
 func (m model) statusLine() string {
+	line, _ := m.statusLayout()
+	return line
+}
+
+// statusLayout is the status line and its clickable parts: the mode goes
+// to the next one, the provider opens the providers, the model the model
+// settings.
+func (m model) statusLayout() (string, []region) {
 	if m.width <= 0 {
 		return m.status(statusParts{provider: true, hint: true, tokens: true, prompt: true, generation: true, bar: contextBarCells})
 	}
@@ -718,11 +805,12 @@ func (m model) statusLine() string {
 		{bar: 5},
 		{},
 	} {
-		if status := m.status(parts); ansi.StringWidth(status) <= m.width {
-			return status
+		if status, regions := m.status(parts); ansi.StringWidth(status) <= m.width {
+			return status, regions
 		}
 	}
-	return ansi.Truncate(m.status(statusParts{}), m.width, "…")
+	status, regions := m.status(statusParts{})
+	return ansi.Truncate(status, m.width, "…"), regions
 }
 
 // statusParts says which parts of the status line to show.
@@ -731,24 +819,42 @@ type statusParts struct {
 	bar                                        int
 }
 
-func (m model) status(show statusParts) string {
+func (m model) status(show statusParts) (string, []region) {
 	colors := statusPalette(m.printer == nil || m.printer.isDark())
 	paint := func(color color.Color, text string) string {
 		return lipgloss.NewStyle().Foreground(color).Render(text)
 	}
 	var parts []string
+	var regions []region
+	separator := paint(colors.label, " · ")
+	clickable := func(part string, do func(m model) (tea.Model, tea.Cmd)) {
+		x := 0
+		for _, earlier := range parts {
+			x += ansi.StringWidth(earlier) + ansi.StringWidth(separator)
+		}
+		regions = append(regions, region{y: 0, x0: x, x1: x + ansi.StringWidth(part), do: do})
+		parts = append(parts, part)
+	}
 	if policy := m.session.Agent.Permissions; policy != nil {
 		mode := policy.Mode()
 		part := lipgloss.NewStyle().Foreground(colors.mode(mode)).Bold(true).Render("● " + string(mode))
 		if show.hint {
 			part += paint(colors.label, " shift+tab")
 		}
-		parts = append(parts, part)
+		clickable(part, func(m model) (tea.Model, tea.Cmd) {
+			policy.SetMode(policy.Mode().Next())
+			return m, nil
+		})
 	}
 	if show.provider {
-		parts = append(parts, lipgloss.NewStyle().Foreground(colors.provider).Bold(true).Render(m.session.Provider))
+		clickable(lipgloss.NewStyle().Foreground(colors.provider).Bold(true).Render(m.session.Provider), func(m model) (tea.Model, tea.Cmd) {
+			return m.runCommand("/providers")
+		})
 	}
-	parts = append(parts, paint(colors.model, shortModelName(m.session.Model)))
+	clickable(paint(colors.model, shortModelName(m.session.Model)), func(m model) (tea.Model, tea.Cmd) {
+		m.openSection = "model"
+		return m.runCommand("/settings")
+	})
 	used := m.usage.InputTokens + m.usage.OutputTokens
 	window := m.session.Agent.Window
 	switch {
@@ -781,7 +887,10 @@ func (m model) status(show statusParts) string {
 	if show.generation && m.speed.GenerationRate > 0 {
 		parts = append(parts, paint(colors.label, "tg ")+paint(colors.generation, fmt.Sprintf("%.1f t/s", m.speed.GenerationRate)))
 	}
-	return strings.Join(parts, paint(colors.label, " · "))
+	if m.flash != "" {
+		parts = append(parts, lipgloss.NewStyle().Foreground(colors.low).Bold(true).Render("✓ "+m.flash))
+	}
+	return strings.Join(parts, separator), regions
 }
 
 const contextBarCells = 10

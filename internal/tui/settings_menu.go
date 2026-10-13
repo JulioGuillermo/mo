@@ -39,7 +39,13 @@ func (m model) openSettingsMenu(loaded settingsLoadedMsg) (tea.Model, tea.Cmd) {
 	if len(m.session.ToolDescriptions) > 0 {
 		draft.describeTools(m.session.ToolDescriptions)
 	}
-	return m.showMenu(&settingsMenu{loaded: loaded, layer: loaded.layer, draft: draft, last: settingsSections[0].key})
+	menu := &settingsMenu{loaded: loaded, layer: loaded.layer, draft: draft, last: settingsSections[0].key}
+	if section := m.openSection; section != "" {
+		m.openSection = ""
+		menu.last = section
+		return m.openMenuChoice(menu, section)
+	}
+	return m.showMenu(menu)
 }
 
 func (m model) showMenu(menu *settingsMenu) (tea.Model, tea.Cmd) {

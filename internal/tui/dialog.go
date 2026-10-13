@@ -349,12 +349,22 @@ func dialogPalette(dark bool) dialogColors {
 // dialogView draws the tabs, when there is more than one part, the part
 // shown on its own background, and the keys.
 func (m model) dialogView() string {
+	view, _ := m.dialogLayout()
+	return view
+}
+
+// dialogLayout draws the dialog and says what its tabs, buttons and options
+// do when clicked.
+func (m model) dialogLayout() (string, []region) {
 	d := m.dialog
 	colors := dialogPalette(m.printer == nil || m.printer.isDark())
-	width := max(m.width, 30)
+	width := max(m.mainWidth(), 30)
 	var lines []string
+	var regions []region
 	if len(d.items) > 1 {
-		lines = append(lines, m.dialogTabs(colors, width))
+		tabs, tabRegions := m.dialogTabs(colors, width)
+		lines = append(lines, tabs)
+		regions = append(regions, tabRegions...)
 	}
 	body := lipgloss.NewStyle().Background(colors.body).Foreground(colors.text)
 	pad := func(content string) string {
@@ -364,22 +374,27 @@ func (m model) dialogView() string {
 	lines = append(lines, pad(""))
 	item := *d.item()
 	var content []string
+	var contentRegions []region
 	if item.approval >= 0 {
-		content = m.approvalLines(item, colors, body, width-4)
+		content, contentRegions = m.approvalLines(item, colors, body, width-4)
 	} else {
-		content = m.questionLines(item, colors, body, width-4)
+		content, contentRegions = m.questionLines(item, colors, body, width-4)
+	}
+	for _, r := range shifted(contentRegions, len(lines)) {
+		r.x0, r.x1 = r.x0+2, r.x1+2
+		regions = append(regions, r)
 	}
 	for _, line := range content {
 		lines = append(lines, pad(line))
 	}
 	lines = append(lines, pad(""))
 	lines = append(lines, dimStyle.Render(m.dialogKeys(item)))
-	return strings.Join(lines, "\n")
+	return strings.Join(lines, "\n"), regions
 }
 
 // dialogTabs names every part: the one shown stands out, answered ones are
 // ticked.
-func (m model) dialogTabs(colors dialogColors, width int) string {
+func (m model) dialogTabs(colors dialogColors, width int) (string, []region) {
 	d := m.dialog
 	left := 0
 	for _, item := range d.items {
@@ -388,6 +403,8 @@ func (m model) dialogTabs(colors dialogColors, width int) string {
 		}
 	}
 	var tabs []string
+	var regions []region
+	x := 0
 	for i, item := range d.items {
 		mark, name := "⚑ ", ""
 		if item.question >= 0 {
@@ -403,14 +420,20 @@ func (m model) dialogTabs(colors dialogColors, width int) string {
 			mark = "✓ "
 			style = style.Background(colors.done).Foreground(colors.dim)
 		}
-		label := mark + name
-		tabs = append(tabs, style.Render(label))
+		tab := style.Render(mark + name)
+		index := i
+		regions = append(regions, region{y: 0, x0: x, x1: x + ansi.StringWidth(tab), do: func(m model) (tea.Model, tea.Cmd) {
+			m.dialog.current = index
+			return m, m.focusItem()
+		}})
+		x += ansi.StringWidth(tab) + 1
+		tabs = append(tabs, tab)
 	}
 	count := dimStyle.Render(fmt.Sprintf(" %d of %d · %d left", d.current+1, len(d.items), left))
-	return ansi.Truncate(strings.Join(tabs, " ")+count, width, "…")
+	return ansi.Truncate(strings.Join(tabs, " ")+count, width, "…"), regions
 }
 
-func (m model) approvalLines(item dialogItem, colors dialogColors, body lipgloss.Style, width int) []string {
+func (m model) approvalLines(item dialogItem, colors dialogColors, body lipgloss.Style, width int) ([]string, []region) {
 	request := m.dialog.request(item)
 	title := body.Bold(true).Render("Run " + request.Call.Name + "?")
 	if request.Warning != "" {
@@ -426,15 +449,34 @@ func (m model) approvalLines(item dialogItem, colors dialogColors, body lipgloss
 	if request.Ruled && len(request.Commands) > 0 && len(parts) == 0 {
 		lines = append(lines, body.Foreground(colors.dim).Render("no rule allows: ")+body.Render(strings.Join(request.Commands, " · ")))
 	}
+	lines = append(lines, "")
 	var buttons []string
+	var regions []region
+	x := 0
 	for i, label := range m.dialog.buttonsFor(item) {
-		style := lipgloss.NewStyle().Padding(0, 2).Background(colors.button).Foreground(colors.text)
-		if i == item.button {
-			style = style.Background(colors.chosen).Foreground(colors.chosenText).Bold(true)
-		}
-		buttons = append(buttons, style.Render(label))
+		button := buttonLabel(label, i == item.button, colors)
+		key := strings.ToLower(label[:1])
+		index := i
+		regions = append(regions, region{y: len(lines), x0: x, x1: x + ansi.StringWidth(button), do: func(m model) (tea.Model, tea.Cmd) {
+			m.dialog.item().button = index
+			return m.handleApprovalKey(key)
+		}})
+		x += ansi.StringWidth(button) + 2
+		buttons = append(buttons, button)
 	}
-	return append(lines, "", strings.Join(buttons, body.Render("  ")))
+	return append(lines, strings.Join(buttons, body.Render("  "))), regions
+}
+
+// buttonLabel draws a button with the key that presses it underlined, in
+// the warning colour unless the button is the chosen one.
+func buttonLabel(label string, chosen bool, colors dialogColors) string {
+	style := lipgloss.NewStyle().Background(colors.button).Foreground(colors.text)
+	key := style.Foreground(warning).Bold(true).Underline(true)
+	if chosen {
+		style = style.Background(colors.chosen).Foreground(colors.chosenText).Bold(true)
+		key = style.Underline(true)
+	}
+	return style.Render("  ") + key.Render(label[:1]) + style.Render(label[1:]+"  ")
 }
 
 // commandRows is how many lines of a command the dialog shows before it
@@ -475,7 +517,7 @@ func (m model) commandBlock(item dialogItem, colors dialogColors, body lipgloss.
 
 // scrollCommand moves the command shown by a line, a page or to an end.
 func (m model) scrollCommand(item *dialogItem, pressed string) {
-	total := len(m.commandLines(m.dialog.request(*item), dialogPalette(true), max(m.width, 30)-4))
+	total := len(m.commandLines(m.dialog.request(*item), dialogPalette(true), max(m.mainWidth(), 30)-4))
 	rows := m.commandRows()
 	last := max(total-rows, 0)
 	item.scroll = min(max(item.scroll, 0), last)
@@ -537,9 +579,10 @@ func (m model) commandParts(request agent.ApprovalRequest, body lipgloss.Style, 
 	return lines
 }
 
-func (m model) questionLines(item dialogItem, colors dialogColors, body lipgloss.Style, width int) []string {
+func (m model) questionLines(item dialogItem, colors dialogColors, body lipgloss.Style, width int) ([]string, []region) {
 	question := m.dialog.questionOf(item)
 	var lines []string
+	var regions []region
 	for _, line := range strings.Split(ansi.Wrap(question.Text, width, ""), "\n") {
 		lines = append(lines, body.Bold(true).Render(line))
 	}
@@ -561,22 +604,37 @@ func (m model) questionLines(item dialogItem, colors dialogColors, body lipgloss
 		if i == item.cursor {
 			style = chosen
 		}
+		index := i
+		regions = append(regions, row(len(lines), func(m model) (tea.Model, tea.Cmd) {
+			item := m.dialog.item()
+			item.cursor = index
+			if m.dialog.questionOf(*item).Multiple {
+				item.picked[index] = !item.picked[index]
+				return m, m.focusItem()
+			}
+			return m.answer(m.dialog.questionOf(*item).Options[index])
+		}))
 		lines = append(lines, style.Render(mark+oneLine(option, width-8)))
 	}
+	regions = append(regions, row(len(lines), func(m model) (tea.Model, tea.Cmd) {
+		item := m.dialog.item()
+		item.cursor = len(m.dialog.questionOf(*item).Options)
+		return m, m.focusItem()
+	}))
 	if item.cursor == len(question.Options) {
 		item.other.SetWidth(max(width-8, 10))
 		lines = append(lines, chosen.Render("❯ ✎ ")+item.other.View())
 	} else {
 		lines = append(lines, body.Foreground(colors.dim).Render("  ✎ your own answer"))
 	}
-	return lines
+	return lines, regions
 }
 
 func (m model) dialogKeys(item dialogItem) string {
 	keys := []string{}
 	if item.approval >= 0 {
 		keys = append(keys, "←→ choose · enter press · y yes · n no")
-		if len(m.commandLines(m.dialog.request(item), dialogPalette(true), max(m.width, 30)-4)) > m.commandRows() {
+		if len(m.commandLines(m.dialog.request(item), dialogPalette(true), max(m.mainWidth(), 30)-4)) > m.commandRows() {
 			keys = append(keys, "↑↓ scroll")
 		}
 		if len(m.dialog.buttonsFor(item)) == 3 {

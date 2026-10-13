@@ -452,3 +452,20 @@
 - The side panel follows what is being done: the conversation, the tasks whole and wrapped, and
   the jobs with their state and time. It shows from 110 columns, 36 wide; the conversation is drawn
   at the width left. Narrower, the tasks go back above the input.
+
+## Mouse
+
+- mo takes the mouse for clicks and the wheel, so the terminal no longer selects; mo selects
+  instead. A drag picks text within the column it started in, conversation or side panel, shows
+  it reversed, and on release copies it through OSC 52 and the desktop's clipboard command when
+  there is one. Rows lose their trailing blanks and the indent they share, counted from the line's
+  start for a first row picked mid-line, so code pastes as it was. A press and release on the
+  same cell is a click.
+- Clickable parts are regions recorded as the screen is laid out, from one layout shared by the
+  view and the click: nothing can be clicked where it is not drawn.
+- huh takes no mouse, so a click on a settings list moves its cursor there and presses enter.
+- Buttons underline the key that presses them, in the warning colour, so the mouse teaches the
+  keys.
+- Beside the side panel, what sits over the input (the dialog, the spinner, the commands that
+  match) takes the conversation's width, and the panel runs down to the input. Without the panel
+  the tasks sit over the input on the panel's background.

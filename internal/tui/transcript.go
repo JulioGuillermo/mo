@@ -203,7 +203,7 @@ func (m *model) toggleDetails() {
 // clickDetails opens or folds the block at row y of the screen, and tells
 // whether there was one there.
 func (m *model) clickDetails(y int) bool {
-	conversation := m.conversation(m.height - lipgloss.Height(m.bottom()) - 1)
+	conversation := m.conversation(m.conversationHeight())
 	_, foldable := m.transcript()
 	i, found := foldable[y+conversation.YOffset()]
 	if !found {
