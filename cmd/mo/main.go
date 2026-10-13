@@ -55,22 +55,28 @@ func run() error {
 	}
 
 	hub := connectMCP(ctx, cfg)
-	defer hub.Close()
+	hubs := &openHubs{current: hub}
+	defer hubs.Close()
 	defer render.RemoveSavedImages()
 	loadedPlugins := loadPlugins(workDir)
 	defer loadedPlugins.Close()
 	choice := sessionChoice{provider: *providerFlag, model: *modelFlag, yes: *yesFlag}
-	session, err := buildSession(ctx, workDir, cfg, choice, extensions{mcp: hub, plugins: loadedPlugins})
-	if err != nil {
-		return err
-	}
+	loaded := extensions{mcp: hub, plugins: loadedPlugins, hubs: hubs}
 
 	prompt, err := oneShotPrompt(flag.Args())
 	if err != nil {
 		return err
 	}
 	if prompt != "" {
+		session, err := buildSession(ctx, workDir, cfg, choice, loaded)
+		if err != nil {
+			return err
+		}
 		return runOnce(ctx, session.Agent, prompt)
+	}
+	session, err := startSession(ctx, workDir, cfg, choice, loaded, tui.AskProvider)
+	if err != nil {
+		return err
 	}
 	stop()
 	return tui.Run(session)

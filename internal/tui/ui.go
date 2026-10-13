@@ -26,8 +26,9 @@ import (
 )
 
 const helpText = `enter send · ctrl+j / alt+enter new line · esc / ctrl+c stop · ctrl+d quit
-/clear forget the conversation · /compact summarize it · /settings provider, tools, context
-/view <file> show an image, svg or mermaid file · /mcp MCP servers · /plugins plugins and their commands
+/clear forget the conversation · /compact summarize it · /settings model, tools, context, web, loops
+/providers add or edit providers · /mcp add or edit MCP servers · /plugins plugins and their commands
+/view <file> show an image, svg or mermaid file
 /help this help · /quit exit`
 
 type Session struct {
@@ -40,6 +41,25 @@ type Session struct {
 	MCP       []mcphub.Status
 	Plugins   *plugins.Set
 	ToolNames []string
+
+	ToolDescriptions map[string]string
+
+	Activate func()
+	Discard  func()
+}
+
+// activate is called once a reloaded session replaces the one in use, and
+// discard when it is dropped instead.
+func (s Session) activate() {
+	if s.Activate != nil {
+		s.Activate()
+	}
+}
+
+func (s Session) discard() {
+	if s.Discard != nil {
+		s.Discard()
+	}
 }
 
 type model struct {
@@ -275,7 +295,10 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		return m, tea.Println(m.printer.Note(helpText))
 	case "settings":
 		m.settingsInFlight = true
-		return m, tea.Sequence(tea.Println(m.printer.Note("looking for providers…")), loadSettings(m.session))
+		return m, tea.Sequence(tea.Println(m.printer.Note("looking for providers…")), loadSettings(m.session, generalSettings))
+	case "providers":
+		m.settingsInFlight = true
+		return m, tea.Sequence(tea.Println(m.printer.Note("looking for providers…")), loadSettings(m.session, providerSettings))
 	case "view":
 		if argument == "" {
 			return m, tea.Println(m.printer.Note("usage: /view <image, svg or mermaid file>"))
@@ -284,7 +307,8 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 	case "plugins":
 		return m, tea.Println(m.printer.Note(pluginReport(m.session.Plugins)))
 	case "mcp":
-		return m, tea.Println(m.printer.Note(mcpReport(m.session.MCP)))
+		m.settingsInFlight = true
+		return m, tea.Sequence(tea.Println(m.printer.Note(mcpReport(m.session.MCP))), loadSettings(m.session, mcpSettings))
 	case "compact":
 		return m.start(tea.Println(m.printer.Note("compacting…")), m.session.Agent.Compact)
 	}
@@ -445,7 +469,7 @@ func pluginReport(loaded *plugins.Set) string {
 
 func mcpReport(statuses []mcphub.Status) string {
 	if len(statuses) == 0 {
-		return "no MCP servers; add them under [mcp.<name>] in " + config.UserFile()
+		return "no MCP servers yet"
 	}
 	var lines []string
 	for _, status := range statuses {

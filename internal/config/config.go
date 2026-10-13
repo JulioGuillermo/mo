@@ -99,16 +99,16 @@ type ProviderConfig struct {
 	Model      string `toml:"model,omitempty"`
 }
 
-// Key returns the API key from the first of api_key, api_key_env and
-// api_key_from that is set.
+// Key returns the API key from the first of api_key, api_key_from and
+// api_key_env that is set.
 func (p ProviderConfig) Key() string {
 	switch {
 	case p.APIKey != "":
 		return p.APIKey
-	case p.APIKeyEnv != "":
-		return os.Getenv(p.APIKeyEnv)
 	case p.APIKeyFrom != "":
 		return KeyFrom(p.APIKeyFrom)
+	case p.APIKeyEnv != "":
+		return os.Getenv(p.APIKeyEnv)
 	}
 	return ""
 }

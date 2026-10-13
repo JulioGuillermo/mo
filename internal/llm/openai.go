@@ -215,7 +215,7 @@ func (p *OpenAI) ListModels(ctx context.Context) ([]string, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("listing models: %s", resp.Status)
+		return nil, &StatusError{Code: resp.StatusCode, Status: resp.Status}
 	}
 	var list struct {
 		Data []struct {
@@ -230,6 +230,16 @@ func (p *OpenAI) ListModels(ctx context.Context) ([]string, error) {
 		ids = append(ids, model.ID)
 	}
 	return ids, nil
+}
+
+// StatusError is a server that answered listing its models with an error.
+type StatusError struct {
+	Code   int
+	Status string
+}
+
+func (e *StatusError) Error() string {
+	return "listing models: " + e.Status
 }
 
 func (p *OpenAI) headers() map[string]string {

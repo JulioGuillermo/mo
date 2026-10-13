@@ -7,7 +7,7 @@ package config
 // | CF-03 | Happy    | A provider layer changes only the fields it sets                  | P0       |
 // | CF-04 | Edge     | confirm = [] in the user file turns confirmation off              | P1       |
 // | CF-05 | Error    | A broken file is reported with its path                           | P1       |
-// | CF-06 | Happy    | Key prefers api_key over api_key_env                              | P1       |
+// | CF-06 | Happy    | Key prefers api_key, then api_key_from, then api_key_env          | P1       |
 // | CF-07 | Security | The project file cannot redirect a provider, swap its key or add one | P0    |
 // | CF-08 | Security | The project file can add tools to confirm but never remove them    | P0       |
 // | CF-09 | Security | The project file can pick a keyless provider but not a paid one    | P1       |
@@ -426,7 +426,7 @@ func TestLoopSettings(t *testing.T) {
 }
 
 func TestProviderKey(t *testing.T) {
-	t.Run("CF-06 Key prefers api_key over api_key_env", func(t *testing.T) {
+	t.Run("CF-06 Key prefers api_key, then api_key_from, then api_key_env", func(t *testing.T) {
 		t.Setenv("MO_TEST_KEY", "from-env")
 
 		if key := (ProviderConfig{APIKeyEnv: "MO_TEST_KEY"}).Key(); key != "from-env" {
@@ -434,6 +434,11 @@ func TestProviderKey(t *testing.T) {
 		}
 		if key := (ProviderConfig{APIKey: "inline", APIKeyEnv: "MO_TEST_KEY"}).Key(); key != "inline" {
 			t.Errorf("inline key = %q", key)
+		}
+		t.Setenv("CODEX_HOME", t.TempDir())
+		writeConfig(t, filepath.Join(os.Getenv("CODEX_HOME"), "auth.json"), `{"OPENAI_API_KEY":"from-codex"}`)
+		if key := (ProviderConfig{APIKeyEnv: "MO_TEST_KEY", APIKeyFrom: KeyFromCodex}).Key(); key != "from-codex" {
+			t.Errorf("codex key = %q", key)
 		}
 	})
 }

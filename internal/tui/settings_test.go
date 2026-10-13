@@ -4,13 +4,13 @@ package tui
 // | ID    | Category | Description                                                          | Priority |
 // | SD-01 | Happy    | An untouched draft leaves the user file as it was                    | P0       |
 // | SD-02 | Edge     | Unticking every confirmation saves confirm = [], not the default     | P0       |
-// | SD-03 | Happy    | Only edited tool descriptions are saved, an emptied one as ""        | P1       |
+// | SD-03 | Happy    | Only edited tool descriptions are saved, an emptied one as empty     | P1       |
 // | SD-04 | Happy    | Picking a detected provider saves its settings, never its key        | P0       |
 // | SD-05 | Error    | Bad numbers are refused with the field name                          | P1       |
 // | SD-06 | Happy    | An empty model keeps following the server                            | P1       |
 // | SD-07 | Happy    | Esc closes the settings without saving                               | P1       |
 // | SD-08 | Happy    | The budget line adds up every item                                   | P2       |
-// | SD-09 | Happy    | A model typed for a provider goes to that provider, or to the top-level model if the file has one | P1 |
+// | SD-09 | Happy    | A typed model goes to its provider, or to the top-level model the file already has | P1 |
 // | SD-10 | Happy    | Changing only the provider keeps the models already saved            | P1       |
 // | SD-11 | Error    | A run cannot start while settings load or save                       | P0       |
 // | SD-12 | Happy    | Agent messages still reach the UI while the form is open             | P1       |
@@ -150,7 +150,7 @@ func TestSettingsScreen(t *testing.T) {
 	t.Run("SD-07 esc closes the settings without saving", func(t *testing.T) {
 		session := Session{Agent: &agent.Agent{}, Provider: "llama-server", Config: config.Defaults()}
 		m := model{session: session, printer: newPrinter(), input: newInput()}
-		m.settings = &settingsScreen{draft: defaultDraft()}
+		m.settings = &settingsScreen{}
 
 		updated, cmd := m.Update(keyEsc)
 
@@ -182,7 +182,7 @@ func TestSettingsGuards(t *testing.T) {
 
 	t.Run("SD-12 agent messages still reach the UI while the form is open", func(t *testing.T) {
 		m := model{session: Session{Agent: &agent.Agent{}}, printer: newPrinter(), input: newInput(), running: true, cancel: func() {}}
-		m.settings = &settingsScreen{draft: defaultDraft()}
+		m.settings = &settingsScreen{}
 
 		updated, _ := m.Update(runDoneMsg{})
 
@@ -223,7 +223,7 @@ func TestSettingsEdges(t *testing.T) {
 		withTools := &agent.Agent{Tools: tools.NewRegistry(tools.Env{}, tools.Options{Mode: tools.ModeFull})}
 		session := Session{Agent: withTools, Config: config.Defaults()}
 		m := model{session: session, printer: newPrinter(), input: newInput(), width: 120, height: 50}
-		m.settings = &settingsScreen{draft: defaultDraft(), form: buildSettingsForm(session, defaultDraft(), nil, nil)}
+		m.settings = &settingsScreen{form: buildSettingsForm(session, defaultDraft(), nil, nil)}
 
 		updated, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
 

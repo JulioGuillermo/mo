@@ -105,8 +105,37 @@
 
 ## Settings and detection
 
-- `/settings` is a huh v2 form embedded in the inline UI, five pages: model, tools, context (with
-  the token cost of the system prompt and of each tool), tool descriptions, memory.
+- Every key of the config file has a place in the UI, so the file is never the only way:
+  `/settings` holds the single values, `/providers` and `/mcp` the lists, each a picker form that
+  opens an edit form for one entry. Only `.mo.toml` stays a file, as it belongs to the project.
+- `/settings` is a huh v2 form embedded in the inline UI: model, tools, context (with the token
+  cost of the system prompt and of each tool), tool descriptions, loop guard, web, memory and
+  display. Descriptions cover the MCP and plugin tools too, compared with each tool's own; saved
+  ones of tools not loaded now are kept.
+- A provider entry keeps only what differs from its preset, since the file is laid over the presets
+  field by field. The same layering means a preset field cannot be emptied from the file: emptied
+  in the form it falls back to the preset. For keys that does not matter, as `api_key` and then
+  `api_key_from` win over the preset's `api_key_env`. An empty key field keeps the saved key;
+  forgetting it is its own choice. Deleting a preset's entry resets it; deleting the provider in
+  use goes back to auto. The provider in use takes a top-level `model` into its own entry, and
+  choosing another provider leaves the top-level model behind, since it would override any choice.
+- Secrets typed in a form are never shown again: key fields are password fields, empty keeps the
+  saved key, and MCP environment and header values show as `••••••` unless they only read the
+  environment (`${NAME}`, `Bearer ${NAME}`). Leaving `••••••` keeps the saved value.
+- MCP edits reconnect the servers: a new hub is connected and the session built on it, and it
+  replaces the old one only once the file is saved; if saving fails the new hub is closed instead.
+  A hub that connects after mo closed its hubs at exit is closed as it arrives. Ceiling: any MCP
+  change restarts every server; reconnecting only the changed ones is the way out if it matters.
+- The setup screen at start replaces the fatal "no provider" error in interactive mode, only for
+  errors about the provider; any other bad setting fails as before. It shows the error, and offers
+  the providers mo knows or found (asking the key of one that needs it, even when a key is set,
+  since the set one may be wrong, and a model), a new one with the same fields as `/providers`,
+  going on anyway (only with a session that was built and just does not answer) and quitting.
+  Each pick is built and checked before it is saved. A pick that was built but does not answer
+  becomes what going on keeps, and the next round starts from it; a pick that could not be built
+  is not kept. A provider is checked by listing an OpenAI-compatible server's models (3 s), and a
+  404 there counts as an answer; an Anthropic key is only checked when used. One-shot mode keeps
+  failing fast instead.
 - The form starts from the defaults plus the user file, not from the session: a provider picked
   with `-p` or by a project's `.mo.toml` is never copied into the global config. Provider and model
   are written only when changed in the form; a typed model goes where the file already keeps one
@@ -122,6 +151,8 @@
   drops empty lists with `omitempty`, and `confirm = []` and `compact_at = 0` must survive.
 - After saving, the session is rebuilt from the files and takes over the conversation, so a change
   of provider, tools or prompt applies on the next message.
+- A key comes from the first of `api_key`, `api_key_from` and `api_key_env` that is set: a login
+  picked for a preset must win over the preset's own variable.
 - Detection reads env keys, probes keyless local providers in parallel (500 ms each), and reads
   codex and opencode files. Keys from those files stay there: the config gets `api_key_from`,
   resolved when a request needs it. OAuth subscription logins are reported, never read for a key.

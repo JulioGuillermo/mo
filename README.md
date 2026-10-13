@@ -11,8 +11,17 @@ git diff | ./mo "review this" # prompt from stdin
 ./mo -detect                  # list the providers mo can use right now
 ```
 
-Inside mo, `/settings` edits provider, model, tools, context and memory, shows what every request
-costs in tokens, saves to `~/.config/mo/config.toml` and applies at once, keeping the conversation.
+Every setting in the config file can be changed from inside mo, saved to `~/.config/mo/config.toml`
+and applied at once, keeping the conversation:
+
+- `/settings`: provider, model, output tokens, tools, context (with what every request costs in
+  tokens), prompts, tool descriptions, loop guard, web search, memory and images.
+- `/providers`: add a provider, or edit or delete one: type, URL, model and where its key comes from.
+- `/mcp`: shows which servers answered, then adds, edits or deletes one; they reconnect on save.
+
+When mo starts with no provider, or with one that does not answer, it opens a setup screen instead
+of quitting: pick a provider mo knows or found, set up a new one, go on anyway, or quit. The choice
+is tried first and saved only when it works.
 
 ## Providers
 
@@ -140,7 +149,7 @@ trust = true               # run its tools without asking
 
 Their tools are named `mcp__<server>__<tool>` and ask before running unless the server has
 `trust = true`. In `search` tool mode they stay out of the context until the model looks for them.
-`/mcp` shows which servers answered. A server's stderr goes to `~/.local/share/mo/logs/mcp-<name>.log`.
+`/mcp` shows which servers answered and edits them. A server's stderr goes to `~/.local/share/mo/logs/mcp-<name>.log`.
 `[web]` and `[mcp]` are read from the user file only, never from a project's `.mo.toml`.
 
 ## Images and diagrams
@@ -197,5 +206,5 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | esc, ctrl+c | stop the current run |
 | ctrl+c (idle) | clear input, then quit |
 | ctrl+d | quit |
-| `/clear` `/compact` `/settings` `/mcp` `/plugins` `/view <file>` `/help` `/quit` | commands |
+| `/clear` `/compact` `/settings` `/providers` `/mcp` `/plugins` `/view <file>` `/help` `/quit` | commands |
 | `/<name> text` | a plugin command |

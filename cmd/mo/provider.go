@@ -104,10 +104,10 @@ func detectedProvider(ctx context.Context, cfg config.Config, name string) (conf
 
 func keyOrigin(settings config.ProviderConfig) string {
 	switch {
-	case settings.APIKeyEnv != "":
-		return "env " + settings.APIKeyEnv
 	case settings.APIKeyFrom != "":
 		return "api_key_from " + settings.APIKeyFrom
+	case settings.APIKeyEnv != "":
+		return "env " + settings.APIKeyEnv
 	}
 	return "api_key"
 }

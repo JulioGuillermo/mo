@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	defaultCompactPrompt = `You summarize a coding session so the work can continue from the summary alone.
+	DefaultCompactPrompt = `You summarize a coding session so the work can continue from the summary alone.
 Keep the user's goals and constraints, decisions taken, files changed and their state, commands that worked or failed, and what is left to do.
 Use short bullet points.`
 	summaryHeader        = "Summary of the conversation so far:\n"
@@ -98,7 +98,7 @@ func (a *Agent) Compact(ctx context.Context, hooks Hooks) error {
 func (a *Agent) summarize(ctx context.Context, history []llm.Message) (string, error) {
 	prompt := a.CompactPrompt
 	if prompt == "" {
-		prompt = defaultCompactPrompt
+		prompt = DefaultCompactPrompt
 	}
 	transcript := transcriptOf(history)
 	if a.Window > 0 {

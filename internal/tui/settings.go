@@ -17,7 +17,9 @@ import (
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/detect"
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/render"
 	"github.com/jg/mo/internal/tools"
+	"github.com/jg/mo/internal/web"
 )
 
 const (
@@ -26,10 +28,19 @@ const (
 	settingsMinHeight     = 3
 	maxToolChoiceHeight   = 14
 	autoProvider          = ""
-	settingsHelp          = "enter next · shift+tab back · space toggle · esc cancel"
+	settingsHelp          = "enter next · shift+tab back · space toggle · ctrl+j new line in a box · esc cancel"
+)
+
+type settingsKind int
+
+const (
+	generalSettings settingsKind = iota
+	providerSettings
+	mcpSettings
 )
 
 type settingsLoadedMsg struct {
+	kind     settingsKind
 	findings []detect.Finding
 	layer    config.Config
 	models   []string
@@ -41,26 +52,33 @@ type settingsSavedMsg struct {
 	err     error
 }
 
+// settingsScreen is a form over the user file. A form that saves turns the
+// file into the new one with apply; a form that picks what to edit opens the
+// next one with next.
 type settingsScreen struct {
-	form     *huh.Form
-	draft    *settingsDraft
-	findings []detect.Finding
-	layer    config.Config
+	form  *huh.Form
+	layer config.Config
+	apply func(layer config.Config) (config.Config, error)
+	next  func(m model) (tea.Model, tea.Cmd)
 }
 
 // loadSettings gathers, off the UI goroutine, what the form shows: the user
-// file, the providers found, and the models to suggest.
-func loadSettings(session Session) tea.Cmd {
+// file, and for the provider forms the providers found and the models to
+// suggest.
+func loadSettings(session Session, kind settingsKind) tea.Cmd {
 	return func() tea.Msg {
 		layer, err := config.ReadUserLayer()
 		if err != nil {
 			return settingsLoadedMsg{err: fmt.Errorf("reading %s: %w", config.UserFile(), err)}
 		}
+		if kind == mcpSettings {
+			return settingsLoadedMsg{kind: kind, layer: layer}
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), settingsDetectTimeout)
 		defer cancel()
 		findings := detect.Run(ctx, session.Config)
 		models := append(currentModels(ctx, session), foundModels(findings)...)
-		return settingsLoadedMsg{findings: findings, layer: layer, models: models}
+		return settingsLoadedMsg{kind: kind, findings: findings, layer: layer, models: models}
 	}
 }
 
@@ -69,11 +87,27 @@ func (m model) openSettings(msg settingsLoadedMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
 		return m, tea.Println(m.printer.Error(msg.err))
 	}
+	switch msg.kind {
+	case providerSettings:
+		return m.pickProvider(msg)
+	case mcpSettings:
+		return m.pickMCPServer(msg)
+	}
 	draft := newSettingsDraft(msg.layer)
+	if len(m.session.ToolDescriptions) > 0 {
+		draft.describeTools(m.session.ToolDescriptions)
+	}
+	apply := func(layer config.Config) (config.Config, error) {
+		return draft.applyTo(layer, msg.findings)
+	}
 	form := buildSettingsForm(m.session, draft, msg.findings, msg.models)
-	form = fitForm(form, m.width, m.height)
-	m.settings = &settingsScreen{form: form, draft: draft, findings: msg.findings, layer: msg.layer}
-	return m, form.Init()
+	return m.showSettings(&settingsScreen{form: form, layer: msg.layer, apply: apply})
+}
+
+func (m model) showSettings(screen *settingsScreen) (tea.Model, tea.Cmd) {
+	screen.form = fitForm(screen.form, m.width, m.height)
+	m.settings = screen
+	return m, screen.form.Init()
 }
 
 // fitForm keeps the form and its help line inside the terminal.
@@ -98,6 +132,9 @@ func (m model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case huh.StateCompleted:
 		screen := m.settings
 		m.settings = nil
+		if screen.next != nil {
+			return screen.next(m)
+		}
 		m.settingsInFlight = true
 		return m, saveSettings(screen, m.session)
 	case huh.StateAborted:
@@ -111,7 +148,7 @@ func (m model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 // the file only when that works, so a bad choice never reaches the disk.
 func saveSettings(screen *settingsScreen, current Session) tea.Cmd {
 	return func() tea.Msg {
-		layer, err := screen.draft.applyTo(screen.layer, screen.findings)
+		layer, err := screen.apply(screen.layer)
 		if err != nil {
 			return settingsSavedMsg{err: err}
 		}
@@ -120,8 +157,10 @@ func saveSettings(screen *settingsScreen, current Session) tea.Cmd {
 			return settingsSavedMsg{err: fmt.Errorf("not saved, these settings do not work: %w", err)}
 		}
 		if err := config.SaveUserLayer(layer); err != nil {
+			fresh.discard()
 			return settingsSavedMsg{err: err}
 		}
+		fresh.activate()
 		fresh.Agent.TakeConversation(current.Agent)
 		return settingsSavedMsg{session: fresh}
 	}
@@ -151,11 +190,19 @@ func buildSettingsForm(session Session, draft *settingsDraft, findings []detect.
 		modelGroup(session.Config, draft, findings, models),
 		toolsGroup(draft, toolNames(session)),
 		contextGroup(session.Agent, draft),
-		descriptionsGroup(draft),
+		descriptionsGroup(draft, toolNames(session)),
 		loopGroup(draft),
+		webGroup(draft),
 		huh.NewGroup(
 			huh.NewInput().Title("Memory folder").Value(&draft.memoryDir),
-		).Title("Memory"),
+			huh.NewSelect[string]().Title("Images, SVG and Mermaid").Options(
+				huh.NewOption("auto: kitty graphics where the terminal has them, else colour blocks", string(render.ModeAuto)),
+				huh.NewOption("kitty graphics", string(render.ModeKitty)),
+				huh.NewOption("colour blocks", string(render.ModeBlocks)),
+				huh.NewOption("off: only the file path", string(render.ModeOff)),
+			).Value(&draft.images),
+			huh.NewNote().Title("Elsewhere").Description("providers: /providers · MCP servers: /mcp"),
+		).Title("Memory and display"),
 	).WithShowHelp(false)
 }
 
@@ -164,6 +211,8 @@ func modelGroup(cfg config.Config, draft *settingsDraft, findings []detect.Findi
 		huh.NewSelect[string]().Title("Provider").Options(providerOptions(cfg, findings, draft.initialProvider)...).Value(&draft.provider),
 		huh.NewInput().Title("Model").Description("empty: the first model the server lists").
 			Suggestions(models).Value(&draft.model),
+		huh.NewInput().Title("Max output tokens").Description("0: the provider's default").
+			Validate(validCount).Value(&draft.maxTokens),
 	}
 	if note := unusableNote(findings); note != "" {
 		fields = append(fields, huh.NewNote().Title("Found but not usable").Description(note))
@@ -219,7 +268,27 @@ func contextGroup(current *agent.Agent, draft *settingsDraft) *huh.Group {
 			huh.NewOption("drop the oldest messages", "drop"),
 		).Value(&draft.strategy),
 		huh.NewText().Title("System prompt").Lines(6).Value(&draft.systemPrompt),
+		huh.NewText().Title("Summary prompt").Description("used when compacting").Lines(4).Value(&draft.compactPrompt),
 	).Title("Context")
+}
+
+func webGroup(draft *settingsDraft) *huh.Group {
+	fields := []huh.Field{
+		huh.NewSelect[string]().Title("Web search").Options(
+			huh.NewOption("DuckDuckGo: no key", web.SearchDuckDuckGo),
+			huh.NewOption("SearXNG: your own instance", web.SearchSearXNG),
+			huh.NewOption("Brave: needs a key", web.SearchBrave),
+			huh.NewOption("Tavily: needs a key", web.SearchTavily),
+		).Value(&draft.search),
+		huh.NewInput().Title("SearXNG URL").Description("e.g. http://localhost:8888").Value(&draft.searchURL),
+		huh.NewInput().Title("Search key variable").Description("environment variable holding the Brave or Tavily key").Value(&draft.searchKeyEnv),
+		huh.NewInput().Title("Search key").Description("saved in the settings file; empty keeps the one it has").
+			EchoMode(huh.EchoModePassword).Value(&draft.searchKey),
+	}
+	if draft.savedKey {
+		fields = append(fields, huh.NewConfirm().Title("Forget the saved search key").Value(&draft.forgetKey))
+	}
+	return huh.NewGroup(fields...).Title("Web")
 }
 
 func loopGroup(draft *settingsDraft) *huh.Group {
@@ -243,10 +312,12 @@ func atLeast(least int) func(string) error {
 	}
 }
 
-func descriptionsGroup(draft *settingsDraft) *huh.Group {
+func descriptionsGroup(draft *settingsDraft, names []string) *huh.Group {
 	var fields []huh.Field
-	for _, name := range tools.BuiltinNames() {
-		fields = append(fields, huh.NewInput().Title(name).Value(draft.descriptions[name]))
+	for _, name := range names {
+		if description, shown := draft.descriptions[name]; shown {
+			fields = append(fields, huh.NewInput().Title(name).Value(description))
+		}
 	}
 	return huh.NewGroup(fields...).Title("Tool descriptions").Description("empty sends the tool without one")
 }

@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"slices"
+	"sync"
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
@@ -22,9 +24,39 @@ type sessionChoice struct {
 }
 
 // extensions are what a run loads once and keeps across settings changes.
+// The MCP servers are the exception: they connect again when their settings
+// change.
 type extensions struct {
 	mcp     *mcphub.Hub
 	plugins *plugins.Set
+	hubs    *openHubs
+}
+
+// openHubs holds the MCP connection in use. A new one replaces it, and once
+// the run has closed it, any later one is closed as it arrives.
+type openHubs struct {
+	mu      sync.Mutex
+	current *mcphub.Hub
+	closed  bool
+}
+
+func (h *openHubs) replace(next *mcphub.Hub) {
+	h.mu.Lock()
+	previous := h.current
+	if h.closed {
+		previous = next
+	} else {
+		h.current = next
+	}
+	h.mu.Unlock()
+	previous.Close()
+}
+
+func (h *openHubs) Close() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.closed = true
+	h.current.Close()
 }
 
 // buildSession puts together the agent the config describes. Its Reload
@@ -35,7 +67,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	hub := loaded.mcp
 	chosen, err := chooseProvider(ctx, cfg, choice.provider, choice.model)
 	if err != nil {
-		return tui.Session{}, err
+		return tui.Session{}, providerError{err}
 	}
 	confirm := append(slices.Clone(cfg.Tools.Confirm), hub.NeedConfirmation()...)
 	confirm = append(confirm, loaded.plugins.NeedConfirmation()...)
@@ -89,7 +121,19 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		if err != nil {
 			return tui.Session{}, err
 		}
-		return buildSession(context.Background(), workDir, fresh, sessionChoice{yes: choice.yes}, loaded)
+		if reflect.DeepEqual(fresh.MCP, cfg.MCP) {
+			return buildSession(context.Background(), workDir, fresh, sessionChoice{yes: choice.yes}, loaded)
+		}
+		next := loaded
+		next.mcp = mcphub.Connect(context.Background(), fresh.MCP, config.LogDir())
+		session, err := buildSession(context.Background(), workDir, fresh, sessionChoice{yes: choice.yes}, next)
+		if err != nil {
+			next.mcp.Close()
+			return tui.Session{}, err
+		}
+		session.Activate = func() { loaded.hubs.replace(next.mcp) }
+		session.Discard = next.mcp.Close
+		return session, nil
 	}
 	return tui.Session{
 		Agent:     assistant,
@@ -101,6 +145,8 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		MCP:       hub.Status(),
 		Plugins:   loaded.plugins,
 		ToolNames: allToolNames(hub, loaded.plugins),
+
+		ToolDescriptions: toolDescriptions(hub, loaded.plugins),
 	}, nil
 }
 
@@ -123,6 +169,16 @@ func allToolNames(hub *mcphub.Hub, loaded *plugins.Set) []string {
 		names = append(names, tool.Name)
 	}
 	return append(names, loaded.ToolNames()...)
+}
+
+// toolDescriptions maps every tool the session can have to its own
+// description, before the settings change it.
+func toolDescriptions(hub *mcphub.Hub, loaded *plugins.Set) map[string]string {
+	descriptions := tools.BuiltinDescriptions()
+	for _, tool := range extraTools(hub, loaded) {
+		descriptions[tool.Name] = tool.Description
+	}
+	return descriptions
 }
 
 func toolEnv(workDir, memoryDir string) tools.Env {

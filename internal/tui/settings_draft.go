@@ -10,24 +10,38 @@ import (
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/detect"
+	"github.com/jg/mo/internal/render"
 	"github.com/jg/mo/internal/tools"
 )
 
 // settingsDraft holds what the settings form edits, as plain strings and
 // lists, starting from the defaults plus the user file.
 type settingsDraft struct {
-	provider     string
-	model        string
-	mode         string
-	alwaysLoaded []string
-	confirm      []string
-	disabled     []string
-	maxOutput    string
-	window       string
-	compactAt    string
-	strategy     string
-	systemPrompt string
-	descriptions map[string]*string
+	provider      string
+	model         string
+	mode          string
+	alwaysLoaded  []string
+	confirm       []string
+	disabled      []string
+	maxOutput     string
+	window        string
+	compactAt     string
+	strategy      string
+	systemPrompt  string
+	compactPrompt string
+	maxTokens     string
+	descriptions  map[string]*string
+
+	defaultDescriptions map[string]string
+	savedDescriptions   map[string]string
+
+	search       string
+	searchURL    string
+	searchKeyEnv string
+	searchKey    string
+	savedKey     bool
+	forgetKey    bool
+	images       string
 	memoryDir    string
 
 	loopEnabled       bool
@@ -61,6 +75,14 @@ func newSettingsDraft(layer config.Config) *settingsDraft {
 		descriptions: map[string]*string{},
 		memoryDir:    cfg.Memory.Dir,
 
+		compactPrompt: cfg.Context.CompactPrompt,
+		maxTokens:     strconv.Itoa(cfg.MaxTokens),
+		search:        cfg.Web.Search,
+		searchURL:     cfg.Web.SearchURL,
+		searchKeyEnv:  cfg.Web.SearchKeyEnv,
+		savedKey:      cfg.Web.SearchKey != "",
+		images:        string(cfg.Render.Images),
+
 		loopEnabled:       *cfg.Loop.Enabled,
 		loopReplies:       strconv.Itoa(cfg.Loop.Replies),
 		loopRepeats:       strconv.Itoa(cfg.Loop.Repeats),
@@ -73,13 +95,25 @@ func newSettingsDraft(layer config.Config) *settingsDraft {
 	if draft.systemPrompt == "" {
 		draft.systemPrompt = agent.DefaultSystemPrompt
 	}
-	for name, description := range tools.BuiltinDescriptions() {
-		if custom, ok := cfg.Tools.Descriptions[name]; ok {
+	if draft.compactPrompt == "" {
+		draft.compactPrompt = agent.DefaultCompactPrompt
+	}
+	draft.savedDescriptions = cfg.Tools.Descriptions
+	draft.describeTools(tools.BuiltinDescriptions())
+	return draft
+}
+
+// describeTools sets the tools the form shows descriptions for, with their
+// own descriptions, and the saved ones in their place.
+func (d *settingsDraft) describeTools(defaults map[string]string) {
+	d.defaultDescriptions = defaults
+	d.descriptions = map[string]*string{}
+	for name, description := range defaults {
+		if custom, ok := d.savedDescriptions[name]; ok {
 			description = custom
 		}
-		draft.descriptions[name] = &description
+		d.descriptions[name] = &description
 	}
-	return draft
 }
 
 // applyTo writes the draft into the user layer. Provider and model are only
@@ -98,6 +132,10 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	if err != nil {
 		return layer, fmt.Errorf("compact at: %w", err)
 	}
+	maxTokens, err := parseCount(d.maxTokens)
+	if err != nil {
+		return layer, fmt.Errorf("max output tokens: %w", err)
+	}
 	loop, err := d.loop()
 	if err != nil {
 		return layer, err
@@ -110,7 +148,7 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	layer.Tools.Confirm = unlessDefaultList(d.confirm, defaults.Tools.Confirm)
 	layer.Tools.Disabled = unlessDefaultList(d.disabled, defaults.Tools.Disabled)
 	layer.Tools.MaxOutput = unlessDefault(maxOutput, defaults.Tools.MaxOutput)
-	layer.Tools.Descriptions = changedDescriptions(d.descriptions)
+	layer.Tools.Descriptions = d.changedDescriptions()
 	layer.Context.Window = window
 	layer.Context.CompactAt = &compactAt
 	if compactAt == *defaults.Context.CompactAt {
@@ -120,6 +158,18 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	layer.SystemPrompt = unlessDefault(strings.TrimSpace(d.systemPrompt), agent.DefaultSystemPrompt)
 	layer.Memory.Dir = unlessDefault(strings.TrimSpace(d.memoryDir), defaults.Memory.Dir)
 	layer.Loop = loop
+	layer.MaxTokens = maxTokens
+	layer.Context.CompactPrompt = unlessDefault(strings.TrimSpace(d.compactPrompt), strings.TrimSpace(agent.DefaultCompactPrompt))
+	layer.Web.Search = unlessDefault(d.search, defaults.Web.Search)
+	layer.Web.SearchURL = strings.TrimSpace(d.searchURL)
+	layer.Web.SearchKeyEnv = strings.TrimSpace(d.searchKeyEnv)
+	if d.forgetKey {
+		layer.Web.SearchKey = ""
+	}
+	if key := strings.TrimSpace(d.searchKey); key != "" {
+		layer.Web.SearchKey = key
+	}
+	layer.Render.Images = unlessDefault(render.Mode(d.images), defaults.Render.Images)
 	return layer, nil
 }
 
@@ -191,12 +241,18 @@ func (d *settingsDraft) applyProvider(layer config.Config, findings []detect.Fin
 	return layer
 }
 
-func changedDescriptions(edited map[string]*string) map[string]string {
-	builtin := tools.BuiltinDescriptions()
+// changedDescriptions keeps the edited descriptions that differ from the
+// tool's own, and the saved ones of tools not loaded now.
+func (d *settingsDraft) changedDescriptions() map[string]string {
 	changed := map[string]string{}
-	for name, description := range edited {
+	for name, description := range d.savedDescriptions {
+		if _, shown := d.descriptions[name]; !shown {
+			changed[name] = description
+		}
+	}
+	for name, description := range d.descriptions {
 		trimmed := strings.TrimSpace(*description)
-		if trimmed != builtin[name] {
+		if trimmed != strings.TrimSpace(d.defaultDescriptions[name]) {
 			changed[name] = trimmed
 		}
 	}
