@@ -187,7 +187,9 @@ rules say of it.
 
 `git` works without the git command: status, diff, log, show, blame, branches and check read and never
 ask; add, commit, branch, switch, merge, cherry_pick, rebase and pull change the repository, and push
-always asks, never forces. fetch, pull and push take an SSH agent or key, or GIT_TOKEN/GITHUB_TOKEN for HTTPS.
+always asks, never forces. pull takes a remote and a branch (by default the one the current branch
+tracks) and merges, or rebases with `rebase: true`; unset, it follows git's `pull.rebase` and
+`branch.<name>.rebase`. fetch, pull and push take an SSH agent or key, or GIT_TOKEN/GITHUB_TOKEN for HTTPS.
 stash, stash_apply, stash_pop and stash_drop are kept as git keeps them; tag and reset (soft, mixed,
 hard, which asks) are there too. Untracked files are never touched. A merge or cherry-pick
 with conflicts leaves markers in the files for the model to resolve, then `continue`; `commit` and

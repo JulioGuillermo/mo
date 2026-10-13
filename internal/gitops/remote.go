@@ -146,11 +146,21 @@ func (r *Repo) Fetch(remote string) (string, error) {
 	return "fetched " + remote, nil
 }
 
-// Pull fetches the branch's remote and merges it in with the three-way
-// merge, so a pull that is not a fast-forward works and its conflicts stop
-// it like any merge.
-func (r *Repo) Pull(remote string) (string, error) {
-	remote = orDefault(remote, defaultRemote)
+// PullOptions say what a pull takes and how. An empty Remote or Branch is
+// the one the current branch tracks, else origin and the branch of the
+// same name. A nil Rebase follows git's config: branch.<name>.rebase, then
+// pull.rebase; without either, it merges.
+type PullOptions struct {
+	Remote string
+	Branch string
+	Rebase *bool
+}
+
+// Pull fetches a remote and brings its branch in: merged with the
+// three-way merge, so a pull that is not a fast-forward works and its
+// conflicts stop it like any merge, or with the current branch's commits
+// replayed on top of it, stopping at conflicts like any rebase.
+func (r *Repo) Pull(options PullOptions) (string, error) {
 	if err := r.requireClean(); err != nil {
 		return "", err
 	}
@@ -158,22 +168,85 @@ func (r *Repo) Pull(remote string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	remote, theirs := r.upstream(branch, options)
+	rebase := r.pullRebases(branch, options.Rebase)
 	fetched, err := r.Fetch(remote)
 	if err != nil {
 		return "", err
 	}
 	if strings.HasPrefix(fetched, "(through the git command)") {
-		return r.withGit(errors.New("pull"), "merge", remote+"/"+branch)
+		if rebase {
+			return r.withGit(errors.New("pull"), "rebase", remote+"/"+theirs)
+		}
+		return r.withGit(errors.New("pull"), "merge", remote+"/"+theirs)
 	}
-	tracking := plumbing.NewRemoteReferenceName(remote, branch)
+	tracking := plumbing.NewRemoteReferenceName(remote, theirs)
 	if _, err := r.repo.Reference(tracking, true); err != nil {
-		return "", fmt.Errorf("%s has no branch %s", remote, branch)
+		return "", fmt.Errorf("%s has no branch %s", remote, theirs)
 	}
-	merged, err := r.Merge(tracking.String())
+	var brought string
+	if rebase {
+		brought, err = r.Rebase(tracking.String())
+	} else {
+		brought, err = r.Merge(tracking.String())
+	}
 	if err != nil {
 		return "", err
 	}
-	return fetched + "; " + merged, nil
+	return fetched + "; " + brought, nil
+}
+
+// upstream is the remote and the branch of it a pull of branch takes.
+func (r *Repo) upstream(branch string, options PullOptions) (string, string) {
+	trackedRemote := r.gitOption("branch", branch, "remote")
+	tracked := strings.TrimPrefix(r.gitOption("branch", branch, "merge"), "refs/heads/")
+	remote := orDefault(options.Remote, orDefault(trackedRemote, defaultRemote))
+	switch {
+	case options.Branch != "":
+		return remote, options.Branch
+	case tracked != "" && remote == orDefault(trackedRemote, defaultRemote):
+		return remote, tracked
+	}
+	return remote, branch
+}
+
+// pullRebases tells whether a pull rebases: as asked, else as git's config
+// says. "merges" and "interactive" rebase too; mo replays the commits.
+func (r *Repo) pullRebases(branch string, asked *bool) bool {
+	if asked != nil {
+		return *asked
+	}
+	value := r.gitOption("branch", branch, "rebase")
+	if value == "" {
+		value = r.gitOption("pull", "", "rebase")
+	}
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "false", "no", "off", "0":
+		return false
+	}
+	return true
+}
+
+// gitOption reads a key of git's config, the repository's over the user's.
+func (r *Repo) gitOption(section, subsection, key string) string {
+	read := func(cfg *config.Config) string {
+		if cfg == nil || cfg.Raw == nil || !cfg.Raw.HasSection(section) {
+			return ""
+		}
+		if subsection == "" {
+			return cfg.Raw.Section(section).Option(key)
+		}
+		return cfg.Raw.Section(section).Subsection(subsection).Option(key)
+	}
+	if local, err := r.repo.Config(); err == nil {
+		if value := read(local); value != "" {
+			return value
+		}
+	}
+	if global, err := config.LoadConfig(config.GlobalScope); err == nil {
+		return read(global)
+	}
+	return ""
 }
 
 // Push sends the current branch to the remote's branch of the same name.

@@ -8,6 +8,10 @@ package gitops
 // | GN-01 | Happy    | push sends the branch; fetch and pull bring another clone's commits  | P0       |
 // | GN-02 | Happy    | A pull that is not a fast-forward merges, and its conflicts stop it   | P0       |
 // | GN-03 | Error    | A push behind the remote is refused with what to do, never forced    | P0       |
+// | GN-04 | Happy    | pull with rebase replays my commits on theirs, with no merge commit  | P0       |
+// | GN-05 | Happy    | pull follows git's pull.rebase unless told; told, it does as told    | P1       |
+// | GN-06 | Happy    | pull takes another branch of the remote when named                   | P0       |
+// | GN-07 | Happy    | pull takes the branch the current one tracks                         | P1       |
 
 import (
 	"os/exec"
@@ -118,7 +122,7 @@ func TestRemote(t *testing.T) {
 
 		pushed, pushErr := theirs.r.Push("")
 		fetched, fetchErr := mine.r.Fetch("")
-		pulled, pullErr := mine.r.Pull("")
+		pulled, pullErr := mine.r.Pull(PullOptions{})
 
 		if pushErr != nil || !strings.Contains(pushed, "pushed master to origin") {
 			t.Fatalf("pushed = %q err = %v", pushed, pushErr)
@@ -137,7 +141,7 @@ func TestRemote(t *testing.T) {
 		_, _ = theirs.r.Push("")
 		mine.commit("my a", map[string]string{"main.go": "package main\n\nfunc a() { mine() }\n\nfunc b() {}\n\nfunc c() {}\n"})
 
-		pulled, err := mine.r.Pull("")
+		pulled, err := mine.r.Pull(PullOptions{})
 
 		if err != nil || !strings.Contains(pulled, "merge stopped at conflicts") || !strings.Contains(mine.read("main.go"), "<<<<<<< master") {
 			t.Errorf("pulled = %q err = %v", pulled, err)
@@ -156,4 +160,115 @@ func TestRemote(t *testing.T) {
 			t.Errorf("err = %v", err)
 		}
 	})
+
+	t.Run("GN-04 pull with rebase replays my commits on theirs, with no merge commit", func(t *testing.T) {
+		needsGitServer(t)
+		mine, theirs := divergedClones(t)
+		rebase := true
+
+		pulled, err := mine.r.Pull(PullOptions{Rebase: &rebase})
+
+		head := mine.headCommit()
+		if err != nil || !strings.Contains(pulled, "rebased") || head.NumParents() != 1 || head.Message != "my work" || head.ParentHashes[0] != theirs.headCommit().Hash {
+			t.Errorf("pulled = %q err = %v parents = %d", pulled, err, head.NumParents())
+		}
+		if mine.read("theirs.txt") != "t\n" || mine.read("mine.txt") != "m\n" {
+			t.Error("a side's file is missing")
+		}
+	})
+
+	t.Run("GN-05 pull follows git's pull.rebase unless told; told, it does as told", func(t *testing.T) {
+		needsGitServer(t)
+		configured, _ := divergedClones(t)
+		setOption(t, configured, "pull", "", "rebase", "true")
+		told, _ := divergedClones(t)
+		setOption(t, told, "pull", "", "rebase", "true")
+		merge := false
+
+		_, err := configured.r.Pull(PullOptions{})
+		_, toldErr := told.r.Pull(PullOptions{Rebase: &merge})
+
+		if err != nil || configured.headCommit().NumParents() != 1 {
+			t.Errorf("pull.rebase was not followed: err %v", err)
+		}
+		if toldErr != nil || told.headCommit().NumParents() != 2 {
+			t.Errorf("rebase = false did not merge: err %v", toldErr)
+		}
+	})
+
+	t.Run("GN-06 pull takes another branch of the remote when named", func(t *testing.T) {
+		mine, theirs := withRemote(t)
+		theirs.branch("feature", true)
+		theirs.commit("feature work", map[string]string{"feature.txt": "f\n"})
+		if _, err := theirs.r.Push(""); err != nil {
+			t.Fatal(err)
+		}
+
+		pulled, err := mine.r.Pull(PullOptions{Branch: "feature"})
+
+		if err != nil || mine.read("feature.txt") != "f\n" || !strings.Contains(pulled, "fast-forwarded") {
+			t.Errorf("pulled = %q err = %v", pulled, err)
+		}
+		if _, missing := mine.r.Pull(PullOptions{Branch: "nowhere"}); missing == nil || !strings.Contains(missing.Error(), "no branch nowhere") {
+			t.Errorf("missing branch: %v", missing)
+		}
+	})
+
+	t.Run("GN-07 pull takes the branch the current one tracks", func(t *testing.T) {
+		mine, theirs := withRemote(t)
+		theirs.branch("trunk", true)
+		theirs.commit("trunk work", map[string]string{"trunk.txt": "t\n"})
+		if _, err := theirs.r.Push(""); err != nil {
+			t.Fatal(err)
+		}
+		cfg, _ := mine.repo.Config()
+		cfg.Branches["master"] = &config.Branch{Name: "master", Remote: "origin", Merge: "refs/heads/trunk"}
+		if err := mine.repo.SetConfig(cfg); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := mine.r.Pull(PullOptions{})
+
+		if err != nil || mine.read("trunk.txt") != "t\n" {
+			t.Errorf("err = %v", err)
+		}
+	})
+}
+
+// divergedClones gives mine a commit of its own and the remote one of theirs, on
+// different files.
+func divergedClones(t *testing.T) (*testRepo, *testRepo) {
+	t.Helper()
+	mine, theirs := withRemote(t)
+	theirs.commit("their work", map[string]string{"theirs.txt": "t\n"})
+	if _, err := theirs.r.Push(""); err != nil {
+		t.Fatal(err)
+	}
+	mine.commit("my work", map[string]string{"mine.txt": "m\n"})
+	return mine, theirs
+}
+
+func needsGitServer(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("git-upload-pack"); err != nil {
+		t.Skip("a folder remote without git is served by go-git's server, which leaves objects out of this fetch")
+	}
+}
+
+// setOption writes a key of the repository's git config. Branch sections
+// are written from go-git's own fields, so set those for them instead.
+func setOption(t *testing.T, tr *testRepo, section, subsection, key, value string) {
+	t.Helper()
+	cfg, err := tr.repo.Config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if subsection == "" {
+		cfg.Raw.Section(section).SetOption(key, value)
+	} else {
+		cfg.Raw.Section(section).Subsection(subsection).SetOption(key, value)
+	}
+	if err := tr.repo.SetConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
 }

@@ -530,6 +530,12 @@
   `GIT_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN` or `GITLAB_TOKEN` for HTTPS. go-git does not use git's
   credential helpers, so when it cannot get in and the git command is installed, that runs
   instead. `pull` is a fetch and the three-way merge, so it is not limited to a fast-forward.
+- `pull` takes any branch of any remote; without one, the branch the current one tracks
+  (`branch.<name>.remote` and `.merge`), else origin and the same name. With `rebase: true` it
+  replays the branch's commits on theirs with mo's rebase, stopping at conflicts like any rebase;
+  unset, it does what the user's git does: `branch.<name>.rebase`, then `pull.rebase`. Any value
+  but false rebases: `merges` and `interactive` have no meaning without a terminal or merge
+  commits to keep, so mo replays the commits.
 - `push` never forces; a push behind the remote is refused with "pull first". It warns, so it asks
   in every mode but all: it publishes outside the machine.
 - go-git's hard reset and checkout delete untracked files, which git never does. mo uses neither:
