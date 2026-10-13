@@ -27,7 +27,7 @@ const (
 	maxRepeatResult = 16 << 20
 )
 
-var reservedCommands = []string{"clear", "compact", "settings", "mcp", "plugins", "view", "help", "quit", "exit"}
+var reservedCommands = []string{"clear", "compact", "settings", "providers", "mcp", "plugins", "view", "help", "quit", "exit"}
 
 var (
 	errPluginStuck = errors.New("stopped responding and was turned off")

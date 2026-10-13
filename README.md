@@ -214,5 +214,5 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | ctrl+d | quit |
 | pgup, pgdown, shift+up/down, mouse wheel | scroll the conversation |
 | shift+drag | select text (the mouse is mo's while it runs) |
-| `/clear` `/compact` `/settings` `/providers` `/mcp` `/plugins` `/view <file>` `/help` `/quit` | commands |
+| `/clear` `/compact` `/settings` `/providers` `/mcp` `/plugins` `/view <file>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
 | `/<name> text` | a plugin command |

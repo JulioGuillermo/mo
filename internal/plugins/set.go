@@ -153,6 +153,22 @@ func (s *Set) NeedConfirmation() []string {
 	return names
 }
 
+type CommandInfo struct {
+	Name        string
+	Description string
+}
+
+// Commands lists the plugin commands, in the order the plugins declared them.
+func (s *Set) Commands() []CommandInfo {
+	var commands []CommandInfo
+	for _, plugin := range s.loaded() {
+		for _, definition := range plugin.commands {
+			commands = append(commands, CommandInfo{Name: definition.name, Description: definition.description})
+		}
+	}
+	return commands
+}
+
 // Command finds a plugin command by name. Its output is cut to
 // maxCommandOutput bytes.
 func (s *Set) Command(name string) (func(ctx context.Context, text string) (string, error), bool) {

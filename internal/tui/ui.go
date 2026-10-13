@@ -27,12 +27,6 @@ import (
 	"github.com/jg/mo/internal/render"
 )
 
-const helpText = `enter send · ctrl+j / alt+enter new line · esc / ctrl+c stop · ctrl+d quit
-/clear forget the conversation · /compact summarize it · /settings model, tools, context, web, loops
-/providers add or edit providers · /mcp add or edit MCP servers · /plugins plugins and their commands
-/view <file> show an image, svg or mermaid file
-/help this help · /quit exit`
-
 type Session struct {
 	Agent     *agent.Agent
 	Provider  string
@@ -85,6 +79,7 @@ type model struct {
 	settings         *settingsScreen
 	settingsInFlight bool
 
+	suggestion int
 	transcript string
 	viewport   viewport.Model
 	scrolled   bool
@@ -212,8 +207,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 	}
+	before := m.input.Value()
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+	if m.input.Value() != before {
+		m.suggestion = 0
+	}
 	return m, cmd
 }
 
@@ -226,6 +225,11 @@ func (m *model) resize(size tea.WindowSizeMsg) {
 func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.approval != nil {
 		return m.answerApproval(msg.String())
+	}
+	if matches := m.suggestions(); len(matches) > 0 && !m.running {
+		if handled, next, cmd := m.handleSuggestionKey(msg.String(), matches); handled {
+			return next, cmd
+		}
 	}
 	switch msg.String() {
 	case "pgup", "shift+up":
@@ -262,9 +266,39 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m.submit()
 	}
+	before := m.input.Value()
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+	if m.input.Value() != before {
+		m.suggestion = 0
+	}
 	return m, cmd
+}
+
+// handleSuggestionKey moves through the command suggestions and takes one
+// with tab or enter. Enter runs a command that needs nothing more.
+func (m model) handleSuggestionKey(key string, matches []command) (bool, tea.Model, tea.Cmd) {
+	selected := matches[m.suggestion%len(matches)]
+	switch key {
+	case "up":
+		m.suggestion = (m.suggestion + len(matches) - 1) % len(matches)
+	case "down":
+		m.suggestion = (m.suggestion + 1) % len(matches)
+	case "tab":
+		m.completeCommand(selected)
+	case "enter":
+		if m.input.Value() == "/"+selected.name {
+			return false, m, nil
+		}
+		if !m.completeCommand(selected) || m.settingsInFlight {
+			return true, m, nil
+		}
+		next, cmd := m.submit()
+		return true, next, cmd
+	default:
+		return false, m, nil
+	}
+	return true, m, nil
 }
 
 func (m model) answerApproval(pressed string) (tea.Model, tea.Cmd) {
@@ -331,7 +365,7 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		m.usage = llm.Usage{}
 		return m, printText(m.printer.Note("conversation cleared"))
 	case "help":
-		return m, printText(m.printer.Note(helpText))
+		return m, printText(m.helpView())
 	case "settings":
 		m.settingsInFlight = true
 		return m, tea.Sequence(printText(m.printer.Note("looking for providers…")), loadSettings(m.session, generalSettings))
@@ -420,6 +454,9 @@ func (m model) bottom() string {
 		sections = append(sections, m.approvalPrompt())
 	case m.running:
 		sections = append(sections, m.spinner.View()+workingStyle.Render(" working · esc to stop"))
+	}
+	if matches := m.suggestions(); len(matches) > 0 && !m.running {
+		sections = append(sections, m.suggestionList(matches))
 	}
 	sections = append(sections, m.input.View(), m.statusLine())
 	return strings.Join(sections, "\n")
