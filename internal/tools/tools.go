@@ -117,6 +117,10 @@ func builtinsWith(searcher web.Searcher) []Tool {
 	}
 }
 
+func (r *Registry) WorkDir() string {
+	return r.env.WorkDir
+}
+
 func (r *Registry) Summary(call llm.ToolCall) string {
 	tool, ok := r.find(call.Name)
 	if !ok || tool.Summary == nil {

@@ -73,7 +73,7 @@ func TestOpenAIStream(t *testing.T) {
 		if strings.Join(reasoning, "") != "hmm" {
 			t.Errorf("reasoning = %v", reasoning)
 		}
-		if response.Usage != (Usage{InputTokens: 12, OutputTokens: 3}) {
+		if usage := response.Usage; usage.InputTokens != 12 || usage.OutputTokens != 3 || usage.GenerationRate <= 0 {
 			t.Errorf("usage = %+v", response.Usage)
 		}
 	})

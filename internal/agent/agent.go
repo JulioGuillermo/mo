@@ -81,7 +81,7 @@ func (a *Agent) Run(ctx context.Context, prompt string, hooks Hooks) error {
 	if a.RewritePrompt != nil {
 		prompt = a.RewritePrompt(ctx, prompt)
 	}
-	a.History = append(a.History, llm.Message{Role: llm.RoleUser, Text: prompt})
+	a.History = append(a.History, a.promptMessage(prompt, hooks))
 	a.currentRequest = prompt
 	a.loops = 0
 	for {
@@ -89,6 +89,12 @@ func (a *Agent) Run(ctx context.Context, prompt string, hooks Hooks) error {
 			a.makeRoom(ctx, hooks)
 		}
 		response, repeated, err := a.stream(ctx, hooks)
+		if err != nil && ctx.Err() == nil && a.withoutImages() {
+			if hooks.OnNotice != nil {
+				hooks.OnNotice(fmt.Sprintf("the model did not take the images (%v); sending without them", err))
+			}
+			response, repeated, err = a.stream(ctx, hooks)
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -114,6 +120,10 @@ func (a *Agent) Run(ctx context.Context, prompt string, hooks Hooks) error {
 			return nil
 		}
 		a.answerToolCalls(ctx, response.Message.ToolCalls, hooks)
+		results := a.History[len(a.History)-len(response.Message.ToolCalls):]
+		if note, found := toolImages(response.Message.ToolCalls, results); found {
+			a.History = append(a.History, note)
+		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}

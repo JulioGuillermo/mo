@@ -49,7 +49,7 @@ func TestAnthropicStream(t *testing.T) {
 		if len(calls) != 1 || calls[0].ID != "t1" || calls[0].Name != "read" || string(calls[0].Args) != `{"path":"go.mod"}` {
 			t.Errorf("calls = %+v", calls)
 		}
-		if response.Usage != (Usage{InputTokens: 125, OutputTokens: 9}) {
+		if usage := response.Usage; usage.InputTokens != 125 || usage.OutputTokens != 9 {
 			t.Errorf("usage = %+v", response.Usage)
 		}
 	})

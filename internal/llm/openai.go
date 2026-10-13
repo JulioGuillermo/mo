@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -18,7 +19,7 @@ type OpenAI struct {
 
 type openAIMessage struct {
 	Role       string           `json:"role"`
-	Content    string           `json:"content"`
+	Content    any              `json:"content"`
 	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string           `json:"tool_call_id,omitempty"`
 }
@@ -67,12 +68,17 @@ type openAIChunk struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
 	} `json:"usage"`
+	Timings *struct {
+		PromptPerSecond    float64 `json:"prompt_per_second"`
+		PredictedPerSecond float64 `json:"predicted_per_second"`
+	} `json:"timings"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
 }
 
 func (p *OpenAI) Stream(ctx context.Context, req Request, onEvent func(Event)) (Response, error) {
+	clock := newSpeedClock()
 	resp, err := postJSON(ctx, clientOrDefault(p.Client), p.url("/chat/completions"), p.headers(), p.buildRequest(req))
 	if err != nil {
 		return Response{}, err
@@ -95,10 +101,16 @@ func (p *OpenAI) Stream(ctx context.Context, req Request, onEvent func(Event)) (
 			return fmt.Errorf("provider error: %s", chunk.Error.Message)
 		}
 		if chunk.Usage != nil {
-			usage = Usage{InputTokens: chunk.Usage.PromptTokens, OutputTokens: chunk.Usage.CompletionTokens}
+			usage.InputTokens, usage.OutputTokens = chunk.Usage.PromptTokens, chunk.Usage.CompletionTokens
+		}
+		if chunk.Timings != nil {
+			usage.PromptRate, usage.GenerationRate = chunk.Timings.PromptPerSecond, chunk.Timings.PredictedPerSecond
 		}
 		for _, choice := range chunk.Choices {
 			delta := choice.Delta
+			if delta.Content != "" || delta.ReasoningContent != "" || delta.Reasoning != "" || len(delta.ToolCalls) > 0 {
+				clock.piece()
+			}
 			if delta.Content != "" {
 				text.WriteString(delta.Content)
 				onEvent(Event{Kind: EventText, Text: delta.Content})
@@ -132,7 +144,7 @@ func (p *OpenAI) Stream(ctx context.Context, req Request, onEvent func(Event)) (
 		}
 		message.ToolCalls = append(message.ToolCalls, newToolCall(id, call.Function.Name, call.Function.Arguments))
 	}
-	return Response{Message: message, Usage: usage}, nil
+	return Response{Message: message, Usage: clock.fill(usage)}, nil
 }
 
 // mergeToolCallDeltas assembles tool calls that arrive in pieces: the first
@@ -187,8 +199,31 @@ func (p *OpenAI) buildRequest(req Request) openAIRequest {
 	return out
 }
 
+type openAIPart struct {
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	ImageURL *struct {
+		URL string `json:"url"`
+	} `json:"image_url,omitempty"`
+}
+
+// openAIContent is the text alone, or the text and the images as parts.
+func openAIContent(message Message) any {
+	if len(message.Images) == 0 {
+		return message.Text
+	}
+	parts := []openAIPart{{Type: "text", Text: message.Text}}
+	for _, image := range message.Images {
+		part := openAIPart{Type: "image_url", ImageURL: &struct {
+			URL string `json:"url"`
+		}{URL: "data:" + image.MIME + ";base64," + base64.StdEncoding.EncodeToString(image.Data)}}
+		parts = append(parts, part)
+	}
+	return parts
+}
+
 func toOpenAIMessage(message Message) openAIMessage {
-	out := openAIMessage{Role: string(message.Role), Content: message.Text, ToolCallID: message.ToolCallID}
+	out := openAIMessage{Role: string(message.Role), Content: openAIContent(message), ToolCallID: message.ToolCallID}
 	for _, call := range message.ToolCalls {
 		var wire openAIToolCall
 		wire.ID = call.ID

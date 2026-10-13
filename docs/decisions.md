@@ -94,6 +94,16 @@
 
 ## TUI
 
+- The user's messages print as a full-width shaded band; commands and approvals show their command
+  on shaded lines, and an approval is a framed question with its keys in colour.
+- Attached files are found in the prompt itself (paths, quoted or with escaped spaces, that exist
+  as regular files), so pasting and dropping work in any terminal. Images (png, jpeg, gif, webp, up
+  to 8 MB) go with the message; images marked in read and MCP results follow the tool results as a
+  `[mo]` note, which drop, compact and the loop guard never take for the user's prompt. A request
+  that fails while the history holds images is sent once more without them.
+- Speeds are llama-server's `timings` when present, else measured: prompt tokens over the time to
+  the first piece, answer tokens over the rest. A cached prompt reads as fast.
+
 - Inline, not alternate screen: finished output goes to the terminal's own scrollback, where
   selection, search and copy work as usual. Only input, streaming text and status are redrawn.
 - The agent goroutine prints with `Program.Println`, which queues in the program's message channel.

@@ -132,9 +132,9 @@ func isLoopNote(text string) bool {
 	return strings.HasPrefix(text, loopNotePrefix)
 }
 
-// isPrompt tells a message the user wrote from a note mo added for the model.
+// isPrompt tells a message the user wrote from the notes mo adds for the model.
 func isPrompt(message llm.Message) bool {
-	return message.Role == llm.RoleUser && !isLoopNote(message.Text)
+	return message.Role == llm.RoleUser && !isLoopNote(message.Text) && !strings.HasPrefix(message.Text, moNotePrefix)
 }
 
 // callKey names a call by its tool and its arguments, with the keys sorted.

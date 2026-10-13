@@ -19,6 +19,12 @@ and applied at once, keeping the conversation:
 - `/providers`: add a provider, or edit or delete one: type, URL, model and where its key comes from.
 - `/mcp`: shows which servers answered, then adds, edits or deletes one; they reconnect on save.
 
+Paths in a prompt, pasted or dropped from a file manager, are attached: images go to the model with
+the message (when it has vision; otherwise mo sends it without them), other files are listed for it
+to read. An image the model opens with `read` reaches it too. The status line shows the context in
+use and the speed of the last reply: `pp` (prompt read) and `tg` (answer written) in tokens per
+second, from llama-server's own timings when it sends them.
+
 When mo starts with no provider, or with one that does not answer, it opens a setup screen instead
 of quitting: pick a provider mo knows or found, set up a new one, go on anyway, or quit. The choice
 is tried first and saved only when it works.

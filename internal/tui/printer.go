@@ -15,13 +15,28 @@ import (
 
 const toolPreviewLines = 4
 
+const shownCommandLines = 6
+
 var (
-	accent     = lipgloss.Color("#7aa2f7")
-	dimStyle   = lipgloss.NewStyle().Faint(true)
-	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e"))
-	userStyle  = lipgloss.NewStyle().Foreground(accent).Bold(true)
-	toolStyle  = lipgloss.NewStyle().Foreground(accent)
+	accent      = lipgloss.Color("#7aa2f7")
+	warning     = lipgloss.Color("#e0af68")
+	dimStyle    = lipgloss.NewStyle().Faint(true)
+	errorStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e"))
+	userStyle   = lipgloss.NewStyle().Foreground(accent).Bold(true)
+	toolStyle   = lipgloss.NewStyle().Foreground(accent)
+	toolName    = lipgloss.NewStyle().Foreground(accent).Bold(true)
+	keyStyle    = lipgloss.NewStyle().Foreground(warning).Bold(true)
+	commandEdge = lipgloss.NewStyle().Foreground(accent).Faint(true)
 )
+
+// panel is the background of the user's messages and of commands, a shade
+// off the terminal's own.
+func panel(dark bool) lipgloss.Style {
+	if dark {
+		return lipgloss.NewStyle().Background(lipgloss.Color("#24283b")).Foreground(lipgloss.Color("#c0caf5"))
+	}
+	return lipgloss.NewStyle().Background(lipgloss.Color("#e1e2e7")).Foreground(lipgloss.Color("#3760bf"))
+}
 
 // printer formats what goes into the terminal scrollback. It is shared by the
 // UI goroutine and the agent goroutine.
@@ -137,12 +152,51 @@ func (p *printer) Markdown(text string) string {
 	return strings.Trim(rendered, "\n")
 }
 
+// User prints a message of the user as a full-width band, every line of it.
 func (p *printer) User(text string) string {
-	return "\n" + userStyle.Render("› ") + text
+	p.mu.Lock()
+	width, dark := p.width, p.dark
+	p.mu.Unlock()
+	band := panel(dark).Width(max(width, 20)).Padding(0, 1)
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	for i, line := range lines {
+		prefix := "  "
+		if i == 0 {
+			prefix = "› "
+		}
+		lines[i] = prefix + line
+	}
+	return "\n" + band.Render(strings.Join(lines, "\n"))
 }
 
+// ToolStart names the tool and shows what it is about to do, a command on
+// its own shaded lines.
 func (p *printer) ToolStart(name, summary string) string {
-	return toolStyle.Render("● "+name) + " " + firstLine(summary)
+	header := toolName.Render("● " + name)
+	if !strings.Contains(summary, "\n") && len(summary) < 60 && name != "bash" {
+		return header + " " + summary
+	}
+	return header + "\n" + p.command(summary)
+}
+
+func (p *printer) command(text string) string {
+	p.mu.Lock()
+	width, dark := p.width, p.dark
+	p.mu.Unlock()
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	hidden := len(lines) - shownCommandLines
+	if hidden > 0 {
+		lines = lines[:shownCommandLines]
+	}
+	shade := panel(dark).Width(max(width-4, 16)).Padding(0, 1)
+	var out []string
+	for _, line := range lines {
+		out = append(out, commandEdge.Render("  ▌")+shade.Render(p.clip(line)))
+	}
+	if hidden > 0 {
+		out = append(out, dimStyle.Render(fmt.Sprintf("    … +%d lines", hidden)))
+	}
+	return strings.Join(out, "\n")
 }
 
 // ToolResult shows the first lines of a result, enough to see what happened

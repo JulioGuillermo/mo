@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -26,7 +27,14 @@ type anthropicBlock struct {
 	ToolUseID    string          `json:"tool_use_id,omitempty"`
 	Content      string          `json:"content,omitempty"`
 	IsError      bool            `json:"is_error,omitempty"`
+	Source       *imageSource    `json:"source,omitempty"`
 	CacheControl *cacheControl   `json:"cache_control,omitempty"`
+}
+
+type imageSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
 }
 
 type cacheControl struct {
@@ -86,6 +94,7 @@ type anthropicEvent struct {
 }
 
 func (p *Anthropic) Stream(ctx context.Context, req Request, onEvent func(Event)) (Response, error) {
+	clock := newSpeedClock()
 	headers := map[string]string{
 		"x-api-key":         p.APIKey,
 		"anthropic-version": "2023-06-01",
@@ -103,12 +112,15 @@ func (p *Anthropic) Stream(ctx context.Context, req Request, onEvent func(Event)
 		if err := json.Unmarshal(data, &event); err != nil {
 			return fmt.Errorf("bad stream event: %w", err)
 		}
+		if event.Type == "content_block_delta" {
+			clock.piece()
+		}
 		return stream.handle(event)
 	})
 	if err != nil {
 		return Response{}, err
 	}
-	return Response{Message: stream.message(), Usage: stream.usage}, nil
+	return Response{Message: stream.message(), Usage: clock.fill(stream.usage)}, nil
 }
 
 // buildAnthropicRequest also marks the system prompt, the tool list and the
@@ -167,7 +179,12 @@ func toAnthropicMessages(messages []Message) []anthropicMessage {
 			}
 			out = append(out, anthropicMessage{Role: "assistant", Content: blocks})
 		default:
-			out = append(out, anthropicMessage{Role: "user", Content: []anthropicBlock{{Type: "text", Text: message.Text}}})
+			blocks := []anthropicBlock{{Type: "text", Text: message.Text}}
+			for _, image := range message.Images {
+				source := &imageSource{Type: "base64", MediaType: image.MIME, Data: base64.StdEncoding.EncodeToString(image.Data)}
+				blocks = append(blocks, anthropicBlock{Type: "image", Source: source})
+			}
+			out = append(out, anthropicMessage{Role: "user", Content: blocks})
 		}
 	}
 	return out

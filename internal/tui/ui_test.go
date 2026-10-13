@@ -89,10 +89,10 @@ func TestApprovalKeys(t *testing.T) {
 		inside, _ := withApproval(runningModel(&cancelled), bashCall)
 		outside, _ := withApproval(runningModel(&cancelled), agent.ApprovalRequest{Call: llm.ToolCall{Name: "write"}, Warning: "outside the working directory"})
 
-		if !strings.Contains(inside.approvalPrompt(), "[a]lways") {
+		if !strings.Contains(inside.approvalPrompt(), "always") {
 			t.Error("inside prompt lacks always")
 		}
-		if strings.Contains(outside.approvalPrompt(), "[a]lways") || !strings.Contains(outside.approvalPrompt(), "outside") {
+		if strings.Contains(outside.approvalPrompt(), "always") || !strings.Contains(outside.approvalPrompt(), "outside") {
 			t.Errorf("outside prompt = %q", outside.approvalPrompt())
 		}
 	})

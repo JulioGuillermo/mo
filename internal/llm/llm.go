@@ -18,9 +18,16 @@ const (
 type Message struct {
 	Role       Role
 	Text       string
+	Images     []Image
 	ToolCalls  []ToolCall
 	ToolCallID string
 	IsError    bool
+}
+
+// Image is a picture sent to the model with a user message.
+type Image struct {
+	MIME string
+	Data []byte
 }
 
 type ToolCall struct {
@@ -44,9 +51,13 @@ type Request struct {
 	MaxTokens int
 }
 
+// Usage is what a reply cost, and how fast the prompt was read and the
+// answer written, in tokens per second.
 type Usage struct {
-	InputTokens  int
-	OutputTokens int
+	InputTokens    int
+	OutputTokens   int
+	PromptRate     float64
+	GenerationRate float64
 }
 
 type EventKind int

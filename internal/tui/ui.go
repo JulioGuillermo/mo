@@ -79,6 +79,7 @@ type model struct {
 	reasoning        string
 	approval         *approvalMsg
 	usage            llm.Usage
+	speed            llm.Usage
 	settings         *settingsScreen
 	settingsInFlight bool
 }
@@ -113,13 +114,18 @@ func Run(session Session) error {
 
 func newInput() textarea.Model {
 	input := textarea.New()
-	input.Prompt = "› "
+	input.Prompt = "┃ "
 	input.Placeholder = "ask anything · /help"
 	input.ShowLineNumbers = false
 	input.DynamicHeight = true
 	input.MinHeight = 1
 	input.MaxHeight = 10
 	input.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("ctrl+j", "alt+enter", "shift+enter"))
+	styles := input.Styles()
+	styles.Focused.Prompt = userStyle
+	styles.Blurred.Prompt = dimStyle
+	styles.Focused.CursorLine = lipgloss.NewStyle()
+	input.SetStyles(styles)
 	input.Focus()
 	return input
 }
@@ -166,6 +172,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case usageMsg:
 		m.usage = llm.Usage(msg)
+		if msg.GenerationRate > 0 || msg.PromptRate > 0 {
+			m.speed = llm.Usage(msg)
+		}
 		return m, nil
 	case approvalMsg:
 		m.approval = &msg
@@ -399,15 +408,21 @@ func (m model) liveText() string {
 	return style.Render(strings.Join(lines, "\n"))
 }
 
+// approvalPrompt is a framed question: the tool, what it will run, and the
+// keys that answer.
 func (m model) approvalPrompt() string {
 	request := m.approval.request
-	question := toolStyle.Render("● "+request.Call.Name) + " " + firstLine(request.Summary)
-	options := "[y]es · [n]o · [a]lways this session"
+	question := lipgloss.NewStyle().Bold(true).Render("Run " + request.Call.Name + "?")
 	if request.Warning != "" {
-		question += errorStyle.Render("  (" + request.Warning + ")")
-		options = "[y]es · [n]o"
+		question += "  " + errorStyle.Render(request.Warning)
 	}
-	return question + "\n" + lipgloss.NewStyle().Bold(true).Render("  run it? ") + dimStyle.Render(options)
+	keys := keyStyle.Render("y") + " yes   " + keyStyle.Render("n") + " no"
+	if request.Warning == "" {
+		keys += "   " + keyStyle.Render("a") + " always this session"
+	}
+	body := question + "\n" + m.printer.command(request.Summary) + "\n" + keys
+	frame := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(warning).Padding(0, 1).Width(max(m.width-2, 20))
+	return frame.Render(body)
 }
 
 func (m model) statusLine() string {
@@ -419,6 +434,12 @@ func (m model) statusLine() string {
 		status += fmt.Sprintf(" · ctx %s/%s", formatTokens(used), formatTokens(window))
 	case used > 0:
 		status += " · ctx " + formatTokens(used)
+	}
+	if m.speed.PromptRate > 0 {
+		status += fmt.Sprintf(" · pp %.0f t/s", m.speed.PromptRate)
+	}
+	if m.speed.GenerationRate > 0 {
+		status += fmt.Sprintf(" · tg %.1f t/s", m.speed.GenerationRate)
 	}
 	return dimStyle.Render(status)
 }
