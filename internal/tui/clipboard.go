@@ -15,6 +15,8 @@ import (
 
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/agent"
 )
@@ -246,4 +248,90 @@ func (m *model) pastedPaths(content string) bool {
 	}
 	m.attach(files, false)
 	return true
+}
+
+// eraseAttachment takes a whole attachment label out of the input when
+// backspace is pressed right after it or delete right before it, and drops
+// the file it stood for, instead of breaking the label one character at a
+// time. It tells whether it did.
+func (m *model) eraseAttachment(key string) bool {
+	if len(m.attachments) == 0 {
+		return false
+	}
+	rows := strings.Split(m.input.Value(), "\n")
+	row, column := m.input.Line(), m.input.Column()
+	if row < 0 || row >= len(rows) {
+		return false
+	}
+	line := []rune(rows[row])
+	column = min(column, len(line))
+	before, after := string(line[:column]), string(line[column:])
+	for label := range m.attachments {
+		var start, end int
+		switch {
+		case key == "backspace" && strings.HasSuffix(before, label+" "):
+			start, end = column-len([]rune(label))-1, column
+		case key == "backspace" && strings.HasSuffix(before, label):
+			start, end = column-len([]rune(label)), column
+		case key == "delete" && strings.HasPrefix(after, label):
+			start, end = column, column+len([]rune(label))
+			if end < len(line) && line[end] == ' ' {
+				end++
+			}
+		default:
+			continue
+		}
+		rows[row] = string(line[:start]) + string(line[end:])
+		m.input.SetValue(strings.Join(rows, "\n"))
+		for range len(rows) - 1 - row {
+			m.input.CursorUp()
+		}
+		m.input.SetCursorColumn(start)
+		if !strings.Contains(m.input.Value(), label) {
+			delete(m.attachments, label)
+		}
+		return true
+	}
+	return false
+}
+
+// attachmentBar shows the files the input holds as chips over it; a click
+// on one takes it out of the input and drops it.
+func (m model) attachmentBar() (string, []region) {
+	value := m.input.Value()
+	var labels []string
+	for label := range m.attachments {
+		if strings.Contains(value, label) {
+			labels = append(labels, label)
+		}
+	}
+	if len(labels) == 0 {
+		return "", nil
+	}
+	slices.Sort(labels)
+	colors := dialogPalette(m.printer == nil || m.printer.isDark())
+	chip := lipgloss.NewStyle().Background(colors.button).Foreground(colors.text)
+	cross := chip.Foreground(lipgloss.Color("#f7768e")).Bold(true)
+	var chips []string
+	var regions []region
+	x := 2
+	for _, label := range labels {
+		shown := chip.Render(" "+strings.Trim(label, "[]")+" ") + cross.Render("× ")
+		chosen := label
+		regions = append(regions, region{y: 0, x0: x, x1: x + ansi.StringWidth(shown), do: func(m model) (tea.Model, tea.Cmd) {
+			m.dropAttachment(chosen)
+			return m, nil
+		}})
+		x += ansi.StringWidth(shown) + 1
+		chips = append(chips, shown)
+	}
+	return dimStyle.Render("📎") + " " + strings.Join(chips, " "), regions
+}
+
+// dropAttachment takes every copy of a label out of the input, with the
+// space after it, and forgets the file.
+func (m *model) dropAttachment(label string) {
+	value := strings.ReplaceAll(m.input.Value(), label+" ", "")
+	m.input.SetValue(strings.ReplaceAll(value, label, ""))
+	delete(m.attachments, label)
 }

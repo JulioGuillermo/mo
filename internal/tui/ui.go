@@ -354,6 +354,10 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+v":
 		return m, pasteClipboard()
+	case "backspace", "delete":
+		if m.eraseAttachment(msg.String()) {
+			return m, nil
+		}
 	case "shift+tab":
 		if policy := m.session.Agent.Permissions; policy != nil {
 			policy.SetMode(policy.Mode().Next())
@@ -648,6 +652,9 @@ func (m model) upperLayout() (string, []region) {
 	}
 	if matches := m.suggestions(); len(matches) > 0 && !m.running {
 		add(m.suggestionLayout(matches))
+	}
+	if bar, barRegions := m.attachmentBar(); bar != "" {
+		add(bar, barRegions)
 	}
 	return strings.Join(sections, "\n"), regions
 }

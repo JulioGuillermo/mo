@@ -7,6 +7,8 @@ package tui
 // | CB-03 | Edge     | A clipboard with only text is left to the normal paste               | P1       |
 // | CB-04 | Happy    | The labels are sent as the paths they stand for, quoted when needed  | P0       |
 // | CB-05 | Happy    | A pasted path to a file becomes a label; other text is typed as is    | P1       |
+// | CB-06 | Happy    | Backspace after a label or delete before it takes it out whole, file and all | P0 |
+// | CB-07 | Happy    | The files in the input show as chips over it; a click on one drops it | P1      |
 // | TB-01 | Happy    | Tables are drawn apart, code blocks with bars are left to markdown    | P0       |
 // | TB-02 | Edge     | Bars inside code and escaped bars stay in their cell                 | P1       |
 
@@ -119,6 +121,64 @@ func TestTables(t *testing.T) {
 
 		if len(cells) != 3 || cells[0] != "`a|b`" || cells[1] != "c | d" {
 			t.Errorf("cells = %q", cells)
+		}
+	})
+}
+
+func TestAttachmentEditing(t *testing.T) {
+	typed := func(m model, text string) model {
+		for _, r := range text {
+			updated, _ := m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+			m = updated.(model)
+		}
+		return m
+	}
+	press := func(m model, code rune) model {
+		updated, _ := m.Update(tea.KeyPressMsg{Code: code})
+		return updated.(model)
+	}
+
+	t.Run("CB-06 backspace after a label or delete before it takes it out whole, file and all", func(t *testing.T) {
+		m := conversationModel()
+		m = typed(m, "look at ")
+		m.attach([]string{"/tmp/a.png"}, true)
+		m = typed(m, "please")
+
+		for range len("please") {
+			m = press(m, tea.KeyBackspace)
+		}
+		m = press(m, tea.KeyBackspace)
+		erased := m.input.Value()
+		gone := m.attachments["[image #1]"] == ""
+
+		m2 := conversationModel()
+		m2 = typed(m2, "see ")
+		m2.attach([]string{"/tmp/b.txt"}, false)
+		m2 = typed(m2, "now")
+		m2.input.SetCursorColumn(len("see "))
+		m2 = press(m2, tea.KeyDelete)
+
+		if erased != "look at " || !gone {
+			t.Errorf("after backspace = %q attachment kept = %v", erased, !gone)
+		}
+		if m2.input.Value() != "see now" || len(m2.attachments) != 0 {
+			t.Errorf("after delete = %q attachments = %v", m2.input.Value(), m2.attachments)
+		}
+	})
+
+	t.Run("CB-07 the files in the input show as chips over it; a click on one drops it", func(t *testing.T) {
+		m := sidebarModel(t, 140)
+		m = typed(m, "compare ")
+		m.attach([]string{"/tmp/a.png", "/tmp/notes.txt"}, false)
+
+		before := ansi.Strip(m.View().Content)
+		m = clickOn(t, m, "image a.png")
+
+		if !strings.Contains(before, "image a.png ×") || !strings.Contains(before, "file notes.txt ×") {
+			t.Errorf("no chips in:\n%s", before)
+		}
+		if strings.Contains(m.input.Value(), "[image a.png]") || m.attachments["[image a.png]"] != "" || !strings.Contains(m.input.Value(), "[file notes.txt]") {
+			t.Errorf("input = %q attachments = %v", m.input.Value(), m.attachments)
 		}
 	})
 }
