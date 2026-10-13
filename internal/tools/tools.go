@@ -51,6 +51,7 @@ type Options struct {
 	AlwaysLoaded []string
 	Disabled     []string
 	MaxOutput    int
+	Descriptions map[string]string
 }
 
 type Registry struct {
@@ -63,14 +64,35 @@ type Registry struct {
 func NewRegistry(env Env, options Options) *Registry {
 	registry := &Registry{env: env, options: options, loaded: map[string]bool{}}
 	for _, tool := range builtins() {
-		if !slices.Contains(options.Disabled, tool.Name) {
-			registry.tools = append(registry.tools, tool)
+		if slices.Contains(options.Disabled, tool.Name) {
+			continue
 		}
+		if description, ok := options.Descriptions[tool.Name]; ok {
+			tool.Description = description
+		}
+		registry.tools = append(registry.tools, tool)
 	}
 	if options.Mode == ModeSearch {
 		registry.tools = append(registry.tools, searchTool(registry))
 	}
 	return registry
+}
+
+// BuiltinDescriptions maps every built-in tool to its default description.
+func BuiltinDescriptions() map[string]string {
+	descriptions := map[string]string{}
+	for _, tool := range builtins() {
+		descriptions[tool.Name] = tool.Description
+	}
+	return descriptions
+}
+
+func BuiltinNames() []string {
+	var names []string
+	for _, tool := range builtins() {
+		names = append(names, tool.Name)
+	}
+	return names
 }
 
 func builtins() []Tool {

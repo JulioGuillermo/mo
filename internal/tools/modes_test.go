@@ -9,6 +9,7 @@ package tools
 // | MD-05 | Happy    | tool_search select: loads exactly the named tools                  | P1       |
 // | MD-06 | Edge     | tool_search with no match lists what can still be loaded           | P2       |
 // | MD-07 | Happy    | tool_search names the tools not loaded yet in its description      | P1       |
+// | MD-08 | Happy    | a configured description replaces the built-in one, "" removes it  | P1       |
 
 import (
 	"context"
@@ -119,6 +120,21 @@ func TestToolSearch(t *testing.T) {
 
 		if !strings.Contains(search.Description, "grep") || strings.Contains(search.Description, "bash,") {
 			t.Errorf("description = %q", search.Description)
+		}
+	})
+}
+
+func TestDescriptionOverrides(t *testing.T) {
+	t.Run("MD-08 a configured description replaces the built-in one, an empty one removes it", func(t *testing.T) {
+		registry := NewRegistry(newEnv(t), Options{Mode: ModeFull, Descriptions: map[string]string{"bash": "Run bash.", "ls": ""}})
+
+		descriptions := map[string]string{}
+		for _, spec := range registry.Specs() {
+			descriptions[spec.Name] = spec.Description
+		}
+
+		if descriptions["bash"] != "Run bash." || descriptions["ls"] != "" || descriptions["read"] != BuiltinDescriptions()["read"] {
+			t.Errorf("descriptions = %#v", descriptions)
 		}
 	})
 }

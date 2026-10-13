@@ -8,7 +8,11 @@ go build -o mo ./cmd/mo
 ./mo -p ollama -m qwen3       # choose provider and model
 ./mo -y "run the tests"       # answer once and exit, tools run without asking
 git diff | ./mo "review this" # prompt from stdin
+./mo -detect                  # list the providers mo can use right now
 ```
+
+Inside mo, `/settings` edits provider, model, tools, context and memory, shows what every request
+costs in tokens, saves to `~/.config/mo/config.toml` and applies at once, keeping the conversation.
 
 ## Providers
 
@@ -22,11 +26,28 @@ Two protocols cover almost everything:
 | `openai` | openai | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
 | `openrouter` | openai | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` |
 | `anthropic` | anthropic | `https://api.anthropic.com` | `ANTHROPIC_API_KEY` |
+| `gemini` | openai | `https://generativelanguage.googleapis.com/v1beta/openai` | `GEMINI_API_KEY` |
+| `groq` | openai | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` |
+| `deepseek` | openai | `https://api.deepseek.com/v1` | `DEEPSEEK_API_KEY` |
+| `mistral` | openai | `https://api.mistral.ai/v1` | `MISTRAL_API_KEY` |
 
 With no provider set, mo tries llama-server, ollama and lmstudio in that order.
 With no model set on an openai-type provider, it uses the first model the server lists.
 
-Anthropic is used with an API key only. mo never reads Claude Code's login.
+### Reusing other tools' credentials
+
+`mo -detect` and `/settings` also offer what codex and opencode already have:
+
+| Found | Becomes |
+|---|---|
+| `OPENAI_API_KEY` in `~/.codex/auth.json` | `openai-codex`, key read from codex when needed |
+| `[model_providers.*]` with `wire_api = "chat"` in `~/.codex/config.toml` | `codex-<name>` |
+| API logins in opencode's `auth.json` | `<provider>-opencode`, key read from opencode when needed |
+| providers with a `baseURL` in `opencode.json` | `opencode-<name>`; `{env:NAME}` keys only |
+
+mo stores a reference (`api_key_from = "codex"` or `"opencode:<provider>"`), never a copy of the key.
+Subscription logins (Claude, ChatGPT, Google OAuth) are listed as not usable and never read:
+Anthropic forbids using Claude subscription tokens outside its own apps. Claude works with an API key.
 
 ## Config
 
@@ -48,6 +69,9 @@ confirm = ["bash", "rm"]   # ask before these; [] never asks
 disabled = []              # e.g. ["mkdir", "ls"] to save context
 max_output = 10000         # bytes of tool output sent to the model
 
+[tools.descriptions]       # replace what the model reads about a tool; "" sends none
+grep = "Regex search in files."
+
 [context]
 window = 0                 # 0: ask llama-server, else 32768 (local) / 200000 (anthropic)
 compact_at = 0.75          # summarize at this share of the window; 0 = never
@@ -62,9 +86,11 @@ base_url = "http://10.106.122.191:8081/v1"
 [providers.my-vllm]
 type = "openai"
 base_url = "http://gpu-box:8000/v1"
-api_key_env = "VLLM_KEY"
+api_key_env = "VLLM_KEY"   # or api_key = "...", or api_key_from = "codex" / "opencode:<provider>"
 model = "qwen3-coder"
 ```
+
+`/settings` rewrites this file with only the values that differ from the defaults; comments are lost.
 
 ## Tools
 
@@ -86,4 +112,4 @@ always ask, even with `-y` or after answering "always". So do changes to global 
 | esc, ctrl+c | stop the current run |
 | ctrl+c (idle) | clear input, then quit |
 | ctrl+d | quit |
-| `/clear` `/compact` `/help` `/quit` | commands |
+| `/clear` `/compact` `/settings` `/help` `/quit` | commands |

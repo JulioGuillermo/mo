@@ -17,6 +17,10 @@ package config
 // | CF-13 | Security | The project file can disable more tools but not re-enable any     | P0       |
 // | CF-14 | Happy    | compact_at = 0 turns auto compaction off                          | P1       |
 // | CF-15 | Happy    | memory.dir with ~/ points into the home directory                 | P2       |
+// | CF-16 | Happy    | Saving the user layer and reading it back keeps every setting     | P0       |
+// | CF-17 | Happy    | A saved file leaves unset numbers and lists out                   | P1       |
+// | CF-18 | Happy    | Tool descriptions merge by tool, and "" removes one               | P1       |
+// | CF-19 | Happy    | api_key_from codex reads the key at the moment it is needed       | P1       |
 
 import (
 	"os"
@@ -256,6 +260,75 @@ func TestPhaseTwoFixes(t *testing.T) {
 
 		if err != nil || cfg.Memory.Dir != filepath.Join(home, "notes") {
 			t.Errorf("dir = %q err = %v", cfg.Memory.Dir, err)
+		}
+	})
+}
+
+func TestSaveUserLayer(t *testing.T) {
+	t.Run("CF-16 saving the user layer and reading it back keeps every setting", func(t *testing.T) {
+		isolatedHome(t)
+		layer := Config{Provider: "ollama", SystemPrompt: "be short"}
+		layer.Tools.Confirm = []string{}
+		layer.Tools.Descriptions = map[string]string{"ls": ""}
+		layer.Context.CompactAt = ptr(0.0)
+		layer.Providers = map[string]ProviderConfig{"ollama": {Model: "qwen3"}}
+
+		if err := SaveUserLayer(layer); err != nil {
+			t.Fatal(err)
+		}
+		back, err := ReadUserLayer()
+
+		if err != nil || back.Provider != "ollama" || back.SystemPrompt != "be short" || back.Providers["ollama"].Model != "qwen3" {
+			t.Fatalf("back = %+v err = %v", back, err)
+		}
+		if back.Tools.Confirm == nil || len(back.Tools.Confirm) != 0 || *back.Context.CompactAt != 0 {
+			t.Errorf("confirm = %#v compact_at = %v", back.Tools.Confirm, back.Context.CompactAt)
+		}
+		if description, ok := back.Tools.Descriptions["ls"]; !ok || description != "" {
+			t.Errorf("descriptions = %#v", back.Tools.Descriptions)
+		}
+	})
+
+	t.Run("CF-17 a saved file leaves unset numbers and lists out", func(t *testing.T) {
+		isolatedHome(t)
+
+		if err := SaveUserLayer(Config{Provider: "ollama"}); err != nil {
+			t.Fatal(err)
+		}
+		data, _ := os.ReadFile(UserFile())
+
+		if strings.TrimSpace(string(data)) != `provider = "ollama"` {
+			t.Errorf("file = %q", data)
+		}
+	})
+
+	t.Run("CF-18 tool descriptions merge by tool, and an empty one removes it", func(t *testing.T) {
+		configHome := isolatedHome(t)
+		workDir := t.TempDir()
+		writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), "[tools.descriptions]\nbash = \"Run bash.\"\n")
+		writeConfig(t, filepath.Join(workDir, ".mo.toml"), "[tools.descriptions]\nls = \"\"\n")
+
+		cfg, err := Load(workDir)
+
+		if err != nil || cfg.Tools.Descriptions["bash"] != "Run bash." {
+			t.Fatalf("descriptions = %#v err = %v", cfg.Tools.Descriptions, err)
+		}
+		if description, ok := cfg.Tools.Descriptions["ls"]; !ok || description != "" {
+			t.Errorf("ls = %q, %v", description, ok)
+		}
+	})
+
+	t.Run("CF-19 api_key_from codex reads the key at the moment it is needed", func(t *testing.T) {
+		codexHome := t.TempDir()
+		t.Setenv("CODEX_HOME", codexHome)
+		settings := ProviderConfig{APIKeyFrom: KeyFromCodex}
+		if settings.Key() != "" {
+			t.Fatal("key before the file exists")
+		}
+		writeConfig(t, filepath.Join(codexHome, "auth.json"), `{"OPENAI_API_KEY":"sk-later"}`)
+
+		if key := settings.Key(); key != "sk-later" {
+			t.Errorf("key = %q", key)
 		}
 	})
 }

@@ -15,6 +15,7 @@ package agent
 // | CP-11 | Happy    | Without usage from the provider the size is estimated                  | P1       |
 // | CP-12 | Edge     | Two full compactions in one turn do not nest their summaries           | P0       |
 // | CP-13 | Error    | A full window compacts again even right after a failed attempt         | P0       |
+// | CP-14 | Happy    | Budget lists the system prompt, then each tool the model sees          | P2       |
 
 import (
 	"context"
@@ -260,6 +261,22 @@ func TestRepeatedCompaction(t *testing.T) {
 
 		if !agent.needsCompaction() {
 			t.Error("a full window should always compact")
+		}
+	})
+}
+
+func TestBudget(t *testing.T) {
+	t.Run("CP-14 Budget lists the system prompt, then each tool the model sees", func(t *testing.T) {
+		agent := newAgent(t, &scriptedProvider{})
+		agent.System = strings.Repeat("x", 400)
+
+		items := agent.Budget()
+
+		if items[0].Name != "system prompt" || items[0].Tokens != 100 || len(items) != len(agent.Tools.Specs())+1 {
+			t.Errorf("items = %+v", items)
+		}
+		if items[1].Name != "tool bash" || items[1].Tokens == 0 {
+			t.Errorf("first tool = %+v", items[1])
 		}
 	})
 }

@@ -172,6 +172,17 @@ func (a *Agent) request() llm.Request {
 	}
 }
 
+// TakeConversation moves the conversation of another agent into this one,
+// to keep it when the session is rebuilt with new settings. Approvals given
+// with "always" are not taken: the new settings decide what asks.
+func (a *Agent) TakeConversation(from *Agent) {
+	a.History = from.History
+	a.LastUsage = from.LastUsage
+	a.historyAtUsage = from.historyAtUsage
+	a.sizeAfterCompaction = from.sizeAfterCompaction
+	a.currentRequest = from.currentRequest
+}
+
 // compactOrGoOn compacts before a request. When that fails the turn goes on
 // uncompacted, and no new attempt is made until the conversation grows.
 func (a *Agent) compactOrGoOn(ctx context.Context, hooks Hooks) {

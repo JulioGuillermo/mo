@@ -17,54 +17,60 @@ import (
 )
 
 type Config struct {
-	Provider     string                    `toml:"provider"`
-	Model        string                    `toml:"model"`
-	SystemPrompt string                    `toml:"system_prompt"`
-	MaxTokens    int                       `toml:"max_tokens"`
-	Tools        Tools                     `toml:"tools"`
-	Context      Context                   `toml:"context"`
-	Memory       Memory                    `toml:"memory"`
-	Providers    map[string]ProviderConfig `toml:"providers"`
+	Provider     string                    `toml:"provider,omitempty"`
+	Model        string                    `toml:"model,omitempty"`
+	SystemPrompt string                    `toml:"system_prompt,omitempty"`
+	MaxTokens    int                       `toml:"max_tokens,omitzero"`
+	Tools        Tools                     `toml:"tools,omitempty"`
+	Context      Context                   `toml:"context,omitempty"`
+	Memory       Memory                    `toml:"memory,omitempty"`
+	Providers    map[string]ProviderConfig `toml:"providers,omitempty"`
 }
 
 type Tools struct {
-	Mode         tools.Mode `toml:"mode"`
-	AlwaysLoaded []string   `toml:"always_loaded"`
-	Confirm      []string   `toml:"confirm"`
-	Disabled     []string   `toml:"disabled"`
-	MaxOutput    int        `toml:"max_output"`
+	Mode         tools.Mode        `toml:"mode,omitempty"`
+	AlwaysLoaded []string          `toml:"always_loaded,omitempty"`
+	Confirm      []string          `toml:"confirm,omitempty"`
+	Disabled     []string          `toml:"disabled,omitempty"`
+	MaxOutput    int               `toml:"max_output,omitzero"`
+	Descriptions map[string]string `toml:"descriptions,omitempty"`
 }
 
 type Context struct {
-	Window        int      `toml:"window"`
-	CompactAt     *float64 `toml:"compact_at"`
-	CompactPrompt string   `toml:"compact_prompt"`
+	Window        int      `toml:"window,omitzero"`
+	CompactAt     *float64 `toml:"compact_at,omitempty"`
+	CompactPrompt string   `toml:"compact_prompt,omitempty"`
 }
 
 type Memory struct {
-	Dir string `toml:"dir"`
+	Dir string `toml:"dir,omitempty"`
 }
 
 type ProviderConfig struct {
-	Protocol  string `toml:"type"`
-	BaseURL   string `toml:"base_url"`
-	APIKey    string `toml:"api_key"`
-	APIKeyEnv string `toml:"api_key_env"`
-	Model     string `toml:"model"`
+	Protocol   string `toml:"type,omitempty"`
+	BaseURL    string `toml:"base_url,omitempty"`
+	APIKey     string `toml:"api_key,omitempty"`
+	APIKeyEnv  string `toml:"api_key_env,omitempty"`
+	APIKeyFrom string `toml:"api_key_from,omitempty"`
+	Model      string `toml:"model,omitempty"`
 }
 
+// Key returns the API key from the first of api_key, api_key_env and
+// api_key_from that is set.
 func (p ProviderConfig) Key() string {
-	if p.APIKey != "" {
+	switch {
+	case p.APIKey != "":
 		return p.APIKey
-	}
-	if p.APIKeyEnv != "" {
+	case p.APIKeyEnv != "":
 		return os.Getenv(p.APIKeyEnv)
+	case p.APIKeyFrom != "":
+		return KeyFrom(p.APIKeyFrom)
 	}
 	return ""
 }
 
-func (p ProviderConfig) needsKey() bool {
-	return p.APIKey != "" || p.APIKeyEnv != ""
+func (p ProviderConfig) NeedsKey() bool {
+	return p.APIKey != "" || p.APIKeyEnv != "" || p.APIKeyFrom != ""
 }
 
 func Defaults() Config {
@@ -90,15 +96,7 @@ func UserFile() string {
 }
 
 func defaultMemoryDir() string {
-	dataHome := os.Getenv("XDG_DATA_HOME")
-	if dataHome == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return ""
-		}
-		dataHome = filepath.Join(home, ".local", "share")
-	}
-	return filepath.Join(dataHome, "mo", "memory")
+	return filepath.Join(dataHome(), "mo", "memory")
 }
 
 func ProjectFile(workDir string) string {
@@ -106,18 +104,11 @@ func ProjectFile(workDir string) string {
 }
 
 func Load(workDir string) (Config, error) {
-	cfg := Defaults()
 	user, err := readOptional(UserFile())
 	if err != nil {
-		return cfg, err
+		return Defaults(), err
 	}
-	cfg = merge(cfg, user)
-	project, err := readOptional(ProjectFile(workDir))
-	if err != nil {
-		return cfg, err
-	}
-	cfg = mergeProject(cfg, project)
-	return cfg, validate(cfg)
+	return LoadWithUserLayer(workDir, user)
 }
 
 func validate(cfg Config) error {
@@ -168,7 +159,7 @@ func merge(base, layer Config) Config {
 // provider that needs no key, set models, and add tools to confirm or disable.
 func mergeProject(base, layer Config) Config {
 	base = mergeHarmless(base, layer)
-	if chosen, ok := base.Providers[layer.Provider]; ok && !chosen.needsKey() {
+	if chosen, ok := base.Providers[layer.Provider]; ok && !chosen.NeedsKey() {
 		base.Provider = layer.Provider
 	}
 	base.Tools.Confirm = union(base.Tools.Confirm, layer.Tools.Confirm)
@@ -192,6 +183,12 @@ func mergeHarmless(base, layer Config) Config {
 	if layer.Tools.AlwaysLoaded != nil {
 		base.Tools.AlwaysLoaded = layer.Tools.AlwaysLoaded
 	}
+	for tool, description := range layer.Tools.Descriptions {
+		if base.Tools.Descriptions == nil {
+			base.Tools.Descriptions = map[string]string{}
+		}
+		base.Tools.Descriptions[tool] = description
+	}
 	base.Context.Window = override(base.Context.Window, layer.Context.Window)
 	if layer.Context.CompactAt != nil {
 		base.Context.CompactAt = layer.Context.CompactAt
@@ -205,6 +202,7 @@ func mergeProvider(base, layer ProviderConfig) ProviderConfig {
 	base.BaseURL = override(base.BaseURL, layer.BaseURL)
 	base.APIKey = override(base.APIKey, layer.APIKey)
 	base.APIKeyEnv = override(base.APIKeyEnv, layer.APIKeyEnv)
+	base.APIKeyFrom = override(base.APIKeyFrom, layer.APIKeyFrom)
 	base.Model = override(base.Model, layer.Model)
 	return base
 }

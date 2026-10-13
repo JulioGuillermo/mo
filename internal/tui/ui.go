@@ -18,16 +18,20 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/jg/mo/internal/agent"
+	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/llm"
 )
 
 const helpText = `enter send · ctrl+j / alt+enter new line · esc / ctrl+c stop · ctrl+d quit
-/clear forget the conversation · /compact summarize it · /help this help · /quit exit`
+/clear forget the conversation · /compact summarize it · /settings provider, tools, context
+/help this help · /quit exit`
 
 type Session struct {
 	Agent    *agent.Agent
 	Provider string
 	Model    string
+	Config   config.Config
+	Reload   func(userLayer config.Config) (Session, error)
 }
 
 type model struct {
@@ -40,13 +44,15 @@ type model struct {
 	width   int
 	height  int
 
-	running   bool
-	cancel    context.CancelFunc
-	finished  chan struct{}
-	stream    string
-	reasoning string
-	approval  *approvalMsg
-	usage     llm.Usage
+	running          bool
+	cancel           context.CancelFunc
+	finished         chan struct{}
+	stream           string
+	reasoning        string
+	approval         *approvalMsg
+	usage            llm.Usage
+	settings         *settingsScreen
+	settingsInFlight bool
 }
 
 const agentShutdownWait = 3 * time.Second
@@ -95,10 +101,17 @@ func (m model) Init() tea.Cmd {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case settingsLoadedMsg:
+		return m.openSettings(msg)
+	case settingsSavedMsg:
+		return m.finishSettings(msg)
+	}
+	if m.settings != nil && !isAgentMsg(msg) {
+		return m.updateSettings(msg)
+	}
+	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width, m.height = msg.Width, msg.Height
-		m.input.SetWidth(msg.Width)
-		m.printer.setWidth(msg.Width)
+		m.resize(msg)
 		return m, nil
 	case tea.BackgroundColorMsg:
 		m.printer.setDark(msg.IsDark())
@@ -137,6 +150,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m *model) resize(size tea.WindowSizeMsg) {
+	m.width, m.height = size.Width, size.Height
+	m.input.SetWidth(size.Width)
+	m.printer.setWidth(size.Width)
+}
+
 func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.approval != nil {
 		return m.answerApproval(msg.String())
@@ -165,7 +184,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	case "enter":
-		if m.running {
+		if m.running || m.settingsInFlight {
 			return m, nil
 		}
 		return m.submit()
@@ -235,6 +254,9 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		return m, tea.Println(m.printer.Note("conversation cleared"))
 	case "/help":
 		return m, tea.Println(m.printer.Note(helpText))
+	case "/settings":
+		m.settingsInFlight = true
+		return m, tea.Sequence(tea.Println(m.printer.Note("looking for providers…")), loadSettings(m.session))
 	case "/compact":
 		return m.start(tea.Println(m.printer.Note("compacting…")), m.session.Agent.Compact)
 	}
@@ -271,6 +293,11 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() tea.View {
+	if m.settings != nil {
+		view := tea.NewView(m.settings.form.View() + "\n" + dimStyle.Render(settingsHelp))
+		view.WindowTitle = "mo · settings"
+		return view
+	}
 	var sections []string
 	if live := m.liveText(); live != "" {
 		sections = append(sections, live)

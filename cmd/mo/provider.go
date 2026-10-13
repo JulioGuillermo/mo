@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/jg/mo/internal/config"
+	"github.com/jg/mo/internal/detect"
 	"github.com/jg/mo/internal/llm"
 )
 
 const (
-	localProbeTimeout      = 400 * time.Millisecond
 	windowProbeTimeout     = 2 * time.Second
 	defaultLocalWindow     = 32768
 	defaultAnthropicWindow = 200000
@@ -42,8 +42,14 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 	}
 	settings, ok := cfg.Providers[name]
 	if !ok {
+		settings, ok = detectedProvider(ctx, cfg, name)
+	}
+	if !ok {
 		known := slices.Sorted(maps.Keys(cfg.Providers))
-		return chosenProvider{}, fmt.Errorf("unknown provider %q (known: %s)", name, strings.Join(known, ", "))
+		return chosenProvider{}, fmt.Errorf("unknown provider %q (known: %s; see mo -detect)", name, strings.Join(known, ", "))
+	}
+	if settings.NeedsKey() && settings.Key() == "" {
+		return chosenProvider{}, fmt.Errorf("%s needs an API key and none was found (%s)", name, keyOrigin(settings))
 	}
 
 	if model == "" {
@@ -71,7 +77,7 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 	case "anthropic":
 		key := settings.Key()
 		if key == "" {
-			return chosenProvider{}, fmt.Errorf("%s needs an API key: set %s or providers.%s.api_key", name, settings.APIKeyEnv, name)
+			return chosenProvider{}, fmt.Errorf("%s needs an API key: set providers.%s.api_key, api_key_env or api_key_from", name, name)
 		}
 		if model == "" {
 			return chosenProvider{}, fmt.Errorf("%s needs a model: use -m or set model in the config", name)
@@ -86,6 +92,26 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 	return chosenProvider{}, fmt.Errorf("provider %q has unknown type %q (use openai or anthropic)", name, settings.Protocol)
 }
 
+// detectedProvider finds a usable provider by the name mo -detect gives it.
+func detectedProvider(ctx context.Context, cfg config.Config, name string) (config.ProviderConfig, bool) {
+	for _, found := range detect.Run(ctx, cfg) {
+		if found.Provider == name && found.Usable && found.Settings != nil {
+			return *found.Settings, true
+		}
+	}
+	return config.ProviderConfig{}, false
+}
+
+func keyOrigin(settings config.ProviderConfig) string {
+	switch {
+	case settings.APIKeyEnv != "":
+		return "env " + settings.APIKeyEnv
+	case settings.APIKeyFrom != "":
+		return "api_key_from " + settings.APIKeyFrom
+	}
+	return "api_key"
+}
+
 func probeWindow(ctx context.Context, provider *llm.OpenAI) int {
 	ctx, cancel := context.WithTimeout(ctx, windowProbeTimeout)
 	defer cancel()
@@ -97,12 +123,7 @@ func probeWindow(ctx context.Context, provider *llm.OpenAI) int {
 
 func findLocalServer(ctx context.Context, cfg config.Config) (string, error) {
 	for _, name := range config.LocalPresets {
-		settings := cfg.Providers[name]
-		provider := &llm.OpenAI{BaseURL: settings.BaseURL, APIKey: settings.Key()}
-		probeCtx, cancel := context.WithTimeout(ctx, localProbeTimeout)
-		_, err := provider.ListModels(probeCtx)
-		cancel()
-		if err == nil {
+		if _, err := detect.LocalModels(ctx, cfg.Providers[name]); err == nil {
 			return name, nil
 		}
 	}

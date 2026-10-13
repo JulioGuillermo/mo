@@ -8,15 +8,12 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/charmbracelet/x/term"
 
-	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
-	"github.com/jg/mo/internal/tools"
+	"github.com/jg/mo/internal/detect"
 	"github.com/jg/mo/internal/tui"
 )
 
@@ -31,8 +28,9 @@ func run() error {
 	providerFlag := flag.String("p", "", "provider name, e.g. ollama, llama-server, anthropic")
 	modelFlag := flag.String("m", "", "model name")
 	yesFlag := flag.Bool("y", false, "run tools without asking, except changes outside the working directory")
+	detectFlag := flag.Bool("detect", false, "list the providers mo can find and exit")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: mo [-p provider] [-m model] [-y] [prompt]")
+		fmt.Fprintln(os.Stderr, "usage: mo [-p provider] [-m model] [-y] [-detect] [prompt]")
 		fmt.Fprintln(os.Stderr, "With a prompt, or with input on stdin, mo answers once and exits.")
 		flag.PrintDefaults()
 	}
@@ -48,36 +46,15 @@ func run() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	if *detectFlag {
+		printFindings(detect.Run(ctx, cfg))
+		return nil
+	}
 
-	chosen, err := chooseProvider(ctx, cfg, *providerFlag, *modelFlag)
+	choice := sessionChoice{provider: *providerFlag, model: *modelFlag, yes: *yesFlag}
+	session, err := buildSession(ctx, workDir, cfg, choice)
 	if err != nil {
 		return err
-	}
-	confirm := cfg.Tools.Confirm
-	if *yesFlag {
-		confirm = nil
-	}
-	env := toolEnv(workDir, cfg.Memory.Dir)
-	registry := tools.NewRegistry(env, tools.Options{
-		Mode:         cfg.Tools.Mode,
-		AlwaysLoaded: cfg.Tools.AlwaysLoaded,
-		Disabled:     cfg.Tools.Disabled,
-		MaxOutput:    cfg.Tools.MaxOutput,
-	})
-	memoryIndex := ""
-	if !slices.Contains(cfg.Tools.Disabled, "memory") {
-		memoryIndex = tools.MemoryIndex(env)
-	}
-	assistant := &agent.Agent{
-		Provider:      chosen.provider,
-		Model:         chosen.model,
-		System:        agent.SystemPrompt(cfg.SystemPrompt, workDir, memoryIndex),
-		MaxTokens:     cfg.MaxTokens,
-		Tools:         registry,
-		ConfirmTools:  confirm,
-		Window:        chosen.window,
-		CompactAt:     *cfg.Context.CompactAt,
-		CompactPrompt: cfg.Context.CompactPrompt,
 	}
 
 	prompt, err := oneShotPrompt(flag.Args())
@@ -85,18 +62,10 @@ func run() error {
 		return err
 	}
 	if prompt != "" {
-		return runOnce(ctx, assistant, prompt)
+		return runOnce(ctx, session.Agent, prompt)
 	}
 	stop()
-	return tui.Run(tui.Session{Agent: assistant, Provider: chosen.name, Model: chosen.model})
-}
-
-func toolEnv(workDir, memoryDir string) tools.Env {
-	return tools.Env{
-		WorkDir:        workDir,
-		ProtectedPaths: []string{filepath.Dir(config.UserFile()), config.ProjectFile(workDir), memoryDir},
-		MemoryDir:      memoryDir,
-	}
+	return tui.Run(session)
 }
 
 // oneShotPrompt returns the prompt from the arguments, or from stdin when it

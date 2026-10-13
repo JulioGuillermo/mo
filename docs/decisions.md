@@ -97,3 +97,31 @@
 - Quitting while a run is active cancels it and waits up to 3 s so running commands get killed.
   Prints from the agent stop once the program has exited, because `Program.Println` blocks forever
   when nobody reads the channel.
+
+## Settings and detection
+
+- `/settings` is a huh v2 form embedded in the inline UI, five pages: model, tools, context (with
+  the token cost of the system prompt and of each tool), tool descriptions, memory.
+- The form starts from the defaults plus the user file, not from the session: a provider picked
+  with `-p` or by a project's `.mo.toml` is never copied into the global config. Provider and model
+  are written only when changed in the form; a typed model goes where the file already keeps one
+  (top-level `model`, else the provider's entry); an empty model keeps following the server.
+  Everything else is written only when it differs from the defaults.
+- Saving first builds a session from the edited settings and writes the file only if that works,
+  so a provider without a key never ends up saved as the default.
+- Model suggestions are gathered once when the form opens: the provider in use (with its key) and
+  the local servers detection already asked. Nothing is requested while moving through the list.
+- While the settings load or save no run can start, and agent messages bypass the form.
+- "Always" approvals do not survive a settings change; the new confirm list decides.
+- The file is encoded from a map of the fields that are set, not from the struct: the TOML encoder
+  drops empty lists with `omitempty`, and `confirm = []` and `compact_at = 0` must survive.
+- After saving, the session is rebuilt from the files and takes over the conversation, so a change
+  of provider, tools or prompt applies on the next message.
+- Detection reads env keys, probes keyless local providers in parallel (500 ms each), and reads
+  codex and opencode files. Keys from those files stay there: the config gets `api_key_from`,
+  resolved when a request needs it. OAuth subscription logins are reported, never read for a key.
+- A codex `OPENAI_API_KEY` stored next to a ChatGPT login is used only when `auth_mode` is
+  `apikey`: some codex versions mint that key from the subscription login.
+- An imported provider keeps the preset's address but none of mo's own key settings, so the key
+  it uses is the imported one.
+- An opencode provider with a literal `apiKey` is listed but not imported, to avoid copying it.
