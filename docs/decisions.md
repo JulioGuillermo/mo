@@ -653,3 +653,12 @@
   the servers it does not need. Off servers are not started at all, and `/mcp` lists them.
   Turning off is harmless, so any project file may add to `mcp_disabled` and `skills.disabled`;
   only a trusted one may turn on what the user turned off. `skills.dirs` is user-only.
+
+## Effort
+
+- `effort` is one setting for every provider, sent only when set: Anthropic's
+  `output_config.effort`, `reasoning_effort` to OpenAI-compatible servers. mo does not keep a
+  list of which model takes which level, as it would age with every release; a model that does
+  not take the one set answers with an error, which mo shows. It applies to the turns only:
+  compaction and the auto-mode judge keep the model's default.
+- A project may set it like the model, so a large repository can think harder than a script.

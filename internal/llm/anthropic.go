@@ -60,6 +60,12 @@ type anthropicRequest struct {
 	Messages  []anthropicMessage `json:"messages"`
 	Tools     []anthropicTool    `json:"tools,omitempty"`
 	Stream    bool               `json:"stream"`
+	// OutputConfig carries the effort, for the models that take it.
+	OutputConfig *anthropicOutputConfig `json:"output_config,omitempty"`
+}
+
+type anthropicOutputConfig struct {
+	Effort string `json:"effort,omitempty"`
 }
 
 type anthropicUsage struct {
@@ -130,6 +136,9 @@ func buildAnthropicRequest(req Request) anthropicRequest {
 	out := anthropicRequest{Model: req.Model, MaxTokens: req.MaxTokens, Stream: true}
 	if out.MaxTokens == 0 {
 		out.MaxTokens = anthropicDefaultMaxTokens
+	}
+	if req.Effort != "" {
+		out.OutputConfig = &anthropicOutputConfig{Effort: req.Effort}
 	}
 	if req.System != "" {
 		out.System = []anthropicBlock{{Type: "text", Text: req.System, CacheControl: ephemeral}}

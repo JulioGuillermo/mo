@@ -12,11 +12,13 @@ package config
 // | PJ-08 | Happy    | An MCP server turned off is not started; a project turns more off          | P0       |
 // | PJ-09 | Security | An untrusted project only turns servers and skills off; a trusted one may turn them on | P0 |
 // | PJ-10 | Happy    | Skills are looked for in the user's folder, the added ones, then the project's | P1   |
+// | PJ-11 | Happy    | Effort is set globally, overridden by any project file, and checked        | P1       |
 
 import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -181,6 +183,25 @@ func TestProjectFile(t *testing.T) {
 		want := []string{filepath.Join(configHome, "mo", "skills"), filepath.Join(home, ".claude", "skills"), filepath.Join(workDir, ".mo", "skills")}
 		if dirs := cfg.SkillDirs(workDir); !slices.Equal(dirs, want) {
 			t.Errorf("dirs = %v", dirs)
+		}
+	})
+
+	t.Run("PJ-11 effort is set globally, overridden by any project file, and checked", func(t *testing.T) {
+		configHome := isolatedHome(t)
+		writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), "effort = \"high\"\n")
+		project, bad := t.TempDir(), t.TempDir()
+		writeConfig(t, ProjectFile(project), "effort = \"low\"\n")
+		writeConfig(t, ProjectFile(bad), "effort = \"extreme\"\n")
+
+		global, _ := Load(t.TempDir())
+		here, _ := Load(project)
+		_, err := Load(bad)
+
+		if global.Effort != "high" || here.Effort != "low" || err == nil || !strings.Contains(err.Error(), "xhigh") {
+			t.Errorf("global %q here %q err %v", global.Effort, here.Effort, err)
+		}
+		if set := ProjectSets(Config{Effort: "low"}); !set["effort"] {
+			t.Errorf("set = %v", set)
 		}
 	})
 }

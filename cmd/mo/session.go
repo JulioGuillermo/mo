@@ -110,6 +110,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		Model:         chosen.model,
 		System:        agent.SystemPrompt(cfg.SystemPrompt, workDir),
 		MaxTokens:     cfg.MaxTokens,
+		Effort:        cfg.Effort,
 		Tools:         registry,
 		ConfirmTools:  confirm,
 		Window:        chosen.window,

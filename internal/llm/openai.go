@@ -45,12 +45,15 @@ type openAITool struct {
 }
 
 type openAIRequest struct {
-	Model         string          `json:"model,omitempty"`
-	Messages      []openAIMessage `json:"messages"`
-	Tools         []openAITool    `json:"tools,omitempty"`
-	MaxTokens     int             `json:"max_tokens,omitempty"`
-	Stream        bool            `json:"stream"`
-	StreamOptions struct {
+	Model     string          `json:"model,omitempty"`
+	Messages  []openAIMessage `json:"messages"`
+	Tools     []openAITool    `json:"tools,omitempty"`
+	MaxTokens int             `json:"max_tokens,omitempty"`
+	// ReasoningEffort is OpenAI's name for the effort, also taken by many
+	// compatible servers; others ignore it.
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	Stream          bool   `json:"stream"`
+	StreamOptions   struct {
 		IncludeUsage bool `json:"include_usage"`
 	} `json:"stream_options"`
 }
@@ -191,7 +194,7 @@ func deltaIndex(delta openAIToolCall, callCount int) int {
 }
 
 func (p *OpenAI) buildRequest(req Request) openAIRequest {
-	out := openAIRequest{Model: req.Model, MaxTokens: req.MaxTokens, Stream: true}
+	out := openAIRequest{Model: req.Model, MaxTokens: req.MaxTokens, ReasoningEffort: req.Effort, Stream: true}
 	out.StreamOptions.IncludeUsage = true
 	if req.System != "" {
 		out.Messages = append(out.Messages, openAIMessage{Role: "system", Content: req.System})

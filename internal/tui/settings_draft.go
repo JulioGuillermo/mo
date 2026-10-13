@@ -34,6 +34,7 @@ type settingsDraft struct {
 	systemPrompt  string
 	compactPrompt string
 	maxTokens     string
+	effort        string
 	descriptions  map[string]*string
 
 	defaultDescriptions map[string]string
@@ -112,6 +113,7 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 
 		compactPrompt: cfg.Context.CompactPrompt,
 		maxTokens:     strconv.Itoa(cfg.MaxTokens),
+		effort:        cfg.Effort,
 		search:        cfg.Web.Search,
 		searchURL:     cfg.Web.SearchURL,
 		searchKeyEnv:  cfg.Web.SearchKeyEnv,
@@ -220,6 +222,7 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	layer.Memory.Dir = unlessDefault(strings.TrimSpace(d.memoryDir), defaults.Memory.Dir)
 	layer.Loop = loop
 	layer.MaxTokens = maxTokens
+	layer.Effort = d.effort
 	layer.Context.CompactPrompt = unlessDefault(strings.TrimSpace(d.compactPrompt), strings.TrimSpace(agent.DefaultCompactPrompt))
 	layer.Web.Search = unlessDefault(d.search, defaults.Web.Search)
 	layer.Web.SearchURL = strings.TrimSpace(d.searchURL)

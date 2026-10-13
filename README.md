@@ -88,6 +88,8 @@ Providers with URLs or keys always go in the user file.
 provider = "llama-server"
 model = ""                 # empty: first model the server lists
 max_tokens = 0             # 0: provider default
+effort = ""                # empty: the model's default · low | medium | high | xhigh | max (Anthropic)
+                           # · none | minimal | low | medium | high | xhigh (OpenAI's reasoning_effort)
 system_prompt = ""         # empty: built-in prompt (~80 tokens)
 
 [tools]

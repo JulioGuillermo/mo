@@ -41,6 +41,7 @@ var projectFields = map[string]projectField{
 	"Provider":                             {"provider", func(d *settingsDraft) any { return &d.provider }},
 	"Model":                                {"model", func(d *settingsDraft) any { return &d.model }},
 	"Max output tokens":                    {"max_tokens", func(d *settingsDraft) any { return &d.maxTokens }},
+	"Effort":                               {"effort", func(d *settingsDraft) any { return &d.effort }},
 	"Tool mode":                            {"tools.mode", func(d *settingsDraft) any { return &d.mode }},
 	"Found tools in search mode":           {"tools.load", func(d *settingsDraft) any { return &d.load }},
 	"Loaded from the start in search mode": {"tools.always_loaded", func(d *settingsDraft) any { return &d.alwaysLoaded }},

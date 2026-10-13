@@ -37,7 +37,11 @@ type settingsSection struct {
 
 var settingsSections = []settingsSection{
 	{key: "model", title: "Model", summary: func(d *settingsDraft) string {
-		return orDefault(d.provider, "auto") + " · " + modelValue(d)
+		summary := orDefault(d.provider, "auto") + " · " + modelValue(d)
+		if d.effort != "" {
+			summary += " · effort " + d.effort
+		}
+		return summary
 	}, note: modelNote, items: modelItems},
 	{key: "tools", title: "Tools", summary: func(d *settingsDraft) string {
 		return d.mode + " · ask before: " + listValue(d.confirm)
@@ -95,10 +99,26 @@ func modelItems(m model, menu *settingsMenu) []settingItem {
 			return huh.NewInput().Title("Model").Description("empty: the first model the server lists").
 				Suggestions(menu.loaded.models).Value(&d.model)
 		}},
+		{"Effort", func(d *settingsDraft) string { return orDefault(d.effort, "model's default") }, func(d *settingsDraft) huh.Field {
+			return huh.NewSelect[string]().Title("Effort").
+				Description("how hard a model that reasons thinks; one that does not take it answers with an error").
+				Options(effortOptions...).Value(&d.effort)
+		}},
 		{"Max output tokens", countValue(func(d *settingsDraft) string { return d.maxTokens }, "provider's default"), func(d *settingsDraft) huh.Field {
 			return huh.NewInput().Title("Max output tokens").Description("0: the provider's default").Validate(validCount).Value(&d.maxTokens)
 		}},
 	}
+}
+
+var effortOptions = []huh.Option[string]{
+	huh.NewOption("model's default: nothing is sent", ""),
+	huh.NewOption("none: OpenAI only, no reasoning", "none"),
+	huh.NewOption("minimal: OpenAI only", "minimal"),
+	huh.NewOption("low", "low"),
+	huh.NewOption("medium", "medium"),
+	huh.NewOption("high", "high"),
+	huh.NewOption("xhigh: Anthropic from Opus 4.7, some OpenAI models", "xhigh"),
+	huh.NewOption("max: Anthropic only", "max"),
 }
 
 func modelNote(_ model, menu *settingsMenu) string {

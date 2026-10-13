@@ -26,6 +26,7 @@ type Config struct {
 	Model        string                    `toml:"model,omitempty"`
 	SystemPrompt string                    `toml:"system_prompt,omitempty"`
 	MaxTokens    int                       `toml:"max_tokens,omitzero"`
+	Effort       string                    `toml:"effort,omitempty"`
 	Tools        Tools                     `toml:"tools,omitempty"`
 	Context      Context                   `toml:"context,omitempty"`
 	Memory       Memory                    `toml:"memory,omitempty"`
@@ -97,6 +98,11 @@ type ProjectRules struct {
 	Allow []string `toml:"allow,omitempty"`
 	Deny  []string `toml:"deny,omitempty"`
 }
+
+// Efforts are the efforts mo sends: empty for the model's default, Anthropic's
+// low to max, and OpenAI's none and minimal besides. A model that does not
+// take the one set answers with an error.
+var Efforts = []string{"", "none", "minimal", "low", "medium", "high", "xhigh", "max"}
 
 // DefaultAllow are the commands that only read and run without asking.
 var DefaultAllow = []string{
@@ -231,6 +237,9 @@ func validate(cfg Config) error {
 	modes := []tools.Mode{tools.ModeFull, tools.ModeCompact, tools.ModeSearch}
 	if !slices.Contains(modes, cfg.Tools.Mode) {
 		return fmt.Errorf("tools.mode %q: use full, compact or search", cfg.Tools.Mode)
+	}
+	if !slices.Contains(Efforts, cfg.Effort) {
+		return fmt.Errorf("effort %q: use %s, or leave it empty for the model's default", cfg.Effort, strings.Join(Efforts[1:], ", "))
 	}
 	if !slices.Contains(modes, cfg.Skills.Mode) {
 		return fmt.Errorf("skills.mode %q: use full, compact or search", cfg.Skills.Mode)
@@ -440,6 +449,7 @@ func mergeHarmless(base, layer Config) Config {
 	base.Model = override(base.Model, layer.Model)
 	base.SystemPrompt = override(base.SystemPrompt, layer.SystemPrompt)
 	base.MaxTokens = override(base.MaxTokens, layer.MaxTokens)
+	base.Effort = override(base.Effort, layer.Effort)
 	base.Tools.Mode = override(base.Tools.Mode, layer.Tools.Mode)
 	base.Tools.Load = override(base.Tools.Load, layer.Tools.Load)
 	base.Skills.Mode = override(base.Skills.Mode, layer.Skills.Mode)

@@ -42,10 +42,13 @@ type ApprovalRequest struct {
 }
 
 type Agent struct {
-	Provider     llm.Provider
-	Model        string
-	System       string
-	MaxTokens    int
+	Provider  llm.Provider
+	Model     string
+	System    string
+	MaxTokens int
+	// Effort is how hard a model that reasons thinks in the turns; empty
+	// is its default. Compaction and the auto-mode judge keep the default.
+	Effort       string
 	Tools        *tools.Registry
 	ConfirmTools []string
 
@@ -226,6 +229,7 @@ func (a *Agent) request() llm.Request {
 		Messages:  a.sentHistory(),
 		Tools:     a.Tools.Specs(a.History),
 		MaxTokens: a.MaxTokens,
+		Effort:    a.Effort,
 	}
 }
 

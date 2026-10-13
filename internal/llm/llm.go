@@ -50,6 +50,10 @@ type Request struct {
 	Messages  []Message
 	Tools     []ToolSpec
 	MaxTokens int
+	// Effort asks a model that reasons for more or less of it: low to max
+	// for Anthropic, none to xhigh for OpenAI's. Empty leaves the model's
+	// default, and nothing is sent.
+	Effort string
 }
 
 // Usage is what a reply cost, and how fast the prompt was read and the

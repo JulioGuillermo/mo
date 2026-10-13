@@ -179,7 +179,7 @@ func EffectiveModel(cfg Config) string {
 // ProjectKeys are the settings a project overrides from the settings
 // screen, by their names in the file.
 var ProjectKeys = []string{
-	"provider", "model", "max_tokens", "system_prompt",
+	"provider", "model", "max_tokens", "effort", "system_prompt",
 	"tools.mode", "tools.load", "tools.always_loaded", "tools.confirm", "tools.disabled", "tools.mcp_disabled", "tools.max_output",
 	"skills.mode", "skills.disabled",
 	"context.window", "context.compact_at", "context.compact_prompt", "context.strategy", "context.keep_reasoning",
@@ -189,7 +189,7 @@ var ProjectKeys = []string{
 // projectField points at the field a project key names.
 func projectField(cfg *Config, key string) reflect.Value {
 	fields := map[string]any{
-		"provider": &cfg.Provider, "model": &cfg.Model, "max_tokens": &cfg.MaxTokens, "system_prompt": &cfg.SystemPrompt,
+		"provider": &cfg.Provider, "model": &cfg.Model, "max_tokens": &cfg.MaxTokens, "effort": &cfg.Effort, "system_prompt": &cfg.SystemPrompt,
 		"tools.mode": &cfg.Tools.Mode, "tools.load": &cfg.Tools.Load, "tools.always_loaded": &cfg.Tools.AlwaysLoaded,
 		"tools.confirm": &cfg.Tools.Confirm, "tools.disabled": &cfg.Tools.Disabled, "tools.max_output": &cfg.Tools.MaxOutput,
 		"tools.mcp_disabled": &cfg.Tools.MCPDisabled, "skills.mode": &cfg.Skills.Mode, "skills.disabled": &cfg.Skills.Disabled,
