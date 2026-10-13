@@ -525,6 +525,16 @@
   instead. `pull` is a fetch and the three-way merge, so it is not limited to a fast-forward.
 - `push` never forces; a push behind the remote is refused with "pull first". It warns, so it asks
   in every mode but all: it publishes outside the machine.
+- go-git's hard reset and checkout delete untracked files, which git never does. mo uses neither:
+  `switch`, fast-forwards, `abort`, rebase, stash and `reset hard` reset the index and branch, then
+  write back only the tracked files that differ and remove those the target lacks.
+- `stash` is stored as git stores it, a commit of the index and one of the working tree on top of
+  HEAD at `refs/stash`, with the list in its log, so `git stash list` shows mo's stashes and the
+  other way round. Untracked files are left out and left alone. `stash_apply` and `stash_pop` use
+  the three-way merge, so a stash applies over new commits; a clash leaves markers and `pop` keeps
+  the stash.
+- `tag` makes a light tag, or an annotated one with a message. `reset` is soft, mixed or hard;
+  hard warns, so it asks in every mode but all, and so does `stash_drop`.
 - go-git runs `git-upload-pack` for remotes that are folders. Without git installed, mo serves them
   with go-git's own server, which can leave objects out of a fetch that is not a fast-forward, so
   git's is used wherever it is installed. SSH and HTTPS remotes need neither.

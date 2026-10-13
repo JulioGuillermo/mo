@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
@@ -112,7 +111,7 @@ func (r *Repo) moveBranch(branch string, to plumbing.Hash) error {
 	if err := r.repo.Storer.SetReference(plumbing.NewHashReference(plumbing.NewBranchReferenceName(branch), to)); err != nil {
 		return err
 	}
-	return r.tree.Reset(&git.ResetOptions{Commit: to, Mode: git.HardReset})
+	return r.hardReset(to)
 }
 
 // replay picks the commits left one by one, until all are on or one stops

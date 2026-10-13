@@ -5,7 +5,7 @@ package tools
 // | GT-01 | Happy    | The git tool reads and commits in the working directory, no git command needed | P0 |
 // | GT-02 | Happy    | Reading actions change nothing; the others count as changes          | P0       |
 // | GT-03 | Error    | Outside a repository it says so                                      | P2       |
-// | GT-04 | Security | A push warns, so it asks in every mode but all                        | P0       |
+// | GT-04 | Security | A push and a hard reset warn, so they ask in every mode but all       | P0       |
 
 import (
 	"context"
@@ -53,12 +53,12 @@ func TestGitTool(t *testing.T) {
 			return registry.Changes(llm.ToolCall{Name: "git", Args: args(t, map[string]any{"action": action})})
 		}
 
-		for _, action := range []string{"status", "diff", "log", "show", "blame", "branches", "check"} {
+		for _, action := range []string{"status", "diff", "log", "show", "blame", "branches", "check", "fetch", "stash_list", "tags"} {
 			if changes(action) {
 				t.Errorf("%s counts as a change", action)
 			}
 		}
-		for _, action := range []string{"add", "commit", "merge", "cherry_pick", "continue", "abort", "switch", "branch"} {
+		for _, action := range []string{"add", "commit", "merge", "cherry_pick", "continue", "abort", "switch", "branch", "rebase", "pull", "push", "stash", "stash_pop", "stash_drop", "tag", "reset"} {
 			if !changes(action) {
 				t.Errorf("%s does not count as a change", action)
 			}
@@ -75,14 +75,17 @@ func TestGitTool(t *testing.T) {
 		}
 	})
 
-	t.Run("GT-04 a push warns, so it asks in every mode but all", func(t *testing.T) {
+	t.Run("GT-04 a push and a hard reset warn, so they ask in every mode but all", func(t *testing.T) {
 		registry := NewRegistry(Env{WorkDir: t.TempDir()}, Options{})
 
 		push := registry.Warning(llm.ToolCall{Name: "git", Args: args(t, map[string]any{"action": "push", "remote": "upstream"})})
 		pull := registry.Warning(llm.ToolCall{Name: "git", Args: args(t, map[string]any{"action": "pull"})})
 
-		if push != "publishes to upstream" || pull != "" {
-			t.Errorf("push = %q pull = %q", push, pull)
+		hard := registry.Warning(llm.ToolCall{Name: "git", Args: args(t, map[string]any{"action": "reset", "mode": "hard"})})
+		soft := registry.Warning(llm.ToolCall{Name: "git", Args: args(t, map[string]any{"action": "reset", "mode": "soft"})})
+
+		if push != "publishes to upstream" || pull != "" || hard != "drops the changes not committed" || soft != "" {
+			t.Errorf("push = %q pull = %q hard = %q soft = %q", push, pull, hard, soft)
 		}
 	})
 }

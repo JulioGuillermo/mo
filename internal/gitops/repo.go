@@ -532,8 +532,15 @@ func (r *Repo) Switch(branch string, create bool) (string, error) {
 	if err := r.requireClean(); err != nil {
 		return "", err
 	}
-	err := r.tree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName(branch), Create: create})
-	if err != nil {
+	name := plumbing.NewBranchReferenceName(branch)
+	if create {
+		if _, err := r.Branch(branch); err != nil {
+			return "", err
+		}
+	} else if _, err := r.repo.Reference(name, true); err != nil {
+		return "", fmt.Errorf("no branch %s", branch)
+	}
+	if err := r.checkout(name); err != nil {
 		return "", err
 	}
 	if create {
@@ -626,7 +633,7 @@ func (r *Repo) fastForward(theirs *object.Commit, revision string) (string, erro
 			return "", err
 		}
 	}
-	if err := r.tree.Reset(&git.ResetOptions{Commit: theirs.Hash, Mode: git.HardReset}); err != nil {
+	if err := r.hardReset(theirs.Hash); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("fast-forwarded to %s (%s)", revision, theirs.Hash.String()[:7]), nil
@@ -663,74 +670,12 @@ func (r *Repo) CherryPick(revision string) (string, error) {
 // result to the working tree, stages what merged cleanly, and commits when
 // nothing conflicted.
 func (r *Repo) threeWay(op *operation, base, ours, theirs *object.Commit, oursName, theirsName string) (string, bool, error) {
-	files := map[string][3]*object.File{}
-	for side, commit := range []*object.Commit{base, ours, theirs} {
-		tree, err := commit.Tree()
-		if err != nil {
-			return "", false, err
-		}
-		err = tree.Files().ForEach(func(file *object.File) error {
-			entry := files[file.Name]
-			entry[side] = file
-			files[file.Name] = entry
-			return nil
-		})
-		if err != nil {
-			return "", false, err
-		}
+	merged, err := r.mergeTrees(base, ours, theirs, oursName, theirsName, true)
+	if err != nil {
+		return "", false, err
 	}
-	var conflicts, notes []string
-	for _, path := range slices.Sorted(func(yield func(string) bool) {
-		for path := range files {
-			if !yield(path) {
-				return
-			}
-		}
-	}) {
-		sides := files[path]
-		b, o, t := sides[0], sides[1], sides[2]
-		switch {
-		case sameFile(o, t), sameFile(t, b):
-			continue
-		case sameFile(o, b):
-			if err := r.takeTheirs(path, t); err != nil {
-				return "", false, err
-			}
-			op.written = append(op.written, path)
-			continue
-		}
-		op.written = append(op.written, path)
-		switch {
-		case o == nil || t == nil:
-			kept := o
-			if kept == nil {
-				kept = t
-			}
-			if err := r.writeFile(path, fileText(kept), kept.Mode); err != nil {
-				return "", false, err
-			}
-			conflicts = append(conflicts, path)
-			notes = append(notes, path+": deleted on one side, changed on the other; the changed one is kept")
-		case isBinary(o) || isBinary(t):
-			if err := r.writeFile(path, fileText(o), o.Mode); err != nil {
-				return "", false, err
-			}
-			conflicts = append(conflicts, path)
-			notes = append(notes, path+": binary, changed on both sides; ours is kept")
-		default:
-			merged, conflicted := Merge3(fileText(b), fileText(o), fileText(t), oursName, "base", theirsName)
-			if err := r.writeFile(path, merged, o.Mode); err != nil {
-				return "", false, err
-			}
-			if conflicted {
-				conflicts = append(conflicts, path)
-				continue
-			}
-			if _, err := r.tree.Add(path); err != nil {
-				return "", false, err
-			}
-		}
-	}
+	op.written = append(op.written, merged.written...)
+	conflicts, notes := merged.conflicts, merged.notes
 	op.conflicts = conflicts
 	if len(conflicts) == 0 {
 		result, err := r.finish(op)
@@ -749,6 +694,88 @@ func (r *Repo) threeWay(op *operation, base, ours, theirs *object.Commit, oursNa
 	}
 	out.WriteString("Edit each file to what it should be, without the markers, then git continue; git check shows what is left; git abort drops the " + op.kind + ".")
 	return out.String(), true, nil
+}
+
+// treeMerge is what merging trees did to the working tree: the paths it
+// wrote, those left with conflicts, and notes on conflicts without markers.
+type treeMerge struct {
+	written, conflicts, notes []string
+}
+
+// mergeTrees merges theirs into ours from base, file by file, into the
+// working tree, staging what merged cleanly when stage is set.
+func (r *Repo) mergeTrees(base, ours, theirs *object.Commit, oursName, theirsName string, stage bool) (treeMerge, error) {
+	var merged treeMerge
+	files := map[string][3]*object.File{}
+	for side, commit := range []*object.Commit{base, ours, theirs} {
+		tree, err := commit.Tree()
+		if err != nil {
+			return merged, err
+		}
+		err = tree.Files().ForEach(func(file *object.File) error {
+			entry := files[file.Name]
+			entry[side] = file
+			files[file.Name] = entry
+			return nil
+		})
+		if err != nil {
+			return merged, err
+		}
+	}
+	for _, path := range slices.Sorted(func(yield func(string) bool) {
+		for path := range files {
+			if !yield(path) {
+				return
+			}
+		}
+	}) {
+		sides := files[path]
+		b, o, t := sides[0], sides[1], sides[2]
+		switch {
+		case sameFile(o, t), sameFile(t, b):
+			continue
+		case sameFile(o, b):
+			if err := r.takeTheirs(path, t); err != nil {
+				return merged, err
+			}
+			merged.written = append(merged.written, path)
+			continue
+		}
+		merged.written = append(merged.written, path)
+		switch {
+		case o == nil || t == nil:
+			kept := o
+			if kept == nil {
+				kept = t
+			}
+			if err := r.writeFile(path, fileText(kept), kept.Mode); err != nil {
+				return merged, err
+			}
+			merged.conflicts = append(merged.conflicts, path)
+			merged.notes = append(merged.notes, path+": deleted on one side, changed on the other; the changed one is kept")
+		case isBinary(o) || isBinary(t):
+			if err := r.writeFile(path, fileText(o), o.Mode); err != nil {
+				return merged, err
+			}
+			merged.conflicts = append(merged.conflicts, path)
+			merged.notes = append(merged.notes, path+": binary, changed on both sides; ours is kept")
+		default:
+			text, conflicted := Merge3(fileText(b), fileText(o), fileText(t), oursName, "base", theirsName)
+			if err := r.writeFile(path, text, o.Mode); err != nil {
+				return merged, err
+			}
+			if conflicted {
+				merged.conflicts = append(merged.conflicts, path)
+				continue
+			}
+			if stage {
+				if _, err := r.tree.Add(path); err != nil {
+					return merged, err
+				}
+			}
+		}
+	}
+	return merged, nil
 }
 
 // conflictExcerpt shows each conflict of a file with the line it starts on.
@@ -910,7 +937,7 @@ func (r *Repo) Abort() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := r.tree.Reset(&git.ResetOptions{Commit: head.Hash, Mode: git.HardReset}); err != nil {
+	if err := r.hardReset(head.Hash); err != nil {
 		return "", err
 	}
 	for _, path := range op.written {
