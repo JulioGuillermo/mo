@@ -26,10 +26,14 @@ package tools
 // | TL-22 | Security | A symlink inside the workdir that points outside is flagged   | P0       |
 // | TL-23 | Security | mo config, .git and hidden home entries are flagged           | P0       |
 // | TL-24 | Security | rm through a symlinked directory still protects the workdir   | P0       |
+// | TL-25 | Happy    | read of an image answers its format, size and a marker        | P1       |
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,6 +42,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/render"
 )
 
 func newEnv(t *testing.T) Env {
@@ -424,6 +429,22 @@ func TestGuards(t *testing.T) {
 
 		if err == nil || !strings.Contains(err.Error(), "refusing") {
 			t.Errorf("err = %v", err)
+		}
+	})
+}
+
+func TestReadImage(t *testing.T) {
+	t.Run("TL-25 read of an image answers its format, size and a marker", func(t *testing.T) {
+		env := newEnv(t)
+		img := image.NewRGBA(image.Rect(0, 0, 5, 3))
+		var encoded bytes.Buffer
+		png.Encode(&encoded, img)
+		writeFile(t, env, "pic.png", encoded.String())
+
+		output, err := runRead(context.Background(), env, args(t, map[string]any{"path": "pic.png"}))
+
+		if err != nil || !strings.HasPrefix(output, "[image png 5x3: /") || len(render.MarkedImages(output)) != 1 {
+			t.Errorf("output = %q err = %v", output, err)
 		}
 	})
 }

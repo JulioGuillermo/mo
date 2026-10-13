@@ -196,8 +196,12 @@ func contextGroup(current *agent.Agent, draft *settingsDraft) *huh.Group {
 		huh.NewNote().Title("Sent with every request now").Description(budgetText(current.Budget())),
 		huh.NewInput().Title("Context window (tokens)").Description("0: ask the server, else 32768 / 200000").
 			Validate(validCount).Value(&draft.window),
-		huh.NewInput().Title("Compact at").Description("share of the window, 0 never").
+		huh.NewInput().Title("Make room at").Description("share of the window, 0 never").
 			Validate(validFraction).Value(&draft.compactAt),
+		huh.NewSelect[string]().Title("To make room").Options(
+			huh.NewOption("summarize the older messages", "compact"),
+			huh.NewOption("drop the oldest messages", "drop"),
+		).Value(&draft.strategy),
 		huh.NewText().Title("System prompt").Lines(6).Value(&draft.systemPrompt),
 	).Title("Context")
 }

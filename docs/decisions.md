@@ -41,6 +41,11 @@
 - The request repeated after a summary is the user's original prompt, kept by the agent, not the
   first message of the history, which after a compaction already holds the previous summary.
 - `compact_at = 0` turns automatic compaction off; `/compact` still works.
+- `context.strategy = "drop"` is the other way to make room: whole turns are removed from the
+  start, oldest first, until the context is under 75 % of the threshold, so it does not have to
+  drop again on the next request. A turn starts at a user message, so no tool result is left
+  without its call, and the turn in progress is never touched. It costs no model call and keeps
+  the recent messages verbatim, but what was dropped is gone; `/compact` still summarizes.
 
 ## Memory
 
@@ -161,3 +166,36 @@
   stderr goes to a log file instead of the screen.
 - `[mcp]` is user-only: a project adding a server would be running any command it likes.
 - Images and audio in tool results are only named for now.
+
+## Rendering
+
+- Images go into the scrollback, so they scroll with the conversation. In kitty and ghostty they use
+  kitty's Unicode placeholders: the image is sent once (quiet, `q=2`, so the terminal answers
+  nothing on stdin) as a virtual placement, and the visible part is ordinary text, one placeholder
+  per cell with the image id in its colour. The UI measures and moves it like any text. Inside tmux
+  the transmission is wrapped for passthrough.
+- Elsewhere, with truecolor, half blocks: two pixel rows per text row. Without truecolor, a name.
+- Detection reads the environment only (TERM, TERM_PROGRAM, KITTY_WINDOW_ID, COLORTERM): querying
+  the terminal would race with the UI reading the keyboard. Inside tmux, kitty graphics are used
+  only when `allow-passthrough` is on, else half blocks. `[render] images` overrides it all.
+- Images are checked by their header first and refused over 50 megapixels, so a tiny file that
+  declares a huge size cannot exhaust memory. Kitty gets the image scaled to the cells it fills,
+  not its full resolution, which keeps the transmission small and the terminal's image store free.
+- SVG goes through resvg compiled to WebAssembly, so the binary stays free of cgo. Its own system
+  font loading finds nothing, so mo loads one common sans font as data and puts it first in every
+  font-family (attribute, style attribute, style element): this resvg tries only the first family
+  and drops text whose font is missing. SVG is checked as XML first, since resvg prints its parse
+  panics to the terminal; a root without xmlns gets it, one in another namespace is refused. The
+  size comes from the viewBox, scaled by an absolute width or height (px, pt, pc, mm, cm, in);
+  % and em have no size of their own. The root is rewritten with that size, because resvg scales
+  each axis against its own reading of it, and the SVG is drawn straight at the size it is shown.
+- Mermaid: mermaid-ascii draws flowcharts and sequence diagrams with box characters anywhere; with
+  mermaid-cli installed and kitty graphics, the diagram is drawn as an image, with labels as SVG
+  text since resvg draws no HTML labels. Half blocks are too coarse for a diagram. What neither
+  draws stays its source.
+- Images in tool results are written to a file and marked `[image <what>: <path>]`, so the model
+  knows where they are, and can show them again with `![](path)`, and the UI draws them. The files
+  go to a private directory made for the run (0700) and removed at exit; a shared, predictable
+  /tmp/mo-images would let another user read them or plant links.
+- Code blocks are tracked when splitting an answer: an image line or a mermaid fence inside, say,
+  a README in a markdown block stays text.

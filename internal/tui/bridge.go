@@ -51,7 +51,7 @@ func (b *bridge) hooks() agent.Hooks {
 		OnAssistant: func(message llm.Message) {
 			b.program.Send(streamEndMsg{})
 			if text := strings.TrimSpace(message.Text); text != "" {
-				b.print(b.printer.Markdown(text))
+				b.print(b.printer.Answer(text))
 			}
 		},
 		OnToolStart: func(call llm.ToolCall, summary string) {
@@ -59,6 +59,9 @@ func (b *bridge) hooks() agent.Hooks {
 		},
 		OnToolDone: func(call llm.ToolCall, output string, isError bool) {
 			b.print(b.printer.ToolResult(output, isError))
+			if images := b.printer.Images(output); images != "" {
+				b.print(images)
+			}
 		},
 		OnUsage: func(usage llm.Usage) {
 			b.program.Send(usageMsg(usage))

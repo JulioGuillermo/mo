@@ -75,7 +75,8 @@ grep = "Regex search in files."
 
 [context]
 window = 0                 # 0: ask llama-server, else 32768 (local) / 200000 (anthropic)
-compact_at = 0.75          # summarize at this share of the window; 0 = never
+compact_at = 0.75          # make room at this share of the window; 0 = never
+strategy = "compact"       # compact: summarize older messages · drop: remove the oldest turns
 compact_prompt = ""        # empty: built-in summary prompt
 
 [memory]
@@ -135,6 +136,22 @@ Their tools are named `mcp__<server>__<tool>` and ask before running unless the 
 `/mcp` shows which servers answered. A server's stderr goes to `~/.local/share/mo/logs/mcp-<name>.log`.
 `[web]` and `[mcp]` are read from the user file only, never from a project's `.mo.toml`.
 
+## Images and diagrams
+
+Answers with a ```` ```mermaid ```` or ```` ```svg ```` block, or a line that is only `![](local/file.png)`,
+are drawn in the terminal; so are images that `read` opens or an MCP tool returns, and `/view <file>`
+shows an image, SVG or Mermaid file.
+
+```toml
+[render]
+images = "auto"   # auto | kitty | blocks | off
+```
+
+`auto` uses kitty graphics in kitty and ghostty (also inside tmux with `set -g allow-passthrough on`),
+coloured half blocks in other truecolor terminals, and text otherwise. SVG is drawn by resvg built
+into mo; Mermaid flowcharts and sequence diagrams are drawn with box characters, or as an image when
+`mmdc` (mermaid-cli) is installed.
+
 ## Keys
 
 | Key | Action |
@@ -144,4 +161,4 @@ Their tools are named `mcp__<server>__<tool>` and ask before running unless the 
 | esc, ctrl+c | stop the current run |
 | ctrl+c (idle) | clear input, then quit |
 | ctrl+d | quit |
-| `/clear` `/compact` `/settings` `/mcp` `/help` `/quit` | commands |
+| `/clear` `/compact` `/settings` `/mcp` `/view <file>` `/help` `/quit` | commands |

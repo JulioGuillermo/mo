@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/jg/mo/internal/render"
 )
 
 const (
@@ -48,6 +51,9 @@ func runRead(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if render.IsImageFile(path) {
+		return describeImage(path, data)
+	}
 	if looksBinary(data) {
 		return "", errors.New("binary file")
 	}
@@ -78,6 +84,19 @@ func runRead(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 		fmt.Fprintf(&out, "[lines %d-%d of %d; continue with offset=%d]\n", first, last, len(lines), last+1)
 	}
 	return out.String(), nil
+}
+
+// describeImage answers a read of an image with its size and a marker, so
+// the user sees it and the model knows what it is.
+func describeImage(path string, data []byte) (string, error) {
+	if strings.EqualFold(filepath.Ext(path), ".svg") {
+		return render.ImageMarker(fmt.Sprintf("svg, %d KB", len(data)>>10), path), nil
+	}
+	config, format, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return "", fmt.Errorf("unreadable image: %w", err)
+	}
+	return render.ImageMarker(fmt.Sprintf("%s %dx%d", format, config.Width, config.Height), path), nil
 }
 
 func looksBinary(data []byte) bool {

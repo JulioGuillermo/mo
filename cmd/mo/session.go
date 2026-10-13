@@ -61,6 +61,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		Window:        chosen.window,
 		CompactAt:     *cfg.Context.CompactAt,
 		CompactPrompt: cfg.Context.CompactPrompt,
+		Strategy:      cfg.Context.Strategy,
 	}
 	reload := func(userLayer config.Config) (tui.Session, error) {
 		if _, err := chooseProvider(context.Background(), config.UserSettings(userLayer), "", ""); err != nil {
@@ -77,6 +78,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		Provider: chosen.name,
 		Model:    chosen.model,
 		Config:   cfg,
+		WorkDir:  workDir,
 		Reload:   reload,
 		MCP:      hub.Status(),
 	}, nil

@@ -25,6 +25,7 @@ type settingsDraft struct {
 	maxOutput    string
 	window       string
 	compactAt    string
+	strategy     string
 	systemPrompt string
 	descriptions map[string]*string
 	memoryDir    string
@@ -49,6 +50,7 @@ func newSettingsDraft(layer config.Config) *settingsDraft {
 		maxOutput:       strconv.Itoa(cfg.Tools.MaxOutput),
 		window:          strconv.Itoa(cfg.Context.Window),
 		compactAt:       strconv.FormatFloat(*cfg.Context.CompactAt, 'f', -1, 64),
+		strategy:        cfg.Context.Strategy,
 		systemPrompt:    cfg.SystemPrompt,
 		descriptions:    map[string]*string{},
 		memoryDir:       cfg.Memory.Dir,
@@ -97,6 +99,7 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	if compactAt == *defaults.Context.CompactAt {
 		layer.Context.CompactAt = nil
 	}
+	layer.Context.Strategy = unlessDefault(d.strategy, defaults.Context.Strategy)
 	layer.SystemPrompt = unlessDefault(strings.TrimSpace(d.systemPrompt), agent.DefaultSystemPrompt)
 	layer.Memory.Dir = unlessDefault(strings.TrimSpace(d.memoryDir), defaults.Memory.Dir)
 	return layer, nil

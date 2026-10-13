@@ -15,6 +15,7 @@ import (
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/detect"
 	"github.com/jg/mo/internal/mcphub"
+	"github.com/jg/mo/internal/render"
 	"github.com/jg/mo/internal/tui"
 )
 
@@ -54,6 +55,7 @@ func run() error {
 
 	hub := connectMCP(ctx, cfg)
 	defer hub.Close()
+	defer render.RemoveSavedImages()
 	choice := sessionChoice{provider: *providerFlag, model: *modelFlag, yes: *yesFlag}
 	session, err := buildSession(ctx, workDir, cfg, choice, hub)
 	if err != nil {

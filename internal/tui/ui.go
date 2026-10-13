@@ -21,17 +21,19 @@ import (
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/mcphub"
+	"github.com/jg/mo/internal/render"
 )
 
 const helpText = `enter send · ctrl+j / alt+enter new line · esc / ctrl+c stop · ctrl+d quit
 /clear forget the conversation · /compact summarize it · /settings provider, tools, context
-/mcp MCP servers · /help this help · /quit exit`
+/view <file> show an image, svg or mermaid file · /mcp MCP servers · /help this help · /quit exit`
 
 type Session struct {
 	Agent    *agent.Agent
 	Provider string
 	Model    string
 	Config   config.Config
+	WorkDir  string
 	Reload   func(userLayer config.Config) (Session, error)
 	MCP      []mcphub.Status
 }
@@ -61,6 +63,8 @@ const agentShutdownWait = 3 * time.Second
 
 func Run(session Session) error {
 	printer := newPrinter()
+	printer.setImages(render.Detect(session.Config.Render.Images))
+	printer.workDir = session.WorkDir
 	bridge := &bridge{printer: printer, exited: make(chan struct{})}
 	m := model{
 		session: session,
@@ -247,6 +251,9 @@ func (m model) start(first tea.Cmd, work func(context.Context, agent.Hooks) erro
 }
 
 func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
+	if path, isView := strings.CutPrefix(command, "/view "); isView {
+		return m, m.view(strings.TrimSpace(path))
+	}
 	switch command {
 	case "/quit", "/exit":
 		return m, tea.Quit
@@ -259,12 +266,22 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 	case "/settings":
 		m.settingsInFlight = true
 		return m, tea.Sequence(tea.Println(m.printer.Note("looking for providers…")), loadSettings(m.session))
+	case "/view":
+		return m, tea.Println(m.printer.Note("usage: /view <image, svg or mermaid file>"))
 	case "/mcp":
 		return m, tea.Println(m.printer.Note(mcpReport(m.session.MCP)))
 	case "/compact":
 		return m.start(tea.Println(m.printer.Note("compacting…")), m.session.Agent.Compact)
 	}
 	return m, tea.Println(m.printer.Note("unknown command " + command + " · /help"))
+}
+
+// view draws a file off the UI goroutine.
+func (m model) view(path string) tea.Cmd {
+	printer := m.printer
+	return func() tea.Msg {
+		return tea.Println(printer.File(path))()
+	}
 }
 
 func (m *model) stop() {

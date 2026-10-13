@@ -7,8 +7,15 @@ package tui
 // | TU-03 | Edge     | ctrl+d while running stops the run before quitting          | P0       |
 // | TU-04 | Happy    | The approval prompt hides "always" outside the workdir      | P1       |
 // | TU-05 | Happy    | The status line shows context used over the window          | P1       |
+// | TU-06 | Happy    | An answer's mermaid block is drawn, its text rendered       | P1       |
+// | TU-07 | Happy    | Images a tool result marks are drawn; others give nothing   | P1       |
 
 import (
+	"bytes"
+	"image"
+	"image/png"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -16,6 +23,7 @@ import (
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/render"
 )
 
 func runningModel(cancelled *bool) model {
@@ -112,6 +120,33 @@ func TestStatusLine(t *testing.T) {
 
 		if !strings.Contains(status, "llama-server · Qwen3-8B · ctx 1.2k/32.0k") {
 			t.Errorf("status = %q", status)
+		}
+	})
+}
+
+func TestPrinterVisuals(t *testing.T) {
+	t.Run("TU-06 an answer's mermaid block is drawn, its text rendered", func(t *testing.T) {
+		printer := newPrinter()
+
+		text := printer.Answer("Here:\n```mermaid\ngraph LR\n  A --> B\n```\n")
+
+		if !strings.Contains(text, "Here") || !strings.Contains(text, "─") || strings.Contains(text, "graph LR") {
+			t.Errorf("text = %q", text)
+		}
+	})
+
+	t.Run("TU-07 images a tool result marks are drawn; others give nothing", func(t *testing.T) {
+		printer := newPrinter()
+		printer.setImages(render.ModeBlocks)
+		path := filepath.Join(t.TempDir(), "dot.png")
+		var encoded bytes.Buffer
+		png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 4, 4)))
+		os.WriteFile(path, encoded.Bytes(), 0o600)
+
+		drawn := printer.Images("ok " + render.ImageMarker("png 4x4", path))
+
+		if drawn == "" || printer.Images("no images here") != "" {
+			t.Errorf("drawn = %q", drawn)
 		}
 	})
 }

@@ -2,12 +2,15 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 
 	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/jg/mo/internal/render"
 )
 
 const toolPreviewLines = 4
@@ -27,10 +30,72 @@ type printer struct {
 	width    int
 	dark     bool
 	markdown *glamour.TermRenderer
+	images   render.Mode
+	workDir  string
 }
 
 func newPrinter() *printer {
-	return &printer{width: 80, dark: true}
+	return &printer{width: 80, dark: true, images: render.ModeOff}
+}
+
+func (p *printer) setImages(mode render.Mode) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.images = mode
+}
+
+func (p *printer) renderer() render.Renderer {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return render.Renderer{Mode: p.images, Width: p.width}
+}
+
+// Answer prints an answer of the model: markdown, with its mermaid and svg
+// blocks and its images of local files drawn.
+func (p *printer) Answer(text string) string {
+	var parts []string
+	for _, segment := range render.Split(text) {
+		parts = append(parts, p.segment(segment))
+	}
+	return strings.Join(parts, "\n")
+}
+
+func (p *printer) segment(segment render.Segment) string {
+	renderer := p.renderer()
+	switch segment.Kind {
+	case render.SegmentMermaid:
+		return renderer.Mermaid(segment.Content)
+	case render.SegmentSVG:
+		drawn, err := renderer.SVG([]byte(segment.Content))
+		if err != nil {
+			return p.Markdown("```svg\n"+segment.Content+"```") + "\n" + p.Error(err)
+		}
+		return drawn
+	case render.SegmentImageFile:
+		return p.File(segment.Content)
+	}
+	return p.Markdown(segment.Content)
+}
+
+// File draws an image, SVG or Mermaid file, or says why it cannot.
+func (p *printer) File(path string) string {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(p.workDir, path)
+	}
+	drawn, err := p.renderer().File(path)
+	if err != nil {
+		return p.Error(err)
+	}
+	return drawn
+}
+
+// Images draws the images a tool result points at.
+func (p *printer) Images(output string) string {
+	var drawn []string
+	for _, path := range render.MarkedImages(output) {
+		drawn = append(drawn, p.File(path))
+	}
+	return strings.Join(drawn, "\n")
 }
 
 func (p *printer) setWidth(width int) {

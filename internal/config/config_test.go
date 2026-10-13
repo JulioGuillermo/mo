@@ -23,6 +23,7 @@ package config
 // | CF-19 | Happy    | api_key_from codex reads the key at the moment it is needed       | P1       |
 // | CF-20 | Security | The project file cannot change the web search backend or its key  | P0       |
 // | CF-21 | Security | The project file cannot add or change MCP servers                 | P0       |
+// | CF-22 | Happy    | context.strategy defaults to compact, takes drop, refuses others  | P1       |
 
 import (
 	"os"
@@ -360,6 +361,21 @@ func TestMCPSettings(t *testing.T) {
 
 		if err != nil || len(cfg.MCP) != 1 || cfg.MCP["docs"].Command != "docs-server" {
 			t.Errorf("mcp = %+v err = %v", cfg.MCP, err)
+		}
+	})
+}
+
+func TestContextStrategy(t *testing.T) {
+	t.Run("CF-22 context.strategy defaults to compact, takes drop, refuses others", func(t *testing.T) {
+		configHome := isolatedHome(t)
+		cfg, _ := Load(t.TempDir())
+		writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), "[context]\nstrategy = \"drop\"\n")
+		dropping, err := Load(t.TempDir())
+		writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), "[context]\nstrategy = \"forget\"\n")
+		_, badErr := Load(t.TempDir())
+
+		if cfg.Context.Strategy != "compact" || err != nil || dropping.Context.Strategy != "drop" || badErr == nil {
+			t.Errorf("default = %q drop = %q (%v) bad = %v", cfg.Context.Strategy, dropping.Context.Strategy, err, badErr)
 		}
 	})
 }

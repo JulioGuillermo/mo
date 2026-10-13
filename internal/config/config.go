@@ -13,6 +13,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/jg/mo/internal/render"
 	"github.com/jg/mo/internal/tools"
 	"github.com/jg/mo/internal/web"
 )
@@ -27,6 +28,7 @@ type Config struct {
 	Memory       Memory                    `toml:"memory,omitempty"`
 	Web          Web                       `toml:"web,omitempty"`
 	MCP          map[string]MCPServer      `toml:"mcp,omitempty"`
+	Render       Render                    `toml:"render,omitempty"`
 	Providers    map[string]ProviderConfig `toml:"providers,omitempty"`
 }
 
@@ -43,6 +45,7 @@ type Context struct {
 	Window        int      `toml:"window,omitzero"`
 	CompactAt     *float64 `toml:"compact_at,omitempty"`
 	CompactPrompt string   `toml:"compact_prompt,omitempty"`
+	Strategy      string   `toml:"strategy,omitempty"`
 }
 
 type Web struct {
@@ -68,6 +71,10 @@ type MCPServer struct {
 	URL     string            `toml:"url,omitempty"`
 	Headers map[string]string `toml:"headers,omitempty"`
 	Trust   bool              `toml:"trust,omitempty"`
+}
+
+type Render struct {
+	Images render.Mode `toml:"images,omitempty"`
 }
 
 type Memory struct {
@@ -109,9 +116,10 @@ func Defaults() Config {
 			Confirm:      []string{"bash", "rm", "fetch"},
 			MaxOutput:    10000,
 		},
-		Context:   Context{CompactAt: ptr(0.75)},
+		Context:   Context{CompactAt: ptr(0.75), Strategy: "compact"},
 		Memory:    Memory{Dir: defaultMemoryDir()},
 		Web:       Web{Search: web.SearchDuckDuckGo},
+		Render:    Render{Images: render.ModeAuto},
 		Providers: presets(),
 	}
 }
@@ -148,6 +156,13 @@ func validate(cfg Config) error {
 	modes := []tools.Mode{tools.ModeFull, tools.ModeCompact, tools.ModeSearch}
 	if !slices.Contains(modes, cfg.Tools.Mode) {
 		return fmt.Errorf("tools.mode %q: use full, compact or search", cfg.Tools.Mode)
+	}
+	imageModes := []render.Mode{render.ModeAuto, render.ModeKitty, render.ModeBlocks, render.ModeOff}
+	if !slices.Contains(imageModes, cfg.Render.Images) {
+		return fmt.Errorf("render.images %q: use auto, kitty, blocks or off", cfg.Render.Images)
+	}
+	if cfg.Context.Strategy != "compact" && cfg.Context.Strategy != "drop" {
+		return fmt.Errorf("context.strategy %q: use compact or drop", cfg.Context.Strategy)
 	}
 	if compactAt := *cfg.Context.CompactAt; compactAt < 0 || compactAt >= 1 {
 		return fmt.Errorf("context.compact_at %v: use a fraction from 0 (never) to below 1", compactAt)
@@ -237,6 +252,8 @@ func mergeHarmless(base, layer Config) Config {
 		base.Context.CompactAt = layer.Context.CompactAt
 	}
 	base.Context.CompactPrompt = override(base.Context.CompactPrompt, layer.Context.CompactPrompt)
+	base.Context.Strategy = override(base.Context.Strategy, layer.Context.Strategy)
+	base.Render.Images = override(base.Render.Images, layer.Render.Images)
 	return base
 }
 

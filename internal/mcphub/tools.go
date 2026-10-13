@@ -13,6 +13,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/jg/mo/internal/render"
 	"github.com/jg/mo/internal/tools"
 )
 
@@ -120,8 +121,16 @@ func (s *server) call(ctx context.Context, tool string, raw json.RawMessage) (st
 	return text, nil
 }
 
-// contentText renders a result as text. Images and audio are only named
-// until the terminal can show them.
+func savedImage(item *mcp.ImageContent) string {
+	marker, err := render.SaveImage(item.Data, item.MIMEType)
+	if err != nil {
+		return fmt.Sprintf("[image %s, %d bytes, not saved: %v]", item.MIMEType, len(item.Data), err)
+	}
+	return marker
+}
+
+// contentText renders a result as text. Images are saved to a file and
+// marked, so the UI draws them; audio is only named.
 func contentText(content []mcp.Content) string {
 	var parts []string
 	for _, item := range content {
@@ -129,7 +138,7 @@ func contentText(content []mcp.Content) string {
 		case *mcp.TextContent:
 			parts = append(parts, item.Text)
 		case *mcp.ImageContent:
-			parts = append(parts, fmt.Sprintf("[image %s, %d bytes]", item.MIMEType, len(item.Data)))
+			parts = append(parts, savedImage(item))
 		case *mcp.AudioContent:
 			parts = append(parts, fmt.Sprintf("[audio %s, %d bytes]", item.MIMEType, len(item.Data)))
 		case *mcp.ResourceLink:

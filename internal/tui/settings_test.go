@@ -17,6 +17,7 @@ package tui
 // | SD-13 | Edge     | A saved provider that is not found now stays selected and saved      | P0       |
 // | SD-14 | Happy    | With auto, a typed model becomes the top-level model                 | P1       |
 // | SD-15 | Edge     | A resize while the form is open refits it and the input              | P2       |
+// | SD-16 | Happy    | Choosing to drop old messages is saved; the default is not           | P1       |
 
 import (
 	"strings"
@@ -227,6 +228,19 @@ func TestSettingsEdges(t *testing.T) {
 		after := updated.(model)
 		if after.width != 60 || after.input.Width() > 60 || lipgloss.Height(after.settings.form.View()) > 18 {
 			t.Errorf("width = %d input = %d form height = %d", after.width, after.input.Width(), lipgloss.Height(after.settings.form.View()))
+		}
+	})
+}
+
+func TestStrategySetting(t *testing.T) {
+	t.Run("SD-16 choosing to drop old messages is saved; the default is not", func(t *testing.T) {
+		untouched, _ := defaultDraft().applyTo(config.Config{Provider: "llama-server"}, nil)
+		draft := defaultDraft()
+		draft.strategy = "drop"
+		dropping, _ := draft.applyTo(config.Config{Provider: "llama-server"}, nil)
+
+		if untouched.Context.Strategy != "" || dropping.Context.Strategy != "drop" {
+			t.Errorf("untouched = %q dropping = %q", untouched.Context.Strategy, dropping.Context.Strategy)
 		}
 	})
 }

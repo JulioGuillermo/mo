@@ -44,6 +44,7 @@ type Agent struct {
 	Window        int
 	CompactAt     float64
 	CompactPrompt string
+	Strategy      string
 
 	History   []llm.Message
 	LastUsage llm.Usage
@@ -73,7 +74,7 @@ func (a *Agent) Run(ctx context.Context, prompt string, hooks Hooks) error {
 	a.currentRequest = prompt
 	for {
 		if a.needsCompaction() {
-			a.compactOrGoOn(ctx, hooks)
+			a.makeRoom(ctx, hooks)
 		}
 		response, err := a.Provider.Stream(ctx, a.request(), func(event llm.Event) {
 			if hooks.OnEvent != nil {
@@ -183,9 +184,14 @@ func (a *Agent) TakeConversation(from *Agent) {
 	a.currentRequest = from.currentRequest
 }
 
-// compactOrGoOn compacts before a request. When that fails the turn goes on
-// uncompacted, and no new attempt is made until the conversation grows.
-func (a *Agent) compactOrGoOn(ctx context.Context, hooks Hooks) {
+// makeRoom shrinks the context before a request, by dropping the oldest
+// turns or by compacting. When compacting fails the turn goes on as it is,
+// and no new attempt is made until the conversation grows.
+func (a *Agent) makeRoom(ctx context.Context, hooks Hooks) {
+	if a.Strategy == StrategyDrop {
+		a.dropOldest(hooks)
+		return
+	}
 	err := a.Compact(ctx, hooks)
 	if err == nil || ctx.Err() != nil {
 		return

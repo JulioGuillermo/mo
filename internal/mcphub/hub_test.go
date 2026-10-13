@@ -8,7 +8,7 @@ package mcphub
 // | MH-04 | Security | Tools of untrusted servers need confirmation, trusted ones do not  | P0       |
 // | MH-05 | Error    | A server that fails to start is reported and adds no tools         | P1       |
 // | MH-06 | Edge     | Unsafe characters and long names are made acceptable to providers  | P2       |
-// | MH-07 | Happy    | Images and resource links are named in the text result             | P2       |
+// | MH-07 | Happy    | Images are saved and marked, resource links named, in the result   | P2       |
 // | MH-08 | Security | Tools whose names collide after cleaning each keep their own name  | P0       |
 // | MH-09 | Security | Close also stops the processes a stdio server started              | P0       |
 // | MH-10 | Edge     | ${NAME} reads the environment and any other $ stays as written     | P2       |
@@ -28,6 +28,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jg/mo/internal/config"
+	"github.com/jg/mo/internal/render"
 	"github.com/jg/mo/internal/tools"
 )
 
@@ -157,15 +158,20 @@ func TestNamesAndContent(t *testing.T) {
 		}
 	})
 
-	t.Run("MH-07 images and resource links are named in the text result", func(t *testing.T) {
+	t.Run("MH-07 images are saved and marked, resource links named, in the text result", func(t *testing.T) {
+		t.Setenv("TMPDIR", t.TempDir())
 		text := contentText([]mcp.Content{
 			&mcp.TextContent{Text: "see"},
 			&mcp.ImageContent{MIMEType: "image/png", Data: []byte("abc")},
 			&mcp.ResourceLink{Name: "doc", URI: "file:///doc"},
 		})
 
-		if text != "see\n[image image/png, 3 bytes]\n[doc](file:///doc)" {
-			t.Errorf("text = %q", text)
+		paths := render.MarkedImages(text)
+		if !strings.HasPrefix(text, "see\n[image image/png") || !strings.HasSuffix(text, "\n[doc](file:///doc)") || len(paths) != 1 {
+			t.Fatalf("text = %q", text)
+		}
+		if saved, err := os.ReadFile(paths[0]); err != nil || string(saved) != "abc" {
+			t.Errorf("saved = %q err = %v", saved, err)
 		}
 	})
 }
