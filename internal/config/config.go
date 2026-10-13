@@ -31,6 +31,7 @@ type Config struct {
 	Memory       Memory                    `toml:"memory,omitempty"`
 	Web          Web                       `toml:"web,omitempty"`
 	MCP          map[string]MCPServer      `toml:"mcp,omitempty"`
+	Skills       Skills                    `toml:"skills,omitempty"`
 	Render       Render                    `toml:"render,omitempty"`
 	Loop         Loop                      `toml:"loop,omitempty"`
 	Permissions  Permissions               `toml:"permissions,omitempty"`
@@ -39,13 +40,26 @@ type Config struct {
 }
 
 type Tools struct {
-	Mode         tools.Mode        `toml:"mode,omitempty"`
-	Load         tools.Load        `toml:"load,omitempty"`
-	AlwaysLoaded []string          `toml:"always_loaded,omitempty"`
-	Confirm      []string          `toml:"confirm,omitempty"`
-	Disabled     []string          `toml:"disabled,omitempty"`
+	Mode         tools.Mode `toml:"mode,omitempty"`
+	Load         tools.Load `toml:"load,omitempty"`
+	AlwaysLoaded []string   `toml:"always_loaded,omitempty"`
+	Confirm      []string   `toml:"confirm,omitempty"`
+	Disabled     []string   `toml:"disabled,omitempty"`
+	// MCPDisabled are MCP servers not started: set up in the user file,
+	// turned off everywhere or in one project.
+	MCPDisabled  []string          `toml:"mcp_disabled,omitempty"`
 	MaxOutput    int               `toml:"max_output,omitzero"`
 	Descriptions map[string]string `toml:"descriptions,omitempty"`
+}
+
+// Skills are folders with a SKILL.md the model may load. Mode shows them in
+// full (names and descriptions), compact (names) or search (found with
+// skill_list and skill_search). Dirs are more folders of skills besides
+// ~/.config/mo/skills and the project's .mo/skills.
+type Skills struct {
+	Mode     tools.Mode `toml:"mode,omitempty"`
+	Disabled []string   `toml:"disabled,omitempty"`
+	Dirs     []string   `toml:"dirs,omitempty"`
 }
 
 type Context struct {
@@ -175,6 +189,7 @@ func Defaults() Config {
 		},
 		Context:     Context{CompactAt: ptr(0.75), Strategy: "compact", KeepReasoning: ptr(false)},
 		Memory:      Memory{Dir: defaultMemoryDir()},
+		Skills:      Skills{Mode: tools.ModeFull},
 		Web:         Web{Search: web.SearchDuckDuckGo},
 		Render:      Render{Images: render.ModeAuto, Background: "#00081a", Sidebar: "auto"},
 		Loop:        Loop{Enabled: ptr(true), Replies: 10, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2)},
@@ -216,6 +231,9 @@ func validate(cfg Config) error {
 	modes := []tools.Mode{tools.ModeFull, tools.ModeCompact, tools.ModeSearch}
 	if !slices.Contains(modes, cfg.Tools.Mode) {
 		return fmt.Errorf("tools.mode %q: use full, compact or search", cfg.Tools.Mode)
+	}
+	if !slices.Contains(modes, cfg.Skills.Mode) {
+		return fmt.Errorf("skills.mode %q: use full, compact or search", cfg.Skills.Mode)
 	}
 	if cfg.Tools.Load != tools.LoadContext && cfg.Tools.Load != tools.LoadDeclare {
 		return fmt.Errorf("tools.load %q: use context or declare", cfg.Tools.Load)
@@ -325,6 +343,18 @@ func merge(base, layer Config) Config {
 	if layer.Tools.Disabled != nil {
 		base.Tools.Disabled = layer.Tools.Disabled
 	}
+	if layer.Tools.MCPDisabled != nil {
+		base.Tools.MCPDisabled = layer.Tools.MCPDisabled
+	}
+	if layer.Skills.Disabled != nil {
+		base.Skills.Disabled = layer.Skills.Disabled
+	}
+	if layer.Skills.Dirs != nil {
+		base.Skills.Dirs = nil
+		for _, dir := range layer.Skills.Dirs {
+			base.Skills.Dirs = append(base.Skills.Dirs, expandHome(dir))
+		}
+	}
 	for name, provider := range layer.Providers {
 		base.Providers[name] = mergeProvider(base.Providers[name], provider)
 	}
@@ -392,6 +422,8 @@ func mergeProject(base, layer Config) Config {
 	}
 	base.Tools.Confirm = union(base.Tools.Confirm, layer.Tools.Confirm)
 	base.Tools.Disabled = union(base.Tools.Disabled, layer.Tools.Disabled)
+	base.Tools.MCPDisabled = union(base.Tools.MCPDisabled, layer.Tools.MCPDisabled)
+	base.Skills.Disabled = union(base.Skills.Disabled, layer.Skills.Disabled)
 	for name, provider := range layer.Providers {
 		if known, ok := base.Providers[name]; ok {
 			known.Model = override(known.Model, provider.Model)
@@ -410,6 +442,7 @@ func mergeHarmless(base, layer Config) Config {
 	base.MaxTokens = override(base.MaxTokens, layer.MaxTokens)
 	base.Tools.Mode = override(base.Tools.Mode, layer.Tools.Mode)
 	base.Tools.Load = override(base.Tools.Load, layer.Tools.Load)
+	base.Skills.Mode = override(base.Skills.Mode, layer.Skills.Mode)
 	base.Tools.MaxOutput = override(base.Tools.MaxOutput, layer.Tools.MaxOutput)
 	if layer.Tools.AlwaysLoaded != nil {
 		base.Tools.AlwaysLoaded = layer.Tools.AlwaysLoaded
@@ -490,6 +523,25 @@ func override[T comparable](current, next T) T {
 		return current
 	}
 	return next
+}
+
+// ActiveMCP are the MCP servers to start: those set up and not turned off.
+func (c Config) ActiveMCP() map[string]MCPServer {
+	active := map[string]MCPServer{}
+	for name, server := range c.MCP {
+		if !slices.Contains(c.Tools.MCPDisabled, name) {
+			active[name] = server
+		}
+	}
+	return active
+}
+
+// SkillDirs are the folders skills are found in, the later winning a name
+// found twice: the user's, those added in the settings, the project's.
+func (c Config) SkillDirs(workDir string) []string {
+	dirs := []string{filepath.Join(ConfigHome(), "mo", "skills")}
+	dirs = append(dirs, c.Skills.Dirs...)
+	return append(dirs, filepath.Join(ProjectDir(workDir), "skills"))
 }
 
 // SessionDir is where conversations are saved to resume them.

@@ -53,7 +53,7 @@ func (r *Registry) Specs(history []llm.Message) []llm.ToolSpec {
 			continue
 		}
 		spec := llm.ToolSpec{Name: tool.Name, Description: tool.Description, Schema: tool.Schema}
-		if r.options.Mode == ModeCompact {
+		if r.options.Mode == ModeCompact && !isSkillTool(tool.Name) {
 			spec.Description = ""
 			spec.Schema = withoutDescriptions(tool.Schema)
 		}
@@ -63,7 +63,7 @@ func (r *Registry) Specs(history []llm.Message) []llm.ToolSpec {
 }
 
 func (r *Registry) visible(name string, found map[string]bool) bool {
-	if r.options.Mode != ModeSearch || isSearchTool(name) {
+	if r.options.Mode != ModeSearch || isMetaTool(name) {
 		return true
 	}
 	return slices.Contains(r.options.AlwaysLoaded, name) || found[name]
@@ -178,7 +178,7 @@ func (r *Registry) Unwrap(call llm.ToolCall) (llm.ToolCall, bool, error) {
 	if !json.Valid(args.Args) {
 		return call, true, errors.New("tool_call: args must be a JSON object")
 	}
-	if _, ok := r.find(args.Name); !ok || isSearchTool(args.Name) {
+	if _, ok := r.find(args.Name); !ok || isMetaTool(args.Name) {
 		return call, true, fmt.Errorf("tool_call: no tool %q; tool_list names them", args.Name)
 	}
 	return llm.ToolCall{ID: call.ID, Name: args.Name, Args: args.Args}, true, nil
@@ -191,7 +191,7 @@ func (r *Registry) list(filter string) string {
 	var names []string
 	for _, tool := range r.tools {
 		text := strings.ToLower(tool.Name + " " + tool.Description)
-		if isSearchTool(tool.Name) || !containsAll(text, words) {
+		if isMetaTool(tool.Name) || !containsAll(text, words) {
 			continue
 		}
 		names = append(names, tool.Name)
@@ -241,7 +241,7 @@ func (r *Registry) match(query string) []Tool {
 	if names, isSelect := strings.CutPrefix(strings.TrimSpace(query), "select:"); isSelect {
 		var selected []Tool
 		for _, name := range strings.Split(names, ",") {
-			if tool, ok := r.find(strings.TrimSpace(name)); ok && !isSearchTool(tool.Name) {
+			if tool, ok := r.find(strings.TrimSpace(name)); ok && !isMetaTool(tool.Name) {
 				selected = append(selected, tool)
 			}
 		}
@@ -254,7 +254,7 @@ func (r *Registry) match(query string) []Tool {
 	}
 	var ranked []scored
 	for _, tool := range r.tools {
-		if isSearchTool(tool.Name) {
+		if isMetaTool(tool.Name) {
 			continue
 		}
 		text := strings.ToLower(tool.Name + " " + tool.Description)

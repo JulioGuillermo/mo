@@ -70,8 +70,8 @@ Anthropic forbids using Claude subscription tokens outside its own apps. Claude 
 read when that does not exist). Each layer overrides only what it sets.
 
 `/settings` has two screens, switched with tab: **Global**, for every project, and **This project**
-(`/settings project`), which shows only what a project can override (provider and model, tools,
-context, loop guard) and marks each value `● this project` or `· global`. What the project does not
+(`/settings project`), which shows only what a project can override (provider and model, tools
+and MCP servers on or off, skills, context, loop guard) and marks each value `● this project` or `· global`. What the project does not
 set follows Global, also when Global changes later. Providers, MCP servers, web search, memory,
 notifications and display are only global. The project's permission rules are edited there too,
 but kept in the user file for that folder, so a repository never brings its own `allow` rules.
@@ -98,10 +98,16 @@ always_loaded = ["read", "edit", "write", "bash", "ask", "recall"]   # search mo
 confirm = ["bash", "rm", "fetch"]   # ask before these; [] never asks. A list of your own
                                     # replaces this one: keep "fetch" in it to be asked
 disabled = []              # e.g. ["mkdir", "ls"] to save context
+mcp_disabled = []          # MCP servers set up but not started, e.g. ["docs"]
 max_output = 10000         # bytes of tool output sent to the model
 
 [tools.descriptions]       # replace what the model reads about a tool; "" sends none
 grep = "Regex search in files."
+
+[skills]
+mode = "full"              # full: names and what each is for · compact: names · search: skill_list/skill_search
+disabled = []              # skills the model does not get
+dirs = []                  # more folders of skills, e.g. ["~/.claude/skills"]
 
 [context]
 window = 0                 # 0: ask llama-server, else 32768 (local) / 200000 (anthropic)
@@ -194,6 +200,27 @@ Changes outside the working directory, to mo's config, under `.git` or to hidden
 always ask, even with `-y` or after answering "always", in every mode but `all`. So do changes to
 global memories.
 
+## Skills
+
+A skill is a folder with a `SKILL.md`: front matter with `name` and `description`, then the
+instructions, and any other files they refer to. mo looks in `~/.config/mo/skills/`, in the folders
+of `skills.dirs` (`~/.claude/skills` works as is), and in the project's `.mo/skills/`, which wins
+for a name found twice.
+
+```markdown
+---
+name: release
+description: Cut a release: changelog, tag and the GitHub release
+---
+1. ...
+```
+
+With at least one skill on, the model gets a `skill` tool that loads one: its instructions, its
+folder and the list of its other files. `skills.mode` says how it learns what there is: `full` puts
+every name with its description in that tool's description, `compact` only the names, `search`
+adds `skill_list` and `skill_search` to find them. Without skills, or with every one off, no skill
+tool is sent. `/settings › Skills` turns skills off and picks the mode, globally or per project.
+
 ## Conversations
 
 Every conversation is saved after each turn in `~/.local/share/mo/sessions/`, readable by you only.
@@ -267,7 +294,8 @@ trust = true               # run its tools without asking
 
 Their tools are named `mcp__<server>__<tool>` and ask before running unless the server has
 `trust = true`. In `search` tool mode they stay out of the context until the model looks for them.
-`/mcp` shows which servers answered and edits them. A server's stderr goes to `~/.local/share/mo/logs/mcp-<name>.log`.
+`/mcp` shows which servers answered and edits them. `/settings › Tools › MCP servers off` stops
+one without deleting it, everywhere or only in a project. A server's stderr goes to `~/.local/share/mo/logs/mcp-<name>.log`.
 `[web]` and `[mcp]` are read from the user file only, never from a project's `.mo/settings.toml`.
 
 ## Images and diagrams

@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"image/color"
+	"maps"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -44,6 +46,8 @@ type Session struct {
 	MCP       []mcphub.Status
 	Plugins   *plugins.Set
 	ToolNames []string
+	// Skills names every skill found, also the ones turned off.
+	Skills []string
 
 	ToolDescriptions map[string]string
 
@@ -569,7 +573,7 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		return m, printText(m.printer.Note(pluginReport(m.session.Plugins)))
 	case "mcp":
 		m.settingsInFlight = true
-		return m, tea.Sequence(printText(m.printer.Note(mcpReport(m.session.MCP))), loadSettings(m.session, mcpSettings))
+		return m, tea.Sequence(printText(m.printer.Note(mcpReport(m.session.MCP, m.session.Config))), loadSettings(m.session, mcpSettings))
 	case "compact":
 		return m.start(printText(m.printer.Note("compacting…")), m.session.Agent.Compact)
 	}
@@ -1063,11 +1067,16 @@ func pluginReport(loaded *plugins.Set) string {
 	return strings.Join(lines, "\n")
 }
 
-func mcpReport(statuses []mcphub.Status) string {
-	if len(statuses) == 0 {
+func mcpReport(statuses []mcphub.Status, cfg config.Config) string {
+	var lines []string
+	for _, name := range slices.Sorted(maps.Keys(cfg.MCP)) {
+		if slices.Contains(cfg.Tools.MCPDisabled, name) {
+			lines = append(lines, fmt.Sprintf("○ %s: off · /settings › Tools turns it on", name))
+		}
+	}
+	if len(statuses)+len(lines) == 0 {
 		return "no MCP servers yet"
 	}
-	var lines []string
 	for _, status := range statuses {
 		if status.Err != nil {
 			lines = append(lines, fmt.Sprintf("✗ %s: %v", status.Name, status.Err))

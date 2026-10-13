@@ -10,9 +10,12 @@ package tui
 // | SP-06 | Security | mo warns at start when a project file it does not trust is held back             | P1       |
 // | SP-07 | Happy    | The project's permissions are kept in the user file for this folder              | P1       |
 // | SP-08 | Happy    | /settings project opens the project screen                                       | P2       |
+// | SP-09 | Happy    | The project turns an MCP server off for itself, saved as tools.mcp_disabled      | P0       |
+// | SP-10 | Happy    | The Skills section lists what was found, and says how to add skills when none    | P1       |
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -218,6 +221,42 @@ func TestProjectSettings(t *testing.T) {
 
 		if !strings.Contains(opened.(model).settings.form.View(), ".mo/settings.toml · what is set here wins") {
 			t.Errorf("view:\n%s", opened.(model).settings.form.View())
+		}
+	})
+
+	t.Run("SP-09 the project turns an MCP server off for itself, saved as tools.mcp_disabled", func(t *testing.T) {
+		m, menu, _ := projectMenuModel(t, "[mcp.docs]\nurl = \"https://example.com/mcp\"\n", "")
+		switched, _ := m.switchScope(menu)
+		section := projectSections()[1]
+		items := overridable(section.items(switched.(model), menu))
+		index := slices.IndexFunc(items, func(item settingItem) bool { return item.title == "MCP servers off" })
+		if index < 0 {
+			t.Fatalf("no MCP item in %v", items)
+		}
+		opened, _ := switched.(model).editItem(menu, section, items[index])
+		menu.project.draft.mcpDisabled = []string{"docs"}
+		listed, _ := opened.(model).settings.next(opened.(model))
+
+		save(t, listed.(model), menu)
+
+		project, _ := config.ReadProject(m.session.WorkDir)
+		user, _ := config.ReadUserLayer()
+		if !slices.Equal(project.Layer.Tools.MCPDisabled, []string{"docs"}) || user.Tools.MCPDisabled != nil {
+			t.Errorf("project %v user %v", project.Layer.Tools.MCPDisabled, user.Tools.MCPDisabled)
+		}
+	})
+
+	t.Run("SP-10 the Skills section lists what was found, and says how to add skills when none", func(t *testing.T) {
+		m, menu, _ := projectMenuModel(t, "", "")
+		empty, _ := m.openMenuChoice(menu, "skills")
+		m.session.Skills = []string{"pdf", "deploy"}
+		found, _ := m.openMenuChoice(menu, "skills")
+
+		if view := empty.(model).settings.form.View(); !strings.Contains(view, "No skills found") || strings.Contains(view, "Skills off") {
+			t.Errorf("empty:\n%s", view)
+		}
+		if view := found.(model).settings.form.View(); !strings.Contains(view, "2 found: pdf, deploy") || !strings.Contains(view, "Skills off") {
+			t.Errorf("found:\n%s", view)
 		}
 	})
 }

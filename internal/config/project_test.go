@@ -9,6 +9,9 @@ package config
 // | PJ-05 | Happy    | Saving a project layer that sets nothing removes the file and .mo/         | P1       |
 // | PJ-06 | Happy    | LoadLayers applies the project layer given as trusted                      | P1       |
 // | PJ-07 | Happy    | ProjectSets counts a provider's model as the model                         | P2       |
+// | PJ-08 | Happy    | An MCP server turned off is not started; a project turns more off          | P0       |
+// | PJ-09 | Security | An untrusted project only turns servers and skills off; a trusted one may turn them on | P0 |
+// | PJ-10 | Happy    | Skills are looked for in the user's folder, the added ones, then the project's | P1   |
 
 import (
 	"os"
@@ -130,6 +133,54 @@ func TestProjectFile(t *testing.T) {
 
 		if !set["model"] || !set["tools.confirm"] || set["provider"] || len(set) != 2 {
 			t.Errorf("set = %v", set)
+		}
+	})
+
+	t.Run("PJ-08 an MCP server turned off is not started; a project turns more off", func(t *testing.T) {
+		configHome := isolatedHome(t)
+		writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), "[tools]\nmcp_disabled = [\"a\"]\n[mcp.a]\ncommand = \"x\"\n[mcp.b]\ncommand = \"y\"\n[mcp.c]\ncommand = \"z\"\n")
+		workDir := t.TempDir()
+		writeConfig(t, ProjectFile(workDir), "[tools]\nmcp_disabled = [\"b\"]\n")
+
+		cfg, err := Load(workDir)
+
+		active := cfg.ActiveMCP()
+		if err != nil || len(active) != 1 || active["c"].Command != "z" || len(cfg.MCP) != 3 {
+			t.Errorf("active = %v err %v", active, err)
+		}
+	})
+
+	t.Run("PJ-09 an untrusted project only turns servers and skills off; a trusted one may turn them on", func(t *testing.T) {
+		configHome := isolatedHome(t)
+		writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), "[tools]\nmcp_disabled = [\"a\"]\n[skills]\ndisabled = [\"pdf\"]\n")
+		cloned, mine := t.TempDir(), t.TempDir()
+		writeConfig(t, ProjectFile(cloned), "[tools]\nmcp_disabled = []\n[skills]\ndisabled = []\nmode = \"search\"\n")
+		if err := SaveProject(mine, Config{Tools: Tools{MCPDisabled: []string{}}, Skills: Skills{Disabled: []string{}}}); err != nil {
+			t.Fatal(err)
+		}
+
+		untrusted, _ := Load(cloned)
+		trusted, _ := Load(mine)
+
+		if len(untrusted.Tools.MCPDisabled) != 1 || len(untrusted.Skills.Disabled) != 1 || untrusted.Skills.Mode != "search" {
+			t.Errorf("untrusted = %+v %+v", untrusted.Tools.MCPDisabled, untrusted.Skills)
+		}
+		if len(trusted.Tools.MCPDisabled) != 0 || len(trusted.Skills.Disabled) != 0 {
+			t.Errorf("trusted = %+v %+v", trusted.Tools.MCPDisabled, trusted.Skills)
+		}
+	})
+
+	t.Run("PJ-10 skills are looked for in the user's folder, the added ones, then the project's", func(t *testing.T) {
+		configHome := isolatedHome(t)
+		home, _ := os.UserHomeDir()
+		writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), "[skills]\ndirs = [\"~/.claude/skills\"]\n")
+		workDir := t.TempDir()
+
+		cfg, _ := Load(workDir)
+
+		want := []string{filepath.Join(configHome, "mo", "skills"), filepath.Join(home, ".claude", "skills"), filepath.Join(workDir, ".mo", "skills")}
+		if dirs := cfg.SkillDirs(workDir); !slices.Equal(dirs, want) {
+			t.Errorf("dirs = %v", dirs)
 		}
 	})
 }

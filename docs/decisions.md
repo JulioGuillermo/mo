@@ -634,3 +634,22 @@
   written, and so trusted, only once its screen has been opened.
 - The model is written as the top-level `model`, whatever provider it belongs to, and a project's
   per-provider models are folded into it on save.
+
+## Skills, and turning MCP servers off
+
+- A skill is a folder with a SKILL.md, the format other agents use, so `~/.claude/skills` can be
+  added to `skills.dirs` and read as is. Only the `name` and `description` keys of the front
+  matter are read, with a small reader instead of a YAML library: plain, quoted and block values.
+- Skills reach the model through a tool, not the system prompt: the prompt stays the same, and a
+  conversation without skills carries nothing about them. `skill` is declared only when at least
+  one skill is on; in search mode `skill_list` and `skill_search` come with it. They are declared
+  in every tool mode, compact keeps the list in `skill`'s description, and `tool_list` and
+  `tool_search` leave them out, as they are not tools to look for.
+- `skills.mode` is apart from `tools.mode`: many skills with few tools, or the other way, are
+  both common.
+- Loading a skill only reads its files, so it never asks. Project skills come with the
+  repository like any file the model reads; they cannot run anything by themselves.
+- `tools.mcp_disabled` turns a server off without deleting its settings, so a project can drop
+  the servers it does not need. Off servers are not started at all, and `/mcp` lists them.
+  Turning off is harmless, so any project file may add to `mcp_disabled` and `skills.disabled`;
+  only a trusted one may turn on what the user turned off. `skills.dirs` is user-only.

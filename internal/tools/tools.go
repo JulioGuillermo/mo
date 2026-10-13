@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/skills"
 	"github.com/jg/mo/internal/web"
 )
 
@@ -68,6 +69,10 @@ type Options struct {
 	Descriptions map[string]string
 	Searcher     web.Searcher
 	Extra        []Tool
+	// Skills are the skills the model may load, shown as SkillMode says;
+	// without any there are no skill tools.
+	Skills    []skills.Skill
+	SkillMode Mode
 }
 
 type Registry struct {
@@ -90,6 +95,7 @@ func NewRegistry(env Env, options Options) *Registry {
 	if options.Mode == ModeSearch {
 		registry.tools = append(registry.tools, searchTools(registry)...)
 	}
+	registry.tools = append(registry.tools, skillTools(options.Skills, options.SkillMode)...)
 	return registry
 }
 
@@ -103,9 +109,9 @@ func BuiltinDescriptions() map[string]string {
 }
 
 // ReservedNames are the names no added tool may take: the built-in tools
-// and tool_search.
+// and the search and skill tools.
 func ReservedNames() []string {
-	return append(BuiltinNames(), searchToolName, listToolName, callToolName)
+	return append(BuiltinNames(), searchToolName, listToolName, callToolName, skillToolName, skillListToolName, skillSearchToolName)
 }
 
 func BuiltinNames() []string {

@@ -13,6 +13,7 @@ import (
 	"github.com/jg/mo/internal/mcphub"
 	"github.com/jg/mo/internal/permissions"
 	"github.com/jg/mo/internal/plugins"
+	"github.com/jg/mo/internal/skills"
 	"github.com/jg/mo/internal/tools"
 	"github.com/jg/mo/internal/tui"
 	"github.com/jg/mo/internal/web"
@@ -87,7 +88,10 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	env := toolEnv(workDir, cfg.Memory.Dir)
 	env.Jobs = loaded.jobs
 	env.Recall = loaded.recall
+	found := skills.Find(cfg.SkillDirs(workDir))
 	registry := tools.NewRegistry(env, tools.Options{
+		Skills:       skills.Without(found, cfg.Skills.Disabled),
+		SkillMode:    cfg.Skills.Mode,
 		Searcher:     searcher,
 		Extra:        extraTools(hub, loaded.plugins),
 		Mode:         cfg.Tools.Mode,
@@ -135,11 +139,11 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		if err != nil {
 			return tui.Session{}, err
 		}
-		if reflect.DeepEqual(fresh.MCP, cfg.MCP) {
+		if reflect.DeepEqual(fresh.ActiveMCP(), cfg.ActiveMCP()) {
 			return buildSession(context.Background(), workDir, fresh, sessionChoice{yes: choice.yes}, loaded)
 		}
 		next := loaded
-		next.mcp = mcphub.Connect(context.Background(), fresh.MCP, config.LogDir())
+		next.mcp = mcphub.Connect(context.Background(), fresh.ActiveMCP(), config.LogDir())
 		session, err := buildSession(context.Background(), workDir, fresh, sessionChoice{yes: choice.yes}, next)
 		if err != nil {
 			next.mcp.Close()
@@ -159,6 +163,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		MCP:       hub.Status(),
 		Plugins:   loaded.plugins,
 		ToolNames: allToolNames(hub, loaded.plugins),
+		Skills:    skills.Names(found),
 
 		ToolDescriptions: toolDescriptions(hub, loaded.plugins),
 	}, nil

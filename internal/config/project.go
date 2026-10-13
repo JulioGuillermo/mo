@@ -140,7 +140,8 @@ func trust(path string, data []byte) error {
 
 // WithProject applies a project file the user trusts: besides what any
 // project file may change, it picks any provider, even one with a key, and
-// says which tools to confirm or disable instead of only adding to them.
+// says which tools to confirm or disable, and which MCP servers and skills
+// to turn off, instead of only adding to them.
 // Provider addresses and keys, the web, MCP and the memory stay the user's.
 func WithProject(base, layer Config) Config {
 	base.Providers = cloneProviders(base.Providers)
@@ -151,6 +152,12 @@ func WithProject(base, layer Config) Config {
 	}
 	if layer.Tools.Disabled != nil {
 		base.Tools.Disabled = slices.Clone(layer.Tools.Disabled)
+	}
+	if layer.Tools.MCPDisabled != nil {
+		base.Tools.MCPDisabled = slices.Clone(layer.Tools.MCPDisabled)
+	}
+	if layer.Skills.Disabled != nil {
+		base.Skills.Disabled = slices.Clone(layer.Skills.Disabled)
 	}
 	return base
 }
@@ -173,7 +180,8 @@ func EffectiveModel(cfg Config) string {
 // screen, by their names in the file.
 var ProjectKeys = []string{
 	"provider", "model", "max_tokens", "system_prompt",
-	"tools.mode", "tools.load", "tools.always_loaded", "tools.confirm", "tools.disabled", "tools.max_output",
+	"tools.mode", "tools.load", "tools.always_loaded", "tools.confirm", "tools.disabled", "tools.mcp_disabled", "tools.max_output",
+	"skills.mode", "skills.disabled",
 	"context.window", "context.compact_at", "context.compact_prompt", "context.strategy", "context.keep_reasoning",
 	"loop.enabled", "loop.replies", "loop.repeats", "loop.stream_repeats", "loop.warnings",
 }
@@ -184,6 +192,7 @@ func projectField(cfg *Config, key string) reflect.Value {
 		"provider": &cfg.Provider, "model": &cfg.Model, "max_tokens": &cfg.MaxTokens, "system_prompt": &cfg.SystemPrompt,
 		"tools.mode": &cfg.Tools.Mode, "tools.load": &cfg.Tools.Load, "tools.always_loaded": &cfg.Tools.AlwaysLoaded,
 		"tools.confirm": &cfg.Tools.Confirm, "tools.disabled": &cfg.Tools.Disabled, "tools.max_output": &cfg.Tools.MaxOutput,
+		"tools.mcp_disabled": &cfg.Tools.MCPDisabled, "skills.mode": &cfg.Skills.Mode, "skills.disabled": &cfg.Skills.Disabled,
 		"context.window": &cfg.Context.Window, "context.compact_at": &cfg.Context.CompactAt,
 		"context.compact_prompt": &cfg.Context.CompactPrompt, "context.strategy": &cfg.Context.Strategy,
 		"context.keep_reasoning": &cfg.Context.KeepReasoning,

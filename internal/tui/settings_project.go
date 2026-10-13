@@ -46,6 +46,9 @@ var projectFields = map[string]projectField{
 	"Loaded from the start in search mode": {"tools.always_loaded", func(d *settingsDraft) any { return &d.alwaysLoaded }},
 	"Ask before running":                   {"tools.confirm", func(d *settingsDraft) any { return &d.confirm }},
 	"Disabled":                             {"tools.disabled", func(d *settingsDraft) any { return &d.disabled }},
+	"MCP servers off":                      {"tools.mcp_disabled", func(d *settingsDraft) any { return &d.mcpDisabled }},
+	"Skill mode":                           {"skills.mode", func(d *settingsDraft) any { return &d.skillMode }},
+	"Skills off":                           {"skills.disabled", func(d *settingsDraft) any { return &d.skillsDisabled }},
 	"Max tool output (bytes)":              {"tools.max_output", func(d *settingsDraft) any { return &d.maxOutput }},
 	"Context window (tokens)":              {"context.window", func(d *settingsDraft) any { return &d.window }},
 	"Make room at":                         {"context.compact_at", func(d *settingsDraft) any { return &d.compactAt }},
@@ -62,7 +65,7 @@ var projectFields = map[string]projectField{
 
 // projectSectionKeys are the sections of the project screen, besides its
 // permissions.
-var projectSectionKeys = []string{"model", "tools", "context", "loop"}
+var projectSectionKeys = []string{"model", "tools", "context", "loop", "skills"}
 
 // projectSettings is the project screen: a draft that is the global one with
 // what the project sets on top, and which settings those are.

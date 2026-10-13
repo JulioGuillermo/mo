@@ -25,6 +25,7 @@ type settingsDraft struct {
 	alwaysLoaded  []string
 	confirm       []string
 	disabled      []string
+	mcpDisabled   []string
 	maxOutput     string
 	window        string
 	compactAt     string
@@ -48,6 +49,10 @@ type settingsDraft struct {
 	background   string
 	sidebar      string
 	memoryDir    string
+
+	skillMode      string
+	skillsDisabled []string
+	skillDirs      string
 
 	loopEnabled       bool
 	loopReplies       string
@@ -95,6 +100,7 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		alwaysLoaded:  slices.Clone(cfg.Tools.AlwaysLoaded),
 		confirm:       slices.Clone(cfg.Tools.Confirm),
 		disabled:      slices.Clone(cfg.Tools.Disabled),
+		mcpDisabled:   slices.Clone(cfg.Tools.MCPDisabled),
 		maxOutput:     strconv.Itoa(cfg.Tools.MaxOutput),
 		window:        strconv.Itoa(cfg.Context.Window),
 		compactAt:     strconv.FormatFloat(*cfg.Context.CompactAt, 'f', -1, 64),
@@ -113,6 +119,10 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		images:        string(cfg.Render.Images),
 		background:    cfg.Render.Background,
 		sidebar:       cfg.Render.Sidebar,
+
+		skillMode:      string(cfg.Skills.Mode),
+		skillsDisabled: slices.Clone(cfg.Skills.Disabled),
+		skillDirs:      strings.Join(cfg.Skills.Dirs, "\n"),
 
 		loopEnabled:       *cfg.Loop.Enabled,
 		loopReplies:       strconv.Itoa(cfg.Loop.Replies),
@@ -188,6 +198,12 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	layer.Tools.AlwaysLoaded = unlessDefaultList(d.alwaysLoaded, defaults.Tools.AlwaysLoaded)
 	layer.Tools.Confirm = unlessDefaultList(d.confirm, defaults.Tools.Confirm)
 	layer.Tools.Disabled = unlessDefaultList(d.disabled, defaults.Tools.Disabled)
+	layer.Tools.MCPDisabled = unlessDefaultList(d.mcpDisabled, defaults.Tools.MCPDisabled)
+	layer.Skills = config.Skills{
+		Mode:     unlessDefault(tools.Mode(d.skillMode), defaults.Skills.Mode),
+		Disabled: unlessDefaultList(d.skillsDisabled, defaults.Skills.Disabled),
+		Dirs:     ruleLines(d.skillDirs),
+	}
 	layer.Tools.MaxOutput = unlessDefault(maxOutput, defaults.Tools.MaxOutput)
 	layer.Tools.Descriptions = d.changedDescriptions()
 	layer.Context.Window = window
@@ -474,6 +490,8 @@ func (d *settingsDraft) snapshot() func() {
 	saved.alwaysLoaded = slices.Clone(d.alwaysLoaded)
 	saved.confirm = slices.Clone(d.confirm)
 	saved.disabled = slices.Clone(d.disabled)
+	saved.mcpDisabled = slices.Clone(d.mcpDisabled)
+	saved.skillsDisabled = slices.Clone(d.skillsDisabled)
 	texts := map[string]string{}
 	for name, text := range d.descriptions {
 		texts[name] = *text

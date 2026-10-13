@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"charm.land/huh/v2"
@@ -54,6 +56,7 @@ var settingsSections = []settingsSection{
 		}
 		return fmt.Sprintf("on · same call %s× · same text %s×", d.loopRepeats, d.loopStreamRepeats)
 	}, items: loopItems},
+	{key: "skills", title: "Skills", summary: skillsSummary, note: skillsNote, items: skillItems},
 	{key: "web", title: "Web search", summary: func(d *settingsDraft) string { return d.search }, items: webItems},
 	{key: "permissions", title: "Permissions", summary: func(d *settingsDraft) string {
 		return fmt.Sprintf("%s · %d allowed · %d never", d.permMode, len(ruleLines(d.allow)), len(ruleLines(d.deny)))
@@ -112,14 +115,14 @@ func modelNote(_ model, menu *settingsMenu) string {
 	return strings.Join(notes, "\n")
 }
 
-func toolItems(m model, _ *settingsMenu) []settingItem {
+func toolItems(m model, menu *settingsMenu) []settingItem {
 	names := toolNames(m.session)
 	choice := func(title string, value func(d *settingsDraft) *[]string) settingItem {
 		return settingItem{title, func(d *settingsDraft) string { return listValue(*value(d)) }, func(d *settingsDraft) huh.Field {
 			return toolChoice(title, names, value(d))
 		}}
 	}
-	return []settingItem{
+	items := []settingItem{
 		{"Tool mode", func(d *settingsDraft) string { return d.mode }, func(d *settingsDraft) huh.Field {
 			return huh.NewSelect[string]().Title("Tool mode").Options(
 				huh.NewOption("full: every tool with its description", string(tools.ModeFull)),
@@ -136,10 +139,67 @@ func toolItems(m model, _ *settingsMenu) []settingItem {
 		choice("Loaded from the start in search mode", func(d *settingsDraft) *[]string { return &d.alwaysLoaded }),
 		choice("Ask before running", func(d *settingsDraft) *[]string { return &d.confirm }),
 		choice("Disabled", func(d *settingsDraft) *[]string { return &d.disabled }),
+	}
+	if servers := mcpNames(m, menu); len(servers) > 0 {
+		items = append(items, settingItem{"MCP servers off", func(d *settingsDraft) string { return listValue(d.mcpDisabled) }, func(d *settingsDraft) huh.Field {
+			return toolChoice("MCP servers off", servers, &d.mcpDisabled).Description("not started: their tools are gone")
+		}})
+	}
+	return append(items, []settingItem{
 		{"Max tool output (bytes)", func(d *settingsDraft) string { return d.maxOutput }, func(d *settingsDraft) huh.Field {
 			return huh.NewInput().Title("Max tool output (bytes)").Validate(validCount).Value(&d.maxOutput)
 		}},
+	}...)
+}
+
+// mcpNames are the MCP servers set up, as the menu edits them, and those
+// turned off already, so ticking one off never loses it.
+func mcpNames(m model, menu *settingsMenu) []string {
+	names := slices.Collect(maps.Keys(m.session.Config.MCP))
+	if menu != nil {
+		names = append(names, slices.Collect(maps.Keys(menu.layer.MCP))...)
+		names = append(names, menu.draft.mcpDisabled...)
 	}
+	slices.Sort(names)
+	return slices.Compact(names)
+}
+
+func skillsSummary(d *settingsDraft) string {
+	return d.skillMode + " · off: " + listValue(d.skillsDisabled)
+}
+
+func skillsNote(m model, _ *settingsMenu) string {
+	if len(m.session.Skills) == 0 {
+		return "No skills found: add folders with a SKILL.md to ~/.config/mo/skills or the project's .mo/skills.\nWithout skills the model gets no skill tools."
+	}
+	return fmt.Sprintf("%d found: %s", len(m.session.Skills), strings.Join(m.session.Skills, ", "))
+}
+
+func skillItems(m model, menu *settingsMenu) []settingItem {
+	items := []settingItem{
+		{"Skill mode", func(d *settingsDraft) string { return d.skillMode }, func(d *settingsDraft) huh.Field {
+			return huh.NewSelect[string]().Title("Skill mode").Description("how the model learns which skills there are").Options(
+				huh.NewOption("full: every skill with what it is for, in the skill tool", string(tools.ModeFull)),
+				huh.NewOption("compact: only their names", string(tools.ModeCompact)),
+				huh.NewOption("search: found with skill_list and skill_search", string(tools.ModeSearch)),
+			).Value(&d.skillMode)
+		}},
+	}
+	names := slices.Clone(m.session.Skills)
+	if menu != nil {
+		names = append(names, menu.draft.skillsDisabled...)
+	}
+	slices.Sort(names)
+	if names = slices.Compact(names); len(names) > 0 {
+		items = append(items, settingItem{"Skills off", func(d *settingsDraft) string { return listValue(d.skillsDisabled) }, func(d *settingsDraft) huh.Field {
+			return toolChoice("Skills off", names, &d.skillsDisabled)
+		}})
+	}
+	return append(items, settingItem{"More skill folders", func(d *settingsDraft) string { return orDefault(textValue(d.skillDirs), "none") }, func(d *settingsDraft) huh.Field {
+		return huh.NewText().Title("More skill folders").
+			Description("one per line, each holding skill folders, e.g. ~/.claude/skills\nbesides ~/.config/mo/skills and the project's .mo/skills").
+			Lines(6).Value(&d.skillDirs)
+	}})
 }
 
 func contextItems(model, *settingsMenu) []settingItem {

@@ -97,11 +97,12 @@ func startJobs(loaded *extensions) func() {
 // reports the ones that failed. They are connected once per run: settings
 // changes keep the same servers.
 func connectMCP(ctx context.Context, cfg config.Config) *mcphub.Hub {
-	if len(cfg.MCP) == 0 {
+	servers := cfg.ActiveMCP()
+	if len(servers) == 0 {
 		return mcphub.Connect(ctx, nil, "")
 	}
-	fmt.Fprintf(os.Stderr, "connecting to %d MCP server(s)…\n", len(cfg.MCP))
-	hub := mcphub.Connect(ctx, cfg.MCP, config.LogDir())
+	fmt.Fprintf(os.Stderr, "connecting to %d MCP server(s)…\n", len(servers))
+	hub := mcphub.Connect(ctx, servers, config.LogDir())
 	for _, status := range hub.Status() {
 		if status.Err != nil {
 			fmt.Fprintf(os.Stderr, "mo: MCP %s: %v\n", status.Name, status.Err)
