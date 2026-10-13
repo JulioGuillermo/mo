@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"regexp"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -50,11 +51,14 @@ func (m model) click(x, y int) (tea.Model, tea.Cmd) {
 
 // clickSettings picks the option of a settings list that was clicked: it
 // moves huh's cursor there and presses enter, as huh takes no mouse.
-func (m model) clickSettings(y int) (tea.Model, tea.Cmd) {
+func (m model) clickSettings(x, y int) (tea.Model, tea.Cmd) {
+	lines := strings.Split(ansi.Strip(m.settings.form.View()), "\n")
+	if _, isConfirm := m.settings.form.GetFocusedField().(*huh.Confirm); isConfirm && y >= 0 && y < len(lines) {
+		return m.clickButton(lines[y], x)
+	}
 	if _, isList := m.settings.form.GetFocusedField().(*huh.Select[string]); !isList {
 		return m, nil
 	}
-	lines := strings.Split(ansi.Strip(m.settings.form.View()), "\n")
 	if y < 0 || y >= len(lines) || !isOptionLine(lines[y]) {
 		return m, nil
 	}
@@ -77,6 +81,27 @@ func (m model) clickSettings(y int) (tea.Model, tea.Cmd) {
 	}
 	return current.(model).updateSettings(tea.KeyPressMsg{Code: tea.KeyEnter})
 }
+
+// clickButton presses the button of a yes/no question under the pointer:
+// the first accepts and the second rejects, as y and n do. Buttons are
+// words, single spaces allowed, apart from others by two or more.
+func (m model) clickButton(line string, x int) (tea.Model, tea.Cmd) {
+	line = strings.NewReplacer("┃", " ", "│", " ").Replace(line)
+	for index, at := range buttonText.FindAllStringIndex(line, 2) {
+		left, right := ansi.StringWidth(line[:at[0]]), ansi.StringWidth(line[:at[1]])
+		if x < left-2 || x >= right+2 {
+			continue
+		}
+		key := "y"
+		if index == 1 {
+			key = "n"
+		}
+		return m.updateSettings(tea.KeyPressMsg{Code: rune(key[0]), Text: key})
+	}
+	return m, nil
+}
+
+var buttonText = regexp.MustCompile(`\S+(?: \S+)*`)
 
 // isOptionLine tells a list option from a title or a description: options
 // start after the border with the cursor or with blank room for it.

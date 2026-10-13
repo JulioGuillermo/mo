@@ -534,3 +534,15 @@
 - An opened `write` shows what it wrote and an opened `edit` the diff from old to new, both
   coloured by the file's language; folded they say how many lines were written, added and
   removed. Each diff line is coloured on its own, so a string spanning lines may colour wrong.
+
+## Editing providers and MCP servers
+
+- A provider or an MCP server is filled in like the settings: a list of its fields with their
+  values, each opened alone (enter keeps, esc puts the old value back), then Save; Delete asks
+  first. A save that does not work says why at the top and keeps what was typed.
+- An MCP server picks its type first, a command mo starts or a URL already running, and shows only
+  that type's fields; saving drops the other type's, so a server switched from one to the other
+  does not keep both.
+- The setup screen that runs before mo starts still asks a new provider's fields in one form, built
+  from the same entries.
+- Yes/no questions take a click too: the first button accepts and the second rejects, as y and n.

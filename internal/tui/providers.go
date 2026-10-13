@@ -58,41 +58,75 @@ func newProviderDraft(name string, cfg config.Config, findings []detect.Finding)
 	}
 }
 
-// fields are the inputs for the draft; a new provider also gets a name.
-func (d *providerDraft) fields(cfg config.Config) []huh.Field {
-	var fields []huh.Field
+// entries are the fields of a provider, each with its value: a new one
+// also gets a name.
+func (d *providerDraft) entries(cfg config.Config) []entry {
+	var entries []entry
 	if d.isNew {
-		fields = append(fields, huh.NewInput().Title("Name").Description("how mo calls it, e.g. my-server").
-			Validate(validNewName(cfg.Providers)).Value(&d.name))
+		entries = append(entries, entry{"Name", func() string { return valueOr(d.name, "required") }, func() huh.Field {
+			return huh.NewInput().Title("Name").Description("how mo calls it, e.g. my-server").Validate(validNewName(cfg.Providers)).Value(&d.name)
+		}})
 	}
-	fields = append(fields,
-		huh.NewSelect[string]().Title("Type").Options(
-			huh.NewOption("OpenAI-compatible: llama-server, ollama, vLLM, OpenAI, OpenRouter…", "openai"),
-			huh.NewOption("Anthropic", "anthropic"),
-		).Value(&d.protocol),
-		huh.NewInput().Title("Base URL").Description("e.g. http://localhost:8080/v1").Validate(required).Value(&d.baseURL),
-		huh.NewInput().Title("Model").Description("empty: the first the server lists (Anthropic needs one)").Value(&d.model),
-		huh.NewInput().Title("API key variable").Description("environment variable holding the key; empty if it needs none").Value(&d.keyEnv),
-		huh.NewInput().Title("API key").Description("saved in "+config.UserFile()+"; empty keeps the saved one").
-			EchoMode(huh.EchoModePassword).Value(&d.key),
+	entries = append(entries,
+		entry{"Type", func() string {
+			return map[string]string{"openai": "OpenAI-compatible", "anthropic": "Anthropic"}[d.protocol]
+		}, func() huh.Field {
+			return huh.NewSelect[string]().Title("Type").Options(
+				huh.NewOption("OpenAI-compatible: llama-server, ollama, vLLM, OpenAI, OpenRouter…", "openai"),
+				huh.NewOption("Anthropic", "anthropic"),
+			).Value(&d.protocol)
+		}},
+		entry{"Base URL", func() string { return valueOr(d.baseURL, "required") }, func() huh.Field {
+			return huh.NewInput().Title("Base URL").Description("e.g. http://localhost:8080/v1").Validate(required).Value(&d.baseURL)
+		}},
+		entry{"Model", func() string { return valueOr(d.model, "the first the server lists") }, func() huh.Field {
+			return huh.NewInput().Title("Model").Description("empty: the first the server lists (Anthropic needs one)").Value(&d.model)
+		}},
+		entry{"API key variable", func() string { return valueOr(d.keyEnv, "none") }, func() huh.Field {
+			return huh.NewInput().Title("API key variable").Description("environment variable holding the key; empty if it needs none").Value(&d.keyEnv)
+		}},
+		entry{"API key", d.keyState, func() huh.Field {
+			return huh.NewInput().Title("API key").Description("saved in " + config.UserFile() + "; empty keeps the saved one").
+				EchoMode(huh.EchoModePassword).Value(&d.key)
+		}},
 	)
 	if d.savedKey {
-		fields = append(fields, huh.NewConfirm().Title("Forget the saved API key").Value(&d.forgetKey))
+		entries = append(entries, entry{"Forget the saved key", func() string { return yesNo(d.forgetKey) }, func() huh.Field {
+			return huh.NewConfirm().Title("Forget the saved API key").Value(&d.forgetKey)
+		}})
 	}
 	if sources := keySources(d.keyFrom); len(sources) > 1 {
-		fields = append(fields, huh.NewSelect[string]().Title("Or take the key from").Options(sources...).Value(&d.keyFrom))
+		entries = append(entries, entry{"Take the key from", func() string { return valueOr(d.keyFrom, "nowhere else") }, func() huh.Field {
+			return huh.NewSelect[string]().Title("Or take the key from").Options(sources...).Value(&d.keyFrom)
+		}})
 	}
 	if !d.inUse {
-		fields = append(fields, huh.NewConfirm().Title("Use it from now on").Value(&d.use))
+		entries = append(entries, entry{"Use it from now on", func() string { return yesNo(d.use) }, func() huh.Field {
+			return huh.NewConfirm().Title("Use it from now on").Value(&d.use)
+		}})
 	}
-	if !d.isNew {
-		title := "Delete this provider"
-		if d.hasPreset {
-			title = "Reset it to the built-in settings"
-		}
-		fields = append(fields, huh.NewConfirm().Title(title).Value(&d.remove))
+	return entries
+}
+
+// fields are the entries as one form, for the setup screen that runs
+// before mo starts.
+func (d *providerDraft) fields(cfg config.Config) []huh.Field {
+	var fields []huh.Field
+	for _, each := range d.entries(cfg) {
+		fields = append(fields, each.field())
 	}
 	return fields
+}
+
+// keyState says whether a key is typed, saved, or neither.
+func (d *providerDraft) keyState() string {
+	switch {
+	case strings.TrimSpace(d.key) != "":
+		return "new one typed"
+	case d.savedKey && !d.forgetKey:
+		return "saved"
+	}
+	return "none"
 }
 
 // keySources lists the logins of other tools mo can take a key from, and
@@ -183,19 +217,43 @@ func (m model) pickProvider(msg settingsLoadedMsg, menu *settingsMenu) (tea.Mode
 	return m.showSettings(screen)
 }
 
+// editProvider fills in a provider a field at a time, then saves it.
 func (m model) editProvider(msg settingsLoadedMsg, cfg config.Config, name string, menu *settingsMenu) (tea.Model, tea.Cmd) {
 	draft := newProviderDraft(name, cfg, msg.findings)
-	title := name
+	title := "Provider " + name
 	if draft.isNew {
 		title = "New provider"
 	}
-	form := huh.NewForm(huh.NewGroup(draft.fields(cfg)...).Title(title)).WithShowHelp(false)
-	screen := &settingsScreen{form: form, layer: msg.layer, apply: draft.applyTo,
-		back: func(m model) (tea.Model, tea.Cmd) { return m.pickProvider(msg, menu) }}
-	if menu != nil {
-		screen.next = func(m model) (tea.Model, tea.Cmd) {
-			return m.keepEdit(menu, "provider "+orDefault(draft.name, "new"), draft.applyTo)
+	e := &editor{
+		title:     title,
+		entries:   func() []entry { return draft.entries(cfg) },
+		saveLabel: "Save",
+		back:      func(m model) (tea.Model, tea.Cmd) { return m.pickProvider(msg, menu) },
+		snapshot: func() func() {
+			saved := *draft
+			return func() { *draft = saved }
+		},
+	}
+	what := "provider " + orDefault(name, "new")
+	e.save = func(m model) (tea.Model, tea.Cmd) {
+		if draft.isNew {
+			if err := validNewName(cfg.Providers)(draft.name); err != nil {
+				e.notice = errorStyle.Render("not saved: " + err.Error())
+				return m.showEditor(e, "Name")
+			}
+		}
+		return m.saveEdit(e, msg, menu, what, draft.applyTo)
+	}
+	if !draft.isNew {
+		e.removeLabel = "Delete this provider"
+		if draft.hasPreset {
+			e.removeLabel = "Reset it to the built-in settings"
+		}
+		e.remove = func(m model) (tea.Model, tea.Cmd) {
+			gone := *draft
+			gone.remove = true
+			return m.saveEdit(e, msg, menu, what, gone.applyTo)
 		}
 	}
-	return m.showSettings(screen)
+	return m.showEditor(e, "")
 }
