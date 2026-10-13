@@ -6,12 +6,78 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/agent"
+	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/sessions"
 )
 
 const autoTitle = "auto"
+
+// titling is a title being asked for: how far the model's reply is, and
+// what stops it.
+type titling struct {
+	cancel context.CancelFunc
+	last   llm.EventKind
+	// started is set once the reply streams anything.
+	started bool
+	read    llm.PromptProgress
+	// said is the end of what the model has written or reasoned so far.
+	said string
+}
+
+// titleShownLength bounds what is kept of the title's reply to show.
+const titleShownLength = 600
+
+// titleEventMsg is a piece of the title's reply as it streams.
+type titleEventMsg llm.Event
+
+func (t *titling) follow(event llm.Event) {
+	t.last, t.started = event.Kind, true
+	switch event.Kind {
+	case llm.EventPromptProgress:
+		t.read = event.Progress
+	case llm.EventText, llm.EventReasoning:
+		said := []rune(t.said + event.Text)
+		t.said = string(said[max(0, len(said)-titleShownLength):])
+	}
+}
+
+// saidLines are the last two lines of what the model writes for the title,
+// dim, under its spinner.
+func (m model) saidLines() string {
+	said := strings.Join(strings.Fields(m.titling.said), " ")
+	if said == "" {
+		return ""
+	}
+	width := max(m.mainWidth()-4, 20)
+	lines := strings.Split(ansi.Hardwrap(said, width, true), "\n")
+	lines = lines[max(0, len(lines)-2):]
+	for i, line := range lines {
+		lines[i] = "  " + dimStyle.Render(strings.TrimSpace(line))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// titleState says what the title waits on, as the spinner says it for a turn.
+func (m model) titleState() state {
+	colors := statePalette(m.printer == nil || m.printer.isDark())
+	detail := "waiting for the model"
+	switch {
+	case !m.titling.started:
+	case m.titling.last == llm.EventPromptProgress:
+		detail = "prompt " + promptDetail(m.titling.read)
+	case m.titling.last == llm.EventReasoning:
+		detail = "reasoning"
+	default:
+		detail = "writing"
+	}
+	return state{word: "titling", detail: detail, tint: colors.compacting}
+}
+
+// titleSetMsg is a title the agent gave the conversation with its tool.
+type titleSetMsg string
 
 // titledMsg brings the title the model suggested.
 type titledMsg struct {
@@ -37,19 +103,38 @@ func (m model) retitle(argument string) (tea.Model, tea.Cmd) {
 		if len(m.session.Agent.Prompts()) == 0 {
 			return m.emit(m.printer.Note("nothing to title yet: write a prompt first"))
 		}
+		if m.titling != nil {
+			return m.emit(m.printer.Note("the model is already working out a title"))
+		}
 		assistant := m.session.Agent
 		first := m.firstPrompt()
-		note := printText(m.printer.Note("asking the model for a title…"))
-		return m, tea.Batch(note, func() tea.Msg {
-			title, err := assistant.SuggestTitle(context.Background())
+		ctx, cancel := context.WithCancel(context.Background())
+		m.titling = &titling{cancel: cancel}
+		bridge := m.bridge
+		ask := func() tea.Msg {
+			title, err := assistant.SuggestTitle(ctx, func(event llm.Event) {
+				if bridge != nil && event.Kind != llm.EventToolCall {
+					bridge.send(titleEventMsg(event))
+				}
+			})
 			return titledMsg{title: title, err: err, first: first}
-		})
+		}
+		if m.running {
+			return m, ask
+		}
+		return m, tea.Batch(ask, m.spinner.Tick)
 	}
 	return m.setTitle(sessions.Title(argument))
 }
 
 func (m model) titled(msg titledMsg) (tea.Model, tea.Cmd) {
+	if m.titling != nil {
+		m.titling.cancel()
+		m.titling = nil
+	}
 	switch {
+	case errors.Is(msg.err, context.Canceled):
+		return m.emit(m.printer.Note("title not changed"))
 	case errors.Is(msg.err, agent.ErrNothingToTitle):
 		return m.emit(m.printer.Note("nothing to title yet: write a prompt first"))
 	case msg.err != nil:

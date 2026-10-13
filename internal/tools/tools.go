@@ -43,6 +43,8 @@ type Env struct {
 	Jobs *Jobs
 	// Recall searches memories and past conversations.
 	Recall *Recall
+	// Titles renames the conversation; without it there is no title tool.
+	Titles *Titles
 }
 
 // Resolve turns a path from the model into an absolute one, relative paths
@@ -84,7 +86,7 @@ type Registry struct {
 func NewRegistry(env Env, options Options) *Registry {
 	registry := &Registry{env: env, options: options}
 	for _, tool := range append(builtinsWith(options.Searcher), options.Extra...) {
-		if slices.Contains(options.Disabled, tool.Name) {
+		if slices.Contains(options.Disabled, tool.Name) || (tool.Name == titleToolName && env.Titles == nil) {
 			continue
 		}
 		if description, ok := options.Descriptions[tool.Name]; ok {
@@ -129,7 +131,7 @@ func builtins() []Tool {
 func builtinsWith(searcher web.Searcher) []Tool {
 	return []Tool{
 		bashTool(), readTool(), writeTool(), editTool(), lsTool(), mkdirTool(), rmTool(), grepTool(),
-		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), jobsTool(), recallTool(), gitTool(),
+		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), jobsTool(), recallTool(), gitTool(), titleTool(),
 	}
 }
 
@@ -139,6 +141,14 @@ func (r *Registry) Recall() *Recall {
 		return nil
 	}
 	return r.env.Recall
+}
+
+// Titles renames the conversation, or nil, also for no registry.
+func (r *Registry) Titles() *Titles {
+	if r == nil {
+		return nil
+	}
+	return r.env.Titles
 }
 
 // Jobs are the session's background jobs, or nil, also for no registry.

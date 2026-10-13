@@ -235,8 +235,10 @@ Every conversation is saved after each turn in `~/.local/share/mo/sessions/`, re
   conversation as it was stays in `/resume`.
 - `/fork` goes on in a copy; `/clear` starts a new conversation. Neither loses the old one.
 - A conversation is named after its first prompt. `/title <name>` renames it, `/title auto` asks
-  the model for a short title in the language you write in, and `/title` alone says the current
+  the model for a short title in the language you write in (a spinner says where it is, with the
+  last two lines it writes under it, and esc stops it; the title is what it puts in <title></title>), and `/title` alone says the current
   one. It works while the model is busy, and the name shows in `/resume` and the side panel.
+  The agent has a `title` tool too, so "rename this conversation" in a prompt does it.
 
 Going back does not undo what tools changed on disk since that prompt.
 

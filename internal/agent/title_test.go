@@ -5,6 +5,7 @@ package agent
 // | TI-01 | Happy    | The model names the conversation from the prompts and the last answer | P0       |
 // | TI-02 | Edge     | Quotes, markup, a "Title:" label and the final period are taken off   | P1       |
 // | TI-03 | Error    | Without prompts there is nothing to title, and the model is not asked | P1       |
+// | TI-04 | Happy    | The title is the last <title></title> of the answer, what comes before left out; without tags, the last line | P0 |
 
 import (
 	"context"
@@ -25,7 +26,7 @@ func TestSuggestTitle(t *testing.T) {
 			{Role: llm.RoleUser, Text: "arréglalo"},
 		}
 
-		title, err := a.SuggestTitle(context.Background())
+		title, err := a.SuggestTitle(context.Background(), nil)
 
 		sent := provider.requests[0].Messages[0].Text
 		if err != nil || title != "Arreglar el login con OAuth" || len(a.History) != 3 {
@@ -48,11 +49,23 @@ func TestSuggestTitle(t *testing.T) {
 		}
 	})
 
+	t.Run("TI-04 the title is the last <title></title> of the answer; without tags, the last line", func(t *testing.T) {
+		for answer, want := range map[string]string{
+			"The user asks about login. Maybe <title>wrong</title>? No.\n<title>Arreglar el login</title>": "Arreglar el login",
+			"<TITLE>\n  **Fix the build.**\n</TITLE>":                                                      "Fix the build",
+			"Let me think.\n\nFix the build":                                                               "Fix the build",
+		} {
+			if got := readTitle(answer); got != want {
+				t.Errorf("%q → %q, want %q", answer, got, want)
+			}
+		}
+	})
+
 	t.Run("TI-03 without prompts there is nothing to title, and the model is not asked", func(t *testing.T) {
 		provider := &scriptedProvider{}
 		a := newAgent(t, provider)
 
-		_, err := a.SuggestTitle(context.Background())
+		_, err := a.SuggestTitle(context.Background(), nil)
 
 		if !errors.Is(err, ErrNothingToTitle) || len(provider.requests) != 0 {
 			t.Errorf("err %v requests %d", err, len(provider.requests))

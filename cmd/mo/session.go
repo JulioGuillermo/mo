@@ -35,6 +35,9 @@ type extensions struct {
 	// jobs are the background jobs of the whole run, kept across settings
 	// changes; nil when mo answers once.
 	jobs *tools.Jobs
+	// titles renames the conversation from the title tool; nil when mo
+	// answers once.
+	titles *tools.Titles
 	// recall searches memories and saved conversations.
 	recall *tools.Recall
 }
@@ -87,6 +90,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	}
 	env := toolEnv(workDir, cfg.Memory.Dir)
 	env.Jobs = loaded.jobs
+	env.Titles = loaded.titles
 	env.Recall = loaded.recall
 	found := skills.Find(cfg.SkillDirs(workDir))
 	registry := tools.NewRegistry(env, tools.Options{
