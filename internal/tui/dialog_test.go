@@ -14,6 +14,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/agent"
@@ -152,4 +153,51 @@ func receive(t *testing.T, reply chan agent.Reply) agent.Reply {
 		t.Fatal("the dialog sent no reply")
 		return agent.Reply{}
 	}
+}
+
+func TestCommandView(t *testing.T) {
+	long := strings.Repeat("echo line\n", 40) + "rm -rf build"
+
+	t.Run("DG-06 a long command scrolls to its end; a long line wraps instead of being cut", func(t *testing.T) {
+		m, _ := asking(agent.Interaction{Approvals: []agent.ApprovalRequest{bash(long), bash("echo " + strings.Repeat("x", 300))}})
+		m.width, m.height = 80, 30
+		top := ansi.Strip(m.dialogView())
+
+		m = keys(t, m, tea.KeyPressMsg{Code: tea.KeyEnd})
+		bottom := ansi.Strip(m.dialogView())
+		m = keys(t, m, keyTab)
+		wrapped := ansi.Strip(m.dialogView())
+
+		if strings.Contains(top, "rm -rf build") || !strings.Contains(top, "lines 1–7 of 41") || !strings.Contains(bottom, "rm -rf build") || !strings.Contains(bottom, "of 41") {
+			t.Errorf("top:\n%s\nbottom:\n%s", top, bottom)
+		}
+		if strings.Contains(wrapped, "…") || strings.Count(wrapped, "xxxxxxxxxx") < 4 {
+			t.Errorf("wrapped:\n%s", wrapped)
+		}
+	})
+
+	t.Run("DG-07 each part of a bash command shows what the rules say of it", func(t *testing.T) {
+		m, _ := asking(agent.Interaction{Approvals: []agent.ApprovalRequest{bash("ls -la && git push origin main; echo x > out.txt")}})
+		m.session.Agent.Permissions, _ = permissions.New(permissions.ModeEdits, []string{"ls *", "echo *"}, []string{"git push *"})
+
+		view := ansi.Strip(m.dialogView())
+
+		for _, want := range []string{"3 parts", "✓ ls -la  allowed: ls *", "✗ git push origin main  deny rule: git push *", "✎ echo x  allowed: echo * · writes a file"} {
+			if !strings.Contains(view, want) {
+				t.Errorf("missing %q in:\n%s", want, view)
+			}
+		}
+	})
+
+	t.Run("HL-01 bash is coloured by what each piece is, on the block's background", func(t *testing.T) {
+		lines := highlightLines("for f in *.go; do echo 'x' \"$f\"; done # list", "bash", 80, lipgloss.Color("#0e1630"), true)
+		plain := highlightLines("for f in x", "", 80, lipgloss.Color("#0e1630"), true)
+
+		if len(lines) != 1 || !strings.Contains(lines[0], "187;154;247") || !strings.Contains(lines[0], "158;206;106") || !strings.Contains(lines[0], "224;175;104") || !strings.Contains(lines[0], "48;2;14;22;48") {
+			t.Errorf("line = %q", lines[0])
+		}
+		if strings.Contains(plain[0], "187;154;247") {
+			t.Errorf("plain text was coloured: %q", plain[0])
+		}
+	})
 }

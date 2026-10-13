@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"image/color"
+	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -17,8 +18,7 @@ import (
 )
 
 const (
-	shownDialogCommandLines = 6
-	tabLength               = 24
+	tabLength = 24
 )
 
 // interactionMsg carries what the calls of a reply need from the user.
@@ -45,6 +45,7 @@ type dialogItem struct {
 
 	decision agent.Decision
 	button   int
+	scroll   int
 
 	answer string
 	cursor int
@@ -155,6 +156,9 @@ func (m model) handleApprovalKey(pressed string) (tea.Model, tea.Cmd) {
 	item := d.item()
 	buttons := d.buttonsFor(*item)
 	switch pressed {
+	case "up", "k", "down", "j", "pgup", "pgdown", "home", "end":
+		m.scrollCommand(item, pressed)
+		return m, nil
 	case "left", "h":
 		item.button = max(item.button-1, 0)
 		return m, nil
@@ -413,23 +417,13 @@ func (m model) approvalLines(item dialogItem, colors dialogColors, body lipgloss
 		title += body.Render("  ") + body.Foreground(lipgloss.Color("#f7768e")).Render(request.Warning)
 	}
 	lines := []string{title, ""}
-	command := lipgloss.NewStyle().Background(colors.command).Foreground(colors.text)
-	shown := strings.Split(strings.TrimRight(request.Summary, "\n"), "\n")
-	hidden := len(shown) - shownDialogCommandLines
-	if hidden > 0 {
-		shown = shown[:shownDialogCommandLines]
-	}
-	for _, line := range shown {
-		line = ansi.Truncate(strings.ReplaceAll(ansi.Strip(line), "\t", "    "), width-2, "…")
-		lines = append(lines, command.Render(" "+line+strings.Repeat(" ", max(width-1-ansi.StringWidth(line), 0))))
-	}
-	if hidden > 0 {
-		lines = append(lines, body.Foreground(colors.dim).Render(fmt.Sprintf("… +%d lines", hidden)))
-	}
+	lines = append(lines, m.commandBlock(item, colors, body, width)...)
+	parts := m.commandParts(request, body, colors, width)
+	lines = append(lines, parts...)
 	if request.Reason != "" {
 		lines = append(lines, "", body.Foreground(warning).Render(request.Reason))
 	}
-	if request.Ruled && len(request.Commands) > 0 {
+	if request.Ruled && len(request.Commands) > 0 && len(parts) == 0 {
 		lines = append(lines, body.Foreground(colors.dim).Render("no rule allows: ")+body.Render(strings.Join(request.Commands, " · ")))
 	}
 	var buttons []string
@@ -441,6 +435,106 @@ func (m model) approvalLines(item dialogItem, colors dialogColors, body lipgloss
 		buttons = append(buttons, style.Render(label))
 	}
 	return append(lines, "", strings.Join(buttons, body.Render("  ")))
+}
+
+// commandRows is how many lines of a command the dialog shows before it
+// scrolls: about half the screen, less what surrounds it.
+func (m model) commandRows() int {
+	if m.height <= 0 {
+		return 12
+	}
+	return min(max(m.height/2-8, 4), 40)
+}
+
+// commandLines is the command of a call highlighted and wrapped to width.
+func (m model) commandLines(request agent.ApprovalRequest, colors dialogColors, width int) []string {
+	language := ""
+	if request.Call.Name == "bash" {
+		language = "bash"
+	}
+	return highlightLines(request.Summary, language, width-2, colors.command, m.printer == nil || m.printer.isDark())
+}
+
+// commandBlock shows the whole command, wrapped, scrolled to where the
+// user moved it when it does not fit.
+func (m model) commandBlock(item dialogItem, colors dialogColors, body lipgloss.Style, width int) []string {
+	command := lipgloss.NewStyle().Background(colors.command)
+	all := m.commandLines(m.dialog.request(item), colors, width)
+	rows := m.commandRows()
+	first := min(max(item.scroll, 0), max(len(all)-rows, 0))
+	shown := all[first:min(first+rows, len(all))]
+	var lines []string
+	for _, line := range shown {
+		lines = append(lines, command.Render(" ")+line+command.Render(strings.Repeat(" ", max(width-1-ansi.StringWidth(line), 0))))
+	}
+	if len(all) > rows {
+		lines = append(lines, body.Foreground(colors.dim).Render(fmt.Sprintf("lines %d–%d of %d · ↑↓ pgup pgdn scroll", first+1, first+len(shown), len(all))))
+	}
+	return lines
+}
+
+// scrollCommand moves the command shown by a line, a page or to an end.
+func (m model) scrollCommand(item *dialogItem, pressed string) {
+	total := len(m.commandLines(m.dialog.request(*item), dialogPalette(true), max(m.width, 30)-4))
+	rows := m.commandRows()
+	last := max(total-rows, 0)
+	item.scroll = min(max(item.scroll, 0), last)
+	switch pressed {
+	case "up", "k":
+		item.scroll--
+	case "down", "j":
+		item.scroll++
+	case "pgup":
+		item.scroll -= rows
+	case "pgdown":
+		item.scroll += rows
+	case "home":
+		item.scroll = 0
+	case "end":
+		item.scroll = last
+	}
+	item.scroll = min(max(item.scroll, 0), last)
+}
+
+const shownParts = 8
+
+// commandParts lists the simple commands of a bash call and what the
+// rules say of each: allowed and by which rule, denied, not covered yet,
+// or writing a file.
+func (m model) commandParts(request agent.ApprovalRequest, body lipgloss.Style, colors dialogColors, width int) []string {
+	if request.Call.Name != "bash" {
+		return nil
+	}
+	parts, err := permissions.Commands(request.Summary)
+	if err != nil {
+		return []string{"", body.Foreground(warning).Render("could not split it into parts: " + oneLine(err.Error(), width-30))}
+	}
+	if len(parts) < 2 && !slices.ContainsFunc(parts, func(part permissions.Command) bool { return part.Writes }) {
+		return nil
+	}
+	policy := m.session.Agent.Permissions
+	lines := []string{"", body.Foreground(colors.dim).Render(fmt.Sprintf("%d parts", len(parts)))}
+	for i, part := range parts {
+		if i == shownParts {
+			lines = append(lines, body.Foreground(colors.dim).Render(fmt.Sprintf("  … +%d more", len(parts)-shownParts)))
+			break
+		}
+		mark, note, tint := "●", "no rule allows it", warning
+		if policy != nil {
+			switch verdict, rule := policy.Check(part.Text); verdict {
+			case permissions.Allowed:
+				mark, note, tint = "✓", "allowed: "+rule, lipgloss.Color("#9ece6a")
+			case permissions.Denied:
+				mark, note, tint = "✗", "deny rule: "+rule, lipgloss.Color("#f7768e")
+			}
+		}
+		if part.Writes {
+			mark, note = "✎", note+" · writes a file"
+		}
+		text := oneLine(part.Text, max(width-ansi.StringWidth(note)-8, 12))
+		lines = append(lines, body.Foreground(tint).Render("  "+mark+" ")+body.Render(text)+body.Foreground(colors.dim).Render("  "+note))
+	}
+	return lines
 }
 
 func (m model) questionLines(item dialogItem, colors dialogColors, body lipgloss.Style, width int) []string {
@@ -482,6 +576,9 @@ func (m model) dialogKeys(item dialogItem) string {
 	keys := []string{}
 	if item.approval >= 0 {
 		keys = append(keys, "←→ choose · enter press · y yes · n no")
+		if len(m.commandLines(m.dialog.request(item), dialogPalette(true), max(m.width, 30)-4)) > m.commandRows() {
+			keys = append(keys, "↑↓ scroll")
+		}
 		if len(m.dialog.buttonsFor(item)) == 3 {
 			keys = append(keys, "a always")
 		}

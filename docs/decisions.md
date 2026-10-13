@@ -429,5 +429,10 @@
   conversation scrolls. It is drawn with backgrounds, not a border, and buttons for the answers.
 - "Always this session" answers the other calls to the same tool waiting in the dialog; rules
   added from one call answer the others they cover in every part.
+- The command to approve is shown whole, wrapped rather than cut, coloured by chroma's bash lexer
+  with mo's own colours (chroma's styles paint their own background), and scrolls with ↑↓ and
+  pgup/pgdn past about half the screen. A bash command also lists its parts as the permission
+  rules see them: allowed and by which rule, denied, not covered, or writing a file. What is
+  approved is what is shown.
 - Without a user (mo run once), approvals are denied and the model is told to decide its questions
   itself and say what it assumed.
