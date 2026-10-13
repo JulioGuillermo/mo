@@ -141,8 +141,7 @@ func (m model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if screen.next != nil {
 			return screen.next(m)
 		}
-		m.settingsInFlight = true
-		return m, saveSettings(screen, m.session)
+		return m.saveOrWait(screen)
 	case huh.StateAborted:
 		m.settings = nil
 		return m, printText(m.printer.Note("settings unchanged"))

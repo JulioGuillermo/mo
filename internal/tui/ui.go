@@ -85,6 +85,8 @@ type model struct {
 	forming []formingCall
 	// activity is what the agent waits on, said by the spinner.
 	activity string
+	// pendingSave is settings saved while a turn runs, applied when it ends.
+	pendingSave *settingsScreen
 	// lastEvent is the kind of what the model sent last, and runningTool
 	// the call running now: they say what the agent is doing.
 	lastEvent        llm.EventKind
@@ -364,7 +366,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.dialog != nil {
 		return m.handleDialogKey(msg)
 	}
-	if matches := m.suggestions(); len(matches) > 0 && !m.running {
+	if matches := m.suggestions(); len(matches) > 0 {
 		if handled, next, cmd := m.handleSuggestionKey(msg.String(), matches); handled {
 			return next, cmd
 		}
@@ -419,7 +421,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	case "enter":
-		if m.running || m.settingsInFlight {
+		if m.settingsInFlight {
 			return m, nil
 		}
 		return m.submit()
@@ -468,6 +470,9 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	if strings.HasPrefix(prompt, "/") {
 		return m.runCommand(prompt)
 	}
+	if m.running {
+		return m.queue(prompt)
+	}
 
 	m.scrolled = false
 	echo := drawText(func() string { return m.printer.User(prompt) })
@@ -498,6 +503,9 @@ func (m model) start(first tea.Cmd, work func(context.Context, agent.Hooks) erro
 func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 	name, argument, _ := strings.Cut(strings.TrimPrefix(command, "/"), " ")
 	argument = strings.TrimSpace(argument)
+	if m.running && !whileRunning[name] {
+		return m.emit(m.printer.Note("/" + name + " changes the conversation: wait for the model to finish, or esc"))
+	}
 	switch name {
 	case "quit", "exit":
 		return m, tea.Quit
@@ -511,6 +519,11 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		return m, listConversations(m.session.WorkDir, false)
 	case "fork":
 		return m.fork()
+	case "continue":
+		if m.running {
+			return m.emit(m.printer.Note("the model is working already"))
+		}
+		return m.start(printText(m.printer.Note("continuing…")), m.session.Agent.Continue)
 	case "sidebar":
 		m.sidebarHidden = !m.sidebarHidden
 		if m.session.Config.Render.Sidebar == sidebarOff {
@@ -586,7 +599,9 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 	}
 	switch {
 	case errors.Is(err, context.Canceled):
-		lines = append(lines, m.printer.Note("stopped"))
+		lines = append(lines, m.printer.Note("stopped · /continue goes on"))
+	case errors.Is(err, agent.ErrNothingToContinue):
+		lines = append(lines, m.printer.Note("nothing to continue yet"))
 	case err != nil:
 		lines = append(lines, m.printer.Error(err))
 	}
@@ -595,7 +610,25 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 	if !stopped {
 		save = tea.Batch(save, m.turnEnded(err))
 	}
-	if m.session.Agent != nil && m.session.Agent.HasEndedJobs() {
+	if stopped && m.session.Agent != nil {
+		if queued := m.session.Agent.TakeQueued(); len(queued) > 0 {
+			if typed := strings.TrimSpace(m.input.Value()); typed != "" {
+				queued = append(queued, typed)
+			}
+			m.input.SetValue(strings.Join(queued, "\n"))
+			m.input.CursorEnd()
+			lines = append(lines, m.printer.Note("what you queued is back in the input"))
+		}
+	}
+	if pending := m.pendingSave; pending != nil {
+		m.pendingSave = nil
+		m.settingsInFlight = true
+		save = tea.Batch(save, saveSettings(pending, m.session))
+	} else if !stopped && m.session.Agent != nil && m.session.Agent.HasQueued() {
+		next, run := m.start(nil, m.session.Agent.RunQueued)
+		m = next.(model)
+		save = tea.Batch(save, run)
+	} else if m.session.Agent != nil && m.session.Agent.HasEndedJobs() {
 		if stopped {
 			lines = append(lines, m.printer.Note("a background job ended: the model goes on to hear of it · esc stops it again"))
 		}
@@ -668,9 +701,13 @@ func (m model) upperLayout() (string, []region) {
 	case m.dialog != nil:
 		add(m.dialogLayout())
 	case m.running:
-		add(m.spinner.View()+" "+m.currentState().label(true)+dimStyle.Render(" · esc to stop"), nil)
+		queued := ""
+		if count := m.session.Agent.QueuedCount(); count > 0 {
+			queued = fmt.Sprintf(" · %d queued", count)
+		}
+		add(m.spinner.View()+" "+m.currentState().label(true)+dimStyle.Render(queued+" · esc to stop"), nil)
 	}
-	if matches := m.suggestions(); len(matches) > 0 && !m.running {
+	if matches := m.suggestions(); len(matches) > 0 {
 		add(m.suggestionLayout(matches))
 	}
 	if bar, barRegions := m.attachmentBar(); bar != "" {

@@ -21,6 +21,7 @@ var builtinCommands = []command{
 	{name: "resume", description: "go back to a saved conversation of this folder"},
 	{name: "rewind", description: "go back to one of your prompts to edit it, in a fork (esc esc)"},
 	{name: "fork", description: "go on in a copy of the conversation"},
+	{name: "continue", description: "let the model go on after you stopped it"},
 	{name: "compact", description: "summarize the conversation to free context"},
 	{name: "settings", description: "model, tools, context, web, loop guard, display"},
 	{name: "providers", description: "add, edit or delete providers"},

@@ -134,8 +134,7 @@ func (m model) openMenuChoice(menu *settingsMenu, choice string) (tea.Model, tea
 		if !menu.changed() {
 			return m, printText(m.printer.Note("settings unchanged"))
 		}
-		m.settingsInFlight = true
-		return m, saveSettings(&settingsScreen{layer: menu.layer, apply: menu.apply}, m.session)
+		return m.saveOrWait(&settingsScreen{layer: menu.layer, apply: menu.apply})
 	case menuDiscard:
 		return m.leaveMenu(menu)
 	case menuProviders:

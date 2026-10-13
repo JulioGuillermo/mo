@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/permissions"
@@ -76,7 +77,10 @@ type Agent struct {
 	loops int
 
 	alwaysAllowed map[string]bool
-	judgedSafe    map[string]bool
+	queued        queue
+	// partial is the answer being streamed, kept when the user stops it.
+	partial    strings.Builder
+	judgedSafe map[string]bool
 }
 
 // Hooks lets the caller follow a run. Every field is optional. Without
@@ -114,6 +118,7 @@ func (a *Agent) Run(ctx context.Context, prompt string, hooks Hooks) error {
 func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
 	for {
 		a.tellEndedJobs()
+		a.deliverQueued(hooks)
 		if a.needsCompaction() {
 			a.makeRoom(ctx, hooks)
 		}
@@ -126,6 +131,7 @@ func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
 		}
 		if err != nil {
 			if ctx.Err() != nil {
+				a.keepPartial()
 				return ctx.Err()
 			}
 			return err
@@ -148,13 +154,15 @@ func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
 		if len(response.Message.ToolCalls) == 0 {
 			return nil
 		}
-		a.answerToolCalls(ctx, response.Message.ToolCalls, hooks)
+		asked := len(a.History) - 1
+		unfinished := a.answerToolCalls(ctx, response.Message.ToolCalls, hooks)
+		if ctx.Err() != nil {
+			a.dropUnfinished(asked, unfinished)
+			return ctx.Err()
+		}
 		results := a.History[len(a.History)-len(response.Message.ToolCalls):]
 		if note, found := toolImages(response.Message.ToolCalls, results); found {
 			a.History = append(a.History, note)
-		}
-		if ctx.Err() != nil {
-			return ctx.Err()
 		}
 		if a.looping() {
 			return ErrLooping
@@ -172,9 +180,13 @@ func (a *Agent) stream(ctx context.Context, hooks Hooks) (llm.Response, string, 
 		watch = newRepeatWatch(a.Loop.StreamRepeats)
 	}
 	repeated := ""
+	a.partial.Reset()
 	response, err := a.Provider.Stream(streamCtx, a.request(), func(event llm.Event) {
 		if repeated != "" {
 			return
+		}
+		if event.Kind == llm.EventText {
+			a.partial.WriteString(event.Text)
 		}
 		if hooks.OnEvent != nil {
 			hooks.OnEvent(event)
@@ -189,6 +201,7 @@ func (a *Agent) stream(ctx context.Context, hooks Hooks) (llm.Response, string, 
 	if repeated == "" {
 		return response, "", err
 	}
+	a.partial.Reset()
 	if ctx.Err() != nil {
 		return llm.Response{}, "", ctx.Err()
 	}

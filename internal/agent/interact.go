@@ -52,17 +52,23 @@ func settled(call llm.ToolCall, result string) pendingCall {
 
 // answerToolCalls answers every call of a reply: it checks them all, asks
 // the user at once what they need, then runs them in order.
-func (a *Agent) answerToolCalls(ctx context.Context, calls []llm.ToolCall, hooks Hooks) {
+func (a *Agent) answerToolCalls(ctx context.Context, calls []llm.ToolCall, hooks Hooks) map[string]bool {
 	var interaction Interaction
 	pending := make([]pendingCall, len(calls))
 	for i, call := range calls {
 		pending[i] = a.prepareCall(ctx, call, hooks, &interaction)
 	}
 	reply := a.interact(ctx, interaction, hooks)
+	unfinished := map[string]bool{}
 	for _, call := range pending {
-		output, isError := a.finishCall(ctx, call, reply, hooks)
+		stoppedBefore := ctx.Err() != nil
+		output, isError, interrupted := a.finishCall(ctx, call, reply, hooks)
+		if stoppedBefore || interrupted {
+			unfinished[call.outer.ID] = true
+		}
 		a.History = append(a.History, llm.Message{Role: llm.RoleTool, ToolCallID: call.outer.ID, Text: output, IsError: isError})
 	}
+	return unfinished
 }
 
 // prepareCall settles what needs no user, and adds what does to the
@@ -139,24 +145,24 @@ func (a *Agent) interact(ctx context.Context, interaction Interaction, hooks Hoo
 }
 
 // finishCall runs a call the user let through, or says why it did not run.
-func (a *Agent) finishCall(ctx context.Context, pending pendingCall, reply Reply, hooks Hooks) (string, bool) {
+func (a *Agent) finishCall(ctx context.Context, pending pendingCall, reply Reply, hooks Hooks) (string, bool, bool) {
 	switch {
 	case pending.settled:
-		return pending.result, pending.isError
+		return pending.result, pending.isError, false
 	case ctx.Err() != nil:
-		return cancelledResult, true
+		return cancelledResult, true, false
 	case pending.questions != nil:
-		return answersText(pending.questions, reply.Answers[pending.firstAsk:pending.firstAsk+len(pending.questions)], reply.Unavailable), false
+		return answersText(pending.questions, reply.Answers[pending.firstAsk:pending.firstAsk+len(pending.questions)], reply.Unavailable), false, false
 	case a.looping():
-		return stoppedCallResult, true
+		return stoppedCallResult, true, false
 	}
 	if earlier, repeated := a.repeatedCall(pending.call); repeated {
-		return a.blockRepeatedCall(pending.call, earlier, hooks), true
+		return a.blockRepeatedCall(pending.call, earlier, hooks), true, false
 	}
 	if pending.approval >= 0 {
 		decision := reply.Decisions[pending.approval]
 		if decision == Deny {
-			return deniedResult, true
+			return deniedResult, true, false
 		}
 		if decision == AllowAlways && pending.need.warning == "" && !pending.need.ruled {
 			if a.alwaysAllowed == nil {
@@ -169,10 +175,11 @@ func (a *Agent) finishCall(ctx context.Context, pending pendingCall, reply Reply
 		hooks.OnToolStart(pending.call, pending.summary)
 	}
 	output, isError := a.Tools.Run(ctx, pending.call)
+	interrupted := ctx.Err() != nil
 	if hooks.OnToolDone != nil {
 		hooks.OnToolDone(pending.call, output, isError)
 	}
-	return output, isError
+	return output, isError, interrupted
 }
 
 // answersText gives the model each question with its answer.

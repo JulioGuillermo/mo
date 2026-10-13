@@ -236,3 +236,30 @@ func ago(when time.Time) string {
 	}
 	return when.Format("2006-01-02")
 }
+
+// whileRunning are the commands that leave the conversation alone, so they
+// work while the model does: settings saved then apply when it finishes.
+var whileRunning = map[string]bool{
+	"help": true, "settings": true, "providers": true, "mcp": true, "plugins": true, "notify": true,
+	"sidebar": true, "jobs": true, "kill": true, "view": true, "quit": true, "exit": true,
+}
+
+// queue keeps a message written while the model works for its next step,
+// and shows it now.
+func (m model) queue(prompt string) (tea.Model, tea.Cmd) {
+	m.session.Agent.Queue(m.withAttachments(prompt))
+	m.scrolled = false
+	return m, tea.Batch(drawText(func() string { return m.printer.User(prompt) }),
+		printText(m.printer.Note("queued · the model reads it at its next step")))
+}
+
+// saveOrWait saves settings now, or once the turn running ends: building a
+// new session under a running agent would pull it from under its feet.
+func (m model) saveOrWait(screen *settingsScreen) (tea.Model, tea.Cmd) {
+	if m.running {
+		m.pendingSave = screen
+		return m.emit(m.printer.Note("settings saved when the model finishes this turn"))
+	}
+	m.settingsInFlight = true
+	return m, saveSettings(screen, m.session)
+}

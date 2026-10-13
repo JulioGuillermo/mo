@@ -12,6 +12,9 @@ package tui
 // | TU-08 | Security | mo's own commands win even with an argument after them      | P1       |
 // | TU-09 | Happy    | A plugin command runs like a turn: Esc can stop it          | P1       |
 // | TU-10 | Happy    | Images line up with their text and keep inside the width    | P1       |
+// | TU-11 | Happy    | After esc the note offers /continue, which starts a turn; not while one runs | P1 |
+// | TU-12 | Happy    | Written while the model works, a message is queued; esc gives it back | P0     |
+// | TU-13 | Happy    | Safe commands work while the model works; settings saved wait for the turn's end | P1 |
 
 import (
 	"bytes"
@@ -209,6 +212,64 @@ func TestImageIndent(t *testing.T) {
 					break
 				}
 			}
+		}
+	})
+}
+
+func TestContinueCommand(t *testing.T) {
+	t.Run("TU-11 after esc the note offers /continue, which starts a turn; not while one runs", func(t *testing.T) {
+		m := conversationModel()
+		m.session.Agent.History = []llm.Message{{Role: llm.RoleUser, Text: "go"}}
+		m.running, m.cancel = true, func() {}
+		stopped, cmd := m.finishRun(context.Canceled)
+		note := ""
+		if cmd != nil {
+			note = sent(cmd)
+		}
+
+		busy, _ := m.runCommand("/continue")
+		resumed, _ := stopped.(model).runCommand("/continue")
+
+		if !strings.Contains(note, "/continue goes on") || !resumed.(model).running || strings.Contains(shown(busy.(model)), "continuing") {
+			t.Errorf("note = %q resumed running = %v", note, resumed.(model).running)
+		}
+	})
+}
+
+func TestWhileRunning(t *testing.T) {
+	typed := func(m model, text string) model {
+		m.input.SetValue(text)
+		updated, _ := m.Update(keyEnter)
+		return updated.(model)
+	}
+
+	t.Run("TU-12 written while the model works, a message is queued; esc gives it back", func(t *testing.T) {
+		m := conversationModel()
+		m.running, m.cancel = true, func() {}
+
+		m = typed(m, "also check the tests")
+		queued := m.session.Agent.HasQueued()
+		stopped, _ := m.finishRun(context.Canceled)
+
+		if !queued || stopped.(model).input.Value() != "also check the tests" || stopped.(model).session.Agent.HasQueued() {
+			t.Errorf("queued = %v input = %q", queued, stopped.(model).input.Value())
+		}
+	})
+
+	t.Run("TU-13 safe commands work while the model works; settings saved wait for the turn's end", func(t *testing.T) {
+		m := conversationModel()
+		m.running, m.cancel = true, func() {}
+
+		cleared := typed(m, "/clear")
+		sidebar := typed(m, "/sidebar")
+		waiting, _ := m.saveOrWait(&settingsScreen{})
+		finished, cmd := waiting.(model).finishRun(nil)
+
+		if !strings.Contains(shown(cleared), "wait for the model to finish") || !sidebar.sidebarHidden {
+			t.Errorf("clear:\n%s", shown(cleared))
+		}
+		if waiting.(model).pendingSave == nil || finished.(model).pendingSave != nil || !finished.(model).settingsInFlight || cmd == nil {
+			t.Error("the save did not wait for the end of the turn")
 		}
 	})
 }

@@ -123,8 +123,7 @@ func (m model) saveEdit(e *editor, msg settingsLoadedMsg, menu *settingsMenu, wh
 	if menu != nil {
 		return m.keepEdit(menu, what, apply)
 	}
-	m.settingsInFlight = true
-	return m, saveSettings(&settingsScreen{layer: msg.layer, apply: apply}, m.session)
+	return m.saveOrWait(&settingsScreen{layer: msg.layer, apply: apply})
 }
 
 // valueOr shows a value on one line, or what an empty one means.

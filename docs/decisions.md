@@ -590,3 +590,22 @@
   for a tool result after its ⎿, and are drawn in the width left. They are lines of placeholder
   cells or colour blocks, so the indent is spaces before each line; a kitty upload at the start of
   the first line takes no room.
+
+## Continue
+
+- An answer stopped with esc stays in the history, marked as stopped there, so the model knows
+  what it had said. `/continue` starts a turn without a prompt: stopped before any answer, the
+  model answers the prompt waiting; stopped later, a note tells it to go on from where it was and
+  redo what was cancelled if still needed.
+
+## While the model works
+
+- A message written while the model works is queued and shown at once; the model reads it at its
+  next step, after the tool call running, as a message of the user's. Queued after its last step,
+  it starts a turn of its own. Esc gives what was queued back to the input.
+- Commands that leave the conversation alone work meanwhile: settings, providers, MCP, help, jobs,
+  kill, the side panel, view, plugins, notify. Settings saved then apply when the turn ends, since
+  a new session cannot replace the agent mid-step. Those that change the conversation (clear,
+  compact, rewind, fork, resume, continue) ask to wait or stop.
+- A stop takes out the tool calls it cut short, not run or stopped running, with their results, as
+  if the model had not made them; the calls that ran and the reply's text stay.

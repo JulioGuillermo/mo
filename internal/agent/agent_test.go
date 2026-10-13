@@ -5,7 +5,7 @@ package agent
 // | AG-01 | Happy    | Runs the requested tool, sends the result back, ends on text        | P0       |
 // | AG-02 | Security | A call that needs confirmation is denied without an approver       | P0       |
 // | AG-03 | Happy    | An approved call runs                                               | P0       |
-// | AG-04 | Edge     | After a cancel every pending tool call still gets a result         | P0       |
+// | AG-04 | Edge     | After a cancel the calls that did not run go, none left without a result | P0 |
 // | AG-05 | Error    | A provider error stops the run and is returned                     | P1       |
 // | AG-06 | Security | A write outside the working directory asks even when not listed    | P0       |
 // | AG-07 | Security | AllowAlways stops asking for that tool, but not outside the workdir | P0       |
@@ -133,7 +133,7 @@ func TestRun(t *testing.T) {
 		}
 	})
 
-	t.Run("AG-04 after a cancel every pending tool call still gets a result", func(t *testing.T) {
+	t.Run("AG-04 after a cancel the calls that did not run go, so none is left without a result", func(t *testing.T) {
 		provider := &scriptedProvider{replies: []llm.Message{
 			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
 				toolCall("c1", "bash", `{"command":"echo one"}`),
@@ -152,12 +152,8 @@ func TestRun(t *testing.T) {
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("err = %v", err)
 		}
-		results := agent.History[2:]
-		if len(results) != 2 || results[0].ToolCallID != "c1" || results[1].ToolCallID != "c2" {
-			t.Fatalf("results = %+v", results)
-		}
-		if results[0].Text != cancelledResult || results[1].Text != cancelledResult {
-			t.Errorf("results = %q, %q", results[0].Text, results[1].Text)
+		if len(agent.History) != 1 || agent.History[0].Text != "go" {
+			t.Errorf("history = %+v", agent.History)
 		}
 	})
 
