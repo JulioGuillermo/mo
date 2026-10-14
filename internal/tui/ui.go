@@ -213,7 +213,11 @@ func newInput() textarea.Model {
 	input.ShowLineNumbers = false
 	input.DynamicHeight = true
 	input.MinHeight = 1
+	// MaxHeight is how tall it grows; MaxContentHeight, set far above it, is
+	// what lets it hold more lines than that, scrolled inside, since bubbles
+	// would stop new lines at MaxHeight without it.
 	input.MaxHeight = 10
+	input.MaxContentHeight = 1 << 20
 	input.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("ctrl+j", "alt+enter", "shift+enter"))
 	input.SetStyles(inputStyles(input.Styles(), true))
 	input.Focus()

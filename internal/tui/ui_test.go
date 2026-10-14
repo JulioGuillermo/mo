@@ -27,6 +27,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -270,6 +271,28 @@ func TestWhileRunning(t *testing.T) {
 		}
 		if waiting.(model).pendingSave == nil || finished.(model).pendingSave != nil || !finished.(model).settingsInFlight || cmd == nil {
 			t.Error("the save did not wait for the end of the turn")
+		}
+	})
+}
+
+func TestInputLines(t *testing.T) {
+	t.Run("the input takes any number of lines and grows to ten, scrolled inside past them", func(t *testing.T) {
+		m := conversationModel()
+		m.width, m.height = 100, 40
+		for i := range 25 {
+			if i > 0 {
+				updated, _ := m.Update(tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl})
+				m = updated.(model)
+			}
+			updated, _ := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
+			m = updated.(model)
+		}
+
+		if lines := strings.Count(m.input.Value(), "\n") + 1; lines != 25 {
+			t.Errorf("lines = %d", lines)
+		}
+		if height := lipgloss.Height(m.input.View()); height > 10 {
+			t.Errorf("height = %d", height)
 		}
 	})
 }
