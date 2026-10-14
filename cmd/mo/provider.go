@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	windowProbeTimeout     = 2 * time.Second
+	windowProbeTimeout     = 3 * time.Second
 	defaultLocalWindow     = 32768
 	defaultAnthropicWindow = 200000
 )
@@ -26,6 +26,9 @@ type chosenProvider struct {
 	model    string
 	window   int
 	provider llm.Provider
+	// windowFrom says where the window came from: the settings, the server,
+	// or mo's default.
+	windowFrom string
 }
 
 // chooseProvider picks the provider from the flag or the config. With
@@ -74,13 +77,9 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 			}
 			model = first
 		}
-		size, llama := probeProps(ctx, provider)
+		window, from, llama := openAIWindow(ctx, provider, model, cfg.Context.Window)
 		provider.PromptProgress = llama
-		window := cfg.Context.Window
-		if window == 0 {
-			window = size
-		}
-		return chosenProvider{name: name, model: model, window: window, provider: provider}, nil
+		return chosenProvider{name: name, model: model, window: window, provider: provider, windowFrom: from}, nil
 	case "anthropic":
 		key := settings.Key()
 		if key == "" && token == nil {
@@ -89,12 +88,12 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 		if model == "" {
 			return chosenProvider{}, fmt.Errorf("%s needs a model: use -m or set model in the config", name)
 		}
-		window := cfg.Context.Window
-		if window == 0 {
-			window = defaultAnthropicWindow
-		}
 		provider := &llm.Anthropic{BaseURL: settings.BaseURL, APIKey: key, Token: token}
-		return chosenProvider{name: name, model: model, window: window, provider: provider}, nil
+		window, from := cfg.Context.Window, windowFromSettings
+		if window == 0 {
+			window, from = anthropicWindow(ctx, provider, model)
+		}
+		return chosenProvider{name: name, model: model, window: window, provider: provider, windowFrom: from}, nil
 	}
 	return chosenProvider{}, fmt.Errorf("provider %q has unknown type %q (use openai or anthropic)", name, settings.Protocol)
 }
@@ -119,16 +118,40 @@ func keyOrigin(settings config.ProviderConfig) string {
 	return "api_key"
 }
 
-// probeProps asks the server for its context size, the default one when it
-// does not say, and whether it is llama-server, which streams how far it
-// is in reading the prompt.
-func probeProps(ctx context.Context, provider *llm.OpenAI) (int, bool) {
+const (
+	windowFromSettings = "your settings"
+	windowFromDefault  = "mo's default: the server does not say"
+)
+
+// openAIWindow is the context of the model: the one set, else the one the
+// server says (llama-server, the model list, Ollama, LM Studio, Gemini),
+// else the default; and whether the server is llama-server, which streams
+// how far it is in reading the prompt.
+func openAIWindow(ctx context.Context, provider *llm.OpenAI, model string, set int) (int, string, bool) {
 	ctx, cancel := context.WithTimeout(ctx, windowProbeTimeout)
 	defer cancel()
-	if window, llama := provider.Props(ctx); window > 0 {
-		return window, llama
+	size, llama := provider.Props(ctx)
+	switch {
+	case set > 0:
+		return set, windowFromSettings, llama
+	case size > 0:
+		return size, "llama-server", llama
 	}
-	return defaultLocalWindow, false
+	if size, from := provider.ModelWindow(ctx, model); size > 0 {
+		return size, from, llama
+	}
+	return defaultLocalWindow, windowFromDefault, llama
+}
+
+// anthropicWindow is the model's context from the Models API, else the
+// default.
+func anthropicWindow(ctx context.Context, provider *llm.Anthropic, model string) (int, string) {
+	ctx, cancel := context.WithTimeout(ctx, windowProbeTimeout)
+	defer cancel()
+	if size := provider.ModelWindow(ctx, model); size > 0 {
+		return size, "the Models API"
+	}
+	return defaultAnthropicWindow, windowFromDefault
 }
 
 func findLocalServer(ctx context.Context, cfg config.Config) (string, error) {

@@ -51,6 +51,8 @@ type Session struct {
 	Skills []string
 	// Instructions are the instructions files read into the system prompt.
 	Instructions []string
+	// WindowFrom says where the context window came from.
+	WindowFrom string
 
 	ToolDescriptions map[string]string
 

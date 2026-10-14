@@ -254,3 +254,31 @@ func (p *Anthropic) headers(ctx context.Context) (map[string]string, error) {
 	headers["Authorization"] = "Bearer " + token
 	return headers, nil
 }
+
+// ModelWindow is the model's context, from the Models API, or 0 when it
+// does not say.
+func (p *Anthropic) ModelWindow(ctx context.Context, model string) int {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(p.BaseURL, "/")+"/v1/models/"+model, nil)
+	if err != nil {
+		return 0
+	}
+	headers, err := p.headers(ctx)
+	if err != nil {
+		return 0
+	}
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
+	resp, err := clientOrDefault(p.Client).Do(req)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+	var info struct {
+		MaxInputTokens int `json:"max_input_tokens"`
+	}
+	if resp.StatusCode != http.StatusOK || json.NewDecoder(resp.Body).Decode(&info) != nil {
+		return 0
+	}
+	return info.MaxInputTokens
+}

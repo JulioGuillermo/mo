@@ -168,6 +168,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	return tui.Session{
 		Agent:        assistant,
 		Provider:     chosen.name,
+		WindowFrom:   chosen.windowFrom,
 		Model:        chosen.model,
 		Config:       cfg,
 		WorkDir:      workDir,

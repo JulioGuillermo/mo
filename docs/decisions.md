@@ -758,3 +758,15 @@
 - A provider with a sign-in counts as one with a key: a project file cannot pick it unless trusted.
 - Signing in with another product's OAuth client, as with Codex or Antigravity subscriptions, is
   left for later: it works only by presenting itself as that product.
+
+## The model's context window
+
+- The window is the model's own unless set: mo asks the server each time a session is built, so at
+  start and after picking another model. llama-server says it in /props; other OpenAI-compatible
+  servers in the model's entry of /models, under the name each uses (context_length,
+  context_window, max_model_len, max_context_length); Ollama, the context it loaded the model with,
+  else its num_ctx, else the most the model takes, as it cuts at num_ctx; LM Studio, the loaded
+  context, else the most; Gemini, its own model API's inputTokenLimit, the key as key= since that
+  API takes no bearer key; Anthropic, the Models API's max_input_tokens. When none says, 32768, or
+  200000 for Anthropic. Context › Context window overrides it, and the Context section says where
+  the window in use came from.

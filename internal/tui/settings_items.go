@@ -49,7 +49,11 @@ var settingsSections = []settingsSection{
 	{key: "context", title: "Context", summary: func(d *settingsDraft) string {
 		return fmt.Sprintf("window %s · make room at %s · %s", windowValue(d), d.compactAt, d.strategy)
 	}, note: func(m model, _ *settingsMenu) string {
-		return "Sent with every request now " + budgetText(m.session.Agent.Budget())
+		note := "Sent with every request now " + budgetText(m.session.Agent.Budget())
+		if from := m.session.WindowFrom; from != "" {
+			note += fmt.Sprintf("\nWindow now %s tokens, from %s", formatTokens(m.session.Agent.Window), from)
+		}
+		return note
 	}, items: contextItems},
 	{key: "descriptions", title: "Tool descriptions", summary: func(d *settingsDraft) string {
 		return fmt.Sprintf("%d tools", len(d.descriptions))
@@ -321,7 +325,7 @@ func skillItems(m model, menu *settingsMenu) []settingItem {
 func contextItems(model, *settingsMenu) []settingItem {
 	return []settingItem{
 		{"Context window (tokens)", windowValue, func(d *settingsDraft) huh.Field {
-			return huh.NewInput().Title("Context window (tokens)").Description("0: ask the server, else 32768 / 200000").
+			return huh.NewInput().Title("Context window (tokens)").Description("0: the model's own, as its server says; set to use another").
 				Validate(validCount).Value(&d.window)
 		}},
 		{"Make room at", func(d *settingsDraft) string { return d.compactAt }, func(d *settingsDraft) huh.Field {

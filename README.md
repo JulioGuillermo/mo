@@ -142,7 +142,8 @@ enabled = true             # read instructions files into the system prompt
 files = ["AGENTS.md", "AGENT.md"]   # looked for in ~/.config/mo, then from the repository's root down
 
 [context]
-window = 0                 # 0: ask llama-server, else 32768 (local) / 200000 (anthropic)
+window = 0                 # 0: the model's own, as its server says (llama-server, the model list,
+                           # Ollama, LM Studio, Gemini, Anthropic); else 32768 / 200000
 compact_at = 0.75          # make room at this share of the window; 0 = never
 strategy = "compact"       # compact: summarize older messages · drop: remove the oldest turns
 compact_prompt = ""        # empty: built-in summary prompt
