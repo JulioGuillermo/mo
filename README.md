@@ -402,6 +402,7 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | shift+tab | change the permission mode |
 | ctrl+o, click | open or fold reasoning and tool calls |
 | esc esc (empty input) | go back to one of your prompts |
+| up, down (empty input) | go through what you sent before, prompts and commands, kept between sessions in `~/.local/share/mo/history` |
 | ctrl+v | paste a copied image or files as attachments |
 | backspace, delete next to `[image #1]` | take the attachment out whole; the chips over the input drop one with a click |
 | pgup, pgdown, shift+up/down, mouse wheel | scroll the conversation |

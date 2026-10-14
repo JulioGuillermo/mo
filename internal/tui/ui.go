@@ -106,6 +106,8 @@ type model struct {
 	changes     []gitops.Change
 	repoReading bool
 	repoStale   bool
+	// history is what was sent before, for the arrows to bring back.
+	history inputHistory
 	// titling is the title the model is working out, after /title auto.
 	titling *titling
 	// promptRead is how far the server is in reading the prompt, when it
@@ -168,6 +170,7 @@ func Run(session Session) error {
 		viewport: viewport.New(),
 		spinner:  spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(workingStyle)),
 		focused:  true,
+		history:  loadHistory(),
 	}
 	program := tea.NewProgram(m)
 	bridge.program = program
@@ -427,6 +430,9 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.dialog != nil {
 		return m.handleDialogKey(msg)
 	}
+	if handled, next, cmd := m.historyKey(msg.String()); handled {
+		return next, cmd
+	}
 	if matches := m.suggestions(); len(matches) > 0 {
 		if handled, next, cmd := m.handleSuggestionKey(msg.String(), matches); handled {
 			return next, cmd
@@ -532,6 +538,16 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.input.Reset()
+	if keep := m.history.add(prompt); keep != nil {
+		next, cmd := m.submitted(prompt)
+		return next, tea.Batch(cmd, keep)
+	}
+	return m.submitted(prompt)
+}
+
+// submitted runs what was sent: a command, a message queued while the
+// model works, or a turn.
+func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 	if strings.HasPrefix(prompt, "/") {
 		return m.runCommand(prompt)
 	}
