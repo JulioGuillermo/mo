@@ -87,7 +87,7 @@ func saveRules(rules []string, where, workDir string) tea.Cmd {
 
 func (m model) finishRules(msg rulesSavedMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
-		return m.emit(m.printer.Error(fmt.Errorf("the rule works for this session but was not saved: %w", msg.err)))
+		return m.emitError(fmt.Errorf("the rule works for this session but was not saved: %w", msg.err))
 	}
 	where := "every project"
 	if msg.where == thisProject {

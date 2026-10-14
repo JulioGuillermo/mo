@@ -47,7 +47,7 @@ func (m model) login(argument string) (tea.Model, tea.Cmd) {
 
 func (m model) loggedIn(msg loginMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
-		return m.emit(m.printer.Error(fmt.Errorf("signing in to %s: %w", msg.provider, msg.err)))
+		return m.emitError(fmt.Errorf("signing in to %s: %w", msg.provider, msg.err))
 	}
 	return m.emit(m.printer.Note("signed in to " + msg.provider + " · its token is renewed when it expires"))
 }
@@ -56,7 +56,7 @@ func (m model) loggedIn(msg loginMsg) (tea.Model, tea.Cmd) {
 func (m model) logout(argument string) (tea.Model, tea.Cmd) {
 	provider := strings.TrimSpace(orDefault(argument, m.session.Provider))
 	if err := auth.Logout(provider); err != nil {
-		return m.emit(m.printer.Error(err))
+		return m.emitError(err)
 	}
 	return m.emit(m.printer.Note("signed out of " + provider))
 }

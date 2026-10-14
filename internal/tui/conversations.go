@@ -95,7 +95,7 @@ func loadConversation(id string) tea.Cmd {
 // name of what they came from.
 func (m model) pickConversation(msg resumeListMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
-		return m.emit(m.printer.Error(msg.err))
+		return m.emitError(msg.err)
 	}
 	if len(msg.infos) == 0 {
 		return m.emit(m.printer.Note("no saved conversations in this folder yet"))
@@ -136,7 +136,7 @@ func (m model) pickConversation(msg resumeListMsg) (tea.Model, tea.Cmd) {
 // saved after its last turn.
 func (m model) resume(msg resumedMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
-		return m.emit(m.printer.Error(msg.err))
+		return m.emitError(msg.err)
 	}
 	if m.running {
 		return m.emit(m.printer.Note("stop the current run first"))

@@ -102,7 +102,7 @@ func loadSettings(session Session, kind settingsKind) tea.Cmd {
 func (m model) openSettings(msg settingsLoadedMsg) (tea.Model, tea.Cmd) {
 	m.settingsInFlight = false
 	if msg.err != nil {
-		return m, printText(m.printer.Error(msg.err))
+		return m.emitError(msg.err)
 	}
 	switch msg.kind {
 	case providerSettings:
@@ -201,7 +201,7 @@ func saveSettings(screen *settingsScreen, current Session) tea.Cmd {
 func (m model) finishSettings(msg settingsSavedMsg) (tea.Model, tea.Cmd) {
 	m.settingsInFlight = false
 	if msg.err != nil {
-		return m, printText(m.printer.Error(msg.err))
+		return m.emitError(msg.err)
 	}
 	m.session = msg.session
 	m.usage = m.session.Agent.LastUsage

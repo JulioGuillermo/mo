@@ -138,7 +138,7 @@ func (m model) titled(msg titledMsg) (tea.Model, tea.Cmd) {
 	case errors.Is(msg.err, agent.ErrNothingToTitle):
 		return m.emit(m.printer.Note("nothing to title yet: write a prompt first"))
 	case msg.err != nil:
-		return m.emit(m.printer.Error(errors.Join(errors.New("no title"), msg.err)))
+		return m.emitError(errors.Join(errors.New("no title"), msg.err))
 	case msg.first != m.firstPrompt():
 		return m.emit(m.printer.Note("the title came for another conversation: " + msg.title))
 	}

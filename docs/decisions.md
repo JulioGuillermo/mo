@@ -744,6 +744,9 @@
 
 - A line of an error longer than the terminal goes on under itself, indented as far as its text
   starts, or under the value of a JSON `"key":`, so a provider's JSON error stays readable whole.
+- An error of more than two lines, or a very long one, is folded to its first line with how many
+  lines it has, like a reasoning: ctrl+o or a click opens it whole. A turn that ends with one keeps
+  the order: the answer cut short, the error, then mo's notes.
 
 ## OAuth sign-in
 

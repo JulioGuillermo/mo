@@ -128,7 +128,7 @@ func (m model) useModel(name string) (tea.Model, tea.Cmd) {
 	}
 	layer, err := config.ReadUserLayer()
 	if err != nil {
-		return m.emit(m.printer.Error(err))
+		return m.emitError(err)
 	}
 	if project, err := config.ReadProject(m.session.WorkDir); err == nil && config.ProjectSets(project.Layer)["model"] {
 		chosen := project.Layer

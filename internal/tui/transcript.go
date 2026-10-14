@@ -80,6 +80,31 @@ func (m *model) addFoldable(b block) {
 	m.blocks = append(m.blocks, b)
 }
 
+// errorFoldLines is how many lines an error may have before it is folded.
+const errorFoldLines = 2
+
+// longError tells an error too long to show whole by default, such as a
+// provider's JSON.
+func longError(err error) bool {
+	text := err.Error()
+	return strings.Count(text, "\n") >= errorFoldLines || len(text) > 300
+}
+
+// emitError shows an error: whole when short, else folded to its first
+// line, opened like reasoning with ctrl+o or a click.
+func (m model) emitError(err error) (tea.Model, tea.Cmd) {
+	if !longError(err) {
+		return m.emit(m.printer.Error(err))
+	}
+	m.addError(err)
+	return m, nil
+}
+
+func (m *model) addError(err error) {
+	printer := m.printer
+	m.addFoldable(block{draw: func(open bool) string { return printer.FoldedError(err, open) }})
+}
+
 // addReasoning adds a reasoning of the model, folded to one line.
 func (m *model) addReasoning(text string) {
 	if text = strings.TrimSpace(text); text != "" {

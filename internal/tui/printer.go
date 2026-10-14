@@ -383,6 +383,24 @@ func (p *printer) Error(err error) string {
 	return errorStyle.Render(hangingWrap("✗ "+err.Error(), width))
 }
 
+// FoldedError is a long error: its first line and how long it is, or all
+// of it when open.
+func (p *printer) FoldedError(err error, open bool) string {
+	text := err.Error()
+	if open {
+		return p.Error(err) + "\n" + dimStyle.Render("  ▴ ctrl+o or click to fold")
+	}
+	first, _, _ := strings.Cut(text, "\n")
+	p.mu.Lock()
+	width := p.width
+	p.mu.Unlock()
+	if runes := []rune(first); width > 0 && len(runes) > width/2 {
+		first = string(runes[:max(width/2, 20)]) + "…"
+	}
+	lines := strings.Count(text, "\n") + 1
+	return errorStyle.Render("✗ "+first) + dimStyle.Render(fmt.Sprintf(" · %d lines · ctrl+o or click to open", lines))
+}
+
 var jsonKey = regexp.MustCompile(`^\s*"[^"]*":\s*`)
 
 // hangingWrap wraps each line at width, its next lines indented as far as

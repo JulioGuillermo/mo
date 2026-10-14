@@ -256,7 +256,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.emit(string(msg))
 	case clipboardMsg:
 		if msg.err != nil {
-			return m.emit(m.printer.Error(msg.err))
+			return m.emitError(msg.err)
 		}
 		if msg.image != "" {
 			m.attach([]string{msg.image}, true)
@@ -290,7 +290,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case savedMsg:
 		if msg.err != nil {
-			return m.emit(m.printer.Error(fmt.Errorf("the conversation was not saved: %w", msg.err)))
+			return m.emitError(fmt.Errorf("the conversation was not saved: %w", msg.err))
 		}
 		return m, nil
 	case resumeListMsg:
@@ -689,11 +689,16 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 	if partial != "" {
 		lines = append(lines, "\n"+m.printer.Markdown(partial))
 	}
+	// A long error goes folded between what came before and the notes after.
+	var folded error
+	foldAt := 0
 	switch {
 	case errors.Is(err, context.Canceled):
 		lines = append(lines, m.printer.Note("stopped · /continue goes on"))
 	case errors.Is(err, agent.ErrNothingToContinue):
 		lines = append(lines, m.printer.Note("nothing to continue yet"))
+	case err != nil && longError(err):
+		folded, foldAt = err, len(lines)
 	case err != nil:
 		lines = append(lines, m.printer.Error(err))
 	}
@@ -727,6 +732,21 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 		reacting, react := m.reactToJobs()
 		m = reacting.(model)
 		save = tea.Batch(save, react)
+	}
+	if folded != nil {
+		cmds := []tea.Cmd{save}
+		if before := lines[:foldAt]; len(before) > 0 {
+			shown, cmd := m.emit(strings.Join(before, "\n"))
+			m = shown.(model)
+			cmds = append(cmds, cmd)
+		}
+		m.addError(folded)
+		if after := lines[foldAt:]; len(after) > 0 {
+			shown, cmd := m.emit(strings.Join(after, "\n"))
+			m = shown.(model)
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
 	}
 	if len(lines) == 0 {
 		return m, save

@@ -400,7 +400,7 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | ctrl+c (idle) | clear input, then quit |
 | ctrl+d | quit |
 | shift+tab | change the permission mode |
-| ctrl+o, click | open or fold reasoning and tool calls |
+| ctrl+o, click | open or fold reasoning, tool calls and long errors |
 | esc esc (empty input) | go back to one of your prompts |
 | up, down (empty input) | go through what you sent before, prompts and commands, kept between sessions in `~/.local/share/mo/history` |
 | ctrl+v | paste a copied image or files as attachments |

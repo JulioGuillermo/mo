@@ -65,7 +65,7 @@ func (m model) jobMenu(id int) (tea.Model, tea.Cmd) {
 	}
 	status, _, err := jobs.Output(id, 0)
 	if err != nil {
-		return m.emit(m.printer.Error(err))
+		return m.emitError(err)
 	}
 	options := []huh.Option[string]{huh.NewOption("see its output and how it stands", "show")}
 	if status.State == tools.JobRunning {
@@ -90,7 +90,7 @@ func (m model) jobDialog(id int) (tea.Model, tea.Cmd) {
 	lines := max(min(jobDialogLines, m.height-10), 3)
 	status, output, err := jobs.Output(id, lines)
 	if err != nil {
-		return m.emit(m.printer.Error(err))
+		return m.emitError(err)
 	}
 	if strings.TrimSpace(output) == "" {
 		output = "(no output yet)"
@@ -112,7 +112,7 @@ func (m model) jobDialog(id int) (tea.Model, tea.Cmd) {
 func (m model) killFromMenu(id int) (tea.Model, tea.Cmd) {
 	jobs := m.jobs()
 	if err := jobs.Kill(id); err != nil {
-		return m.emit(m.printer.Error(err))
+		return m.emitError(err)
 	}
 	return m.emit(m.printer.Note(fmt.Sprintf("job %d killed", id)))
 }

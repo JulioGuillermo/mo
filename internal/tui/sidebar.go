@@ -222,7 +222,7 @@ func (m model) showJob(id int) (tea.Model, tea.Cmd) {
 	}
 	status, output, err := jobs.Output(id, jobShownLines)
 	if err != nil {
-		return m.emit(m.printer.Error(err))
+		return m.emitError(err)
 	}
 	return m.emit(m.printer.Note(status.Describe()) + "\n" + m.printer.ToolResult(output, status.State == tools.JobFailed))
 }
