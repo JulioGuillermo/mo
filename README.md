@@ -31,7 +31,7 @@ is tried first and saved only when it works.
 
 ## Providers
 
-Two protocols cover almost everything (a third, Google's Cloud Code, serves Antigravity):
+Two protocols cover almost everything (three more serve the subscription logins: Google's Cloud Code for Antigravity, the Responses API for Codex, and Anthropic's own with a Claude account):
 
 | Preset | Protocol | Default URL | Key |
 |---|---|---|---|
@@ -46,6 +46,8 @@ Two protocols cover almost everything (a third, Google's Cloud Code, serves Anti
 | `deepseek` | openai | `https://api.deepseek.com/v1` | `DEEPSEEK_API_KEY` |
 | `mistral` | openai | `https://api.mistral.ai/v1` | `MISTRAL_API_KEY` |
 | `antigravity` | cloudcode | `https://daily-cloudcode-pa.sandbox.googleapis.com` | `/login antigravity` (below) |
+| `codex` | responses | `https://chatgpt.com/backend-api/codex` | `/login codex` (below) |
+| `claude-code` | claude-code | `https://api.anthropic.com` | `/login claude-code` (below) |
 
 With no provider set, mo tries llama-server, ollama and lmstudio in that order.
 With no model set on an openai-type provider, it uses the first model the server lists.
@@ -80,8 +82,7 @@ client_secret_env = ""     # when the client has a secret
 
 `/login corp` signs in; the token is kept in `~/.local/share/mo/oauth/corp.json`, for you only, and
 renewed with its refresh token when it expires. `/logout corp` forgets it.
-Other subscription logins (Claude, ChatGPT) are listed as not usable and never read:
-Anthropic forbids using Claude subscription tokens outside its own apps. Claude works with an API key.
+Subscription logins have their own providers (below); no other tool's token is ever read.
 
 ### Antigravity
 
@@ -92,6 +93,18 @@ and renewed when it expires. The client only accepts `http://localhost:51121/oau
 port must be free during the sign-in (`redirect_url` in its `[oauth]` settings). It offers Antigravity's
 Gemini, Claude and gpt-oss models: pick one in `/providers`, or `-p antigravity -m gemini-3-flash`.
 Using Antigravity's client outside Antigravity may break Google's terms, and the quota is the account's.
+
+### Codex and Claude Code
+
+`codex` signs in with a ChatGPT account and `claude-code` with a Claude account, each as the
+official tool does: `/login codex` or `/login claude-code` opens the browser and keeps the token in
+`~/.local/share/mo/oauth/<provider>.json`, renewed when it expires; in `/providers` the same is the
+**Log in** button. `codex` needs port 1455 free during the sign-in. Their models come from the
+provider's own list (`/model`); the defaults are `gpt-5.6` and `claude-sonnet-5-5`.
+These providers send their requests like Codex and Claude Code do (their headers and, for Claude
+Code, the system line it starts with), since their servers expect that. Both OpenAI's and
+Anthropic's terms limit these subscriptions to their own apps, and Anthropic has blocked other uses
+before: a provider may stop working, and your account is the one at risk.
 
 ## Config
 

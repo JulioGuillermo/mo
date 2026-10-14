@@ -10,6 +10,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -158,6 +159,46 @@ func TestLogin(t *testing.T) {
 		token, _ := Load("corp")
 		if err != nil || asked != redirect || token == nil {
 			t.Errorf("err %v asked %q token %+v", err, asked, token)
+		}
+	})
+
+	t.Run("AU-07 a JSON token endpoint gets JSON for the code and for the renewal", func(t *testing.T) {
+		t.Setenv("XDG_DATA_HOME", t.TempDir())
+		var bodies []map[string]string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body map[string]string
+			if r.Header.Get("Content-Type") != "application/json" || json.NewDecoder(r.Body).Decode(&body) != nil {
+				http.Error(w, "json only", http.StatusBadRequest)
+				return
+			}
+			bodies = append(bodies, body)
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"access_token":"a%d","refresh_token":"r%d","expires_in":3600}`, len(bodies), len(bodies))
+		}))
+		defer server.Close()
+		openBrowser = func(page string) {
+			parsed, _ := url.Parse(page)
+			query := parsed.Query()
+			go http.Get(query.Get("redirect_uri") + "?code=the-code&state=" + url.QueryEscape(query.Get("state")))
+		}
+		t.Cleanup(func() { openBrowser = func(string) {} })
+		settings := config.OAuth{Flow: config.OAuthBrowser, JSON: true, ClientID: "cli", AuthURL: server.URL + "/authorize", TokenURL: server.URL + "/token", Scopes: []string{"a", "b"}}
+
+		if err := Login(context.Background(), "claude", settings, func(Prompt) {}); err != nil {
+			t.Fatal(err)
+		}
+		_ = Save("claude", &oauth2.Token{AccessToken: "old", RefreshToken: "r1", Expiry: time.Now().Add(-time.Hour)})
+		token, err := NewSource("claude", settings).Token(context.Background())
+
+		if err != nil || token != "a2" || len(bodies) != 2 {
+			t.Fatalf("token %q err %v bodies %v", token, err, bodies)
+		}
+		first, second := bodies[0], bodies[1]
+		if first["grant_type"] != "authorization_code" || first["code"] != "the-code" || first["code_verifier"] == "" || !strings.HasPrefix(first["redirect_uri"], "http://localhost:") {
+			t.Errorf("code request %v", first)
+		}
+		if second["grant_type"] != "refresh_token" || second["refresh_token"] != "r1" || second["scope"] != "a b" || second["client_id"] != "cli" {
+			t.Errorf("refresh request %v", second)
 		}
 	})
 }

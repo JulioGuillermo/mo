@@ -33,5 +33,25 @@ func presets() map[string]ProviderConfig {
 				"https://www.googleapis.com/auth/experimentsandconfigs",
 			},
 		}},
+		// Sign in as Codex does, with a ChatGPT account.
+		"codex": {Protocol: "responses", BaseURL: "https://chatgpt.com/backend-api/codex", Model: "gpt-5.6", OAuth: &OAuth{
+			Flow:        OAuthBrowser,
+			ClientID:    "app_EMoamEEZ73f0CkXaXp7hrann",
+			AuthURL:     "https://auth.openai.com/oauth/authorize",
+			TokenURL:    "https://auth.openai.com/oauth/token",
+			RedirectURL: "http://localhost:1455/auth/callback",
+			Scopes:      []string{"openid", "profile", "email", "offline_access", "api.connectors.read", "api.connectors.invoke"},
+			Params:      map[string]string{"id_token_add_organizations": "true", "codex_cli_simplified_flow": "true", "originator": "codex_cli_rs"},
+		}},
+		// Sign in as Claude Code does, with a Claude account.
+		"claude-code": {Protocol: "claude-code", BaseURL: "https://api.anthropic.com", Model: "claude-sonnet-5-5", OAuth: &OAuth{
+			Flow:     OAuthBrowser,
+			JSON:     true,
+			ClientID: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+			AuthURL:  "https://claude.com/cai/oauth/authorize",
+			TokenURL: "https://platform.claude.com/v1/oauth/token",
+			Scopes:   []string{"user:profile", "user:inference", "user:sessions:claude_code", "user:mcp_servers", "user:file_upload"},
+			Params:   map[string]string{"code": "true"},
+		}},
 	}
 }

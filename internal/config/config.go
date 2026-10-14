@@ -218,6 +218,9 @@ type OAuth struct {
 	// RedirectURL is the loopback address the browser flow listens on, when
 	// the client only accepts one registered address; empty: any free port.
 	RedirectURL string `toml:"redirect_url,omitempty"`
+	// JSON says the token endpoint takes its requests and gives its answers
+	// as JSON, not as a form.
+	JSON bool `toml:"json,omitempty"`
 }
 
 // Secret is the client secret, written or from its variable.

@@ -16,7 +16,17 @@ type Anthropic struct {
 	Client  *http.Client
 	// Token, when set, gives a bearer at each request instead of APIKey.
 	Token func(ctx context.Context) (string, error)
+	// Subscription sends the requests as Claude Code does with a Claude
+	// account's sign-in: its beta header and the line its system prompt
+	// must start with.
+	Subscription bool
 }
+
+const (
+	claudeCodeBeta   = "oauth-2025-04-20"
+	claudeCodeSystem = "You are Claude Code, Anthropic's official CLI for Claude."
+	claudeCodeAgent  = "claude-cli/2.1.299 (external, cli)"
+)
 
 const anthropicDefaultMaxTokens = 8192
 
@@ -108,7 +118,11 @@ func (p *Anthropic) Stream(ctx context.Context, req Request, onEvent func(Event)
 		return Response{}, err
 	}
 	url := strings.TrimRight(p.BaseURL, "/") + "/v1/messages"
-	resp, err := postJSON(ctx, clientOrDefault(p.Client), url, headers, buildAnthropicRequest(req))
+	body := buildAnthropicRequest(req)
+	if p.Subscription {
+		body.System = append([]anthropicBlock{{Type: "text", Text: claudeCodeSystem}}, body.System...)
+	}
+	resp, err := postJSON(ctx, clientOrDefault(p.Client), url, headers, body)
 	if err != nil {
 		return Response{}, err
 	}
@@ -252,6 +266,11 @@ func (p *Anthropic) headers(ctx context.Context) (map[string]string, error) {
 		return nil, err
 	}
 	headers["Authorization"] = "Bearer " + token
+	if p.Subscription {
+		headers["anthropic-beta"] = claudeCodeBeta
+		headers["x-app"] = "cli"
+		headers["User-Agent"] = claudeCodeAgent
+	}
 	return headers, nil
 }
 

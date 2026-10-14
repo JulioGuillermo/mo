@@ -19,6 +19,7 @@ const (
 	windowProbeTimeout     = 3 * time.Second
 	defaultLocalWindow     = 32768
 	defaultAnthropicWindow = 200000
+	defaultResponsesWindow = 272000
 )
 
 type chosenProvider struct {
@@ -80,7 +81,7 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 		window, from, llama := openAIWindow(ctx, provider, model, cfg.Context.Window)
 		provider.PromptProgress = llama
 		return chosenProvider{name: name, model: model, window: window, provider: provider, windowFrom: from}, nil
-	case "anthropic":
+	case "anthropic", "claude-code":
 		key := settings.Key()
 		if key == "" && token == nil {
 			return chosenProvider{}, fmt.Errorf("%s needs an API key: set providers.%s.api_key, api_key_env or api_key_from", name, name)
@@ -88,12 +89,24 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 		if model == "" {
 			return chosenProvider{}, fmt.Errorf("%s needs a model: use -m or set model in the config", name)
 		}
-		provider := &llm.Anthropic{BaseURL: settings.BaseURL, APIKey: key, Token: token}
+		provider := &llm.Anthropic{BaseURL: settings.BaseURL, APIKey: key, Token: token, Subscription: settings.Protocol == "claude-code"}
 		window, from := cfg.Context.Window, windowFromSettings
 		if window == 0 {
 			window, from = anthropicWindow(ctx, provider, model)
 		}
 		return chosenProvider{name: name, model: model, window: window, provider: provider, windowFrom: from}, nil
+	case "responses":
+		if token == nil {
+			return chosenProvider{}, fmt.Errorf("%s needs a sign-in: set providers.%s.oauth", name, name)
+		}
+		if model == "" {
+			return chosenProvider{}, fmt.Errorf("%s needs a model: use -m or set model in the config", name)
+		}
+		window, from := cfg.Context.Window, windowFromSettings
+		if window == 0 {
+			window, from = defaultResponsesWindow, windowFromDefault
+		}
+		return chosenProvider{name: name, model: model, window: window, provider: &llm.Responses{BaseURL: settings.BaseURL, Token: token}, windowFrom: from}, nil
 	case "cloudcode":
 		if model == "" {
 			return chosenProvider{}, fmt.Errorf("%s needs a model: use -m or set model in the config", name)
@@ -104,7 +117,7 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 		}
 		return chosenProvider{name: name, model: model, window: window, provider: &llm.CloudCode{BaseURL: settings.BaseURL, Token: token}, windowFrom: from}, nil
 	}
-	return chosenProvider{}, fmt.Errorf("provider %q has unknown type %q (use openai, anthropic or cloudcode)", name, settings.Protocol)
+	return chosenProvider{}, fmt.Errorf("provider %q has unknown type %q (use openai, anthropic, claude-code, responses or cloudcode)", name, settings.Protocol)
 }
 
 // defaultCloudCodeWindow is the context of the models Cloud Code serves,

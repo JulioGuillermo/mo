@@ -79,8 +79,16 @@
 
 - Two protocols only: OpenAI chat completions (every local server speaks it) and Anthropic Messages.
   Gemini, Bedrock and Vertex can come later as more adapters behind `llm.Provider`.
-- Anthropic: API key only. Reusing Claude Code's subscription login breaks Anthropic's terms and is
-  blocked by them since 2026.
+- `anthropic` takes an API key only. A Claude account's sign-in is the separate `claude-code`
+  provider, asked for by the user: Anthropic's terms limit it to Claude Code and have blocked other
+  uses since 2026, so it can stop working. It signs in with Claude Code's OAuth client (token
+  endpoint speaks JSON, hence `oauth.json`), sends the `oauth-2025-04-20` beta header, and puts
+  "You are Claude Code, Anthropic's official CLI for Claude." first in the system prompt, which
+  the API requires for these tokens.
+- `codex` is the Responses API as the ChatGPT backend serves it (`chatgpt.com/backend-api/codex`):
+  system prompt as `instructions` (never empty), `store: false`, no `max_output_tokens`, and the
+  ChatGPT account id, read from the access token's own claims, as a header. Reasoning items are
+  not sent back, so the model re-reasons each turn.
 - Antigravity is a third protocol, `cloudcode`: Gemini's own format inside the envelope of Google's
   Cloud Code Assist API (`v1internal:streamGenerateContent`), the one Antigravity speaks. It signs
   in with Antigravity's own OAuth client (id and secret are public, from its app), through the

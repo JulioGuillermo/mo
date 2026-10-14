@@ -507,3 +507,16 @@ allow = ["make *"]
 		}
 	})
 }
+
+func TestSubscriptionPresets(t *testing.T) {
+	presets := Defaults().Providers
+	for name, protocol := range map[string]string{"antigravity": "cloudcode", "codex": "responses", "claude-code": "claude-code"} {
+		preset := presets[name]
+		if preset.Protocol != protocol || preset.OAuth == nil || preset.OAuth.Flow != OAuthBrowser || preset.OAuth.ClientID == "" || preset.Model == "" || !preset.NeedsKey() {
+			t.Errorf("%s: %+v", name, preset)
+		}
+	}
+	if !presets["claude-code"].OAuth.JSON || presets["codex"].OAuth.RedirectURL == "" {
+		t.Error("claude-code takes JSON and codex one fixed redirect")
+	}
+}

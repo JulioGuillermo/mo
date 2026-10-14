@@ -2,10 +2,15 @@ package tui
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/jg/mo/internal/auth"
+	"github.com/jg/mo/internal/config"
 )
 
 const shownSuggestions = 10
@@ -23,8 +28,8 @@ var builtinCommands = []command{
 	{name: "fork", description: "go on in a copy of the conversation"},
 	{name: "continue", description: "let the model go on after you stopped it"},
 	{name: "model", description: "pick a model of the provider in use, from the list it gives"},
-	{name: "login", description: "sign in to a provider that uses OAuth: /login <provider>"},
-	{name: "logout", description: "forget a provider's sign-in"},
+	{name: "login", argument: "[provider]", description: "sign in to a provider that uses OAuth, the one in use by default"},
+	{name: "logout", argument: "[provider]", description: "forget a provider's sign-in"},
 	{name: "title", description: "name the conversation: /title <name>, or /title auto for the model to"},
 	{name: "compact", description: "summarize the conversation to free context"},
 	{name: "settings", description: "global settings, and what this project overrides · /settings project"},
@@ -64,16 +69,47 @@ func (m model) commands() []command {
 }
 
 // suggestions are the commands that start with what the user typed after
-// "/", while the first word is being written.
+// "/", while the first word is being written; after /login or /logout and a
+// space, the providers it takes.
 func (m model) suggestions() []command {
 	typed, isCommand := strings.CutPrefix(m.input.Value(), "/")
-	if !isCommand || strings.ContainsAny(typed, " \n") {
+	if !isCommand || strings.Contains(typed, "\n") {
 		return nil
+	}
+	if name, partial, spaced := strings.Cut(typed, " "); spaced {
+		return m.providerSuggestions(name, partial)
 	}
 	var matches []command
 	for _, candidate := range m.commands() {
 		if strings.HasPrefix(candidate.name, typed) {
 			matches = append(matches, candidate)
+		}
+	}
+	return matches
+}
+
+// providerSuggestions are the providers /login can sign in to, or /logout
+// has a sign-in to forget, that start with what was typed. Each is a
+// command ready to run, so enter runs it as it is.
+func (m model) providerSuggestions(name, partial string) []command {
+	if (name != "login" && name != "logout") || strings.Contains(partial, " ") {
+		return nil
+	}
+	var matches []command
+	for _, provider := range slices.Sorted(maps.Keys(m.session.Config.Providers)) {
+		settings := m.session.Config.Providers[provider]
+		if !strings.HasPrefix(provider, partial) || settings.OAuth == nil || settings.OAuth.Flow == config.OAuthClient {
+			continue
+		}
+		_, err := auth.Load(provider)
+		signedIn := err == nil
+		switch {
+		case name == "logout" && !signedIn:
+			continue
+		case signedIn:
+			matches = append(matches, command{name: name + " " + provider, description: "signed in"})
+		default:
+			matches = append(matches, command{name: name + " " + provider, description: "not signed in"})
 		}
 	}
 	return matches

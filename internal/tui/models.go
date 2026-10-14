@@ -47,9 +47,10 @@ func listModels(ctx context.Context, provider string, settings config.ProviderCo
 	switch settings.Protocol {
 	case "cloudcode":
 		return (&llm.CloudCode{BaseURL: settings.BaseURL, Token: token}).ListModels(ctx)
-	}
-	if settings.Protocol == "anthropic" {
-		return (&llm.Anthropic{BaseURL: settings.BaseURL, APIKey: settings.Key(), Token: token}).ListModels(ctx)
+	case "responses":
+		return (&llm.Responses{BaseURL: settings.BaseURL, Token: token}).ListModels(ctx)
+	case "anthropic", "claude-code":
+		return (&llm.Anthropic{BaseURL: settings.BaseURL, APIKey: settings.Key(), Token: token, Subscription: settings.Protocol == "claude-code"}).ListModels(ctx)
 	}
 	return (&llm.OpenAI{BaseURL: settings.BaseURL, APIKey: settings.Key(), Token: token}).ListModels(ctx)
 }

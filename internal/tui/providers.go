@@ -16,6 +16,15 @@ import (
 	"github.com/jg/mo/internal/detect"
 )
 
+// providerTypes name the types of provider a form offers.
+var providerTypes = map[string]string{
+	"openai": "OpenAI-compatible", "anthropic": "Anthropic", "claude-code": "Claude Code (Claude account)",
+	"responses": "Responses (ChatGPT account)", "cloudcode": "Google Cloud Code (Antigravity)",
+}
+
+// protocolNeedsModel are the types that cannot pick a model by themselves.
+var protocolNeedsModel = map[string]bool{"anthropic": true, "claude-code": true, "responses": true, "cloudcode": true}
+
 // providerDraft holds what the provider form edits for one provider.
 type providerDraft struct {
 	name      string
@@ -97,11 +106,13 @@ func (d *providerDraft) entries(cfg config.Config) []entry {
 	}
 	entries = append(entries,
 		entry{"Type", func() string {
-			return map[string]string{"openai": "OpenAI-compatible", "anthropic": "Anthropic", "cloudcode": "Google Cloud Code (Antigravity)"}[d.protocol]
+			return providerTypes[d.protocol]
 		}, func() huh.Field {
 			return huh.NewSelect[string]().Title("Type").Options(
 				huh.NewOption("OpenAI-compatible: llama-server, ollama, vLLM, OpenAI, OpenRouter…", "openai"),
 				huh.NewOption("Anthropic", "anthropic"),
+				huh.NewOption("Claude Code: Anthropic with a Claude account's sign-in", "claude-code"),
+				huh.NewOption("Responses: Codex with a ChatGPT account's sign-in", "responses"),
 				huh.NewOption("Google Cloud Code: Antigravity's Gemini and Claude models", "cloudcode"),
 			).Value(&d.protocol)
 		}},
@@ -225,7 +236,7 @@ func (d *providerDraft) applyTo(layer config.Config) (config.Config, error) {
 		}
 		return layer, nil
 	}
-	if (d.protocol == "anthropic" || d.protocol == "cloudcode") && strings.TrimSpace(d.model) == "" {
+	if protocolNeedsModel[d.protocol] && strings.TrimSpace(d.model) == "" {
 		return layer, fmt.Errorf("%s: this type of provider needs a model", name)
 	}
 	preset := config.Defaults().Providers[name]

@@ -134,7 +134,13 @@ func (s *Source) Token(ctx context.Context) (string, error) {
 	case s.token.RefreshToken == "":
 		return "", fmt.Errorf("%s: the token expired: %w again: /login %s", s.provider, ErrNeedsLogin, s.provider)
 	}
-	renewed, err := oauthConfig(s.settings, "").TokenSource(ctx, s.token).Token()
+	var renewed *oauth2.Token
+	var err error
+	if s.settings.JSON {
+		renewed, err = jsonRefresh(ctx, s.settings, s.token.RefreshToken)
+	} else {
+		renewed, err = oauthConfig(s.settings, "").TokenSource(ctx, s.token).Token()
+	}
 	if err != nil {
 		return "", fmt.Errorf("%s: renewing the token: %v: /login %s", s.provider, err, s.provider)
 	}
@@ -209,7 +215,7 @@ func browserLogin(ctx context.Context, settings config.OAuth, show func(Prompt))
 		return nil, fmt.Errorf("listening for the sign-in answer: %w", err)
 	}
 	if redirect == "" {
-		redirect = fmt.Sprintf("http://%s%s", listener.Addr(), path)
+		redirect = fmt.Sprintf("http://localhost:%d%s", listener.Addr().(*net.TCPAddr).Port, path)
 	}
 	conf := oauthConfig(settings, redirect)
 	verifier := oauth2.GenerateVerifier()
@@ -239,6 +245,12 @@ func browserLogin(ctx context.Context, settings config.OAuth, show func(Prompt))
 	openBrowser(url)
 	select {
 	case code := <-codes:
+		if settings.JSON {
+			return jsonExchange(ctx, settings, map[string]string{
+				"grant_type": "authorization_code", "code": code, "redirect_uri": redirect, "client_id": settings.ClientID,
+				"code_verifier": verifier, "state": state,
+			})
+		}
 		return conf.Exchange(ctx, code, oauth2.VerifierOption(verifier))
 	case err := <-failures:
 		return nil, err

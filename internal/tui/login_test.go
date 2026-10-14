@@ -7,6 +7,9 @@ package tui
 // | OL-03 | Edge     | /login on a provider with a key says it takes a key                          | P2       |
 // | OL-10 | Happy    | A browser sign-in provider gets Log in, and Log out once signed in           | P1       |
 // | OL-11 | Edge     | A provider with a key or client credentials has no sign-in button            | P2       |
+// | OL-12 | Happy    | /login and a space list the providers that sign in                           | P1       |
+// | OL-13 | Happy    | Tab on /login asks for the provider; tab on one writes it ready to run       | P1       |
+// | OL-14 | Edge     | /logout lists only the providers that are signed in                          | P2       |
 
 import (
 	"slices"
@@ -102,6 +105,57 @@ func TestSignInButtons(t *testing.T) {
 		draft.oauth.Flow = config.OAuthClient
 		if actions := draft.signInActions(cfg); len(actions) != 0 {
 			t.Errorf("client credentials: %v", labels(actions))
+		}
+	})
+}
+
+func TestLoginSuggestions(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	names := func(m model) []string {
+		var out []string
+		for _, match := range m.suggestions() {
+			out = append(out, match.name)
+		}
+		return out
+	}
+	typing := func(text string) model {
+		m := conversationModel()
+		m.session.Config = config.Defaults()
+		m.input.SetValue(text)
+		return m
+	}
+
+	t.Run("OL-12 /login and a space list the providers that sign in", func(t *testing.T) {
+		got := names(typing("/login "))
+		if !slices.Equal(got, []string{"login antigravity", "login claude-code", "login codex"}) {
+			t.Fatalf("suggestions %v", got)
+		}
+		if got := names(typing("/login co")); !slices.Equal(got, []string{"login codex"}) {
+			t.Fatalf("filtered %v", got)
+		}
+		if got := names(typing("/title x")); got != nil {
+			t.Fatalf("other commands %v", got)
+		}
+	})
+
+	t.Run("OL-13 tab on /login asks for the provider, tab on one writes it ready to run", func(t *testing.T) {
+		m := typing("/login")
+		if matches := m.suggestions(); len(matches) != 1 || m.completeCommand(matches[0]) || m.input.Value() != "/login " {
+			t.Fatalf("after tab: %q", m.input.Value())
+		}
+		matches := m.suggestions()
+		if len(matches) == 0 || !m.completeCommand(matches[0]) || m.input.Value() != "/login antigravity" {
+			t.Fatalf("after tab on a provider: %q", m.input.Value())
+		}
+	})
+
+	t.Run("OL-14 /logout lists only the providers that are signed in", func(t *testing.T) {
+		if got := names(typing("/logout ")); len(got) != 0 {
+			t.Fatalf("nobody signed in: %v", got)
+		}
+		_ = auth.Save("codex", &oauth2.Token{AccessToken: "x", Expiry: time.Now().Add(time.Hour)})
+		if got := names(typing("/logout ")); !slices.Equal(got, []string{"logout codex"}) {
+			t.Fatalf("suggestions %v", got)
 		}
 	})
 }
