@@ -172,6 +172,9 @@ type Render struct {
 	// Status draws the status line as powerline segments, which need a
 	// font with their arrows, or "plain".
 	Status string `toml:"status,omitempty"`
+	// Icons are Nerd Font icons in the status line, or "text" for plain
+	// characters.
+	Icons string `toml:"icons,omitempty"`
 }
 
 type Memory struct {
@@ -256,7 +259,7 @@ func Defaults() Config {
 		Skills:       Skills{Mode: tools.ModeFull},
 		Instructions: Instructions{Enabled: ptr(true), Files: []string{"AGENTS.md", "AGENT.md"}},
 		Web:          Web{Search: web.SearchDuckDuckGo},
-		Render:       Render{Images: render.ModeAuto, Background: "#00081a", Sidebar: "auto", Status: "powerline"},
+		Render:       Render{Images: render.ModeAuto, Background: "#00081a", Sidebar: "auto", Status: "powerline", Icons: "nerd"},
 		Loop:         Loop{Enabled: ptr(true), Replies: 10, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2)},
 		Permissions:  Permissions{Mode: "edits", Allow: DefaultAllow},
 		Notify:       Notify{Finish: ptr(true), Approval: ptr(true), Method: "auto", Focused: ptr(false)},
@@ -323,6 +326,9 @@ func validate(cfg Config) error {
 	}
 	if cfg.Context.Strategy != "compact" && cfg.Context.Strategy != "drop" {
 		return fmt.Errorf("context.strategy %q: use compact or drop", cfg.Context.Strategy)
+	}
+	if cfg.Render.Icons != "nerd" && cfg.Render.Icons != "text" {
+		return fmt.Errorf("render.icons %q: use nerd or text", cfg.Render.Icons)
 	}
 	if cfg.Render.Status != "powerline" && cfg.Render.Status != "plain" {
 		return fmt.Errorf("render.status %q: use powerline or plain", cfg.Render.Status)
@@ -558,6 +564,7 @@ func mergeHarmless(base, layer Config) Config {
 	base.Render.Background = override(base.Render.Background, layer.Render.Background)
 	base.Render.Sidebar = override(base.Render.Sidebar, layer.Render.Sidebar)
 	base.Render.Status = override(base.Render.Status, layer.Render.Status)
+	base.Render.Icons = override(base.Render.Icons, layer.Render.Icons)
 	base.Loop = mergeLoop(base.Loop, layer.Loop)
 	return base
 }

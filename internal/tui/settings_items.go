@@ -491,6 +491,12 @@ func displayItems(model, *settingsMenu) []settingItem {
 				huh.NewOption("plain: text joined by │, for any font", statusPlain),
 			).Value(&d.statusStyle)
 		}},
+		{"Icons", func(d *settingsDraft) string { return d.icons }, func(d *settingsDraft) huh.Field {
+			return huh.NewSelect[string]().Title("Icons").Description("in the status line: the branch and its changes").Options(
+				huh.NewOption("nerd: Nerd Font icons \ue0a0 \U000f0752 \U000f11e7 \U000f1aa1 \U000f086f", iconsNerd),
+				huh.NewOption("text: + ~ - » ? ! ✓, for any font", iconsText),
+			).Value(&d.icons)
+		}},
 		{"Images, SVG and Mermaid", func(d *settingsDraft) string { return d.images }, func(d *settingsDraft) huh.Field {
 			return huh.NewSelect[string]().Title("Images, SVG and Mermaid").Options(
 				huh.NewOption("auto: kitty graphics where the terminal has them, else colour blocks", string(render.ModeAuto)),

@@ -162,6 +162,7 @@ background = "#00081a"     # painted behind everything so mo looks the same in a
                            # "terminal" keeps the terminal's own
 sidebar = "auto"           # side panel of tasks and jobs when wide enough; "off" never
 status = "powerline"       # segments on backgrounds with arrows (needs a Nerd Font); "plain" for any font
+icons = "nerd"             # Nerd Font icons for the branch and its changes; "text": + ~ - » ? ! ✓
 
 [permissions]
 mode = "edits"             # ask | edits | auto | all; shift+tab changes it for the session
@@ -406,6 +407,7 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | pgup, pgdown, shift+up/down, mouse wheel | scroll the conversation |
 | drag | select text and copy it; the shared indent is taken off |
 | click | buttons, options and tabs of a dialog, a suggested command, the mode (next), the provider (its settings), the model (a list to pick from), a job (its last lines), a settings option |
+| click on the branch | the files changed, each with its kind |
 | right click | the mode: all modes to pick · a task: change its state or delete it · a job: its output and how it stands, or kill it |
 | wheel over the side panel | scroll its tasks and jobs |
 | `/clear` `/resume` `/rewind` `/fork` `/title` `/model` `/login` `/logout` `/compact` `/settings` `/providers` `/mcp` `/plugins` `/view <file>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |

@@ -706,6 +706,12 @@
   that colour into the next: the mode, shaded from its own colour, provider › model, the context,
   the speeds; the branch and the folder end it from the right. Powerline arrows need a Nerd Font,
   so `render.status = "plain"` joins the parts with │ instead.
+- The branch shows always, master too, after a segment of its own counting the changes by kind
+  in their colours: added, modified, deleted, renamed, untracked, in conflict, or a check when
+  clean. They are Nerd Font's Material file icons (a file with a plus, a pencil, a minus…), or with `render.icons = "text"` the characters
+  `+ ~ - » ? ! ✓`, which also leaves the branch icon out. They are read with the branch off the UI goroutine at start, after each tool and turn
+  and on focus, one read at a time, since a status can take long in a large repository. A click
+  on the branch lists the files. The counts go before the branch and the folder when room is short.
 - When room is short the ⇧tab hint goes first, then the provider, first shortened to its letter,
   then the speeds, the tokens, and the bar last, which shrinks to one cell in eighths (▁ to █).
   The branch and the folder go only when nothing else is left, and once they go nothing that went

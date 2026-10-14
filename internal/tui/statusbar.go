@@ -19,10 +19,34 @@ const (
 	// bars, for fonts without them.
 	statusPowerline = "powerline"
 	statusPlain     = "plain"
-	arrowRight      = ""
-	arrowLeft       = ""
-	branchIcon      = ""
+	arrowRight      = "\ue0b0"
+	arrowLeft       = "\ue0b2"
+	branchIcon      = "\ue0a0"
+	iconsNerd       = "nerd"
+	iconsText       = "text"
 )
+
+// changeIcons are the marks of each kind of change and of a clean tree:
+// Nerd Font's Material file icons (file_plus, file_edit, file_minus,
+// file_move, file_question, file_alert, file_check), or plain characters.
+var changeIcons = map[string]map[rune]string{
+	iconsNerd: {
+		gitops.ChangeAdded: "\U000f0752", gitops.ChangeModified: "\U000f11e7", gitops.ChangeDeleted: "\U000f1aa1", gitops.ChangeRenamed: "\U000f0ab9",
+		gitops.ChangeUntracked: "\U000f086f", gitops.ChangeConflicted: "\U000f0a4b", 0: "\U000f0216",
+	},
+	iconsText: {
+		gitops.ChangeAdded: "+", gitops.ChangeModified: "~", gitops.ChangeDeleted: "-", gitops.ChangeRenamed: "»",
+		gitops.ChangeUntracked: "?", gitops.ChangeConflicted: "!", 0: "✓",
+	},
+}
+
+// icons are the icons in use, Nerd Font's unless set to text.
+func (m model) icons() string {
+	if m.session.Config.Render.Icons == iconsText {
+		return iconsText
+	}
+	return iconsNerd
+}
 
 // segment is a part of the status line: its text in its colours, the
 // background it sits on, and what a click and a right click on it do.
@@ -71,12 +95,12 @@ func (m model) statusLine() string {
 // model lists the models.
 func (m model) statusLayout() (string, []region) {
 	if m.width <= 0 {
-		return m.renderStatus(m.statusSegments(statusTiers[0]), m.suffixSegments(2), 0)
+		return m.renderStatus(m.statusSegments(statusTiers[0]), m.suffixSegments(3), 0)
 	}
-	for _, suffix := range []int{2, 1, 0} {
+	for _, suffix := range []int{3, 2, 1, 0} {
 		right := m.suffixSegments(suffix)
 		tiers := statusTiers
-		if suffix < 2 {
+		if suffix < 3 {
 			// Without room for the branch, nothing that went before it comes back.
 			tiers = statusTiers[len(statusTiers)-1:]
 		}
@@ -152,8 +176,9 @@ func firstLetter(name string) string {
 	return ""
 }
 
-// suffixSegments are the branch and the folder at the right end: both,
-// the folder alone, or none; the branch whichever it is, also master.
+// suffixSegments are the branch and the folder at the right end: the
+// branch with its changes counted (3), without them (2), the folder alone
+// (1), or none; the branch whichever it is, also master.
 func (m model) suffixSegments(show int) []segment {
 	colors := statusPalette(m.printer == nil || m.printer.isDark())
 	folder := segment{text: lipgloss.NewStyle().Foreground(colors.text).Render(filepath.Base(m.session.WorkDir)), bg: colors.segmentDim}
@@ -165,10 +190,15 @@ func (m model) suffixSegments(show int) []segment {
 		return []segment{folder}
 	}
 	icon := branchIcon + " "
-	if m.statusStyle() == statusPlain {
+	if m.icons() == iconsText {
 		icon = ""
 	}
-	branch := segment{text: lipgloss.NewStyle().Foreground(colors.branch).Bold(true).Render(icon + m.branch), bg: colors.segment}
+	list := func(m model) (tea.Model, tea.Cmd) { return m.showChanges() }
+	branch := segment{text: lipgloss.NewStyle().Foreground(colors.branch).Bold(true).Render(icon + m.branch), bg: colors.segment, do: list}
+	if show == 3 {
+		counts := segment{text: m.changeCounts(colors), bg: colors.segmentDeep, do: list}
+		return []segment{counts, branch, folder}
+	}
 	return []segment{branch, folder}
 }
 
@@ -216,23 +246,35 @@ func (m model) renderStatus(left, right []segment, width int) (string, []region)
 		}
 	}
 	var tail strings.Builder
+	type span struct{ start, end int }
+	spans := make([]span, len(right))
 	for i, seg := range right {
 		if plain {
 			if i > 0 {
 				tail.WriteString(lipgloss.NewStyle().Foreground(colors.label).Render(" · "))
 			}
+			start := ansi.StringWidth(tail.String())
 			tail.WriteString(seg.text)
+			spans[i] = span{start, ansi.StringWidth(tail.String())}
 			continue
 		}
 		arrow := lipgloss.NewStyle().Foreground(seg.bg)
 		if i > 0 {
 			arrow = arrow.Background(right[i-1].bg)
 		}
-		tail.WriteString(arrow.Render(arrowLeft) + onBackground(" "+seg.text+" ", seg.bg))
+		tail.WriteString(arrow.Render(arrowLeft))
+		start := ansi.StringWidth(tail.String()) + 1
+		tail.WriteString(onBackground(" "+seg.text+" ", seg.bg))
+		spans[i] = span{start, ansi.StringWidth(tail.String()) - 1}
 	}
 	if tail.Len() > 0 {
 		gap := max(width-x-ansi.StringWidth(tail.String()), 1)
-		write(strings.Repeat(" ", gap) + tail.String())
+		write(strings.Repeat(" ", gap))
+		offset := x
+		write(tail.String())
+		for i, seg := range right {
+			place(seg, offset+spans[i].start, offset+spans[i].end)
+		}
 	}
 	return line.String(), regions
 }
@@ -257,21 +299,83 @@ func shade(c, base color.Color, amount float64) color.Color {
 	return lipgloss.Color(fmt.Sprintf("#%02x%02x%02x", mix(r1, r2), mix(g1, g2), mix(b1, b2)))
 }
 
-// branchMsg is the branch checked out in the working directory, read off
-// the UI goroutine.
-type branchMsg string
+// repoMsg is the branch checked out in the working directory and the files
+// changed there, read off the UI goroutine.
+type repoMsg struct {
+	branch  string
+	changes []gitops.Change
+}
 
-// readBranch reads the branch once, when it may have changed: at start,
-// after a tool or a turn, and when the terminal gets the focus back, never
-// on every redraw.
-func readBranch(workDir string) tea.Cmd {
+// readRepo reads the branch and the changes when they may have changed: at
+// start, after a tool or a turn, and when the terminal gets the focus back,
+// never on every redraw. One read at a time: asked while one runs, it runs
+// again once that one is back.
+func (m *model) readRepo() tea.Cmd {
+	if m.repoReading {
+		m.repoStale = true
+		return nil
+	}
+	m.repoReading = true
+	workDir := m.session.WorkDir
 	return func() tea.Msg {
 		repo, err := gitops.Open(workDir)
 		if err != nil {
-			return branchMsg("")
+			return repoMsg{}
 		}
-		return branchMsg(repo.CurrentBranch())
+		changes, _ := repo.Changes()
+		return repoMsg{branch: repo.CurrentBranch(), changes: changes}
 	}
+}
+
+// readRepoAgain takes a read that came back, and starts the one asked
+// meanwhile.
+func (m *model) repoRead(msg repoMsg) tea.Cmd {
+	m.branch, m.changes, m.repoReading = msg.branch, msg.changes, false
+	if m.repoStale {
+		m.repoStale = false
+		return m.readRepo()
+	}
+	return nil
+}
+
+// changeCounts are the changes in the working tree as counts by kind, in
+// their colours: +2 ~3 -1 ?4, or ✓ when there are none.
+func (m model) changeCounts(colors statusColors) string {
+	icons := changeIcons[m.icons()]
+	space := ""
+	if m.icons() == iconsNerd {
+		space = " "
+	}
+	if len(m.changes) == 0 {
+		return lipgloss.NewStyle().Foreground(colors.low).Render(icons[0])
+	}
+	counts := map[rune]int{}
+	for _, change := range m.changes {
+		counts[change.Kind]++
+	}
+	tints := map[rune]color.Color{
+		gitops.ChangeConflicted: colors.high, gitops.ChangeAdded: colors.low, gitops.ChangeModified: colors.mid,
+		gitops.ChangeDeleted: colors.high, gitops.ChangeRenamed: colors.model, gitops.ChangeUntracked: colors.prompt,
+	}
+	var parts []string
+	for _, kind := range []rune{gitops.ChangeConflicted, gitops.ChangeAdded, gitops.ChangeModified, gitops.ChangeDeleted, gitops.ChangeRenamed, gitops.ChangeUntracked} {
+		if counts[kind] > 0 {
+			parts = append(parts, lipgloss.NewStyle().Foreground(tints[kind]).Render(fmt.Sprintf("%s%s%d", icons[kind], space, counts[kind])))
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// showChanges prints the files changed, each with its kind.
+func (m model) showChanges() (tea.Model, tea.Cmd) {
+	if len(m.changes) == 0 {
+		return m.emit(m.printer.Note("no changes on " + orDefault(m.branch, "this branch")))
+	}
+	lines := []string{fmt.Sprintf("%d changed on %s · + added ~ modified - deleted » renamed ? untracked ! conflict", len(m.changes), m.branch)}
+	for _, change := range m.changes {
+		lines = append(lines, fmt.Sprintf("%c %s", change.Kind, change.Path))
+	}
+	return m.emit(m.printer.Note(strings.Join(lines, "\n")))
 }
 
 // contextShare is how full the context is, and the colour that says so.

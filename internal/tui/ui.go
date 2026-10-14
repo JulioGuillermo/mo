@@ -24,6 +24,7 @@ import (
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
+	"github.com/jg/mo/internal/gitops"
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/mcphub"
 	"github.com/jg/mo/internal/notify"
@@ -100,6 +101,11 @@ type model struct {
 	lastEvent llm.EventKind
 	// branch is the git branch of the working directory, as last read.
 	branch string
+	// changes are the files changed in the working tree, as last read;
+	// repoReading and repoStale keep one read at a time.
+	changes     []gitops.Change
+	repoReading bool
+	repoStale   bool
 	// titling is the title the model is working out, after /title auto.
 	titling *titling
 	// promptRead is how far the server is in reading the prompt, when it
@@ -227,7 +233,7 @@ func (m model) Init() tea.Cmd {
 	if m.session.Continue {
 		start = tea.Sequence(start, listConversations(m.session.WorkDir, true))
 	}
-	return tea.Batch(start, tea.RequestBackgroundColor, textarea.Blink, readBranch(m.session.WorkDir))
+	return tea.Batch(start, tea.RequestBackgroundColor, textarea.Blink, m.readRepo())
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -320,7 +326,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case toolDoneMsg:
 		m.runningTool = nil
 		m.finishTool(msg.id, msg.output, msg.isError)
-		return m, tea.Batch(m.tickJobs(), readBranch(m.session.WorkDir))
+		read := m.readRepo()
+		return m, tea.Batch(m.tickJobs(), read)
 	case tea.MouseWheelMsg:
 		if m.sidebarShown() && msg.X > m.mainWidth() {
 			m.scrollSidebar(msg.Button == tea.MouseWheelUp)
@@ -372,16 +379,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.openDialog(msg)
 	case tea.FocusMsg:
 		m.focused = true
-		return m, readBranch(m.session.WorkDir)
-	case branchMsg:
-		m.branch = string(msg)
-		return m, nil
+		read := m.readRepo()
+		return m, read
+	case repoMsg:
+		again := m.repoRead(msg)
+		return m, again
 	case tea.BlurMsg:
 		m.focused = false
 		return m, nil
 	case runDoneMsg:
 		finished, cmd := m.finishRun(msg.err)
-		return finished, tea.Batch(cmd, readBranch(m.session.WorkDir))
+		done := finished.(model)
+		read := done.readRepo()
+		return done, tea.Batch(cmd, read)
 	case spinner.TickMsg:
 		if !m.running && m.titling == nil {
 			return m, nil

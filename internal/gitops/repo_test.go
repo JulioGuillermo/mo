@@ -2,6 +2,7 @@ package gitops
 
 // Test Traceability Table
 // | ID    | Category | Description                                                          | Priority |
+// | GC-01 | Happy    | Each changed file once, by what happened to it, untracked and staged too | P1 |
 // | GR-01 | Happy    | status, diff, log, show, blame and branches read the repository      | P0       |
 // | GR-02 | Happy    | A merge fast-forwards when HEAD is behind; nothing to do when ahead  | P1       |
 // | GR-03 | Happy    | A three-way merge without conflicts commits with both parents        | P0       |
@@ -264,6 +265,34 @@ func TestMerging(t *testing.T) {
 
 		if err == nil || !strings.Contains(err.Error(), "main.go: line 1") {
 			t.Errorf("err = %v", err)
+		}
+	})
+}
+
+func TestChanges(t *testing.T) {
+	t.Run("GC-01 each changed file once, by what happened to it, untracked and staged too", func(t *testing.T) {
+		tr := newRepo(t)
+		tr.commit("base", map[string]string{"keep.txt": "k\n", "edit.txt": "e\n", "gone.txt": "g\n"})
+		tr.write(map[string]string{"edit.txt": "changed\n", "new.txt": "n\n", "staged.txt": "s\n"})
+		_ = os.Remove(filepath.Join(tr.dir, "gone.txt"))
+		if _, err := tr.tree.Add("staged.txt"); err != nil {
+			t.Fatal(err)
+		}
+
+		changes, err := tr.r.Changes()
+
+		got := map[string]rune{}
+		for _, change := range changes {
+			got[change.Path] = change.Kind
+		}
+		want := map[string]rune{"edit.txt": ChangeModified, "gone.txt": ChangeDeleted, "new.txt": ChangeUntracked, "staged.txt": ChangeAdded}
+		if err != nil || len(got) != len(want) {
+			t.Fatalf("changes %v err %v", changes, err)
+		}
+		for path, kind := range want {
+			if got[path] != kind {
+				t.Errorf("%s: %c, want %c", path, got[path], kind)
+			}
 		}
 	})
 }
