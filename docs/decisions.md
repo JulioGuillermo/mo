@@ -670,8 +670,10 @@
   next step, after the tool call running, as a message of the user's. Queued after its last step,
   it starts a turn of its own. Esc gives what was queued back to the input.
 - Commands that leave the conversation alone work meanwhile: settings, providers, MCP, help, jobs,
-  kill, the side panel, view, plugins, notify. Settings saved then apply when the turn ends, since
-  a new session cannot replace the agent mid-step. Those that change the conversation (clear,
+  kill, the side panel, view, plugins, notify. Settings saved then are written to the files at
+  once, so reopening the settings shows them and quitting keeps them; the session built from them
+  takes over when the turn ends, since a new session cannot replace the agent mid-step. A second
+  save meanwhile replaces the waiting session with one built from the files as they now are. Those that change the conversation (clear,
   compact, rewind, fork, resume, continue) ask to wait or stop.
 - A stop takes out the tool calls it cut short, not run or stopped running, with their results, as
   if the model had not made them; the calls that ran and the reply's text stay.

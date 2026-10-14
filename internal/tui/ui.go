@@ -96,8 +96,9 @@ type model struct {
 	forming []formingCall
 	// activity is what the agent waits on, said by the spinner.
 	activity string
-	// pendingSave is settings saved while a turn runs, applied when it ends.
-	pendingSave *settingsScreen
+	// pendingSession is built from settings saved while a turn ran, to take
+	// over when it ends.
+	pendingSession *Session
 	// lastEvent is the kind of what the model sent last, and runningTool
 	// the call running now: they say what the agent is doing.
 	lastEvent llm.EventKind
@@ -777,11 +778,15 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 			lines = append(lines, m.printer.Note("what you queued is back in the input"))
 		}
 	}
-	if pending := m.pendingSave; pending != nil {
-		m.pendingSave = nil
-		m.settingsInFlight = true
-		save = tea.Batch(save, saveSettings(pending, m.session))
-	} else if !stopped && m.session.Agent != nil && m.session.Agent.HasQueued() {
+	if pending := m.pendingSession; pending != nil {
+		m.pendingSession = nil
+		takeOver(*pending, m.session)
+		using, use := m.useSession(*pending)
+		m = using.(model)
+		lines = append(lines, m.printer.Note("the settings saved during the turn apply now"))
+		save = tea.Batch(save, use)
+	}
+	if !stopped && m.session.Agent != nil && m.session.Agent.HasQueued() {
 		next, run := m.start(nil, m.session.Agent.RunQueued)
 		m = next.(model)
 		save = tea.Batch(save, run)

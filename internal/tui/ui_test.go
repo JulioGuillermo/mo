@@ -32,6 +32,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/agent"
+	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/render"
 )
@@ -257,20 +258,25 @@ func TestWhileRunning(t *testing.T) {
 		}
 	})
 
-	t.Run("TU-13 safe commands work while the model works; settings saved wait for the turn's end", func(t *testing.T) {
+	t.Run("TU-13 safe commands work while the model works; saved settings take over at the turn's end", func(t *testing.T) {
 		m := conversationModel()
 		m.running, m.cancel = true, func() {}
 
 		cleared := typed(m, "/clear")
 		sidebar := typed(m, "/sidebar")
-		waiting, _ := m.saveOrWait(&settingsScreen{})
-		finished, cmd := waiting.(model).finishRun(nil)
+		fresh := Session{Agent: &agent.Agent{}, Provider: "fresh", Config: config.Defaults()}
+		fresh.Config.Render.Keys = "vim"
+		waiting, _ := m.finishSettings(settingsSavedMsg{session: fresh, saved: []string{"config.toml"}, waiting: true})
+		finished, _ := waiting.(model).finishRun(nil)
 
 		if !strings.Contains(shown(cleared), "wait for the model to finish") || !sidebar.sidebarHidden {
 			t.Errorf("clear:\n%s", shown(cleared))
 		}
-		if waiting.(model).pendingSave == nil || finished.(model).pendingSave != nil || !finished.(model).settingsInFlight || cmd == nil {
-			t.Error("the save did not wait for the end of the turn")
+		if waiting.(model).pendingSession == nil || waiting.(model).session.Provider == "fresh" {
+			t.Error("the new session should wait for the turn's end")
+		}
+		if done := finished.(model); done.pendingSession != nil || done.session.Provider != "fresh" || !done.vim.enabled {
+			t.Errorf("after the turn: provider = %q vim = %v", done.session.Provider, done.vim.enabled)
 		}
 	})
 }

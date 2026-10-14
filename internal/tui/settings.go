@@ -52,6 +52,9 @@ type settingsSavedMsg struct {
 	session Session
 	saved   []string
 	err     error
+	// waiting is set when the files were written while the model worked:
+	// the session built from them takes over once its turn ends.
+	waiting bool
 }
 
 // settingsScreen is a form over the user file. A form that saves turns the
@@ -186,8 +189,10 @@ func (m model) filteringList() bool {
 }
 
 // saveSettings builds a session from the edited settings first and writes
-// the file only when that works, so a bad choice never reaches the disk.
-func saveSettings(screen *settingsScreen, current Session) tea.Cmd {
+// the files only when that works, so a bad choice never reaches the disk.
+// With wait set the model is working: the files are written now, and the
+// new session takes the conversation over once the turn ends.
+func saveSettings(screen *settingsScreen, current Session, wait bool) tea.Cmd {
 	return func() tea.Msg {
 		layer, err := screen.apply(screen.layer)
 		if err != nil {
@@ -212,11 +217,20 @@ func saveSettings(screen *settingsScreen, current Session) tea.Cmd {
 			}
 			saved = append(saved, projectFileName)
 		}
-		fresh.activate()
-		fresh.Agent.TakeConversation(current.Agent)
-		keepMode(fresh, current)
+		if wait {
+			return settingsSavedMsg{session: fresh, saved: saved, waiting: true}
+		}
+		takeOver(fresh, current)
 		return settingsSavedMsg{session: fresh, saved: saved}
 	}
+}
+
+// takeOver puts a fresh session in place of the current one: its MCP
+// servers, the conversation and the permission mode picked meanwhile.
+func takeOver(fresh, current Session) {
+	fresh.activate()
+	fresh.Agent.TakeConversation(current.Agent)
+	keepMode(fresh, current)
 }
 
 func (m model) finishSettings(msg settingsSavedMsg) (tea.Model, tea.Cmd) {
@@ -224,15 +238,31 @@ func (m model) finishSettings(msg settingsSavedMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
 		return m.emitError(msg.err)
 	}
-	m.session = msg.session
+	where := strings.Join(msg.saved, " and ")
+	if msg.waiting {
+		if m.running {
+			if m.pendingSession != nil {
+				m.pendingSession.discard()
+			}
+			m.pendingSession = &msg.session
+			return m, printText(m.printer.Note("settings saved to " + where + " · they apply when the model finishes this turn"))
+		}
+		takeOver(msg.session, m.session)
+	}
+	updated, cmd := m.useSession(msg.session)
+	note := fmt.Sprintf("settings saved to %s · %s · %s", where, msg.session.Provider, shortModelName(msg.session.Model))
+	return updated, tea.Batch(cmd, printText(m.printer.Note(note)))
+}
+
+// useSession makes a session built from saved settings the one in use.
+func (m model) useSession(session Session) (tea.Model, tea.Cmd) {
+	m.session = session
 	m.printer.setKind(m.toolKind)
 	if enabled := m.session.Config.Render.Keys == "vim"; enabled != m.vim.enabled {
 		m.vim = vimState{enabled: enabled}
 	}
 	m.usage = m.session.Agent.LastUsage
-	redraw := m.applyScreen(m.printer.isDark())
-	note := fmt.Sprintf("settings saved to %s · %s · %s", strings.Join(msg.saved, " and "), m.session.Provider, shortModelName(m.session.Model))
-	return m, tea.Batch(redraw, printText(m.printer.Note(note)))
+	return m, m.applyScreen(m.printer.isDark())
 }
 
 func isAgentMsg(msg tea.Msg) bool {

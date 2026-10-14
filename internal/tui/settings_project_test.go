@@ -306,3 +306,22 @@ func TestProjectSettings(t *testing.T) {
 		}
 	})
 }
+
+func TestSaveWhileWorking(t *testing.T) {
+	t.Run("SP-20 saving while the model works writes the file at once; the session waits for the turn", func(t *testing.T) {
+		m, menu, _ := projectMenuModel(t, "", "")
+		m.running, m.cancel = true, func() {}
+		menu.draft.keys = "vim"
+
+		_, cmd := m.openMenuChoice(menu, menuSave)
+		msg, ok := cmd().(settingsSavedMsg)
+		layer, err := config.ReadUserLayer()
+
+		if !ok || msg.err != nil || !msg.waiting {
+			t.Fatalf("msg = %#v", msg)
+		}
+		if err != nil || layer.Render.Keys != "vim" {
+			t.Errorf("the file should hold the change already: keys = %q err = %v", layer.Render.Keys, err)
+		}
+	})
+}

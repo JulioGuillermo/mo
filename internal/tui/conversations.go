@@ -271,13 +271,10 @@ func (m model) queue(prompt string) (tea.Model, tea.Cmd) {
 		printText(m.printer.Note("queued · the model reads it at its next step")))
 }
 
-// saveOrWait saves settings now, or once the turn running ends: building a
-// new session under a running agent would pull it from under its feet.
+// saveOrWait writes the settings now; while the model works the session
+// built from them waits for the turn's end, as swapping it under a running
+// agent would pull it from under its feet.
 func (m model) saveOrWait(screen *settingsScreen) (tea.Model, tea.Cmd) {
-	if m.running {
-		m.pendingSave = screen
-		return m.emit(m.printer.Note("settings saved when the model finishes this turn"))
-	}
 	m.settingsInFlight = true
-	return m, saveSettings(screen, m.session)
+	return m, saveSettings(screen, m.session, m.running)
 }
