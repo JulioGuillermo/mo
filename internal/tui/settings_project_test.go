@@ -12,6 +12,8 @@ package tui
 // | SP-08 | Happy    | /settings project opens the project screen                                       | P2       |
 // | SP-09 | Happy    | The project turns an MCP server off for itself, saved as tools.mcp_disabled      | P0       |
 // | SP-10 | Happy    | The Skills section lists what was found, and says how to add skills when none    | P1       |
+// | SP-11 | Happy    | Tool modes lists each tool and MCP server; a mode set there is saved by name     | P0       |
+// | SP-12 | Happy    | A project sets one server's mode, group, alone; the rest follow Global           | P0       |
 
 import (
 	"os"
@@ -20,6 +22,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
@@ -103,7 +106,7 @@ func TestProjectSettings(t *testing.T) {
 		m, menu, reloaded := projectMenuModel(t, "[render]\nsidebar = \"off\"\n", "")
 		switched, _ := m.switchScope(menu)
 		section := projectSections()[3]
-		items := overridable(section.items(switched.(model), menu))
+		items := overridable(section, section.items(switched.(model), menu))
 		opened, _ := switched.(model).editItem(menu, section, items[1])
 		menu.project.draft.loopRepeats = "7"
 		listed, _ := opened.(model).settings.next(opened.(model))
@@ -149,7 +152,7 @@ func TestProjectSettings(t *testing.T) {
 		m, menu, _ := projectMenuModel(t, "", "model = \"gemma\"\n[render]\nsidebar = \"off\"\n[loop]\nreplies = 4\n")
 		switched, _ := m.switchScope(menu)
 		section := projectSections()[3]
-		items := overridable(section.items(switched.(model), menu))
+		items := overridable(section, section.items(switched.(model), menu))
 		asked, _ := switched.(model).chooseOverride(menu, section, items[2])
 		if !strings.Contains(asked.(model).settings.form.View(), "Use the global value") {
 			t.Fatalf("asked:\n%s", asked.(model).settings.form.View())
@@ -228,7 +231,7 @@ func TestProjectSettings(t *testing.T) {
 		m, menu, _ := projectMenuModel(t, "[mcp.docs]\nurl = \"https://example.com/mcp\"\n", "")
 		switched, _ := m.switchScope(menu)
 		section := projectSections()[1]
-		items := overridable(section.items(switched.(model), menu))
+		items := overridable(section, section.items(switched.(model), menu))
 		index := slices.IndexFunc(items, func(item settingItem) bool { return item.title == "MCP servers off" })
 		if index < 0 {
 			t.Fatalf("no MCP item in %v", items)
@@ -257,6 +260,49 @@ func TestProjectSettings(t *testing.T) {
 		}
 		if view := found.(model).settings.form.View(); !strings.Contains(view, "2 found: pdf, deploy") || !strings.Contains(view, "Skills off") {
 			t.Errorf("found:\n%s", view)
+		}
+	})
+
+	t.Run("SP-11 tool modes lists each tool and MCP server; a mode set there is saved by name", func(t *testing.T) {
+		m, menu, _ := projectMenuModel(t, "[mcp.playwright]\ncommand = \"npx\"\n", "")
+		listed, _ := m.openMenuChoice(menu, "toolmodes")
+		view := listed.(model).settings.form.View()
+		*menu.draft.modeOf(toolModes, "git") = "search"
+		*menu.draft.modeOf(mcpModes, "playwright") = "group"
+
+		save(t, listed.(model), menu)
+
+		layer, _ := config.ReadUserLayer()
+		if !strings.Contains(view, "playwright (MCP server)") || !strings.Contains(view, "full (default)") {
+			t.Errorf("view:\n%s", view)
+		}
+		if layer.Tools.Modes["git"] != "search" || layer.Tools.MCPModes["playwright"] != "group" || len(layer.Tools.Modes) != 1 {
+			t.Errorf("modes %v mcp %v", layer.Tools.Modes, layer.Tools.MCPModes)
+		}
+	})
+
+	t.Run("SP-12 a project sets one server's mode, group, alone; the rest follow Global", func(t *testing.T) {
+		m, menu, _ := projectMenuModel(t, "[mcp.playwright]\ncommand = \"npx\"\n[tools.modes]\ngit = \"compact\"\n", "")
+		switched, _ := m.switchScope(menu)
+		section := projectSections()[6]
+		items := overridable(section, section.items(switched.(model), menu))
+		index := slices.IndexFunc(items, func(item settingItem) bool { return item.title == "playwright (MCP server)" })
+		if section.key != "toolmodes" || index < 0 {
+			t.Fatalf("section %q items %d", section.key, len(items))
+		}
+		opened, _ := switched.(model).editItem(menu, section, items[index])
+		*menu.project.draft.modeOf(mcpModes, "playwright") = "group"
+		listed, _ := opened.(model).settings.next(opened.(model))
+
+		save(t, listed.(model), menu)
+
+		project, _ := config.ReadProject(m.session.WorkDir)
+		user, _ := config.ReadUserLayer()
+		if project.Layer.Tools.MCPModes["playwright"] != "group" || project.Layer.Tools.Modes != nil || user.Tools.MCPModes != nil || user.Tools.Modes["git"] != "compact" {
+			t.Errorf("project %v / %v user %v / %v", project.Layer.Tools.MCPModes, project.Layer.Tools.Modes, user.Tools.MCPModes, user.Tools.Modes)
+		}
+		if !strings.Contains(ansi.Strip(listed.(model).settings.form.View()), "group  ● this project") {
+			t.Errorf("view:\n%s", listed.(model).settings.form.View())
 		}
 	})
 }

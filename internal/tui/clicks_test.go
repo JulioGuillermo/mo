@@ -5,7 +5,7 @@ package tui
 // | CK-01 | Happy    | Clicking a dialog button presses it; clicking a tab shows that part  | P0       |
 // | CK-02 | Happy    | Clicking an option answers the question; on a multiple one it ticks  | P1       |
 // | CK-03 | Happy    | Clicking a suggested command runs it                                 | P1       |
-// | CK-04 | Happy    | Clicking the mode goes to the next; the model opens its settings     | P1       |
+// | CK-04 | Happy    | Clicking the mode goes to the next; the model asks for models to pick | P1       |
 // | CK-05 | Happy    | Clicking an option of a settings list opens it                       | P1       |
 // | CK-06 | Happy    | Clicking a job in the side panel shows its last lines                | P2       |
 // | CK-07 | Happy    | Buttons underline the key that presses them                          | P2       |
@@ -91,7 +91,7 @@ func TestClicks(t *testing.T) {
 		}
 	})
 
-	t.Run("CK-04 clicking the mode goes to the next; the model opens its settings", func(t *testing.T) {
+	t.Run("CK-04 clicking the mode goes to the next; the model asks for the models to pick from", func(t *testing.T) {
 		m := sidebarModel(t, 140)
 		m.session.Agent.Permissions, _ = permissions.New(permissions.ModeEdits, nil, nil)
 		m.session.Model = "qwen3-coder"
@@ -100,8 +100,8 @@ func TestClicks(t *testing.T) {
 		modeAfter := m.session.Agent.Permissions.Mode()
 		m = clickOn(t, m, "qwen3-coder")
 
-		if modeAfter != permissions.ModeAuto || !m.settingsInFlight || m.openSection != "model" {
-			t.Errorf("mode = %s loading = %v section = %q", modeAfter, m.settingsInFlight, m.openSection)
+		if modeAfter != permissions.ModeAuto || m.settings == nil || !strings.Contains(ansi.Strip(m.settings.form.View()), "Model · ") {
+			t.Errorf("mode = %s model screen = %v", modeAfter, m.settings != nil)
 		}
 	})
 

@@ -53,6 +53,17 @@ func safe(name string) string {
 	return unsafeNameChars.ReplaceAllString(name, "_")
 }
 
+// ToolServers maps the name of each tool to the server it comes from.
+func (h *Hub) ToolServers() map[string]string {
+	servers := map[string]string{}
+	for _, entry := range h.servers {
+		for _, named := range entry.tools {
+			servers[named.name] = entry.name
+		}
+	}
+	return servers
+}
+
 // Tools adapts the tools of the servers that connected.
 func (h *Hub) Tools() []tools.Tool {
 	var adapted []tools.Tool

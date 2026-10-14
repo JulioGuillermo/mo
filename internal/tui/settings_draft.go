@@ -40,6 +40,11 @@ type settingsDraft struct {
 	defaultDescriptions map[string]string
 	savedDescriptions   map[string]string
 
+	// modes holds the mode of single tools, MCP servers and skills, by
+	// kind and name, "" for the default; saved are those of the file.
+	modes      map[modeKind]map[string]*string
+	savedModes map[modeKind]map[string]tools.Mode
+
 	search       string
 	searchURL    string
 	searchKeyEnv string
@@ -49,7 +54,11 @@ type settingsDraft struct {
 	images       string
 	background   string
 	sidebar      string
+	statusStyle  string
 	memoryDir    string
+
+	instructionsOn    bool
+	instructionsFiles string
 
 	skillMode      string
 	skillsDisabled []string
@@ -121,6 +130,10 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		images:        string(cfg.Render.Images),
 		background:    cfg.Render.Background,
 		sidebar:       cfg.Render.Sidebar,
+		statusStyle:   cfg.Render.Status,
+
+		instructionsOn:    cfg.Instructions.Enabled == nil || *cfg.Instructions.Enabled,
+		instructionsFiles: strings.Join(cfg.Instructions.Files, "\n"),
 
 		skillMode:      string(cfg.Skills.Mode),
 		skillsDisabled: slices.Clone(cfg.Skills.Disabled),
@@ -151,6 +164,8 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		draft.compactPrompt = agent.DefaultCompactPrompt
 	}
 	draft.savedDescriptions = cfg.Tools.Descriptions
+	draft.modes = map[modeKind]map[string]*string{toolModes: {}, mcpModes: {}, skillModes: {}}
+	draft.savedModes = map[modeKind]map[string]tools.Mode{toolModes: cfg.Tools.Modes, mcpModes: cfg.Tools.MCPModes, skillModes: cfg.Skills.Modes}
 	draft.describeTools(tools.BuiltinDescriptions())
 	return draft
 }
@@ -201,10 +216,17 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	layer.Tools.Confirm = unlessDefaultList(d.confirm, defaults.Tools.Confirm)
 	layer.Tools.Disabled = unlessDefaultList(d.disabled, defaults.Tools.Disabled)
 	layer.Tools.MCPDisabled = unlessDefaultList(d.mcpDisabled, defaults.Tools.MCPDisabled)
+	layer.Tools.Modes = d.modesOf(toolModes)
+	layer.Tools.MCPModes = d.modesOf(mcpModes)
+	layer.Instructions = config.Instructions{
+		Enabled: unlessDefaultFlag(d.instructionsOn, *defaults.Instructions.Enabled),
+		Files:   unlessDefaultList(ruleLines(d.instructionsFiles), defaults.Instructions.Files),
+	}
 	layer.Skills = config.Skills{
 		Mode:     unlessDefault(tools.Mode(d.skillMode), defaults.Skills.Mode),
 		Disabled: unlessDefaultList(d.skillsDisabled, defaults.Skills.Disabled),
 		Dirs:     ruleLines(d.skillDirs),
+		Modes:    d.modesOf(skillModes),
 	}
 	layer.Tools.MaxOutput = unlessDefault(maxOutput, defaults.Tools.MaxOutput)
 	layer.Tools.Descriptions = d.changedDescriptions()
@@ -239,6 +261,7 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	}
 	layer.Render.Background = unlessDefault(strings.TrimSpace(d.background), defaults.Render.Background)
 	layer.Render.Sidebar = unlessDefault(d.sidebar, defaults.Render.Sidebar)
+	layer.Render.Status = unlessDefault(d.statusStyle, defaults.Render.Status)
 	layer.Notify = config.Notify{
 		Finish:   unlessDefaultFlag(d.notifyFinish, *defaults.Notify.Finish),
 		Approval: unlessDefaultFlag(d.notifyApproval, *defaults.Notify.Approval),
@@ -499,12 +522,64 @@ func (d *settingsDraft) snapshot() func() {
 	for name, text := range d.descriptions {
 		texts[name] = *text
 	}
+	modes := map[modeKind]map[string]string{}
+	for kind, entries := range d.modes {
+		modes[kind] = map[string]string{}
+		for name, mode := range entries {
+			modes[kind][name] = *mode
+		}
+	}
 	return func() {
-		descriptions := d.descriptions
+		descriptions, modePointers := d.descriptions, d.modes
 		*d = saved
-		d.descriptions = descriptions
+		d.descriptions, d.modes = descriptions, modePointers
 		for name, text := range texts {
 			*descriptions[name] = text
 		}
+		for kind, entries := range modes {
+			for name, mode := range entries {
+				*modePointers[kind][name] = mode
+			}
+		}
 	}
+}
+
+// modeKind says what a mode is for.
+type modeKind int
+
+const (
+	toolModes modeKind = iota
+	mcpModes
+	skillModes
+)
+
+// modeOf is the mode of one tool, server or skill, as edited: the file's
+// until it is changed.
+func (d *settingsDraft) modeOf(kind modeKind, name string) *string {
+	if mode, ok := d.modes[kind][name]; ok {
+		return mode
+	}
+	mode := string(d.savedModes[kind][name])
+	d.modes[kind][name] = &mode
+	return &mode
+}
+
+// modesOf is the map of modes to save: those set in the form, and the
+// saved ones of names the form did not show.
+func (d *settingsDraft) modesOf(kind modeKind) map[string]tools.Mode {
+	modes := map[string]tools.Mode{}
+	for name, mode := range d.savedModes[kind] {
+		modes[name] = mode
+	}
+	for name, mode := range d.modes[kind] {
+		if *mode == "" {
+			delete(modes, name)
+		} else {
+			modes[name] = tools.Mode(*mode)
+		}
+	}
+	if len(modes) == 0 {
+		return nil
+	}
+	return modes
 }

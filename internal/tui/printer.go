@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -373,8 +374,45 @@ func (p *printer) Denied(name string) string {
 	return errorStyle.Render("  ⎿ denied: " + name)
 }
 
+// Error shows an error; a line too long for the terminal goes on under
+// itself, aligned with where it starts, or under a JSON key's value.
 func (p *printer) Error(err error) string {
-	return errorStyle.Render("✗ " + err.Error())
+	p.mu.Lock()
+	width := p.width - 2
+	p.mu.Unlock()
+	return errorStyle.Render(hangingWrap("✗ "+err.Error(), width))
+}
+
+var jsonKey = regexp.MustCompile(`^\s*"[^"]*":\s*`)
+
+// hangingWrap wraps each line at width, its next lines indented as far as
+// its text starts, or its value when it is a "key": value line.
+func hangingWrap(text string, width int) string {
+	if width <= 0 {
+		return text
+	}
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		if ansi.StringWidth(line) <= width {
+			out = append(out, line)
+			continue
+		}
+		indent := len(line) - len(strings.TrimLeft(line, " "))
+		if key := jsonKey.FindString(line); key != "" {
+			indent = ansi.StringWidth(key)
+		}
+		if indent > width/2 {
+			indent = 0
+		}
+		first := ansi.Wrap(line, width, " ")
+		head, rest, _ := strings.Cut(first, "\n")
+		out = append(out, head)
+		rest = strings.ReplaceAll(rest, "\n", " ")
+		for _, piece := range strings.Split(ansi.Wrap(strings.TrimLeft(rest, " "), width-indent, " "), "\n") {
+			out = append(out, strings.Repeat(" ", indent)+piece)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 func (p *printer) Note(text string) string {

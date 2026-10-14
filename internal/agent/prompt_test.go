@@ -11,7 +11,7 @@ import (
 
 func TestSystemPrompt(t *testing.T) {
 	t.Run("PR-01 the system prompt holds the working directory and no memories", func(t *testing.T) {
-		prompt := SystemPrompt("", "/work/app")
+		prompt := SystemPrompt("", "/work/app", nil)
 
 		if !strings.Contains(prompt, "Working directory: /work/app") || strings.Contains(strings.ToLower(prompt), "memor") {
 			t.Errorf("prompt = %q", prompt)

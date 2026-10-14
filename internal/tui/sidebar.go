@@ -21,6 +21,7 @@ const (
 	jobRefresh        = time.Second
 	jobShownLines     = 20
 	sidebarConversion = "new conversation"
+	sidebarWheelStep  = 3
 )
 
 type jobEndedMsg tools.JobStatus
@@ -102,8 +103,35 @@ func (m model) sidebar(height int) string {
 	return panel
 }
 
-// sidebarLayout draws the side panel; a click on a job shows its last lines.
+// sidebarLayout draws the side panel, scrolled as the wheel left it; a
+// click on a job shows its last lines, a right click on a job or a task
+// opens what can be done with it.
 func (m model) sidebarLayout(height int) (string, []region) {
+	colors := sidebarPalette(m.printer == nil || m.printer.isDark())
+	width := sidebarWidth - 2
+	base := lipgloss.NewStyle().Background(colors.background).Foreground(colors.text)
+	lines, regions := m.sidebarLines()
+	context := m.contextBlock(width, base, colors)
+	room := height
+	if len(context) > 0 {
+		room = max(height-len(context)-1, 1)
+	}
+	lines, regions = scrolled(lines, regions, room, m.sidebarScroll, base.Foreground(colors.dim))
+	for len(lines) < room {
+		lines = append(lines, "")
+	}
+	if len(context) > 0 && height > len(context) {
+		lines = append(append(lines, ""), context...)
+	}
+	pad := base.Render(" ")
+	for i, line := range lines {
+		lines[i] = pad + line + base.Render(strings.Repeat(" ", max(width-ansi.StringWidth(line), 0))) + pad
+	}
+	return strings.Join(lines, "\n"), regions
+}
+
+// sidebarLines are all the lines of the side panel, before scrolling.
+func (m model) sidebarLines() ([]string, []region) {
 	colors := sidebarPalette(m.printer == nil || m.printer.isDark())
 	width := sidebarWidth - 2
 	base := lipgloss.NewStyle().Background(colors.background).Foreground(colors.text)
@@ -133,7 +161,8 @@ func (m model) sidebarLayout(height int) (string, []region) {
 	if len(m.todos) == 0 {
 		add(paint(colors.dim).Render("none yet"))
 	}
-	for _, todo := range m.todos {
+	for i, todo := range m.todos {
+		first := len(lines)
 		switch todo.Status {
 		case tools.TodoCompleted:
 			wrapped(paint(colors.dim).Strikethrough(true), "✓ ", "  ", todo.Text)
@@ -141,6 +170,10 @@ func (m model) sidebarLayout(height int) (string, []region) {
 			wrapped(paint(colors.active).Bold(true), "◐ ", "  ", todo.Text)
 		default:
 			wrapped(base, "○ ", "  ", todo.Text)
+		}
+		menu := func(m model) (tea.Model, tea.Cmd) { return m.taskMenu(i) }
+		for y := first; y < len(lines); y++ {
+			regions = append(regions, region{y: y, x0: 0, x1: 1 << 30, do: menu, menu: menu})
 		}
 	}
 	add("")
@@ -169,7 +202,8 @@ func (m model) sidebarLayout(height int) (string, []region) {
 		}
 		id := status.ID
 		show := func(m model) (tea.Model, tea.Cmd) { return m.showJob(id) }
-		regions = append(regions, row(len(lines), show), row(len(lines)+1, show))
+		menu := func(m model) (tea.Model, tea.Cmd) { return m.jobMenu(id) }
+		regions = append(regions, withMenu([]region{row(len(lines), show), row(len(lines)+1, show)}, menu)...)
 		add(paint(tint).Render(fmt.Sprintf("%s %d ", mark, status.ID)) + base.Render(oneLine(status.Command, width-4)))
 		if untold[status.ID] && !m.running {
 			state += " · /jobs tell"
@@ -177,17 +211,7 @@ func (m model) sidebarLayout(height int) (string, []region) {
 		add(paint(colors.dim).Render("    " + state))
 	}
 
-	if len(lines) > height {
-		lines = append(lines[:max(height-1, 0)], paint(colors.dim).Render("…"))
-	}
-	for len(lines) < height {
-		lines = append(lines, "")
-	}
-	pad := base.Render(" ")
-	for i, line := range lines {
-		lines[i] = pad + line + base.Render(strings.Repeat(" ", max(width-ansi.StringWidth(line), 0))) + pad
-	}
-	return strings.Join(lines, "\n"), regions
+	return lines, regions
 }
 
 // showJob prints how a job stands and its last lines.
@@ -269,4 +293,90 @@ func (m model) killJob(argument string) (tea.Model, tea.Cmd) {
 		}
 		return printMsg(m.printer.Note(fmt.Sprintf("job %d killed", id)))
 	}
+}
+
+// scrolled shows the panel's lines from scroll on, as many as fit in
+// height, saying how many are above and below; regions move with them.
+func scrolled(lines []string, regions []region, height, scroll int, dim lipgloss.Style) ([]string, []region) {
+	if len(lines) <= height || height < 3 {
+		return lines, regions
+	}
+	scroll = max(0, min(scroll, len(lines)-height+1))
+	end := min(scroll+height-1, len(lines))
+	if scroll > 0 {
+		end = min(scroll+height-2, len(lines))
+	}
+	var shown []string
+	if scroll > 0 {
+		shown = append(shown, dim.Render(fmt.Sprintf("↑ %d more · wheel scrolls", scroll)))
+	}
+	shown = append(shown, lines[scroll:end]...)
+	if below := len(lines) - end; below > 0 {
+		shown = append(shown, dim.Render(fmt.Sprintf("↓ %d more", below)))
+	}
+	offset := len(shown) - (end - scroll) - boolInt(len(lines)-end > 0)
+	var kept []region
+	for _, r := range regions {
+		if r.y >= scroll && r.y < end {
+			r.y = r.y - scroll + offset
+			kept = append(kept, r)
+		}
+	}
+	return shown, kept
+}
+
+func boolInt(yes bool) int {
+	if yes {
+		return 1
+	}
+	return 0
+}
+
+// contextBlock is how full the context is and how fast the model went, at
+// the bottom of the panel whatever is scrolled, so the status line can
+// leave them out.
+func (m model) contextBlock(width int, base lipgloss.Style, colors sidebarColors) []string {
+	status := statusPalette(m.printer == nil || m.printer.isDark())
+	used, window, share, fill := m.contextShare(status)
+	if used == 0 && window == 0 {
+		return nil
+	}
+	paint := func(c color.Color) lipgloss.Style { return base.Foreground(c) }
+	var lines []string
+	if window > 0 {
+		bar := contextBar(share, width-6, fill, status.empty)
+		lines = append(lines,
+			sidebarBackground(bar, colors.background)+paint(fill).Render(fmt.Sprintf(" %3.0f%%", share*100)),
+			paint(colors.dim).Render(fmt.Sprintf("%s of %s tokens", formatTokens(used), formatTokens(window))))
+	} else {
+		lines = append(lines, paint(colors.dim).Render(formatTokens(used)+" tokens"))
+	}
+	if speeds := m.speedPart(statusParts{prompt: true, generation: true}, status); speeds != "" {
+		lines = append(lines, sidebarBackground(speeds, colors.background))
+	}
+	return lines
+}
+
+// sidebarBackground keeps the panel's background behind text styled with
+// a foreground only.
+func sidebarBackground(text string, background color.Color) string {
+	code := backgroundCode(background)
+	text = strings.ReplaceAll(text, "\x1b[m", "\x1b[m"+code)
+	return code + strings.ReplaceAll(text, "\x1b[0m", "\x1b[0m"+code)
+}
+
+// scrollSidebar moves the panel by the wheel, as far as it has lines.
+func (m *model) scrollSidebar(up bool) {
+	if up {
+		m.sidebarScroll = max(0, m.sidebarScroll-sidebarWheelStep)
+		return
+	}
+	lines, _ := m.sidebarLines()
+	lower, _ := m.lowerLayout()
+	height := m.height - lipgloss.Height(lower)
+	colors := sidebarPalette(m.printer == nil || m.printer.isDark())
+	if context := m.contextBlock(sidebarWidth-2, lipgloss.NewStyle(), colors); len(context) > 0 {
+		height -= len(context) + 1
+	}
+	m.sidebarScroll = max(0, min(m.sidebarScroll+sidebarWheelStep, len(lines)-height+1))
 }

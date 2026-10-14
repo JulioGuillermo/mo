@@ -7,6 +7,9 @@ package llm
 // | PP-01 | Happy    | llama-server is asked for prompt progress, and each chunk of it is an event | P1  |
 // | PP-02 | Edge     | Other servers are never sent return_progress                             | P0       |
 // | PP-03 | Happy    | /props tells llama-server apart from servers without it                   | P1       |
+// | LM-01 | Happy    | Anthropic's models are listed with the key, from the Models API          | P1       |
+// | GS-01 | Happy    | Gemini's thought signature on a call is kept and sent back with it       | P0       |
+// | OA-01 | Happy    | A sign-in's token is the bearer at each request, over the key; its error stops the request | P0 |
 
 import (
 	"context"
@@ -91,6 +94,56 @@ func TestEffort(t *testing.T) {
 
 		if size != 32768 || !isLlama || isOther {
 			t.Errorf("size %d llama %v other %v", size, isLlama, isOther)
+		}
+	})
+
+	t.Run("LM-01 Anthropic's models are listed with the key, from the Models API", func(t *testing.T) {
+		var key, version string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			key, version = r.Header.Get("x-api-key"), r.Header.Get("anthropic-version")
+			fmt.Fprint(w, `{"data":[{"id":"claude-opus-5-5"},{"id":"claude-sonnet-5-5"}],"has_more":false}`)
+		}))
+		defer server.Close()
+
+		models, err := (&Anthropic{BaseURL: server.URL, APIKey: "sk-test"}).ListModels(context.Background())
+
+		if err != nil || strings.Join(models, ",") != "claude-opus-5-5,claude-sonnet-5-5" || key != "sk-test" || version == "" {
+			t.Errorf("models %v err %v key %q", models, err, key)
+		}
+	})
+
+	t.Run("GS-01 Gemini's thought signature on a call is kept and sent back with it", func(t *testing.T) {
+		server := sseServer(t, []string{
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"ls","arguments":"{}"},"extra_content":{"google":{"thought_signature":"c2lnbmF0dXJl"}}}]}}]}`,
+			`[DONE]`,
+		}, nil)
+
+		response, err := (&OpenAI{BaseURL: server.URL}).Stream(context.Background(), Request{Model: "gemini-3"}, func(Event) {})
+		sent := encoded(t, (&OpenAI{}).buildRequest(Request{Model: "gemini-3", Messages: []Message{response.Message}}))
+
+		if err != nil || len(response.Message.ToolCalls) != 1 || !strings.Contains(string(response.Message.ToolCalls[0].Extra), "c2lnbmF0dXJl") {
+			t.Fatalf("calls %+v err %v", response.Message.ToolCalls, err)
+		}
+		if !strings.Contains(sent, `"extra_content":{"google":{"thought_signature":"c2lnbmF0dXJl"}}`) {
+			t.Errorf("sent %s", sent)
+		}
+	})
+
+	t.Run("OA-01 a sign-in's token is the bearer at each request, over the key; its error stops the request", func(t *testing.T) {
+		var bearer string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			bearer = r.Header.Get("Authorization")
+			fmt.Fprint(w, `{"data":[{"id":"m"}]}`)
+		}))
+		defer server.Close()
+		signedIn := &OpenAI{BaseURL: server.URL, APIKey: "sk-key", Token: func(context.Context) (string, error) { return "tok-1", nil }}
+		signedOut := &OpenAI{BaseURL: server.URL, Token: func(context.Context) (string, error) { return "", fmt.Errorf("not signed in: /login corp") }}
+
+		_, err := signedIn.ListModels(context.Background())
+		_, outErr := signedOut.ListModels(context.Background())
+
+		if err != nil || bearer != "Bearer tok-1" || outErr == nil || !strings.Contains(outErr.Error(), "/login corp") {
+			t.Errorf("bearer %q err %v outErr %v", bearer, err, outErr)
 		}
 	})
 }

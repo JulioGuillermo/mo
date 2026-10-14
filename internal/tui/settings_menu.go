@@ -201,7 +201,7 @@ func (m model) showSection(menu *settingsMenu, section settingsSection, last str
 	overriding := menu.overriding(section)
 	items := section.items(m, menu)
 	if overriding {
-		items = overridable(items)
+		items = overridable(section, items)
 	}
 	width := 0
 	for _, item := range items {
@@ -211,7 +211,7 @@ func (m model) showSection(menu *settingsMenu, section settingsSection, last str
 	for _, item := range items {
 		label := fmt.Sprintf("%-*s   %s", width, item.title, dimStyle.Render(item.value(draft)))
 		if overriding {
-			label += menu.overrideMark(item)
+			label += menu.overrideMark(section, item)
 		}
 		options = append(options, huh.NewOption(label, item.title))
 	}
@@ -237,7 +237,7 @@ func (m model) showSection(menu *settingsMenu, section settingsSection, last str
 		for _, item := range items {
 			switch {
 			case item.title != choice:
-			case overriding && menu.project.set[projectFields[item.title].key]:
+			case overriding && menu.project.set[fieldKey(section, item)]:
 				return m.chooseOverride(menu, section, item)
 			default:
 				return m.editItem(menu, section, item)
@@ -252,6 +252,9 @@ func (m model) showSection(menu *settingsMenu, section settingsSection, last str
 // editItem opens one setting. Enter keeps the new value, esc puts the old
 // one back; both go back to the section.
 func (m model) editItem(menu *settingsMenu, section settingsSection, item settingItem) (tea.Model, tea.Cmd) {
+	if item.title == "Model" {
+		return m.pickDraftModel(menu, section, item)
+	}
 	draft := menu.sectionDraft(section)
 	restore := draft.snapshot()
 	field := item.field(draft)
@@ -259,7 +262,7 @@ func (m model) editItem(menu *settingsMenu, section settingsSection, item settin
 	keep := toSection
 	if menu.overriding(section) {
 		keep = func(m model) (tea.Model, tea.Cmd) {
-			menu.project.set[projectFields[item.title].key] = true
+			menu.project.set[fieldKey(section, item)] = true
 			return toSection(m)
 		}
 	}
@@ -334,4 +337,26 @@ func orDefault(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func fieldKey(section settingsSection, item settingItem) string {
+	field, _ := fieldOf(section, item)
+	return field.key
+}
+
+// pickDraftModel lists the models of the provider the section has, to set
+// the model from them; in the project screen that sets it for the project.
+func (m model) pickDraftModel(menu *settingsMenu, section settingsSection, item settingItem) (tea.Model, tea.Cmd) {
+	draft := menu.sectionDraft(section)
+	provider := orDefault(draft.provider, m.session.Provider)
+	settings := menu.config(m.session.Config).Providers[provider]
+	back := func(m model) (tea.Model, tea.Cmd) { return m.showSection(menu, section, item.title) }
+	return m.chooseModel(settings, modelChoice{provider: provider, current: draft.model, back: back,
+		pick: func(m model, name string) (tea.Model, tea.Cmd) {
+			if menu.overriding(section) {
+				menu.project.set["model"] = true
+			}
+			menu.sectionDraft(section).model = name
+			return back(m)
+		}})
 }

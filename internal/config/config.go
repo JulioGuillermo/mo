@@ -7,6 +7,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -33,6 +34,7 @@ type Config struct {
 	Web          Web                       `toml:"web,omitempty"`
 	MCP          map[string]MCPServer      `toml:"mcp,omitempty"`
 	Skills       Skills                    `toml:"skills,omitempty"`
+	Instructions Instructions              `toml:"instructions,omitempty"`
 	Render       Render                    `toml:"render,omitempty"`
 	Loop         Loop                      `toml:"loop,omitempty"`
 	Permissions  Permissions               `toml:"permissions,omitempty"`
@@ -51,6 +53,20 @@ type Tools struct {
 	MCPDisabled  []string          `toml:"mcp_disabled,omitempty"`
 	MaxOutput    int               `toml:"max_output,omitzero"`
 	Descriptions map[string]string `toml:"descriptions,omitempty"`
+	// Modes set the mode of single tools over Mode: full, compact, or
+	// search, found with tool_search.
+	Modes map[string]tools.Mode `toml:"modes,omitempty"`
+	// MCPModes set the mode of all the tools of an MCP server, or group:
+	// one entry in tool_search for the server, which finds all its tools.
+	MCPModes map[string]tools.Mode `toml:"mcp_modes,omitempty"`
+}
+
+// Instructions are files that tell the agent how to work, like AGENTS.md:
+// the user's in ~/.config/mo, and the project's from the repository's root
+// down to the working directory, added to the system prompt.
+type Instructions struct {
+	Enabled *bool    `toml:"enabled,omitempty"`
+	Files   []string `toml:"files,omitempty"`
 }
 
 // Skills are folders with a SKILL.md the model may load. Mode shows them in
@@ -61,6 +77,8 @@ type Skills struct {
 	Mode     tools.Mode `toml:"mode,omitempty"`
 	Disabled []string   `toml:"disabled,omitempty"`
 	Dirs     []string   `toml:"dirs,omitempty"`
+	// Modes set the mode of single skills over Mode.
+	Modes map[string]tools.Mode `toml:"modes,omitempty"`
 }
 
 type Context struct {
@@ -151,6 +169,9 @@ type Render struct {
 	// Sidebar shows the side panel of tasks and background jobs when the
 	// terminal is wide enough ("auto"), or never ("off").
 	Sidebar string `toml:"sidebar,omitempty"`
+	// Status draws the status line as powerline segments, which need a
+	// font with their arrows, or "plain".
+	Status string `toml:"status,omitempty"`
 }
 
 type Memory struct {
@@ -164,6 +185,41 @@ type ProviderConfig struct {
 	APIKeyEnv  string `toml:"api_key_env,omitempty"`
 	APIKeyFrom string `toml:"api_key_from,omitempty"`
 	Model      string `toml:"model,omitempty"`
+	// OAuth signs in to the provider instead of a key: the token it gives
+	// is sent as the bearer and renewed when it expires.
+	OAuth *OAuth `toml:"oauth,omitempty"`
+}
+
+// OAuth flows a provider may sign in with.
+const (
+	// OAuthDevice shows a code to enter on a page, for any terminal.
+	OAuthDevice = "device"
+	// OAuthBrowser opens the browser and takes the code on a local port,
+	// with PKCE.
+	OAuthBrowser = "browser"
+	// OAuthClient takes a token for the client itself, with no user.
+	OAuthClient = "client_credentials"
+)
+
+// OAuth is how to sign in to a provider with OAuth 2.
+type OAuth struct {
+	Flow            string            `toml:"flow,omitempty"`
+	ClientID        string            `toml:"client_id,omitempty"`
+	ClientSecret    string            `toml:"client_secret,omitempty"`
+	ClientSecretEnv string            `toml:"client_secret_env,omitempty"`
+	AuthURL         string            `toml:"auth_url,omitempty"`
+	TokenURL        string            `toml:"token_url,omitempty"`
+	DeviceURL       string            `toml:"device_url,omitempty"`
+	Scopes          []string          `toml:"scopes,omitempty"`
+	Params          map[string]string `toml:"params,omitempty"`
+}
+
+// Secret is the client secret, written or from its variable.
+func (o OAuth) Secret() string {
+	if o.ClientSecret != "" {
+		return o.ClientSecret
+	}
+	return os.Getenv(o.ClientSecretEnv)
 }
 
 // Key returns the API key from the first of api_key, api_key_from and
@@ -180,8 +236,10 @@ func (p ProviderConfig) Key() string {
 	return ""
 }
 
+// NeedsKey tells whether the provider takes a credential: a key, or a
+// sign-in.
 func (p ProviderConfig) NeedsKey() bool {
-	return p.APIKey != "" || p.APIKeyEnv != "" || p.APIKeyFrom != ""
+	return p.APIKey != "" || p.APIKeyEnv != "" || p.APIKeyFrom != "" || p.OAuth != nil
 }
 
 func Defaults() Config {
@@ -193,15 +251,16 @@ func Defaults() Config {
 			Confirm:      []string{"bash", "rm", "fetch"},
 			MaxOutput:    10000,
 		},
-		Context:     Context{CompactAt: ptr(0.75), Strategy: "compact", KeepReasoning: ptr(false)},
-		Memory:      Memory{Dir: defaultMemoryDir()},
-		Skills:      Skills{Mode: tools.ModeFull},
-		Web:         Web{Search: web.SearchDuckDuckGo},
-		Render:      Render{Images: render.ModeAuto, Background: "#00081a", Sidebar: "auto"},
-		Loop:        Loop{Enabled: ptr(true), Replies: 10, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2)},
-		Permissions: Permissions{Mode: "edits", Allow: DefaultAllow},
-		Notify:      Notify{Finish: ptr(true), Approval: ptr(true), Method: "auto", Focused: ptr(false)},
-		Providers:   presets(),
+		Context:      Context{CompactAt: ptr(0.75), Strategy: "compact", KeepReasoning: ptr(false)},
+		Memory:       Memory{Dir: defaultMemoryDir()},
+		Skills:       Skills{Mode: tools.ModeFull},
+		Instructions: Instructions{Enabled: ptr(true), Files: []string{"AGENTS.md", "AGENT.md"}},
+		Web:          Web{Search: web.SearchDuckDuckGo},
+		Render:       Render{Images: render.ModeAuto, Background: "#00081a", Sidebar: "auto", Status: "powerline"},
+		Loop:         Loop{Enabled: ptr(true), Replies: 10, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2)},
+		Permissions:  Permissions{Mode: "edits", Allow: DefaultAllow},
+		Notify:       Notify{Finish: ptr(true), Approval: ptr(true), Method: "auto", Focused: ptr(false)},
+		Providers:    presets(),
 	}
 }
 
@@ -244,6 +303,17 @@ func validate(cfg Config) error {
 	if !slices.Contains(modes, cfg.Skills.Mode) {
 		return fmt.Errorf("skills.mode %q: use full, compact or search", cfg.Skills.Mode)
 	}
+	for _, each := range []struct {
+		name  string
+		modes map[string]tools.Mode
+		group bool
+	}{{"tools.modes", cfg.Tools.Modes, false}, {"skills.modes", cfg.Skills.Modes, false}, {"tools.mcp_modes", cfg.Tools.MCPModes, true}} {
+		for name, mode := range each.modes {
+			if !slices.Contains(modes, mode) && !(each.group && mode == tools.ModeGroup) {
+				return fmt.Errorf("%s.%s %q: use full, compact or search%s", each.name, name, mode, map[bool]string{true: ", or group"}[each.group])
+			}
+		}
+	}
 	if cfg.Tools.Load != tools.LoadContext && cfg.Tools.Load != tools.LoadDeclare {
 		return fmt.Errorf("tools.load %q: use context or declare", cfg.Tools.Load)
 	}
@@ -253,6 +323,9 @@ func validate(cfg Config) error {
 	}
 	if cfg.Context.Strategy != "compact" && cfg.Context.Strategy != "drop" {
 		return fmt.Errorf("context.strategy %q: use compact or drop", cfg.Context.Strategy)
+	}
+	if cfg.Render.Status != "powerline" && cfg.Render.Status != "plain" {
+		return fmt.Errorf("render.status %q: use powerline or plain", cfg.Render.Status)
 	}
 	if cfg.Render.Sidebar != "auto" && cfg.Render.Sidebar != "off" {
 		return fmt.Errorf("render.sidebar %q: use auto or off", cfg.Render.Sidebar)
@@ -451,8 +524,17 @@ func mergeHarmless(base, layer Config) Config {
 	base.MaxTokens = override(base.MaxTokens, layer.MaxTokens)
 	base.Effort = override(base.Effort, layer.Effort)
 	base.Tools.Mode = override(base.Tools.Mode, layer.Tools.Mode)
+	base.Tools.Modes = mergeModes(base.Tools.Modes, layer.Tools.Modes)
+	base.Tools.MCPModes = mergeModes(base.Tools.MCPModes, layer.Tools.MCPModes)
+	base.Skills.Modes = mergeModes(base.Skills.Modes, layer.Skills.Modes)
 	base.Tools.Load = override(base.Tools.Load, layer.Tools.Load)
 	base.Skills.Mode = override(base.Skills.Mode, layer.Skills.Mode)
+	if layer.Instructions.Enabled != nil {
+		base.Instructions.Enabled = layer.Instructions.Enabled
+	}
+	if layer.Instructions.Files != nil {
+		base.Instructions.Files = layer.Instructions.Files
+	}
 	base.Tools.MaxOutput = override(base.Tools.MaxOutput, layer.Tools.MaxOutput)
 	if layer.Tools.AlwaysLoaded != nil {
 		base.Tools.AlwaysLoaded = layer.Tools.AlwaysLoaded
@@ -475,8 +557,22 @@ func mergeHarmless(base, layer Config) Config {
 	base.Render.Images = override(base.Render.Images, layer.Render.Images)
 	base.Render.Background = override(base.Render.Background, layer.Render.Background)
 	base.Render.Sidebar = override(base.Render.Sidebar, layer.Render.Sidebar)
+	base.Render.Status = override(base.Render.Status, layer.Render.Status)
 	base.Loop = mergeLoop(base.Loop, layer.Loop)
 	return base
+}
+
+// mergeModes sets the modes layer names over base's, one by one.
+func mergeModes(base, layer map[string]tools.Mode) map[string]tools.Mode {
+	if len(layer) == 0 {
+		return base
+	}
+	merged := maps.Clone(base)
+	if merged == nil {
+		merged = map[string]tools.Mode{}
+	}
+	maps.Copy(merged, layer)
+	return merged
 }
 
 func mergeLoop(base, layer Loop) Loop {
@@ -499,6 +595,9 @@ func mergeProvider(base, layer ProviderConfig) ProviderConfig {
 	base.APIKeyEnv = override(base.APIKeyEnv, layer.APIKeyEnv)
 	base.APIKeyFrom = override(base.APIKeyFrom, layer.APIKeyFrom)
 	base.Model = override(base.Model, layer.Model)
+	if layer.OAuth != nil {
+		base.OAuth = layer.OAuth
+	}
 	return base
 }
 
@@ -552,6 +651,15 @@ func (c Config) SkillDirs(workDir string) []string {
 	dirs := []string{filepath.Join(ConfigHome(), "mo", "skills")}
 	dirs = append(dirs, c.Skills.Dirs...)
 	return append(dirs, filepath.Join(ProjectDir(workDir), "skills"))
+}
+
+// InstructionFiles are the names of the instructions files to read, none
+// when they are turned off.
+func (c Config) InstructionFiles() []string {
+	if c.Instructions.Enabled != nil && !*c.Instructions.Enabled {
+		return nil
+	}
+	return c.Instructions.Files
 }
 
 // SessionDir is where conversations are saved to resume them.

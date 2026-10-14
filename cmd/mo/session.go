@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -93,11 +94,17 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	env.Titles = loaded.titles
 	env.Recall = loaded.recall
 	found := skills.Find(cfg.SkillDirs(workDir))
+	instructions := agent.FindInstructions(cfg.InstructionFiles(), filepath.Join(config.ConfigHome(), "mo"), workDir)
+	extra := extraTools(hub, loaded.plugins)
+	modes, groups := toolModes(cfg.Tools, extra, hub.ToolServers())
 	registry := tools.NewRegistry(env, tools.Options{
+		Modes:        modes,
+		Groups:       groups,
+		SkillModes:   cfg.Skills.Modes,
 		Skills:       skills.Without(found, cfg.Skills.Disabled),
 		SkillMode:    cfg.Skills.Mode,
 		Searcher:     searcher,
-		Extra:        extraTools(hub, loaded.plugins),
+		Extra:        extra,
 		Mode:         cfg.Tools.Mode,
 		Load:         cfg.Tools.Load,
 		AlwaysLoaded: cfg.Tools.AlwaysLoaded,
@@ -112,7 +119,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	assistant := &agent.Agent{
 		Provider:      chosen.provider,
 		Model:         chosen.model,
-		System:        agent.SystemPrompt(cfg.SystemPrompt, workDir),
+		System:        agent.SystemPrompt(cfg.SystemPrompt, workDir, instructions),
 		MaxTokens:     cfg.MaxTokens,
 		Effort:        cfg.Effort,
 		Tools:         registry,
@@ -159,19 +166,52 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		return session, nil
 	}
 	return tui.Session{
-		Agent:     assistant,
-		Provider:  chosen.name,
-		Model:     chosen.model,
-		Config:    cfg,
-		WorkDir:   workDir,
-		Reload:    reload,
-		MCP:       hub.Status(),
-		Plugins:   loaded.plugins,
-		ToolNames: allToolNames(hub, loaded.plugins),
-		Skills:    skills.Names(found),
+		Agent:        assistant,
+		Provider:     chosen.name,
+		Model:        chosen.model,
+		Config:       cfg,
+		WorkDir:      workDir,
+		Reload:       reload,
+		MCP:          hub.Status(),
+		Plugins:      loaded.plugins,
+		ToolNames:    allToolNames(hub, loaded.plugins),
+		Skills:       skills.Names(found),
+		Instructions: instructionPaths(instructions),
 
 		ToolDescriptions: toolDescriptions(hub, loaded.plugins),
 	}, nil
+}
+
+// toolModes are the modes of single tools, an MCP server's mode given to
+// its tools that have none of their own, and the groups: the tools of the
+// servers in group mode, under the server's name.
+func toolModes(settings config.Tools, extra []tools.Tool, servers map[string]string) (map[string]tools.Mode, map[string]string) {
+	modes := maps.Clone(settings.Modes)
+	if modes == nil {
+		modes = map[string]tools.Mode{}
+	}
+	groups := map[string]string{}
+	for _, tool := range extra {
+		server, ok := servers[tool.Name]
+		if !ok {
+			continue
+		}
+		switch mode := settings.MCPModes[server]; {
+		case mode == tools.ModeGroup:
+			groups[tool.Name] = server
+		case mode != "" && modes[tool.Name] == "":
+			modes[tool.Name] = mode
+		}
+	}
+	return modes, groups
+}
+
+func instructionPaths(found []agent.Instruction) []string {
+	var paths []string
+	for _, instruction := range found {
+		paths = append(paths, instruction.Path)
+	}
+	return paths
 }
 
 // extraTools puts the MCP tools first and then the plugin tools whose names

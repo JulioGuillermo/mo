@@ -15,6 +15,9 @@ type OpenAI struct {
 	BaseURL string
 	APIKey  string
 	Client  *http.Client
+	// Token, when set, gives the bearer at each request instead of APIKey:
+	// a sign-in's token, renewed when it expires.
+	Token func(ctx context.Context) (string, error)
 	// PromptProgress asks for how far the server is in reading the prompt.
 	// Only for llama-server: other servers may refuse the field.
 	PromptProgress bool
@@ -36,6 +39,9 @@ type openAIToolCall struct {
 		Name      string `json:"name,omitempty"`
 		Arguments string `json:"arguments"`
 	} `json:"function"`
+	// ExtraContent is Gemini's: the thought signature of a call, which it
+	// wants back with the call in the next requests.
+	ExtraContent json.RawMessage `json:"extra_content,omitempty"`
 }
 
 type openAITool struct {
@@ -94,7 +100,11 @@ type openAIChunk struct {
 
 func (p *OpenAI) Stream(ctx context.Context, req Request, onEvent func(Event)) (Response, error) {
 	clock := newSpeedClock()
-	resp, err := postJSON(ctx, clientOrDefault(p.Client), p.url("/chat/completions"), p.headers(), p.buildRequest(req))
+	headers, err := p.headers(ctx)
+	if err != nil {
+		return Response{}, err
+	}
+	resp, err := postJSON(ctx, clientOrDefault(p.Client), p.url("/chat/completions"), headers, p.buildRequest(req))
 	if err != nil {
 		return Response{}, err
 	}
@@ -169,7 +179,9 @@ func (p *OpenAI) Stream(ctx context.Context, req Request, onEvent func(Event)) (
 		if id == "" {
 			id = fmt.Sprintf("call_%d", i)
 		}
-		message.ToolCalls = append(message.ToolCalls, newToolCall(id, call.Function.Name, call.Function.Arguments))
+		toolCall := newToolCall(id, call.Function.Name, call.Function.Arguments)
+		toolCall.Extra = call.ExtraContent
+		message.ToolCalls = append(message.ToolCalls, toolCall)
 	}
 	return Response{Message: message, Usage: clock.fill(usage)}, nil
 }
@@ -192,6 +204,9 @@ func mergeToolCallDeltas(calls []*openAIToolCall, deltas []openAIToolCall, onDel
 			call.Function.Name = delta.Function.Name
 		}
 		call.Function.Arguments += delta.Function.Arguments
+		if len(delta.ExtraContent) > 0 {
+			call.ExtraContent = delta.ExtraContent
+		}
 	}
 	return calls
 }
@@ -258,6 +273,7 @@ func toOpenAIMessage(message Message) openAIMessage {
 		wire.Type = "function"
 		wire.Function.Name = call.Name
 		wire.Function.Arguments = string(call.Args)
+		wire.ExtraContent = call.Extra
 		out.ToolCalls = append(out.ToolCalls, wire)
 	}
 	return out
@@ -269,7 +285,11 @@ func (p *OpenAI) ListModels(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	for name, value := range p.headers() {
+	headers, err := p.headers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for name, value := range headers {
 		req.Header.Set(name, value)
 	}
 	resp, err := clientOrDefault(p.Client).Do(req)
@@ -305,11 +325,19 @@ func (e *StatusError) Error() string {
 	return "listing models: " + e.Status
 }
 
-func (p *OpenAI) headers() map[string]string {
-	if p.APIKey == "" {
-		return nil
+func (p *OpenAI) headers(ctx context.Context) (map[string]string, error) {
+	key := p.APIKey
+	if p.Token != nil {
+		token, err := p.Token(ctx)
+		if err != nil {
+			return nil, err
+		}
+		key = token
 	}
-	return map[string]string{"Authorization": "Bearer " + p.APIKey}
+	if key == "" {
+		return nil, nil
+	}
+	return map[string]string{"Authorization": "Bearer " + key}, nil
 }
 
 func (p *OpenAI) url(path string) string {

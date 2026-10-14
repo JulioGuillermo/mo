@@ -30,6 +30,10 @@ type providerDraft struct {
 	remove    bool
 	inUse     bool
 	use       bool
+
+	// oauth is the sign-in being edited; flow "" signs in with a key.
+	oauth       config.OAuth
+	oauthScopes string
 }
 
 func newProviderDraft(name string, cfg config.Config, findings []detect.Finding) *providerDraft {
@@ -45,7 +49,7 @@ func newProviderDraft(name string, cfg config.Config, findings []detect.Finding)
 	if inUse && cfg.Model != "" {
 		settings.Model = cfg.Model
 	}
-	return &providerDraft{
+	draft := &providerDraft{
 		name:      name,
 		hasPreset: hasPreset,
 		savedKey:  settings.APIKey != "",
@@ -56,6 +60,24 @@ func newProviderDraft(name string, cfg config.Config, findings []detect.Finding)
 		keyFrom:   settings.APIKeyFrom,
 		inUse:     inUse,
 	}
+	if settings.OAuth != nil {
+		draft.oauth = *settings.OAuth
+		draft.oauthScopes = strings.Join(settings.OAuth.Scopes, " ")
+	}
+	return draft
+}
+
+// settings are the provider as the form has it now, with the key typed or
+// the one saved, to ask it for its models.
+func (d *providerDraft) settings(cfg config.Config) config.ProviderConfig {
+	settings := config.ProviderConfig{Protocol: d.protocol, BaseURL: d.baseURL, APIKeyEnv: d.keyEnv, APIKeyFrom: d.keyFrom}
+	switch {
+	case strings.TrimSpace(d.key) != "":
+		settings.APIKey = strings.TrimSpace(d.key)
+	case !d.forgetKey:
+		settings.APIKey = cfg.Providers[d.name].APIKey
+	}
+	return settings
 }
 
 // entries are the fields of a provider, each with its value: a new one
@@ -94,6 +116,33 @@ func (d *providerDraft) entries(cfg config.Config) []entry {
 		entries = append(entries, entry{"Forget the saved key", func() string { return yesNo(d.forgetKey) }, func() huh.Field {
 			return huh.NewConfirm().Title("Forget the saved API key").Value(&d.forgetKey)
 		}})
+	}
+	entries = append(entries, entry{"Sign in", func() string { return valueOr(d.oauth.Flow, "with a key") }, func() huh.Field {
+		return huh.NewSelect[string]().Title("Sign in").Description("OAuth 2 instead of a key; /login <provider> signs in").Options(
+			huh.NewOption("with a key", ""),
+			huh.NewOption("device: a code to enter on a page, from any terminal", config.OAuthDevice),
+			huh.NewOption("browser: opens it and takes the answer on a local port, with PKCE", config.OAuthBrowser),
+			huh.NewOption("client credentials: the client's own token, no user", config.OAuthClient),
+		).Value(&d.oauth.Flow)
+	}})
+	if d.oauth.Flow != "" {
+		text := func(title, description string, value *string) entry {
+			return entry{title, func() string { return valueOr(*value, "none") }, func() huh.Field {
+				return huh.NewInput().Title(title).Description(description).Value(value)
+			}}
+		}
+		entries = append(entries,
+			text("Client id", "the id the provider gave mo's client", &d.oauth.ClientID),
+			text("Client secret variable", "environment variable holding the secret, if the client has one", &d.oauth.ClientSecretEnv),
+			text("Token URL", "where tokens are taken and renewed", &d.oauth.TokenURL),
+		)
+		switch d.oauth.Flow {
+		case config.OAuthDevice:
+			entries = append(entries, text("Device URL", "where the device code is asked for", &d.oauth.DeviceURL))
+		case config.OAuthBrowser:
+			entries = append(entries, text("Authorization URL", "the page that asks the user", &d.oauth.AuthURL))
+		}
+		entries = append(entries, text("Scopes", "separated by spaces", &d.oauthScopes))
 	}
 	if sources := keySources(d.keyFrom); len(sources) > 1 {
 		entries = append(entries, entry{"Take the key from", func() string { return valueOr(d.keyFrom, "nowhere else") }, func() huh.Field {
@@ -181,6 +230,14 @@ func (d *providerDraft) applyTo(layer config.Config) (config.Config, error) {
 	if d.forgetKey {
 		entry.APIKey = ""
 	}
+	if d.oauth.Flow != "" {
+		oauth := d.oauth
+		oauth.Scopes = strings.Fields(d.oauthScopes)
+		if oauth.ClientID == "" || oauth.TokenURL == "" {
+			return layer, fmt.Errorf("%s: signing in needs a client id and a token URL", name)
+		}
+		entry.OAuth = &oauth
+	}
 	if key := strings.TrimSpace(d.key); key != "" {
 		entry.APIKey = key
 	}
@@ -232,6 +289,9 @@ func (m model) editProvider(msg settingsLoadedMsg, cfg config.Config, name strin
 		snapshot: func() func() {
 			saved := *draft
 			return func() { *draft = saved }
+		},
+		models: func() (string, config.ProviderConfig, string, func(string)) {
+			return draft.name, draft.settings(cfg), draft.model, func(name string) { draft.model = name }
 		},
 	}
 	what := "provider " + orDefault(name, "new")

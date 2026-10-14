@@ -91,6 +91,11 @@ func ConfigHome() string {
 	return filepath.Join(home, ".config")
 }
 
+// DataHome is where mo keeps its data, ~/.local/share by default.
+func DataHome() string {
+	return dataHome()
+}
+
 func dataHome() string {
 	if dir := os.Getenv("XDG_DATA_HOME"); dir != "" {
 		return dir

@@ -14,6 +14,8 @@ type Anthropic struct {
 	BaseURL string
 	APIKey  string
 	Client  *http.Client
+	// Token, when set, gives a bearer at each request instead of APIKey.
+	Token func(ctx context.Context) (string, error)
 }
 
 const anthropicDefaultMaxTokens = 8192
@@ -101,9 +103,9 @@ type anthropicEvent struct {
 
 func (p *Anthropic) Stream(ctx context.Context, req Request, onEvent func(Event)) (Response, error) {
 	clock := newSpeedClock()
-	headers := map[string]string{
-		"x-api-key":         p.APIKey,
-		"anthropic-version": "2023-06-01",
+	headers, err := p.headers(ctx)
+	if err != nil {
+		return Response{}, err
 	}
 	url := strings.TrimRight(p.BaseURL, "/") + "/v1/messages"
 	resp, err := postJSON(ctx, clientOrDefault(p.Client), url, headers, buildAnthropicRequest(req))
@@ -197,4 +199,58 @@ func toAnthropicMessages(messages []Message) []anthropicMessage {
 		}
 	}
 	return out
+}
+
+// ListModels returns the ids of the models the key can use, newest first,
+// from the Models API.
+func (p *Anthropic) ListModels(ctx context.Context) ([]string, error) {
+	url := strings.TrimRight(p.BaseURL, "/") + "/v1/models?limit=1000"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	headers, err := p.headers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
+	resp, err := clientOrDefault(p.Client).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return nil, &StatusError{Code: resp.StatusCode, Status: resp.Status}
+	}
+	var list struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, model := range list.Data {
+		ids = append(ids, model.ID)
+	}
+	return ids, nil
+}
+
+// headers authenticate a request: the key, or a sign-in's token as the
+// bearer.
+func (p *Anthropic) headers(ctx context.Context) (map[string]string, error) {
+	headers := map[string]string{"anthropic-version": "2023-06-01"}
+	if p.Token == nil {
+		headers["x-api-key"] = p.APIKey
+		return headers, nil
+	}
+	token, err := p.Token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	headers["Authorization"] = "Bearer " + token
+	return headers, nil
 }

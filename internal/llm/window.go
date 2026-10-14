@@ -22,7 +22,11 @@ func (p *OpenAI) Props(ctx context.Context) (int, bool) {
 	if err != nil {
 		return 0, false
 	}
-	for name, value := range p.headers() {
+	headers, err := p.headers(ctx)
+	if err != nil {
+		return 0, false
+	}
+	for name, value := range headers {
 		req.Header.Set(name, value)
 	}
 	resp, err := clientOrDefault(p.Client).Do(req)

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -49,6 +50,8 @@ var projectFields = map[string]projectField{
 	"Disabled":                             {"tools.disabled", func(d *settingsDraft) any { return &d.disabled }},
 	"MCP servers off":                      {"tools.mcp_disabled", func(d *settingsDraft) any { return &d.mcpDisabled }},
 	"Skill mode":                           {"skills.mode", func(d *settingsDraft) any { return &d.skillMode }},
+	"Read instructions files":              {"instructions.enabled", func(d *settingsDraft) any { return &d.instructionsOn }},
+	"File names":                           {"instructions.files", func(d *settingsDraft) any { return &d.instructionsFiles }},
 	"Skills off":                           {"skills.disabled", func(d *settingsDraft) any { return &d.skillsDisabled }},
 	"Max tool output (bytes)":              {"tools.max_output", func(d *settingsDraft) any { return &d.maxOutput }},
 	"Context window (tokens)":              {"context.window", func(d *settingsDraft) any { return &d.window }},
@@ -66,7 +69,29 @@ var projectFields = map[string]projectField{
 
 // projectSectionKeys are the sections of the project screen, besides its
 // permissions.
-var projectSectionKeys = []string{"model", "tools", "context", "loop", "skills"}
+var projectSectionKeys = []string{"model", "tools", "context", "loop", "skills", "instructions", "toolmodes", "skillmodes"}
+
+// modePrefixes are the keys of the file under which each kind of mode is set
+// name by name.
+var modePrefixes = map[modeKind]string{toolModes: "tools.modes.", mcpModes: "tools.mcp_modes.", skillModes: "skills.modes."}
+
+// fieldOf is the setting an item of a section edits, when a project can
+// set it: one of projectFields, or a single mode of Tool modes or Skill
+// modes.
+func fieldOf(section settingsSection, item settingItem) (projectField, bool) {
+	kind, name := toolModes, item.title
+	switch {
+	case section.key == "toolmodes" && strings.HasSuffix(item.title, mcpSuffix):
+		kind, name = mcpModes, strings.TrimSuffix(item.title, mcpSuffix)
+	case section.key == "toolmodes":
+	case section.key == "skillmodes":
+		kind = skillModes
+	default:
+		field, ok := projectFields[item.title]
+		return field, ok
+	}
+	return projectField{modePrefixes[kind] + name, func(d *settingsDraft) any { return d.modeOf(kind, name) }}, true
+}
 
 // projectSettings is the project screen: a draft that is the global one with
 // what the project sets on top, and which settings those are.
@@ -92,11 +117,20 @@ func newProjectSettings(workDir string, user config.Config, file config.Project,
 		draft: draft, set: config.ProjectSets(file.Layer), last: projectSectionKeys[0]}
 }
 
-// sync gives every setting the project does not set its global value.
+// sync gives every setting the project does not set its global value, and
+// every single mode either draft has met.
 func (p *projectSettings) sync(global *settingsDraft) {
 	for _, field := range projectFields {
 		if !p.set[field.key] {
 			copyValue(field.bind(p.draft), field.bind(global))
+		}
+	}
+	for kind, prefix := range modePrefixes {
+		names := slices.Concat(slices.Collect(maps.Keys(global.modes[kind])), slices.Collect(maps.Keys(p.draft.modes[kind])))
+		for _, name := range names {
+			if !p.set[prefix+name] {
+				*p.draft.modeOf(kind, name) = *global.modeOf(kind, name)
+			}
 		}
 	}
 }
@@ -203,8 +237,8 @@ func (m model) projectOptions(menu *settingsMenu, row func(title, summary string
 	var options []huh.Option[string]
 	for _, section := range projectSections() {
 		set := 0
-		for _, item := range overridable(section.items(m, menu)) {
-			if menu.project.set[projectFields[item.title].key] {
+		for _, item := range overridable(section, section.items(m, menu)) {
+			if field, _ := fieldOf(section, item); menu.project.set[field.key] {
 				set++
 			}
 		}
@@ -233,10 +267,10 @@ func projectSections() []settingsSection {
 }
 
 // overridable keeps the items a project can set.
-func overridable(items []settingItem) []settingItem {
+func overridable(section settingsSection, items []settingItem) []settingItem {
 	var kept []settingItem
 	for _, item := range items {
-		if _, ok := projectFields[item.title]; ok {
+		if _, ok := fieldOf(section, item); ok {
 			kept = append(kept, item)
 		}
 	}
@@ -244,8 +278,8 @@ func overridable(items []settingItem) []settingItem {
 }
 
 // overrideMark says, after a value in the project screen, where it comes from.
-func (menu *settingsMenu) overrideMark(item settingItem) string {
-	if menu.project.set[projectFields[item.title].key] {
+func (menu *settingsMenu) overrideMark(section settingsSection, item settingItem) string {
+	if field, _ := fieldOf(section, item); menu.project.set[field.key] {
 		return keyStyle.Render("  ● this project")
 	}
 	return dimStyle.Render("  · global")
@@ -254,7 +288,7 @@ func (menu *settingsMenu) overrideMark(item settingItem) string {
 // chooseOverride asks what to do with a setting the project sets: change it,
 // or go back to the global value.
 func (m model) chooseOverride(menu *settingsMenu, section settingsSection, item settingItem) (tea.Model, tea.Cmd) {
-	field := projectFields[item.title]
+	field, _ := fieldOf(section, item)
 	choice := overrideChange
 	global := item.value(menu.draft)
 	form := huh.NewForm(huh.NewGroup(

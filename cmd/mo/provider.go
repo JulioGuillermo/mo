@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jg/mo/internal/auth"
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/detect"
 	"github.com/jg/mo/internal/llm"
@@ -48,7 +49,11 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 		known := slices.Sorted(maps.Keys(cfg.Providers))
 		return chosenProvider{}, fmt.Errorf("unknown provider %q (known: %s; see mo -detect)", name, strings.Join(known, ", "))
 	}
-	if settings.NeedsKey() && settings.Key() == "" {
+	var token func(context.Context) (string, error)
+	if settings.OAuth != nil {
+		token = auth.NewSource(name, *settings.OAuth).Token
+	}
+	if token == nil && settings.NeedsKey() && settings.Key() == "" {
 		return chosenProvider{}, fmt.Errorf("%s needs an API key and none was found (%s)", name, keyOrigin(settings))
 	}
 
@@ -61,7 +66,7 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 
 	switch settings.Protocol {
 	case "openai":
-		provider := &llm.OpenAI{BaseURL: settings.BaseURL, APIKey: settings.Key()}
+		provider := &llm.OpenAI{BaseURL: settings.BaseURL, APIKey: settings.Key(), Token: token}
 		if model == "" {
 			first, err := firstModel(ctx, provider)
 			if err != nil {
@@ -78,7 +83,7 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 		return chosenProvider{name: name, model: model, window: window, provider: provider}, nil
 	case "anthropic":
 		key := settings.Key()
-		if key == "" {
+		if key == "" && token == nil {
 			return chosenProvider{}, fmt.Errorf("%s needs an API key: set providers.%s.api_key, api_key_env or api_key_from", name, name)
 		}
 		if model == "" {
@@ -88,7 +93,7 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 		if window == 0 {
 			window = defaultAnthropicWindow
 		}
-		provider := &llm.Anthropic{BaseURL: settings.BaseURL, APIKey: key}
+		provider := &llm.Anthropic{BaseURL: settings.BaseURL, APIKey: key, Token: token}
 		return chosenProvider{name: name, model: model, window: window, provider: provider}, nil
 	}
 	return chosenProvider{}, fmt.Errorf("provider %q has unknown type %q (use openai or anthropic)", name, settings.Protocol)

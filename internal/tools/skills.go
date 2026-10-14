@@ -29,25 +29,40 @@ func isMetaTool(name string) bool {
 }
 
 // skillTools are the tools of the skills, none without skills: skill loads
-// one, and its description names them with what they are for, or only
-// their names; in search mode skill_list and skill_search find them.
-func skillTools(found []skills.Skill, mode Mode) []Tool {
+// one, and its description names each in full mode with what it is for,
+// and each in compact mode by name; skills in search mode are left for
+// skill_list and skill_search, which come with them.
+func skillTools(found []skills.Skill, mode Mode, modes map[string]Mode) []Tool {
 	if len(found) == 0 {
 		return nil
 	}
+	var full, compact []string
+	searched := false
+	for _, skill := range found {
+		switch skillMode(skill.Name, mode, modes) {
+		case ModeCompact:
+			compact = append(compact, skill.Name)
+			searched = true
+		case ModeSearch:
+			searched = true
+		default:
+			full = append(full, "- "+skill.Name+": "+oneLine(skill.Description))
+		}
+	}
 	description := "Load a skill: instructions for a kind of task, with the folder of its other files. " +
 		"Load the one that fits before you start such a task."
-	switch mode {
-	case ModeCompact:
-		description += "\nSkills: " + strings.Join(skills.Names(found), ", ")
-	case ModeSearch:
-		description += " Find them with skill_list or skill_search."
-	default:
-		var lines []string
-		for _, skill := range found {
-			lines = append(lines, "- "+skill.Name+": "+oneLine(skill.Description))
+	if len(full) > 0 {
+		description += "\nSkills:\n" + strings.Join(full, "\n")
+	}
+	if len(compact) > 0 {
+		label := "Skills: "
+		if len(full) > 0 {
+			label = "Also: "
 		}
-		description += "\nSkills:\n" + strings.Join(lines, "\n")
+		description += "\n" + label + strings.Join(compact, ", ")
+	}
+	if searched {
+		description += "\nskill_search tells what the others are for, and finds more."
 	}
 	tools := []Tool{{
 		Name:        skillToolName,
@@ -58,7 +73,7 @@ func skillTools(found []skills.Skill, mode Mode) []Tool {
 		},
 		Summary: func(args json.RawMessage) string { return argField(args, "name") },
 	}}
-	if mode != ModeSearch {
+	if !searched {
 		return tools
 	}
 	return append(tools,
@@ -81,6 +96,14 @@ func skillTools(found []skills.Skill, mode Mode) []Tool {
 			Summary: func(args json.RawMessage) string { return argField(args, "query") },
 		},
 	)
+}
+
+// skillMode is a skill's own mode, else the default.
+func skillMode(name string, mode Mode, modes map[string]Mode) Mode {
+	if own := modes[name]; own == ModeFull || own == ModeCompact || own == ModeSearch {
+		return own
+	}
+	return mode
 }
 
 func oneLine(text string) string {

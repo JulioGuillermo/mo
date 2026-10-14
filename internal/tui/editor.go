@@ -37,6 +37,8 @@ type editor struct {
 	back        func(m model) (tea.Model, tea.Cmd)
 	snapshot    func() func()
 	notice      string
+	// models, when set, lists the models for the Model field to pick from.
+	models func() (string, config.ProviderConfig, string, func(name string))
 }
 
 func (m model) showEditor(e *editor, last string) (tea.Model, tea.Cmd) {
@@ -86,6 +88,15 @@ func (m model) showEditor(e *editor, last string) (tea.Model, tea.Cmd) {
 // editEntry opens one field; enter keeps what was typed, esc puts the old
 // value back.
 func (m model) editEntry(e *editor, field entry) (tea.Model, tea.Cmd) {
+	if field.title == "Model" && e.models != nil {
+		provider, settings, current, set := e.models()
+		toList := func(m model) (tea.Model, tea.Cmd) { return m.showEditor(e, field.title) }
+		return m.chooseModel(settings, modelChoice{provider: provider, current: current, back: toList,
+			pick: func(m model, name string) (tea.Model, tea.Cmd) {
+				set(name)
+				return toList(m)
+			}})
+	}
 	restore := e.snapshot()
 	input := field.field()
 	toList := func(m model) (tea.Model, tea.Cmd) { return m.showEditor(e, field.title) }

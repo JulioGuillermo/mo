@@ -7,7 +7,7 @@ package tools
 // | MD-03 | Happy    | search mode declares the search tools and the always-loaded ones only | P0     |
 // | MD-04 | Happy    | tool_search tells what the matching tools do and take                | P0       |
 // | MD-05 | Happy    | context: the request never changes; declare: found tools are declared from history | P0 |
-// | MD-06 | Happy    | tool_list names the tools, filtered, without descriptions             | P0       |
+// | MD-06 | Happy    | tool_list names the tools left to find, filtered, without descriptions | P0      |
 // | MD-07 | Happy    | tool_call stands for the tool it names; string args are taken         | P0       |
 // | MD-09 | Error    | tool_call refuses unknown tools, search tools and args that are not JSON | P1     |
 // | MD-08 | Happy    | a configured description replaces the built-in one, "" removes it  | P1       |
@@ -62,6 +62,9 @@ func TestModes(t *testing.T) {
 		specs := NewRegistry(newEnv(t), Options{Mode: ModeCompact}).Specs(nil)
 
 		for _, spec := range specs {
+			if isSearchTool(spec.Name) {
+				continue
+			}
 			if spec.Description != "" || strings.Contains(string(spec.Schema), "description") {
 				t.Errorf("%s still describes itself: %q %s", spec.Name, spec.Description, spec.Schema)
 			}
@@ -123,10 +126,10 @@ func TestToolSearch(t *testing.T) {
 
 		all, files, none := list(""), list("file"), list("kubernetes")
 
-		if !strings.HasPrefix(all, "bash, read, write") || strings.Contains(all, "tool_") || strings.Contains(all, ":") {
+		if !strings.HasPrefix(all, "bash, write") || strings.Contains(all, "read") || strings.Contains(all, "tool_") || strings.Contains(all, ":") {
 			t.Errorf("all = %q", all)
 		}
-		if !strings.Contains(files, "read") || strings.Contains(files, "bash") || !strings.Contains(none, "no tools match") {
+		if !strings.Contains(files, "write") || strings.Contains(files, "bash") || !strings.Contains(none, "no tools match") {
 			t.Errorf("files = %q none = %q", files, none)
 		}
 	})

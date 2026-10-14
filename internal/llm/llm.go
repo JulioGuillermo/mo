@@ -36,6 +36,9 @@ type ToolCall struct {
 	Name      string
 	Args      json.RawMessage
 	ArgsError string
+	// Extra is what the provider sends with a call to have it back as it
+	// was, such as Gemini's thought signature; it is never read.
+	Extra json.RawMessage `json:",omitempty"`
 }
 
 type ToolSpec struct {

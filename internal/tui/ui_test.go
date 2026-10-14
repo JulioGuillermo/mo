@@ -133,7 +133,7 @@ func TestStatusLine(t *testing.T) {
 
 		status := ansi.Strip(m.statusLine())
 
-		if !strings.Contains(status, "llama-server · Qwen3-8B · ctx 1.2k/32.0k ▰▱▱▱▱▱▱▱▱▱ 4%") {
+		if !strings.Contains(status, "llama-server › Qwen3-8B \ue0b0 ▰▱▱▱▱▱▱▱▱▱ 4% 1.2k/32.0k \ue0b0") {
 			t.Errorf("status = %q", status)
 		}
 	})

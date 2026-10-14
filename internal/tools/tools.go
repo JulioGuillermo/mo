@@ -71,10 +71,16 @@ type Options struct {
 	Descriptions map[string]string
 	Searcher     web.Searcher
 	Extra        []Tool
-	// Skills are the skills the model may load, shown as SkillMode says;
-	// without any there are no skill tools.
-	Skills    []skills.Skill
-	SkillMode Mode
+	// Modes set the mode of single tools over Mode.
+	Modes map[string]Mode
+	// Groups put tools in a group, by name: found together with tool_search
+	// under the group's name, as the tools of an MCP server.
+	Groups map[string]string
+	// Skills are the skills the model may load, shown as SkillMode says,
+	// or SkillModes for single ones; without any there are no skill tools.
+	Skills     []skills.Skill
+	SkillMode  Mode
+	SkillModes map[string]Mode
 }
 
 type Registry struct {
@@ -94,10 +100,10 @@ func NewRegistry(env Env, options Options) *Registry {
 		}
 		registry.tools = append(registry.tools, tool)
 	}
-	if options.Mode == ModeSearch {
+	if slices.ContainsFunc(registry.tools, func(tool Tool) bool { return registry.modeOf(tool.Name) != ModeFull }) {
 		registry.tools = append(registry.tools, searchTools(registry)...)
 	}
-	registry.tools = append(registry.tools, skillTools(options.Skills, options.SkillMode)...)
+	registry.tools = append(registry.tools, skillTools(options.Skills, options.SkillMode, options.SkillModes)...)
 	return registry
 }
 

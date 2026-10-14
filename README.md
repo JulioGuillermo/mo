@@ -61,6 +61,24 @@ With no model set on an openai-type provider, it uses the first model the server
 | providers with a `baseURL` in `opencode.json` | `opencode-<name>`; `{env:NAME}` keys only |
 
 mo stores a reference (`api_key_from = "codex"` or `"opencode:<provider>"`), never a copy of the key.
+
+A provider can sign in with OAuth 2 instead of a key, set in its form in `/providers` or by hand:
+
+```toml
+[providers.corp]
+type = "openai"
+base_url = "https://llm.corp.example/v1"
+[providers.corp.oauth]
+flow = "device"            # device (a code to enter on a page) | browser (PKCE, local port) | client_credentials
+client_id = "mo"
+token_url = "https://sso.corp.example/oauth/token"
+device_url = "https://sso.corp.example/oauth/device"   # browser takes auth_url instead
+scopes = ["models"]
+client_secret_env = ""     # when the client has a secret
+```
+
+`/login corp` signs in; the token is kept in `~/.local/share/mo/oauth/corp.json`, for you only, and
+renewed with its refresh token when it expires. `/logout corp` forgets it.
 Subscription logins (Claude, ChatGPT, Google OAuth) are listed as not usable and never read:
 Anthropic forbids using Claude subscription tokens outside its own apps. Claude works with an API key.
 
@@ -106,10 +124,22 @@ max_output = 10000         # bytes of tool output sent to the model
 [tools.descriptions]       # replace what the model reads about a tool; "" sends none
 grep = "Regex search in files."
 
+[tools.modes]              # the mode of single tools, over tools.mode
+git = "search"
+grep = "compact"
+
+[tools.mcp_modes]          # the mode of all of an MCP server's tools, or group: one entry
+playwright = "group"       # in tool_search under the server's name, which gives all its tools
+
 [skills]
 mode = "full"              # full: names and what each is for · compact: names · search: skill_list/skill_search
 disabled = []              # skills the model does not get
 dirs = []                  # more folders of skills, e.g. ["~/.claude/skills"]
+modes = { pdf = "search" } # the mode of single skills, over skills.mode
+
+[instructions]
+enabled = true             # read instructions files into the system prompt
+files = ["AGENTS.md", "AGENT.md"]   # looked for in ~/.config/mo, then from the repository's root down
 
 [context]
 window = 0                 # 0: ask llama-server, else 32768 (local) / 200000 (anthropic)
@@ -131,6 +161,7 @@ dir = "~/.local/share/mo/memory"
 background = "#00081a"     # painted behind everything so mo looks the same in any terminal;
                            # "terminal" keeps the terminal's own
 sidebar = "auto"           # side panel of tasks and jobs when wide enough; "off" never
+status = "powerline"       # segments on backgrounds with arrows (needs a Nerd Font); "plain" for any font
 
 [permissions]
 mode = "edits"             # ask | edits | auto | all; shift+tab changes it for the session
@@ -203,6 +234,12 @@ unless asked for all.
 Changes outside the working directory, to mo's config, under `.git` or to hidden files in your home
 always ask, even with `-y` or after answering "always", in every mode but `all`. So do changes to
 global memories.
+
+## Instructions
+
+mo reads `AGENTS.md` (and `AGENT.md`) into the system prompt: yours in `~/.config/mo/`, then each one
+from the repository's root down to the working folder, so the closest come last. `/settings ›
+Instructions` turns them off or names other files, such as `CLAUDE.md`, globally or per project.
 
 ## Skills
 
@@ -368,6 +405,8 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | backspace, delete next to `[image #1]` | take the attachment out whole; the chips over the input drop one with a click |
 | pgup, pgdown, shift+up/down, mouse wheel | scroll the conversation |
 | drag | select text and copy it; the shared indent is taken off |
-| click | buttons, options and tabs of a dialog, a suggested command, the mode (next), the provider and model (their settings), a job (its last lines), a settings option |
-| `/clear` `/resume` `/rewind` `/fork` `/title` `/compact` `/settings` `/providers` `/mcp` `/plugins` `/view <file>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
+| click | buttons, options and tabs of a dialog, a suggested command, the mode (next), the provider (its settings), the model (a list to pick from), a job (its last lines), a settings option |
+| right click | the mode: all modes to pick · a task: change its state or delete it · a job: its output and how it stands, or kill it |
+| wheel over the side panel | scroll its tasks and jobs |
+| `/clear` `/resume` `/rewind` `/fork` `/title` `/model` `/login` `/logout` `/compact` `/settings` `/providers` `/mcp` `/plugins` `/view <file>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
 | `/<name> text` | a plugin command |

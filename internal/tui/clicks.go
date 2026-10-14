@@ -14,6 +14,16 @@ import (
 type region struct {
 	y, x0, x1 int
 	do        func(m model) (tea.Model, tea.Cmd)
+	// menu, when set, is what a right click there opens.
+	menu func(m model) (tea.Model, tea.Cmd)
+}
+
+// withMenu gives regions the menu a right click opens.
+func withMenu(regions []region, menu func(m model) (tea.Model, tea.Cmd)) []region {
+	for i := range regions {
+		regions[i].menu = menu
+	}
+	return regions
 }
 
 func row(y int, do func(m model) (tea.Model, tea.Cmd)) region {
@@ -45,6 +55,20 @@ func (m model) click(x, y int) (tea.Model, tea.Cmd) {
 	}
 	if y < m.conversationHeight() && x < m.mainWidth() && m.dialog == nil {
 		m.clickDetails(y)
+	}
+	return m, nil
+}
+
+// rightClick opens the menu of what is under the pointer, if it has one.
+func (m model) rightClick(x, y int) (tea.Model, tea.Cmd) {
+	if m.dialog != nil || m.settings != nil {
+		return m, nil
+	}
+	_, regions := m.screenLayout()
+	for _, r := range regions {
+		if r.menu != nil && r.holds(x, y) {
+			return r.menu(m)
+		}
 	}
 	return m, nil
 }

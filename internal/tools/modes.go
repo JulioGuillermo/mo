@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -21,6 +22,9 @@ const (
 	ModeFull    Mode = "full"
 	ModeCompact Mode = "compact"
 	ModeSearch  Mode = "search"
+	// ModeGroup is for the tools of an MCP server: found with tool_search
+	// as a group under the server's name.
+	ModeGroup Mode = "group"
 )
 
 const (
@@ -41,19 +45,22 @@ const (
 	LoadDeclare Load = "declare"
 )
 
-// Specs are the tools declared to the model. In search mode they are the
-// search tools and the always-loaded ones, and with LoadDeclare the tools
-// found by the tool_search calls in history, so a resumed or rewound
-// conversation declares what it had found and a new one starts clean.
+// Specs are the tools declared to the model: those in full mode, those in
+// compact mode without descriptions, and the search tools when any tool is
+// not in full mode, so what a compact one does can be looked up too; with
+// LoadDeclare also the tools found by the tool_search calls in history,
+// whole, so a resumed or rewound conversation declares what it had found
+// and a new one starts clean.
 func (r *Registry) Specs(history []llm.Message) []llm.ToolSpec {
 	found := r.foundIn(history)
 	var specs []llm.ToolSpec
 	for _, tool := range r.tools {
-		if !r.visible(tool.Name, found) {
+		mode := r.modeOf(tool.Name)
+		if mode == ModeSearch && !found[tool.Name] {
 			continue
 		}
 		spec := llm.ToolSpec{Name: tool.Name, Description: tool.Description, Schema: tool.Schema}
-		if r.options.Mode == ModeCompact && !isSkillTool(tool.Name) {
+		if mode == ModeCompact && !found[tool.Name] {
 			spec.Description = ""
 			spec.Schema = withoutDescriptions(tool.Schema)
 		}
@@ -62,11 +69,61 @@ func (r *Registry) Specs(history []llm.Message) []llm.ToolSpec {
 	return specs
 }
 
-func (r *Registry) visible(name string, found map[string]bool) bool {
-	if r.options.Mode != ModeSearch || isMetaTool(name) {
-		return true
+// modeOf is a tool's mode: search for one in a group, else its own, else
+// the default. In search mode the always-loaded tools are full; the search
+// and skill tools always are.
+func (r *Registry) modeOf(name string) Mode {
+	if isMetaTool(name) {
+		return ModeFull
 	}
-	return slices.Contains(r.options.AlwaysLoaded, name) || found[name]
+	if _, grouped := r.options.Groups[name]; grouped {
+		return ModeSearch
+	}
+	if mode := r.options.Modes[name]; mode == ModeFull || mode == ModeCompact || mode == ModeSearch {
+		return mode
+	}
+	switch {
+	case r.options.Mode == ModeSearch && slices.Contains(r.options.AlwaysLoaded, name):
+		return ModeFull
+	case r.options.Mode == ModeCompact || r.options.Mode == ModeSearch:
+		return r.options.Mode
+	}
+	return ModeFull
+}
+
+// searchable are the tools tool_search finds: those in search mode, and
+// those in compact mode, declared without what they do.
+func (r *Registry) searchable() []Tool {
+	var found []Tool
+	for _, tool := range r.tools {
+		if mode := r.modeOf(tool.Name); mode == ModeSearch || mode == ModeCompact {
+			found = append(found, tool)
+		}
+	}
+	return found
+}
+
+// groups are the groups of tools, by name, with their tools.
+func (r *Registry) groups() map[string][]Tool {
+	groups := map[string][]Tool{}
+	for _, tool := range r.tools {
+		if group, ok := r.options.Groups[tool.Name]; ok {
+			groups[group] = append(groups[group], tool)
+		}
+	}
+	return groups
+}
+
+// groupNamed is the group a word of a query names: its name, or the name
+// with group: or mcp__ before it.
+func (r *Registry) groupNamed(word string) string {
+	word = strings.TrimPrefix(strings.TrimPrefix(strings.ToLower(word), "group:"), "mcp__")
+	for group := range r.groups() {
+		if strings.ToLower(group) == word {
+			return group
+		}
+	}
+	return ""
 }
 
 func isSearchTool(name string) bool {
@@ -77,7 +134,7 @@ func isSearchTool(name string) bool {
 // found tools are declared.
 func (r *Registry) foundIn(history []llm.Message) map[string]bool {
 	found := map[string]bool{}
-	if r.options.Mode != ModeSearch || r.options.Load != LoadDeclare {
+	if r.options.Load != LoadDeclare {
 		return found
 	}
 	for _, message := range history {
@@ -113,8 +170,17 @@ func withoutDescriptions(schema json.RawMessage) json.RawMessage {
 
 // searchTools are the tools of search mode: tool_list names what there is,
 // tool_search tells what some do and takes, and with LoadContext tool_call
-// runs one.
+// runs one. The groups are named in tool_search's description, so the
+// model knows of them without listing.
 func searchTools(registry *Registry) []Tool {
+	searchDescription := "Get what tools do and their parameters: keywords, or select:name1,name2 for exact names."
+	if groups := registry.groups(); len(groups) > 0 {
+		var names []string
+		for _, group := range slices.Sorted(maps.Keys(groups)) {
+			names = append(names, fmt.Sprintf("%s (%d tools)", group, len(groups[group])))
+		}
+		searchDescription += " A group's name gives all its tools, more words after it filter them. Groups: " + strings.Join(names, ", ") + "."
+	}
 	tools := []Tool{
 		{
 			Name:        listToolName,
@@ -127,7 +193,7 @@ func searchTools(registry *Registry) []Tool {
 		},
 		{
 			Name:        searchToolName,
-			Description: "Get what tools do and their parameters: keywords, or select:name1,name2 for exact names.",
+			Description: searchDescription,
 			Schema:      json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}`),
 			Run: func(_ context.Context, _ Env, raw json.RawMessage) (string, error) {
 				return registry.search(argField(raw, "query")), nil
@@ -184,22 +250,38 @@ func (r *Registry) Unwrap(call llm.ToolCall) (llm.ToolCall, bool, error) {
 	return llm.ToolCall{ID: call.ID, Name: args.Name, Args: args.Args}, true, nil
 }
 
-// list names the tools besides the search ones, those whose name or
-// description hold every word of the filter.
+// list names the tools left to search, not declared, whose name or
+// description hold every word of the filter, and the groups with such a tool, each
+// once with how many tools it has.
 func (r *Registry) list(filter string) string {
 	words := strings.Fields(strings.ToLower(filter))
 	var names []string
-	for _, tool := range r.tools {
-		text := strings.ToLower(tool.Name + " " + tool.Description)
-		if isMetaTool(tool.Name) || !containsAll(text, words) {
+	groups := map[string]int{}
+	for _, tool := range r.searchable() {
+		if r.modeOf(tool.Name) == ModeCompact {
 			continue
 		}
-		names = append(names, tool.Name)
+		group, grouped := r.options.Groups[tool.Name]
+		text := strings.ToLower(tool.Name + " " + tool.Description + " " + group)
+		switch {
+		case !containsAll(text, words):
+		case grouped:
+			groups[group]++
+		default:
+			names = append(names, tool.Name)
+		}
 	}
-	if len(names) == 0 {
+	var lines []string
+	if len(names) > 0 {
+		lines = append(lines, strings.Join(names, ", "))
+	}
+	for _, group := range slices.Sorted(maps.Keys(groups)) {
+		lines = append(lines, fmt.Sprintf("group %s: %d tools; tool_search %s gives them", group, groups[group], group))
+	}
+	if len(lines) == 0 {
 		return "no tools match; tool_list without a filter names them all"
 	}
-	return strings.Join(names, ", ")
+	return strings.Join(lines, "\n")
 }
 
 func containsAll(text string, words []string) bool {
@@ -248,15 +330,23 @@ func (r *Registry) match(query string) []Tool {
 		return selected
 	}
 	words := strings.Fields(strings.ToLower(query))
+	candidates := r.searchable()
+	limit := searchMaxResults
+	if len(words) > 0 {
+		if group := r.groupNamed(words[0]); group != "" {
+			candidates, words = r.groups()[group], words[1:]
+			limit = len(candidates)
+			if len(words) == 0 {
+				return candidates
+			}
+		}
+	}
 	type scored struct {
 		tool  Tool
 		score int
 	}
 	var ranked []scored
-	for _, tool := range r.tools {
-		if isMetaTool(tool.Name) {
-			continue
-		}
+	for _, tool := range candidates {
 		text := strings.ToLower(tool.Name + " " + tool.Description)
 		score := 0
 		for _, word := range words {
@@ -270,7 +360,7 @@ func (r *Registry) match(query string) []Tool {
 	}
 	slices.SortStableFunc(ranked, func(a, b scored) int { return b.score - a.score })
 	var best []Tool
-	for _, entry := range ranked[:min(len(ranked), searchMaxResults)] {
+	for _, entry := range ranked[:min(len(ranked), limit)] {
 		best = append(best, entry.tool)
 	}
 	return best

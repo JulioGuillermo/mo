@@ -677,3 +677,75 @@
   only what was not cached, since the cached part costs no time: `prompt 42% · 3.1k/7.4k · 1.0k
   cached`. Other servers say nothing while they read, so the state stays `waiting`.
 
+## Instructions files
+
+- `AGENTS.md`, the name most agents share, and `AGENT.md` are read by default; the list is a
+  setting, so `CLAUDE.md` is one line away. The user's file comes first, then the repository's from
+  its root down to the working folder: the most specific instructions are read last. Outside a
+  repository only the working folder is read, so mo run from a subfolder of home does not pick up
+  files above it. A file is read whole, however long: the user wrote it to be followed; a link to a file
+  already read is skipped.
+
+## Modes per tool, per skill and per MCP server
+
+- Every tool, skill and MCP server can have its own mode over the default: full, compact or
+  search; a server also group. The search tools are declared as soon as a tool is not in full
+  mode: one left to search must be found, and one in compact mode is declared without what it does,
+  so tool_search gives that too, and with LoadDeclare a compact tool found is declared whole from
+  then on. tool_list names only the tools not declared, so none is listed twice. Skills likewise:
+  skill_search comes with any skill in compact or search mode.
+- group shows an MCP server as one entry, named with its tool count in tool_search's
+  description; tool_search with the server's name gives all its tools, more words filter them. A
+  server with many tools costs a line until the model needs it.
+- A project overrides each mode on its own, under keys like `tools.modes.git`, so the rest follows
+  the global settings.
+
+## Status line and side panel
+
+- The status line is drawn as powerline segments, each on a mid-dark background with an arrow of
+  that colour into the next: the mode, shaded from its own colour, provider › model, the context,
+  the speeds; the branch and the folder end it from the right. Powerline arrows need a Nerd Font,
+  so `render.status = "plain"` joins the parts with │ instead.
+- When room is short the ⇧tab hint goes first, then the provider, first shortened to its letter,
+  then the speeds, the tokens, and the bar last, which shrinks to one cell in eighths (▁ to █).
+  The branch and the folder go only when nothing else is left, and once they go nothing that went
+  before them comes back.
+- With the side panel the context and the speeds sit at its bottom whatever is scrolled, without a
+  title: a whole bar, the tokens in words and the speeds.
+- The panel scrolls with the wheel when its tasks and jobs do not fit, saying how many lines are
+  above and below.
+
+## Right clicks and /model
+
+- A right click opens what can be done with what is under it: on the mode, every mode; on a task,
+  its states and delete; on a job, its output and how long it ran, refresh and kill. Menus are the
+  settings lists, so the keys and the left click work in them too.
+- A task changed by the user is told to the model at its next step with the whole list, as ended
+  jobs are, without starting a turn.
+- `/model`, a click on the model, the Model setting and the provider form list the provider's
+  models: an OpenAI-compatible server's `/models`, Anthropic's Models API. The list filters with /,
+  and a name it lacks can be typed. A model picked with /model is saved where the model is set: the
+  project's file when it sets one, else the user's.
+
+## Gemini's thought signatures
+
+- Gemini 3 models, through the OpenAI-compatible endpoint, send a thought signature with each tool
+  call, in `extra_content`, and refuse the next request if it is not sent back with the call. Every
+  tool call keeps what its provider sent with it as opaque `Extra`, saved with the conversation,
+  and sends it back as it came.
+
+## Errors on narrow terminals
+
+- A line of an error longer than the terminal goes on under itself, indented as far as its text
+  starts, or under the value of a JSON `"key":`, so a provider's JSON error stays readable whole.
+
+## OAuth sign-in
+
+- A provider can sign in with OAuth 2 instead of a key: the device flow for any terminal, the
+  browser with PKCE and a loopback redirect, or client credentials. golang.org/x/oauth2 does the
+  protocol; mo keeps the token by provider in `~/.local/share/mo/oauth/`, 0600, and asks for it at
+  each request, so a token renewed with its refresh token, or one got with /login while mo runs,
+  is used without a restart. A session starts without a token; its first request says to /login.
+- A provider with a sign-in counts as one with a key: a project file cannot pick it unless trusted.
+- Signing in with another product's OAuth client, as with Codex or Antigravity subscriptions, is
+  left for later: it works only by presenting itself as that product.

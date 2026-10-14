@@ -21,11 +21,9 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
-	"github.com/jg/mo/internal/gitops"
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/mcphub"
 	"github.com/jg/mo/internal/notify"
@@ -50,6 +48,8 @@ type Session struct {
 	ToolNames []string
 	// Skills names every skill found, also the ones turned off.
 	Skills []string
+	// Instructions are the instructions files read into the system prompt.
+	Instructions []string
 
 	ToolDescriptions map[string]string
 
@@ -129,6 +129,8 @@ type model struct {
 	todos []tools.Todo
 	// sidebarHidden is /sidebar turning the side panel off for the session.
 	sidebarHidden bool
+	// sidebarScroll is how many of the panel's lines the wheel scrolled past.
+	sidebarScroll int
 	// openSection is the settings section to open once settings load, as
 	// a click on the model asks.
 	openSection string
@@ -234,6 +236,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.openSettings(msg)
 	case settingsSavedMsg:
 		return m.finishSettings(msg)
+	case modelsMsg:
+		return m.showModels(msg)
 	}
 	if m.settings != nil && !isAgentMsg(msg) {
 		return m.updateSettings(msg)
@@ -264,6 +268,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case jobTickMsg:
 		m.jobsTicking = false
 		return m, m.tickJobs()
+	case loginMsg:
+		return m.loggedIn(msg)
 	case titledMsg:
 		return m.titled(msg)
 	case titleSetMsg:
@@ -286,10 +292,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.addReasoning(string(msg))
 		return m, nil
 	case tea.MouseClickMsg:
-		if msg.Button != tea.MouseLeft {
-			return m, nil
+		switch msg.Button {
+		case tea.MouseLeft:
+			return m.press(msg.X, msg.Y)
+		case tea.MouseRight:
+			return m.rightClick(msg.X, msg.Y)
 		}
-		return m.press(msg.X, msg.Y)
+		return m, nil
 	case tea.MouseMotionMsg:
 		if msg.Button != tea.MouseLeft {
 			return m, nil
@@ -313,6 +322,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.finishTool(msg.id, msg.output, msg.isError)
 		return m, tea.Batch(m.tickJobs(), readBranch(m.session.WorkDir))
 	case tea.MouseWheelMsg:
+		if m.sidebarShown() && msg.X > m.mainWidth() {
+			m.scrollSidebar(msg.Button == tea.MouseWheelUp)
+			return m, nil
+		}
 		m.scroll(msg.Button == tea.MouseWheelUp, 3)
 		return m, nil
 	case tea.WindowSizeMsg:
@@ -563,6 +576,12 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		return m.fork()
 	case "title":
 		return m.retitle(argument)
+	case "model":
+		return m.switchModel()
+	case "login":
+		return m.login(argument)
+	case "logout":
+		return m.logout(argument)
 	case "continue":
 		if m.running {
 			return m.emit(m.printer.Note("the model is working already"))
@@ -905,165 +924,13 @@ func (m model) liveText() string {
 	return strings.Join(parts, "\n")
 }
 
-// statusLine shows the permission mode, provider and model, how full the
-// context is, with a bar that turns yellow and then red, and the last
-// speeds, each in its colour. On a narrow terminal the least needed parts go
-// first, down to the mode, model and how full the context is.
-func (m model) statusLine() string {
-	line, _ := m.statusLayout()
-	return line
-}
-
-// statusLayout is the status line and its clickable parts: the mode goes
-// to the next one, the provider opens the providers, the model the model
-// settings.
-func (m model) statusLayout() (string, []region) {
-	if m.width <= 0 {
-		return m.status(statusParts{provider: true, hint: true, tokens: true, prompt: true, generation: true, bar: contextBarCells})
-	}
-	for _, parts := range []statusParts{
-		{provider: true, hint: true, tokens: true, prompt: true, generation: true, bar: contextBarCells},
-		{provider: true, tokens: true, prompt: true, generation: true, bar: contextBarCells},
-		{tokens: true, prompt: true, generation: true, bar: contextBarCells},
-		{tokens: true, generation: true, bar: contextBarCells},
-		{generation: true, bar: contextBarCells},
-		{bar: contextBarCells},
-		{bar: 5},
-		{},
-	} {
-		if status, regions := m.status(parts); ansi.StringWidth(status) <= m.width {
-			return m.appendSuffix(status, regions)
-		}
-	}
-	status, regions := m.status(statusParts{})
-	status = ansi.Truncate(status, m.width, "…")
-	return m.appendSuffix(status, regions)
-}
-
-// appendSuffix puts the branch and the folder at the right end of the
-// status, as much of them as fits: both, the folder alone, or nothing. The
-// branch is left out on master and main.
-func (m model) appendSuffix(status string, regions []region) (string, []region) {
-	if m.width <= 0 {
-		return status, regions
-	}
-	colors := statusPalette(m.printer == nil || m.printer.isDark())
-	folder := lipgloss.NewStyle().Foreground(colors.label).Render(filepath.Base(m.session.WorkDir))
-	choices := []string{folder}
-	if m.branch != "" && m.branch != "master" && m.branch != "main" {
-		branch := lipgloss.NewStyle().Foreground(colors.model).Render(" " + m.branch)
-		choices = []string{branch + lipgloss.NewStyle().Foreground(colors.label).Render(" · ") + folder, folder}
-	}
-	free := m.width - ansi.StringWidth(status) - statusSuffixGap
-	for _, suffix := range choices {
-		if width := ansi.StringWidth(suffix); width <= free {
-			return status + strings.Repeat(" ", m.width-ansi.StringWidth(status)-width) + suffix, regions
-		}
-	}
-	return status, regions
-}
-
-// statusSuffixGap is the least room between the status and its suffix.
-const statusSuffixGap = 2
-
-// branchMsg is the branch checked out in the working directory, read off
-// the UI goroutine.
-type branchMsg string
-
-// readBranch reads the branch once, when it may have changed: at start,
-// after a tool or a turn, and when the terminal gets the focus back, never
-// on every redraw.
-func readBranch(workDir string) tea.Cmd {
-	return func() tea.Msg {
-		repo, err := gitops.Open(workDir)
-		if err != nil {
-			return branchMsg("")
-		}
-		return branchMsg(repo.CurrentBranch())
-	}
-}
-
-// statusParts says which parts of the status line to show.
-type statusParts struct {
-	provider, hint, tokens, prompt, generation bool
-	bar                                        int
-}
-
-func (m model) status(show statusParts) (string, []region) {
-	colors := statusPalette(m.printer == nil || m.printer.isDark())
-	paint := func(color color.Color, text string) string {
-		return lipgloss.NewStyle().Foreground(color).Render(text)
-	}
-	var parts []string
-	var regions []region
-	separator := paint(colors.label, " · ")
-	clickable := func(part string, do func(m model) (tea.Model, tea.Cmd)) {
-		x := 0
-		for _, earlier := range parts {
-			x += ansi.StringWidth(earlier) + ansi.StringWidth(separator)
-		}
-		regions = append(regions, region{y: 0, x0: x, x1: x + ansi.StringWidth(part), do: do})
-		parts = append(parts, part)
-	}
-	if policy := m.session.Agent.Permissions; policy != nil {
-		mode := policy.Mode()
-		part := lipgloss.NewStyle().Foreground(colors.mode(mode)).Bold(true).Render("● " + string(mode))
-		if show.hint {
-			part += paint(colors.label, " shift+tab")
-		}
-		clickable(part, func(m model) (tea.Model, tea.Cmd) {
-			policy.SetMode(policy.Mode().Next())
-			return m, nil
-		})
-	}
-	if show.provider {
-		clickable(lipgloss.NewStyle().Foreground(colors.provider).Bold(true).Render(m.session.Provider), func(m model) (tea.Model, tea.Cmd) {
-			return m.runCommand("/providers")
-		})
-	}
-	clickable(paint(colors.model, shortModelName(m.session.Model)), func(m model) (tea.Model, tea.Cmd) {
-		m.openSection = "model"
-		return m.runCommand("/settings")
-	})
-	used := m.usage.InputTokens + m.usage.OutputTokens
-	window := m.session.Agent.Window
-	switch {
-	case window > 0:
-		share := float64(used) / float64(window)
-		fill := colors.low
-		switch {
-		case share >= 0.8:
-			fill = colors.high
-		case share >= 0.5:
-			fill = colors.mid
-		}
-		context := ""
-		if show.tokens || show.bar > 0 {
-			context = paint(colors.label, "ctx ")
-		}
-		if show.tokens {
-			context += paint(fill, fmt.Sprintf("%s/%s ", formatTokens(used), formatTokens(window)))
-		}
-		if show.bar > 0 {
-			context += contextBar(share, show.bar, fill, colors.empty) + " "
-		}
-		parts = append(parts, context+paint(fill, fmt.Sprintf("%.0f%%", share*100)))
-	case used > 0:
-		parts = append(parts, paint(colors.label, "ctx ")+paint(colors.low, formatTokens(used)))
-	}
-	if show.prompt && m.speed.PromptRate > 0 {
-		parts = append(parts, paint(colors.label, "pp ")+paint(colors.prompt, fmt.Sprintf("%.0f t/s", m.speed.PromptRate)))
-	}
-	if show.generation && m.speed.GenerationRate > 0 {
-		parts = append(parts, paint(colors.label, "tg ")+paint(colors.generation, fmt.Sprintf("%.1f t/s", m.speed.GenerationRate)))
-	}
-	if m.flash != "" {
-		parts = append(parts, lipgloss.NewStyle().Foreground(colors.low).Bold(true).Render("✓ "+m.flash))
-	}
-	return strings.Join(parts, separator), regions
-}
-
 const contextBarCells = 10
+
+// contextGauge is how full the context is in one cell, in eighths.
+func contextGauge(share float64) string {
+	levels := []rune("▁▂▃▄▅▆▇█")
+	return string(levels[max(0, min(int(share*float64(len(levels))), len(levels)-1))])
+}
 
 // contextBar draws how full the context is in cells, the used ones in fill.
 func contextBar(share float64, cells int, fill, empty color.Color) string {
@@ -1077,6 +944,10 @@ func contextBar(share float64, cells int, fill, empty color.Color) string {
 
 type statusColors struct {
 	provider, model, label, low, mid, high, empty, prompt, generation color.Color
+	// base is what segments are shaded from; segment, segmentDim and
+	// segmentDeep are the backgrounds of the model, the context and the
+	// speeds; text and branch colour the folder and the branch.
+	base, segment, segmentDim, segmentDeep, text, branch color.Color
 }
 
 // mode colours a permission mode by how much it lets through.
@@ -1098,12 +969,16 @@ func statusPalette(dark bool) statusColors {
 			provider: accent, model: lipgloss.Color("#bb9af7"), label: lipgloss.Color("#565f89"),
 			low: lipgloss.Color("#9ece6a"), mid: warning, high: lipgloss.Color("#f7768e"), empty: lipgloss.Color("#3b4261"),
 			prompt: lipgloss.Color("#7dcfff"), generation: lipgloss.Color("#73daca"),
+			base: lipgloss.Color("#0b1230"), segment: lipgloss.Color("#2a2f4a"), segmentDim: lipgloss.Color("#1f2440"),
+			segmentDeep: lipgloss.Color("#171b33"), text: lipgloss.Color("#a9b1d6"), branch: warning,
 		}
 	}
 	return statusColors{
 		provider: lipgloss.Color("#2e7de9"), model: lipgloss.Color("#9854f1"), label: lipgloss.Color("#8990b3"),
 		low: lipgloss.Color("#587539"), mid: lipgloss.Color("#8c6c3e"), high: lipgloss.Color("#f52a65"), empty: lipgloss.Color("#c4c8da"),
 		prompt: lipgloss.Color("#007197"), generation: lipgloss.Color("#118c74"),
+		base: lipgloss.Color("#f4f5fb"), segment: lipgloss.Color("#d5d9ec"), segmentDim: lipgloss.Color("#e1e4f2"),
+		segmentDeep: lipgloss.Color("#e9ebf6"), text: lipgloss.Color("#3760bf"), branch: lipgloss.Color("#8c6c3e"),
 	}
 }
 

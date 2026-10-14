@@ -61,6 +61,26 @@ var settingsSections = []settingsSection{
 		return fmt.Sprintf("on · same call %s× · same text %s×", d.loopRepeats, d.loopStreamRepeats)
 	}, items: loopItems},
 	{key: "skills", title: "Skills", summary: skillsSummary, note: skillsNote, items: skillItems},
+	{key: "instructions", title: "Instructions", summary: func(d *settingsDraft) string {
+		if !d.instructionsOn {
+			return "off"
+		}
+		return strings.Join(ruleLines(d.instructionsFiles), ", ")
+	}, note: instructionsNote, items: instructionItems},
+	{key: "toolmodes", title: "Tool modes", summary: func(d *settingsDraft) string {
+		return modesSummary(d, toolModes, mcpModes)
+	}, note: func(model, *settingsMenu) string {
+		return "full: declared with its description · compact: declared without · search: found with tool_search\n" +
+			"group, for an MCP server: one entry in tool_search under the server's name, which gives all its tools"
+	}, items: toolModeItems},
+	{key: "skillmodes", title: "Skill modes", summary: func(d *settingsDraft) string {
+		return modesSummary(d, skillModes)
+	}, note: func(m model, _ *settingsMenu) string {
+		if len(m.session.Skills) == 0 {
+			return "no skills found"
+		}
+		return "full: in the skill tool with what it is for · compact: by name · search: found with skill_search"
+	}, items: skillModeItems},
 	{key: "web", title: "Web search", summary: func(d *settingsDraft) string { return d.search }, items: webItems},
 	{key: "permissions", title: "Permissions", summary: func(d *settingsDraft) string {
 		return fmt.Sprintf("%s · %d allowed · %d never", d.permMode, len(ruleLines(d.allow)), len(ruleLines(d.deny)))
@@ -182,6 +202,82 @@ func mcpNames(m model, menu *settingsMenu) []string {
 	}
 	slices.Sort(names)
 	return slices.Compact(names)
+}
+
+// mcpSuffix marks an MCP server among the tools in Tool modes.
+const mcpSuffix = " (MCP server)"
+
+func modesSummary(d *settingsDraft, kinds ...modeKind) string {
+	set := 0
+	for _, kind := range kinds {
+		set += len(d.modesOf(kind))
+	}
+	if set == 0 {
+		return "all as the default"
+	}
+	return fmt.Sprintf("%d set apart", set)
+}
+
+// modeItem is one tool, server or skill with its mode, the default when it
+// has none of its own.
+func modeItem(title string, kind modeKind, name string, fallback func(d *settingsDraft) string, group bool) settingItem {
+	options := []huh.Option[string]{
+		huh.NewOption("as the default", ""),
+		huh.NewOption("full: declared with its description", string(tools.ModeFull)),
+		huh.NewOption("compact: declared without descriptions", string(tools.ModeCompact)),
+		huh.NewOption("search: found when looked for", string(tools.ModeSearch)),
+	}
+	if group {
+		options = append(options, huh.NewOption("group: one entry for the server, all its tools when looked for", string(tools.ModeGroup)))
+	}
+	return settingItem{title, func(d *settingsDraft) string {
+		if mode := *d.modeOf(kind, name); mode != "" {
+			return mode
+		}
+		return fallback(d) + " (default)"
+	}, func(d *settingsDraft) huh.Field {
+		return huh.NewSelect[string]().Title(title).Options(options...).Value(d.modeOf(kind, name))
+	}}
+}
+
+func toolModeItems(m model, menu *settingsMenu) []settingItem {
+	var items []settingItem
+	toolDefault := func(d *settingsDraft) string { return d.mode }
+	for _, name := range toolNames(m.session) {
+		items = append(items, modeItem(name, toolModes, name, toolDefault, false))
+	}
+	for _, server := range mcpNames(m, menu) {
+		items = append(items, modeItem(server+mcpSuffix, mcpModes, server, toolDefault, true))
+	}
+	return items
+}
+
+func skillModeItems(m model, _ *settingsMenu) []settingItem {
+	var items []settingItem
+	for _, name := range m.session.Skills {
+		items = append(items, modeItem(name, skillModes, name, func(d *settingsDraft) string { return d.skillMode }, false))
+	}
+	return items
+}
+
+func instructionsNote(m model, _ *settingsMenu) string {
+	note := "files that tell the agent how to work, added to the system prompt:\n~/.config/mo, then each folder from the repository's root down to here"
+	if len(m.session.Instructions) == 0 {
+		return note + "\nnone found now"
+	}
+	return note + "\nread now: " + strings.Join(m.session.Instructions, ", ")
+}
+
+func instructionItems(model, *settingsMenu) []settingItem {
+	return []settingItem{
+		{"Read instructions files", func(d *settingsDraft) string { return yesNo(d.instructionsOn) }, func(d *settingsDraft) huh.Field {
+			return huh.NewConfirm().Title("Read instructions files").Description("no: the system prompt is mo's alone").Value(&d.instructionsOn)
+		}},
+		{"File names", func(d *settingsDraft) string { return listValue(ruleLines(d.instructionsFiles)) }, func(d *settingsDraft) huh.Field {
+			return huh.NewText().Title("File names").Description("one per line, read in every folder where they are, e.g. CLAUDE.md").
+				Lines(6).Value(&d.instructionsFiles)
+		}},
+	}
 }
 
 func skillsSummary(d *settingsDraft) string {
@@ -388,6 +484,12 @@ func displayItems(model, *settingsMenu) []settingItem {
 				huh.NewOption("auto: tasks and background jobs beside the conversation when the terminal is wide enough", "auto"),
 				huh.NewOption("off: tasks above the input instead", "off"),
 			).Value(&d.sidebar)
+		}},
+		{"Status line", func(d *settingsDraft) string { return d.statusStyle }, func(d *settingsDraft) huh.Field {
+			return huh.NewSelect[string]().Title("Status line").Options(
+				huh.NewOption("powerline: segments on backgrounds joined by arrows; needs a Nerd Font or a powerline font", statusPowerline),
+				huh.NewOption("plain: text joined by │, for any font", statusPlain),
+			).Value(&d.statusStyle)
 		}},
 		{"Images, SVG and Mermaid", func(d *settingsDraft) string { return d.images }, func(d *settingsDraft) huh.Field {
 			return huh.NewSelect[string]().Title("Images, SVG and Mermaid").Options(

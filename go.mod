@@ -21,6 +21,7 @@ require (
 	github.com/yuin/gopher-lua v1.1.2
 	golang.org/x/image v0.47.0
 	golang.org/x/net v0.55.0
+	golang.org/x/oauth2 v0.35.0
 	golang.org/x/sys v0.49.0
 	mvdan.cc/sh/v3 v3.12.0
 )
@@ -79,7 +80,6 @@ require (
 	github.com/yuin/goldmark v1.8.2 // indirect
 	github.com/yuin/goldmark-emoji v1.0.5 // indirect
 	golang.org/x/crypto v0.51.0 // indirect
-	golang.org/x/oauth2 v0.35.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.15.0 // indirect

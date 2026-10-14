@@ -2,6 +2,7 @@ package tui
 
 // Test Traceability Table
 // | ID    | Category | Description                                                          | Priority |
+// | EW-01 | Happy    | A long error line goes on under its JSON value, never past the width | P1       |
 // | RS-01 | Happy    | A reasoning shows as one line, then whole after ctrl+o, and folds again | P0    |
 // | RS-02 | Happy    | A click on the line of a reasoning opens only that one               | P1       |
 // | RS-03 | Edge     | A run stopped while thinking keeps what was thought, folded           | P2       |
@@ -127,6 +128,27 @@ func TestResize(t *testing.T) {
 
 		if updated.(model).blocks[0].draw != nil || cmd == nil || updated.(model).blocks[0].text != "picture" {
 			t.Errorf("block = %+v", updated.(model).blocks[0])
+		}
+	})
+}
+
+func TestErrorWrap(t *testing.T) {
+	t.Run("EW-01 a long error line goes on under its JSON value, never past the width", func(t *testing.T) {
+		text := "✗ 400 Bad Request: [{\n  \"error\": {\n    \"message\": \"Function call is missing a thought_signature in functionCall parts. This is required for tools to work correctly\",\n  }\n}]"
+
+		wrapped := hangingWrap(text, 60)
+
+		lines := strings.Split(wrapped, "\n")
+		for _, line := range lines {
+			if len([]rune(line)) > 60 {
+				t.Errorf("too long: %q", line)
+			}
+		}
+		if !strings.HasPrefix(lines[3], strings.Repeat(" ", 15)+"thought_signature") && !strings.HasPrefix(lines[3], strings.Repeat(" ", 15)) {
+			t.Errorf("not aligned:\n%s", wrapped)
+		}
+		if strings.Join(strings.Fields(wrapped), " ") != strings.Join(strings.Fields(text), " ") {
+			t.Errorf("text changed:\n%s", wrapped)
 		}
 	})
 }

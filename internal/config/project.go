@@ -11,8 +11,11 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/jg/mo/internal/tools"
 )
 
 // Project is a project's settings file as read: what it sets, where it is,
@@ -181,7 +184,7 @@ func EffectiveModel(cfg Config) string {
 var ProjectKeys = []string{
 	"provider", "model", "max_tokens", "effort", "system_prompt",
 	"tools.mode", "tools.load", "tools.always_loaded", "tools.confirm", "tools.disabled", "tools.mcp_disabled", "tools.max_output",
-	"skills.mode", "skills.disabled",
+	"skills.mode", "skills.disabled", "instructions.enabled", "instructions.files",
 	"context.window", "context.compact_at", "context.compact_prompt", "context.strategy", "context.keep_reasoning",
 	"loop.enabled", "loop.replies", "loop.repeats", "loop.stream_repeats", "loop.warnings",
 }
@@ -193,6 +196,7 @@ func projectField(cfg *Config, key string) reflect.Value {
 		"tools.mode": &cfg.Tools.Mode, "tools.load": &cfg.Tools.Load, "tools.always_loaded": &cfg.Tools.AlwaysLoaded,
 		"tools.confirm": &cfg.Tools.Confirm, "tools.disabled": &cfg.Tools.Disabled, "tools.max_output": &cfg.Tools.MaxOutput,
 		"tools.mcp_disabled": &cfg.Tools.MCPDisabled, "skills.mode": &cfg.Skills.Mode, "skills.disabled": &cfg.Skills.Disabled,
+		"instructions.enabled": &cfg.Instructions.Enabled, "instructions.files": &cfg.Instructions.Files,
 		"context.window": &cfg.Context.Window, "context.compact_at": &cfg.Context.CompactAt,
 		"context.compact_prompt": &cfg.Context.CompactPrompt, "context.strategy": &cfg.Context.Strategy,
 		"context.keep_reasoning": &cfg.Context.KeepReasoning,
@@ -202,13 +206,27 @@ func projectField(cfg *Config, key string) reflect.Value {
 	return reflect.ValueOf(fields[key]).Elem()
 }
 
-// ProjectSets tells which of ProjectKeys a project layer sets. A model set
-// for one of the providers counts as the model.
+// modeMaps are the maps of modes a project sets entry by entry, under keys
+// such as "tools.modes.read".
+func modeMaps(cfg *Config) map[string]*map[string]tools.Mode {
+	return map[string]*map[string]tools.Mode{
+		"tools.modes.": &cfg.Tools.Modes, "tools.mcp_modes.": &cfg.Tools.MCPModes, "skills.modes.": &cfg.Skills.Modes,
+	}
+}
+
+// ProjectSets tells which of ProjectKeys a project layer sets, and which
+// entries of the maps of modes. A model set for one of the providers counts
+// as the model.
 func ProjectSets(layer Config) map[string]bool {
 	set := map[string]bool{}
 	for _, key := range ProjectKeys {
 		if !projectField(&layer, key).IsZero() {
 			set[key] = true
+		}
+	}
+	for prefix, modes := range modeMaps(&layer) {
+		for name := range *modes {
+			set[prefix+name] = true
 		}
 	}
 	for _, provider := range layer.Providers {
@@ -243,6 +261,19 @@ func ProjectOverrides(target Config, set map[string]bool, into Config) Config {
 			field.Set(copied)
 		default:
 			field.Set(value)
+		}
+	}
+	targetMaps := modeMaps(&target)
+	for prefix, modes := range modeMaps(&into) {
+		*modes = nil
+		for key := range set {
+			name, ok := strings.CutPrefix(key, prefix)
+			if mode := (*targetMaps[prefix])[name]; ok && mode != "" {
+				if *modes == nil {
+					*modes = map[string]tools.Mode{}
+				}
+				(*modes)[name] = mode
+			}
 		}
 	}
 	return into

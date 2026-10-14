@@ -13,6 +13,7 @@ package config
 // | PJ-09 | Security | An untrusted project only turns servers and skills off; a trusted one may turn them on | P0 |
 // | PJ-10 | Happy    | Skills are looked for in the user's folder, the added ones, then the project's | P1   |
 // | PJ-11 | Happy    | Effort is set globally, overridden by any project file, and checked        | P1       |
+// | PJ-12 | Happy    | Instructions files are on by default; a project turns them off or names others | P1   |
 
 import (
 	"os"
@@ -202,6 +203,21 @@ func TestProjectFile(t *testing.T) {
 		}
 		if set := ProjectSets(Config{Effort: "low"}); !set["effort"] {
 			t.Errorf("set = %v", set)
+		}
+	})
+
+	t.Run("PJ-12 instructions files are on by default; a project turns them off or names others", func(t *testing.T) {
+		isolatedHome(t)
+		off, other := t.TempDir(), t.TempDir()
+		writeConfig(t, ProjectFile(off), "[instructions]\nenabled = false\n")
+		writeConfig(t, ProjectFile(other), "[instructions]\nfiles = [\"CLAUDE.md\"]\n")
+
+		plain, _ := Load(t.TempDir())
+		offCfg, _ := Load(off)
+		otherCfg, _ := Load(other)
+
+		if !slices.Equal(plain.InstructionFiles(), []string{"AGENTS.md", "AGENT.md"}) || offCfg.InstructionFiles() != nil || !slices.Equal(otherCfg.InstructionFiles(), []string{"CLAUDE.md"}) {
+			t.Errorf("plain %v off %v other %v", plain.InstructionFiles(), offCfg.InstructionFiles(), otherCfg.InstructionFiles())
 		}
 	})
 }

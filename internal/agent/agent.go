@@ -81,6 +81,7 @@ type Agent struct {
 
 	alwaysAllowed map[string]bool
 	queued        queue
+	told          notes
 	// partial is the answer being streamed, kept when the user stops it.
 	partial    strings.Builder
 	judgedSafe map[string]bool
@@ -121,6 +122,7 @@ func (a *Agent) Run(ctx context.Context, prompt string, hooks Hooks) error {
 func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
 	for {
 		a.tellEndedJobs()
+		a.tellNotes()
 		a.deliverQueued(hooks)
 		if a.needsCompaction() {
 			a.makeRoom(ctx, hooks)
