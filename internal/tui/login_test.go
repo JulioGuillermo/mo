@@ -5,12 +5,18 @@ package tui
 // | OL-01 | Happy    | The provider form sets a sign-in: flow, client, URLs and scopes go to the file | P0     |
 // | OL-02 | Error    | A sign-in without a client id or a token URL is not kept                    | P1       |
 // | OL-03 | Edge     | /login on a provider with a key says it takes a key                          | P2       |
+// | OL-10 | Happy    | A browser sign-in provider gets Log in, and Log out once signed in           | P1       |
+// | OL-11 | Edge     | A provider with a key or client credentials has no sign-in button            | P2       |
 
 import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"golang.org/x/oauth2"
+
+	"github.com/jg/mo/internal/auth"
 	"github.com/jg/mo/internal/config"
 )
 
@@ -62,6 +68,40 @@ func TestProviderSignIn(t *testing.T) {
 
 		if !strings.Contains(shown(updated.(model)), "openai takes a key, not a sign-in") {
 			t.Errorf("shown: %q", shown(updated.(model)))
+		}
+	})
+}
+
+func TestSignInButtons(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	labels := func(actions []editorAction) []string {
+		var out []string
+		for _, action := range actions {
+			out = append(out, action.label)
+		}
+		return out
+	}
+	cfg := config.Defaults()
+
+	t.Run("OL-10 a provider that signs in with the browser gets Log in, and Log out once signed in", func(t *testing.T) {
+		draft := newProviderDraft("antigravity", cfg, nil)
+		if got := labels(draft.signInActions(cfg)); !slices.Equal(got, []string{"Log in"}) {
+			t.Fatalf("buttons %v", got)
+		}
+		_ = auth.Save("antigravity", &oauth2.Token{AccessToken: "x", Expiry: time.Now().Add(time.Hour)})
+		if got := labels(draft.signInActions(cfg)); !slices.Equal(got, []string{"Log in again", "Log out"}) {
+			t.Fatalf("buttons %v", got)
+		}
+	})
+
+	t.Run("OL-11 a provider with a key or with client credentials has no sign-in button", func(t *testing.T) {
+		if actions := newProviderDraft("openai", cfg, nil).signInActions(cfg); len(actions) != 0 {
+			t.Errorf("key: %v", labels(actions))
+		}
+		draft := newProviderDraft("antigravity", cfg, nil)
+		draft.oauth.Flow = config.OAuthClient
+		if actions := draft.signInActions(cfg); len(actions) != 0 {
+			t.Errorf("client credentials: %v", labels(actions))
 		}
 	})
 }

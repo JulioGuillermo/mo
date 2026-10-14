@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -131,6 +132,32 @@ func TestLogin(t *testing.T) {
 
 		if err != nil || token != "from-client" || len(*grants) != 1 {
 			t.Errorf("token %q err %v", token, err)
+		}
+	})
+
+	t.Run("AU-06 the browser flow listens on the fixed redirect address the client has registered", func(t *testing.T) {
+		t.Setenv("XDG_DATA_HOME", t.TempDir())
+		server, _ := fakeServer(t)
+		free, _ := net.Listen("tcp", "127.0.0.1:0")
+		port := free.Addr().(*net.TCPAddr).Port
+		free.Close()
+		redirect := fmt.Sprintf("http://localhost:%d/oauth-callback", port)
+		var asked string
+		openBrowser = func(page string) {
+			parsed, _ := url.Parse(page)
+			query := parsed.Query()
+			asked = query.Get("redirect_uri")
+			go http.Get(redirect + "?code=c&state=" + url.QueryEscape(query.Get("state")))
+		}
+		t.Cleanup(func() { openBrowser = func(string) {} })
+		settings := settingsFor(server, config.OAuthBrowser)
+		settings.RedirectURL = redirect
+
+		err := Login(context.Background(), "corp", settings, func(Prompt) {})
+
+		token, _ := Load("corp")
+		if err != nil || asked != redirect || token == nil {
+			t.Errorf("err %v asked %q token %+v", err, asked, token)
 		}
 	})
 }

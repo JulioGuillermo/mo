@@ -13,9 +13,11 @@ import (
 
 const (
 	newProviderChoice = "\x00new"
-	continueChoice    = "\x00continue"
-	quitChoice        = "\x00quit"
-	defaultNewURL     = "http://localhost:8080/v1"
+	// activeProviderChoice opens the choice of the provider in use.
+	activeProviderChoice = "\x00active"
+	continueChoice       = "\x00continue"
+	quitChoice           = "\x00quit"
+	defaultNewURL        = "http://localhost:8080/v1"
 )
 
 // ProviderProblem is what the setup screen starts from: why mo cannot talk

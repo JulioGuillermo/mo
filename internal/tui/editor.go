@@ -16,6 +16,14 @@ const (
 	editorBack   = "\x00back"
 )
 
+// editorAction is a button of an editor.
+type editorAction struct {
+	label string
+	run   func(m model) (tea.Model, tea.Cmd)
+}
+
+const editorActionPrefix = "\x00action:"
+
 // entry is one field of an editor: a row with its value, and the field
 // that edits it alone.
 type entry struct {
@@ -37,6 +45,9 @@ type editor struct {
 	back        func(m model) (tea.Model, tea.Cmd)
 	snapshot    func() func()
 	notice      string
+	// actions are buttons between the fields and save, that do something
+	// else, like signing in.
+	actions []editorAction
 	// models, when set, lists the models for the Model field to pick from.
 	models func() (string, config.ProviderConfig, string, func(name string))
 }
@@ -50,6 +61,9 @@ func (m model) showEditor(e *editor, last string) (tea.Model, tea.Cmd) {
 	var options []huh.Option[string]
 	for _, each := range entries {
 		options = append(options, huh.NewOption(fmt.Sprintf("%-*s   %s", width, each.title, dimStyle.Render(oneLine(each.value(), 60))), each.title))
+	}
+	for i, action := range e.actions {
+		options = append(options, huh.NewOption(keyStyle.Render(action.label), fmt.Sprintf("%s%d", editorActionPrefix, i)))
 	}
 	options = append(options, huh.NewOption(keyStyle.Render(e.saveLabel), editorSave))
 	if e.remove != nil {
@@ -73,6 +87,11 @@ func (m model) showEditor(e *editor, last string) (tea.Model, tea.Cmd) {
 			return m.confirmRemove(e)
 		case editorBack:
 			return e.back(m)
+		}
+		for i, action := range e.actions {
+			if choice == fmt.Sprintf("%s%d", editorActionPrefix, i) {
+				return action.run(m)
+			}
 		}
 		for _, each := range e.entries() {
 			if each.title == choice {

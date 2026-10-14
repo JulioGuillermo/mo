@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/jg/mo/internal/auth"
+	"github.com/jg/mo/internal/config"
 )
 
 // loginMsg is the end of a sign-in.
@@ -27,6 +28,12 @@ func (m model) login(argument string) (tea.Model, tea.Cmd) {
 	case settings.OAuth == nil:
 		return m.emit(m.printer.Note(provider + " takes a key, not a sign-in · set [providers." + provider + ".oauth] to sign in"))
 	}
+	return m.loginTo(provider, *settings.OAuth)
+}
+
+// loginTo signs in to a provider with the given settings, which may be a
+// form's not saved yet.
+func (m model) loginTo(provider string, oauth config.OAuth) (tea.Model, tea.Cmd) {
 	bridge := m.bridge
 	printer := m.printer
 	show := func(prompt auth.Prompt) {
@@ -38,7 +45,6 @@ func (m model) login(argument string) (tea.Model, tea.Cmd) {
 			bridge.send(printMsg(printer.Note(text)))
 		}
 	}
-	oauth := *settings.OAuth
 	note := printText(m.printer.Note("signing in to " + provider + "…"))
 	return m, tea.Batch(note, func() tea.Msg {
 		return loginMsg{provider: provider, err: auth.Login(context.Background(), provider, oauth, show)}

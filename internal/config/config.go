@@ -215,6 +215,9 @@ type OAuth struct {
 	DeviceURL       string            `toml:"device_url,omitempty"`
 	Scopes          []string          `toml:"scopes,omitempty"`
 	Params          map[string]string `toml:"params,omitempty"`
+	// RedirectURL is the loopback address the browser flow listens on, when
+	// the client only accepts one registered address; empty: any free port.
+	RedirectURL string `toml:"redirect_url,omitempty"`
 }
 
 // Secret is the client secret, written or from its variable.

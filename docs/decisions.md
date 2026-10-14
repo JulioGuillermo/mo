@@ -81,6 +81,15 @@
   Gemini, Bedrock and Vertex can come later as more adapters behind `llm.Provider`.
 - Anthropic: API key only. Reusing Claude Code's subscription login breaks Anthropic's terms and is
   blocked by them since 2026.
+- Antigravity is a third protocol, `cloudcode`: Gemini's own format inside the envelope of Google's
+  Cloud Code Assist API (`v1internal:streamGenerateContent`), the one Antigravity speaks. It signs
+  in with Antigravity's own OAuth client (id and secret are public, from its app), through the
+  browser flow with a fixed loopback redirect (`oauth.redirect_url`), since that client has one
+  registered. mo keeps its own token; it does not read opencode's or the IDE's. Only the `daily`
+  sandbox endpoint serves it for a plain account: prod answers 429 and autopush 403. The request is
+  sent as Antigravity's (`requestType: agent`, its system preamble and user agent), since that is
+  what the API expects. Function calls keep their thought signature in `ToolCall.Extra`; a call
+  without one gets Gemini's skip value.
 - Anthropic requests mark the system prompt, the last tool and the last message as cache
   breakpoints, so every turn rereads the shared prefix from the prompt cache.
 - Tool arguments cut off by the output token limit become `{}` plus `ToolCall.ArgsError`. Sending

@@ -14,6 +14,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/jg/mo/internal/agent"
+	"github.com/jg/mo/internal/auth"
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/detect"
 	"github.com/jg/mo/internal/llm"
@@ -295,6 +296,11 @@ func providerLabel(name string, settings config.ProviderConfig) string {
 	switch {
 	case !settings.NeedsKey():
 		return name + "  · " + settings.BaseURL
+	case settings.OAuth != nil:
+		if _, err := auth.Load(name); err != nil {
+			return name + "  · not signed in"
+		}
+		return name + "  · signed in"
 	case settings.Key() != "":
 		return name + "  · key found"
 	}

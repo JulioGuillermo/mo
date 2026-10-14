@@ -4,12 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 
+	"github.com/jg/mo/internal/auth"
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/detect"
 )
@@ -71,6 +73,10 @@ func newProviderDraft(name string, cfg config.Config, findings []detect.Finding)
 // the one saved, to ask it for its models.
 func (d *providerDraft) settings(cfg config.Config) config.ProviderConfig {
 	settings := config.ProviderConfig{Protocol: d.protocol, BaseURL: d.baseURL, APIKeyEnv: d.keyEnv, APIKeyFrom: d.keyFrom}
+	if d.oauth.Flow != "" {
+		oauth := d.oauth
+		settings.OAuth = &oauth
+	}
 	switch {
 	case strings.TrimSpace(d.key) != "":
 		settings.APIKey = strings.TrimSpace(d.key)
@@ -91,11 +97,12 @@ func (d *providerDraft) entries(cfg config.Config) []entry {
 	}
 	entries = append(entries,
 		entry{"Type", func() string {
-			return map[string]string{"openai": "OpenAI-compatible", "anthropic": "Anthropic"}[d.protocol]
+			return map[string]string{"openai": "OpenAI-compatible", "anthropic": "Anthropic", "cloudcode": "Google Cloud Code (Antigravity)"}[d.protocol]
 		}, func() huh.Field {
 			return huh.NewSelect[string]().Title("Type").Options(
 				huh.NewOption("OpenAI-compatible: llama-server, ollama, vLLM, OpenAI, OpenRouter…", "openai"),
 				huh.NewOption("Anthropic", "anthropic"),
+				huh.NewOption("Google Cloud Code: Antigravity's Gemini and Claude models", "cloudcode"),
 			).Value(&d.protocol)
 		}},
 		entry{"Base URL", func() string { return valueOr(d.baseURL, "required") }, func() huh.Field {
@@ -140,7 +147,10 @@ func (d *providerDraft) entries(cfg config.Config) []entry {
 		case config.OAuthDevice:
 			entries = append(entries, text("Device URL", "where the device code is asked for", &d.oauth.DeviceURL))
 		case config.OAuthBrowser:
-			entries = append(entries, text("Authorization URL", "the page that asks the user", &d.oauth.AuthURL))
+			entries = append(entries,
+				text("Authorization URL", "the page that asks the user", &d.oauth.AuthURL),
+				text("Redirect URL", "http://localhost:<port>/<path> when the client takes only that one; empty: any free port", &d.oauth.RedirectURL),
+			)
 		}
 		entries = append(entries, text("Scopes", "separated by spaces", &d.oauthScopes))
 	}
@@ -215,8 +225,8 @@ func (d *providerDraft) applyTo(layer config.Config) (config.Config, error) {
 		}
 		return layer, nil
 	}
-	if d.protocol == "anthropic" && strings.TrimSpace(d.model) == "" {
-		return layer, fmt.Errorf("%s: an Anthropic provider needs a model", name)
+	if (d.protocol == "anthropic" || d.protocol == "cloudcode") && strings.TrimSpace(d.model) == "" {
+		return layer, fmt.Errorf("%s: this type of provider needs a model", name)
 	}
 	preset := config.Defaults().Providers[name]
 	entry := config.ProviderConfig{
@@ -236,7 +246,9 @@ func (d *providerDraft) applyTo(layer config.Config) (config.Config, error) {
 		if oauth.ClientID == "" || oauth.TokenURL == "" {
 			return layer, fmt.Errorf("%s: signing in needs a client id and a token URL", name)
 		}
-		entry.OAuth = &oauth
+		if preset.OAuth == nil || !reflect.DeepEqual(oauth, *preset.OAuth) {
+			entry.OAuth = &oauth
+		}
 	}
 	if key := strings.TrimSpace(d.key); key != "" {
 		entry.APIKey = key
@@ -253,6 +265,28 @@ func (d *providerDraft) applyTo(layer config.Config) (config.Config, error) {
 	return layer, nil
 }
 
+// signInActions are the buttons to sign in to the provider, and out of it,
+// for one that signs in with the browser or a device code. They work from
+// the form as it is, saved or not.
+func (d *providerDraft) signInActions(cfg config.Config) []editorAction {
+	if d.oauth.Flow == "" || d.oauth.Flow == config.OAuthClient || strings.TrimSpace(d.name) == "" {
+		return nil
+	}
+	name := strings.TrimSpace(d.name)
+	label := "Log in"
+	var actions []editorAction
+	if _, err := auth.Load(name); err == nil {
+		label = "Log in again"
+		actions = append(actions, editorAction{label: "Log out", run: func(m model) (tea.Model, tea.Cmd) { return m.logout(name) }})
+	}
+	login := editorAction{label: label, run: func(m model) (tea.Model, tea.Cmd) {
+		oauth := d.oauth
+		oauth.Scopes = strings.Fields(d.oauthScopes)
+		return m.loginTo(name, oauth)
+	}}
+	return append([]editorAction{login}, actions...)
+}
+
 // pickProvider lists the providers to edit, then opens the chosen one. From
 // the settings menu, esc goes back to it and an edit waits there to be saved
 // with the rest; on its own, an edit is saved at once.
@@ -260,11 +294,15 @@ func (m model) pickProvider(msg settingsLoadedMsg, menu *settingsMenu) (tea.Mode
 	cfg := config.UserSettings(msg.layer)
 	picked := m.session.Provider
 	options := providerOptions(cfg, msg.findings, msg.layer.Provider)[1:]
+	options = append([]huh.Option[string]{huh.NewOption(keyStyle.Render("Active provider")+"   "+dimStyle.Render(orDefault(msg.layer.Provider, "auto")+" · pick the one mo uses"), activeProviderChoice)}, options...)
 	options = append(options, huh.NewOption("+ set up a new provider", newProviderChoice))
 	form := huh.NewForm(huh.NewGroup(
 		huh.NewSelect[string]().Title("Provider to edit").Options(options...).Value(&picked),
 	)).WithShowHelp(false)
 	next := func(m model) (tea.Model, tea.Cmd) {
+		if picked == activeProviderChoice {
+			return m.chooseActiveProvider(msg, cfg, menu)
+		}
 		return m.editProvider(msg, cfg, picked, menu)
 	}
 	screen := &settingsScreen{form: form, layer: msg.layer, next: next, help: menuHelp}
@@ -272,6 +310,36 @@ func (m model) pickProvider(msg settingsLoadedMsg, menu *settingsMenu) (tea.Mode
 		screen.back = func(m model) (tea.Model, tea.Cmd) { return m.showMenu(menu) }
 	}
 	return m.showSettings(screen)
+}
+
+// chooseActiveProvider picks the provider mo uses, with no field to edit: a
+// provider found in another tool and not in the config yet comes along.
+func (m model) chooseActiveProvider(msg settingsLoadedMsg, cfg config.Config, menu *settingsMenu) (tea.Model, tea.Cmd) {
+	chosen := msg.layer.Provider
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewSelect[string]().Title("Active provider").Description("the model comes from its own settings; /model picks another").
+			Options(providerOptions(cfg, msg.findings, msg.layer.Provider)...).Value(&chosen),
+	)).WithShowHelp(false)
+	back := func(m model) (tea.Model, tea.Cmd) { return m.pickProvider(msg, menu) }
+	apply := func(layer config.Config) (config.Config, error) {
+		layer.Provider = chosen
+		layer.Model = ""
+		if found := findingFor(msg.findings, chosen); found != nil && found.Settings != nil {
+			if _, known := config.Defaults().Providers[chosen]; !known {
+				if _, saved := layer.Providers[chosen]; !saved {
+					layer.Providers = withEntry(layer.Providers, chosen, *found.Settings)
+				}
+			}
+		}
+		return layer, nil
+	}
+	next := func(m model) (tea.Model, tea.Cmd) {
+		if menu != nil {
+			return m.keepEdit(menu, "provider "+orDefault(chosen, "auto"), apply)
+		}
+		return m.saveOrWait(&settingsScreen{layer: msg.layer, apply: apply})
+	}
+	return m.showSettings(&settingsScreen{form: form, next: next, back: back, help: menuHelp})
 }
 
 // editProvider fills in a provider a field at a time, then saves it.
@@ -295,6 +363,7 @@ func (m model) editProvider(msg settingsLoadedMsg, cfg config.Config, name strin
 		},
 	}
 	what := "provider " + orDefault(name, "new")
+	e.actions = draft.signInActions(cfg)
 	e.save = func(m model) (tea.Model, tea.Cmd) {
 		if draft.isNew {
 			if err := validNewName(cfg.Providers)(draft.name); err != nil {

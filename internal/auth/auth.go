@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -195,11 +196,21 @@ func deviceLogin(ctx context.Context, settings config.OAuth, show func(Prompt)) 
 // browserLogin opens the authorization page and takes the code back on a
 // port of the loopback, as the redirect, with PKCE.
 func browserLogin(ctx context.Context, settings config.OAuth, show func(Prompt)) (*oauth2.Token, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return nil, err
+	address, path, redirect := "127.0.0.1:0", "/callback", ""
+	if settings.RedirectURL != "" {
+		fixed, err := neturl.Parse(settings.RedirectURL)
+		if err != nil || fixed.Port() == "" {
+			return nil, fmt.Errorf("oauth redirect_url %q: use http://localhost:<port>/<path>", settings.RedirectURL)
+		}
+		address, path, redirect = "127.0.0.1:"+fixed.Port(), fixed.Path, settings.RedirectURL
 	}
-	redirect := fmt.Sprintf("http://%s/callback", listener.Addr())
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return nil, fmt.Errorf("listening for the sign-in answer: %w", err)
+	}
+	if redirect == "" {
+		redirect = fmt.Sprintf("http://%s%s", listener.Addr(), path)
+	}
 	conf := oauthConfig(settings, redirect)
 	verifier := oauth2.GenerateVerifier()
 	state := oauth2.GenerateVerifier()
@@ -208,6 +219,9 @@ func browserLogin(ctx context.Context, settings config.OAuth, show func(Prompt))
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query()
 		switch {
+		case r.URL.Path != path:
+			http.NotFound(w, r)
+			return
 		case query.Get("state") != state:
 			http.Error(w, "unexpected state", http.StatusBadRequest)
 			return

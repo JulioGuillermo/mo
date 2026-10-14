@@ -94,8 +94,26 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 			window, from = anthropicWindow(ctx, provider, model)
 		}
 		return chosenProvider{name: name, model: model, window: window, provider: provider, windowFrom: from}, nil
+	case "cloudcode":
+		if model == "" {
+			return chosenProvider{}, fmt.Errorf("%s needs a model: use -m or set model in the config", name)
+		}
+		window, from := cfg.Context.Window, windowFromSettings
+		if window == 0 {
+			window, from = defaultCloudCodeWindow(model), windowFromDefault
+		}
+		return chosenProvider{name: name, model: model, window: window, provider: &llm.CloudCode{BaseURL: settings.BaseURL, Token: token}, windowFrom: from}, nil
 	}
-	return chosenProvider{}, fmt.Errorf("provider %q has unknown type %q (use openai or anthropic)", name, settings.Protocol)
+	return chosenProvider{}, fmt.Errorf("provider %q has unknown type %q (use openai, anthropic or cloudcode)", name, settings.Protocol)
+}
+
+// defaultCloudCodeWindow is the context of the models Cloud Code serves,
+// which it does not say: a million tokens for Gemini, 200000 for the rest.
+func defaultCloudCodeWindow(model string) int {
+	if strings.HasPrefix(model, "gemini") {
+		return 1000000
+	}
+	return defaultAnthropicWindow
 }
 
 // detectedProvider finds a usable provider by the name mo -detect gives it.

@@ -31,7 +31,7 @@ is tried first and saved only when it works.
 
 ## Providers
 
-Two protocols cover almost everything:
+Two protocols cover almost everything (a third, Google's Cloud Code, serves Antigravity):
 
 | Preset | Protocol | Default URL | Key |
 |---|---|---|---|
@@ -45,6 +45,7 @@ Two protocols cover almost everything:
 | `groq` | openai | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` |
 | `deepseek` | openai | `https://api.deepseek.com/v1` | `DEEPSEEK_API_KEY` |
 | `mistral` | openai | `https://api.mistral.ai/v1` | `MISTRAL_API_KEY` |
+| `antigravity` | cloudcode | `https://daily-cloudcode-pa.sandbox.googleapis.com` | `/login antigravity` (below) |
 
 With no provider set, mo tries llama-server, ollama and lmstudio in that order.
 With no model set on an openai-type provider, it uses the first model the server lists.
@@ -79,8 +80,18 @@ client_secret_env = ""     # when the client has a secret
 
 `/login corp` signs in; the token is kept in `~/.local/share/mo/oauth/corp.json`, for you only, and
 renewed with its refresh token when it expires. `/logout corp` forgets it.
-Subscription logins (Claude, ChatGPT, Google OAuth) are listed as not usable and never read:
+Other subscription logins (Claude, ChatGPT) are listed as not usable and never read:
 Anthropic forbids using Claude subscription tokens outside its own apps. Claude works with an API key.
+
+### Antigravity
+
+The `antigravity` provider signs in as Antigravity does, with its OAuth client (public, as in any
+installed app) and Google's browser flow with PKCE. In mo, run `/login antigravity`: it opens the
+browser, you pick your Google account, and the token is kept in `~/.local/share/mo/oauth/antigravity.json`
+and renewed when it expires. The client only accepts `http://localhost:51121/oauth-callback`, so that
+port must be free during the sign-in (`redirect_url` in its `[oauth]` settings). It offers Antigravity's
+Gemini, Claude and gpt-oss models: pick one in `/providers`, or `-p antigravity -m gemini-3-flash`.
+Using Antigravity's client outside Antigravity may break Google's terms, and the quota is the account's.
 
 ## Config
 

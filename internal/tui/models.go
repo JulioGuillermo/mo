@@ -44,6 +44,10 @@ func listModels(ctx context.Context, provider string, settings config.ProviderCo
 	if settings.OAuth != nil {
 		token = auth.NewSource(provider, *settings.OAuth).Token
 	}
+	switch settings.Protocol {
+	case "cloudcode":
+		return (&llm.CloudCode{BaseURL: settings.BaseURL, Token: token}).ListModels(ctx)
+	}
 	if settings.Protocol == "anthropic" {
 		return (&llm.Anthropic{BaseURL: settings.BaseURL, APIKey: settings.Key(), Token: token}).ListModels(ctx)
 	}
