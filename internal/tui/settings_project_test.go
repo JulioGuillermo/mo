@@ -91,13 +91,13 @@ func TestProjectSettings(t *testing.T) {
 		project := switched.(model).settings.form.View()
 		back, _ := switched.(model).Update(keyTab)
 
-		if !strings.Contains(global, "Web search") || !strings.Contains(global, "This project ›") {
+		if !strings.Contains(global, "Tools ›") || !strings.Contains(global, "This project ›") {
 			t.Errorf("global:\n%s", global)
 		}
 		if strings.Contains(project, "Web search") || strings.Contains(project, "MCP servers") || !strings.Contains(project, "Loop guard") || !strings.Contains(project, ".mo/settings.toml") {
 			t.Errorf("project:\n%s", project)
 		}
-		if !strings.Contains(back.(model).settings.form.View(), "Web search") {
+		if !strings.Contains(back.(model).settings.form.View(), "Tools ›") {
 			t.Error("tab did not come back to Global")
 		}
 	})
@@ -160,7 +160,7 @@ func TestProjectSettings(t *testing.T) {
 		down, _ := asked.(model).Update(keyDown)
 		picked, cmd := down.(model).Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		listed := deliver(picked.(model), cmd, 5)
-		if menu.project.set["loop.replies"] || !strings.Contains(listed.settings.form.View(), "This project › Loop guard") {
+		if menu.project.set["loop.replies"] || !strings.Contains(listed.settings.form.View(), "This project › Safety › Loop guard") {
 			t.Fatalf("still set, or not back in the section:\n%s", listed.settings.form.View())
 		}
 

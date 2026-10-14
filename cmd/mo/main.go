@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	"github.com/charmbracelet/x/term"
@@ -28,7 +30,22 @@ func main() {
 	}
 }
 
+// keepCrashes writes what the Go runtime prints when mo crashes to a file
+// too: the screen may not keep it, and the terminal is left in raw mode.
+func keepCrashes() {
+	if err := os.MkdirAll(config.LogDir(), 0o700); err != nil {
+		return
+	}
+	file, err := os.OpenFile(filepath.Join(config.LogDir(), "crash.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return
+	}
+	_ = debug.SetCrashOutput(file, debug.CrashOptions{})
+	file.Close()
+}
+
 func run() error {
+	keepCrashes()
 	providerFlag := flag.String("p", "", "provider name, e.g. ollama, llama-server, anthropic")
 	modelFlag := flag.String("m", "", "model name")
 	yesFlag := flag.Bool("y", false, "run tools without asking, except changes outside the working directory")
@@ -56,14 +73,16 @@ func run() error {
 		return nil
 	}
 
-	hub := connectMCP(ctx, cfg)
-	hubs := &openHubs{current: hub}
+	hubs := &openHubs{}
+	connecting := connectInBackground(func() *mcphub.Hub { return connectMCP(ctx, cfg) }, hubs)
 	defer hubs.Close()
+	// What never took the connection still has to close it.
+	defer func() { connecting.get() }()
 	defer render.RemoveSavedImages()
 	loadedPlugins := loadPlugins(workDir)
 	defer loadedPlugins.Close()
 	choice := sessionChoice{provider: *providerFlag, model: *modelFlag, yes: *yesFlag}
-	loaded := extensions{mcp: hub, plugins: loadedPlugins, hubs: hubs, recall: tools.NewRecall(config.SessionDir())}
+	loaded := extensions{connecting: connecting, plugins: loadedPlugins, hubs: hubs, recall: tools.NewRecall(config.SessionDir())}
 
 	prompt, err := oneShotPrompt(flag.Args())
 	if err != nil {

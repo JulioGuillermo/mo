@@ -11,6 +11,7 @@ package tui
 // | VM-07 | Happy    | u undoes an edit or a whole insert, ctrl+r redoes it                      | P1       |
 // | VM-08 | Happy    | yy and dd go to the clipboard as lines; p pastes it below, P above, text inline | P0 |
 // | VM-09 | Happy    | v in the input selects with the moves; y copies it, d deletes it         | P1       |
+// | VM-10 | Error    | j and k in the input move or go through history, never back into vim    | P0       |
 
 import (
 	"strings"
@@ -200,6 +201,19 @@ func TestVim(t *testing.T) {
 		}
 		if deleted.input.Value() != "llo" {
 			t.Errorf("deleted = %q", deleted.input.Value())
+		}
+	})
+
+	t.Run("VM-10 j and k in the input move or go through history, never back into vim", func(t *testing.T) {
+		m := vimModel(t)
+		m.history.add("sent before")
+		m = vimKeys(t, m, "esc", "k")
+		if m.input.Value() != "sent before" {
+			t.Errorf("k should bring back what was sent: %q", m.input.Value())
+		}
+		m = vimKeys(t, m, "j", "j", "k")
+		if m.vim.mode != vimNormal || m.vim.pane != paneInput {
+			t.Errorf("mode = %d pane = %d", m.vim.mode, m.vim.pane)
 		}
 	})
 }

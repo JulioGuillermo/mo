@@ -9,10 +9,13 @@ package tui
 // | SM-05 | Happy    | Esc in a provider form goes back to the list, then to the menu       | P1       |
 // | SM-06 | Happy    | A section lists its settings with their values; one opens on its own | P0       |
 // | SM-07 | Edge     | Esc in a setting puts its old value back; enter keeps the new one    | P0       |
+// | SM-08 | Happy    | The menu opens groups; a group lists its sections; esc goes back a level at a time | P0 |
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
@@ -118,8 +121,33 @@ func TestSettingsMenu(t *testing.T) {
 		menu.draft.loopRepeats = "7"
 		opened.(model).settings.next(opened.(model))
 
-		if afterEsc == "9" || menu.draft.loopRepeats != "7" || !strings.Contains(cancelled.(model).settings.form.View(), "Settings › Loop guard") {
+		if afterEsc == "9" || menu.draft.loopRepeats != "7" || !strings.Contains(cancelled.(model).settings.form.View(), "Settings › Safety › Loop guard") {
 			t.Errorf("after esc = %q after enter = %q", afterEsc, menu.draft.loopRepeats)
+		}
+	})
+
+	t.Run("SM-08 the menu opens groups; a group lists its sections and lists; esc goes back a level at a time", func(t *testing.T) {
+		m, menu := menuModel()
+		top := ansi.Strip(m.settings.form.View())
+
+		group, _ := m.openMenuChoice(menu, groupPrefix+"tools")
+		listed := ansi.Strip(group.(model).settings.form.View())
+		section, _ := group.(model).openMenuChoice(menu, "descriptions")
+		toGroup, _ := section.(model).Update(keyEsc)
+		toMenu, _ := toGroup.(model).Update(keyEsc)
+
+		for _, want := range []string{"Model ›", "Conversation ›", "Tools ›", "Skills ›", "Safety ›", "Interface ›"} {
+			if !strings.Contains(top, want) {
+				t.Errorf("menu misses %q:\n%s", want, top)
+			}
+		}
+		for _, want := range []string{"Settings › Tools", "Loading and output", "Mode of each tool", "Descriptions", "Web search", "MCP servers", "‹ back"} {
+			if !strings.Contains(listed, want) {
+				t.Errorf("group misses %q:\n%s", want, listed)
+			}
+		}
+		if !strings.Contains(ansi.Strip(toGroup.(model).settings.form.View()), "Settings › Tools") || !strings.Contains(ansi.Strip(toMenu.(model).settings.form.View()), "Conversation ›") {
+			t.Error("esc should go back to the group, then to the menu")
 		}
 	})
 }

@@ -30,9 +30,12 @@ type sessionChoice struct {
 // The MCP servers are the exception: they connect again when their settings
 // change.
 type extensions struct {
-	mcp     *mcphub.Hub
-	plugins *plugins.Set
-	hubs    *openHubs
+	mcp *mcphub.Hub
+	// connecting is the first connection to the MCP servers, made while the
+	// provider is chosen; mcp is unset until it is taken.
+	connecting *pendingHub
+	plugins    *plugins.Set
+	hubs       *openHubs
 	// jobs are the background jobs of the whole run, kept across settings
 	// changes; nil when mo answers once.
 	jobs *tools.Jobs
@@ -41,6 +44,35 @@ type extensions struct {
 	titles *tools.Titles
 	// recall searches memories and saved conversations.
 	recall *tools.Recall
+}
+
+// pendingHub is a connection to the MCP servers being made in the
+// background; get waits for it.
+type pendingHub struct {
+	once  sync.Once
+	ready chan *mcphub.Hub
+	hub   *mcphub.Hub
+	hubs  *openHubs
+}
+
+// connectInBackground starts connecting so the provider is chosen
+// meanwhile.
+func connectInBackground(connect func() *mcphub.Hub, hubs *openHubs) *pendingHub {
+	pending := &pendingHub{ready: make(chan *mcphub.Hub, 1), hubs: hubs}
+	go func() { pending.ready <- connect() }()
+	return pending
+}
+
+func (p *pendingHub) get() *mcphub.Hub {
+	p.once.Do(func() {
+		p.hub = <-p.ready
+		p.hubs.mu.Lock()
+		if p.hubs.current == nil && !p.hubs.closed {
+			p.hubs.current = p.hub
+		}
+		p.hubs.mu.Unlock()
+	})
+	return p.hub
 }
 
 // openHubs holds the MCP connection in use. A new one replaces it, and once
@@ -60,14 +92,18 @@ func (h *openHubs) replace(next *mcphub.Hub) {
 		h.current = next
 	}
 	h.mu.Unlock()
-	previous.Close()
+	if previous != nil {
+		previous.Close()
+	}
 }
 
 func (h *openHubs) Close() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.closed = true
-	h.current.Close()
+	if h.current != nil {
+		h.current.Close()
+	}
 }
 
 // buildSession puts together the agent the config describes. Its Reload
@@ -75,10 +111,14 @@ func (h *openHubs) Close() {
 // after checking that the layer works on its own, outside any project; the
 // provider and model given on the command line no longer apply then.
 func buildSession(ctx context.Context, workDir string, cfg config.Config, choice sessionChoice, loaded extensions) (tui.Session, error) {
-	hub := loaded.mcp
 	chosen, err := chooseProvider(ctx, cfg, choice.provider, choice.model)
 	if err != nil {
 		return tui.Session{}, providerError{err}
+	}
+	hub := loaded.mcp
+	if hub == nil && loaded.connecting != nil {
+		hub = loaded.connecting.get()
+		loaded.mcp = hub
 	}
 	confirm := append(slices.Clone(cfg.Tools.Confirm), hub.NeedConfirmation()...)
 	confirm = append(confirm, loaded.plugins.NeedConfirmation()...)

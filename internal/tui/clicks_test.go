@@ -108,9 +108,10 @@ func TestClicks(t *testing.T) {
 	t.Run("CK-05 clicking an option of a settings list opens it", func(t *testing.T) {
 		m, _ := menuModel()
 
+		m = clickOn(t, m, "Safety ›")
 		m = clickOn(t, m, "Loop guard")
 
-		if m.settings == nil || !strings.Contains(m.settings.form.View(), "Settings › Loop guard") {
+		if m.settings == nil || !strings.Contains(m.settings.form.View(), "Settings › Safety › Loop guard") {
 			t.Errorf("view:\n%s", ansi.Strip(m.settings.form.View()))
 		}
 	})

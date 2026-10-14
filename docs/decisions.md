@@ -843,3 +843,12 @@
   lines going below or above. Without a clipboard program p pastes what mo kept itself.
 - u undoes one normal-mode edit or a whole insert, as vim does, from snapshots of the input;
   ctrl+r redoes. Counts (3j) are left out.
+
+## Settings menu
+
+- The menu is six groups, not a flat list of sixteen sections: Model, Conversation, Tools, Skills,
+  Safety and Interface, each opening its sections and, for Model and Tools, the provider and MCP
+  server lists. A group's row shows the values of its first section, the ones most looked for.
+- Esc goes back one level at a time: setting, section, group, menu. Titles say where one is, as
+  "Settings › Tools › Descriptions".
+- The project screen keeps its flat list, short as it is, with each section named with its group.

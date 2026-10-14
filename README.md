@@ -108,7 +108,12 @@ Subscription logins have their own providers.
 `~/.config/mo/config.toml`, then `.mo/settings.toml` in the project (the old `.mo.toml` is still
 read when that does not exist). Each layer overrides only what it sets.
 
-`/settings` has two screens, switched with tab: **Global**, for every project, and **This project**
+`/settings` groups what it sets under six headings, each opening its sections: **Model** (and
+the providers), **Conversation** (context window, instructions files, memory), **Tools** (loading
+and output, the mode of each tool, descriptions, web search, MCP servers), **Skills**, **Safety**
+(permissions, loop guard) and **Interface** (look and keys, notifications). Esc goes back a level.
+
+It has two screens, switched with tab: **Global**, for every project, and **This project**
 (`/settings project`), which shows only what a project can override (provider and model, tools
 and MCP servers on or off, skills, context, loop guard) and marks each value `● this project` or `· global`. What the project does not
 set follows Global, also when Global changes later. Providers, MCP servers, web search, memory,
@@ -288,7 +293,7 @@ global memories.
 
 mo reads `AGENTS.md` (and `AGENT.md`) into the system prompt: yours in `~/.config/mo/`, then each one
 from the repository's root down to the working folder, so the closest come last. `/settings ›
-Instructions` turns them off or names other files, such as `CLAUDE.md`, globally or per project.
+Conversation › Instructions` turns them off or names other files, such as `CLAUDE.md`, globally or per project.
 
 ## Skills
 
@@ -363,7 +368,7 @@ takes `ls`, `ls * /home` takes `ls -la /home`), inside a word any characters of 
 others (`find *`, `xargs *`, `env *`, `sudo *`) lets those through too.
 
 When a command asks, `a` opens the parts no rule allows as rules: put the `*` where you want, then
-save them for every project or for this folder only. `/settings` › Permissions edits the lists, one
+save them for every project or for this folder only. `/settings` › Safety › Permissions edits the lists, one
 rule per line, and has a field to try a command against them.
 
 In `auto` the model is asked in a separate request that holds only your request and the commands,
@@ -393,7 +398,7 @@ trust = true               # run its tools without asking
 
 Their tools are named `mcp__<server>__<tool>` and ask before running unless the server has
 `trust = true`. In `search` tool mode they stay out of the context until the model looks for them.
-`/mcp` shows which servers answered and edits them. `/settings › Tools › MCP servers off` stops
+`/mcp` shows which servers answered and edits them. `/settings › Tools › Loading and output › MCP servers off` stops
 one without deleting it, everywhere or only in a project. A server's stderr goes to `~/.local/share/mo/logs/mcp-<name>.log`.
 `[web]` and `[mcp]` are read from the user file only, never from a project's `.mo/settings.toml`.
 

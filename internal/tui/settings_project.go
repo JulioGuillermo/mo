@@ -246,7 +246,7 @@ func (m model) projectOptions(menu *settingsMenu, row func(title, summary string
 		if set > 0 {
 			summary = fmt.Sprintf("%d set here · %s", set, section.summary(menu.sectionDraft(section)))
 		}
-		options = append(options, huh.NewOption(row(section.title, summary), section.key))
+		options = append(options, huh.NewOption(row(fullTitle(section), summary), section.key))
 	}
 	return append(options,
 		huh.NewOption(row("Permissions", projectPermissionSection.summary(menu.draft)), projectPermissions),

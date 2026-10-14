@@ -35,6 +35,8 @@ type settingsMenu struct {
 	notice  string
 	scope   settingsScope
 	project *projectSettings
+	// lastIn is the row last opened in each group.
+	lastIn map[string]string
 }
 
 func (m model) newSettingsMenu(loaded settingsLoadedMsg) *settingsMenu {
@@ -43,7 +45,7 @@ func (m model) newSettingsMenu(loaded settingsLoadedMsg) *settingsMenu {
 	if len(m.session.ToolDescriptions) > 0 {
 		draft.describeTools(m.session.ToolDescriptions)
 	}
-	return &settingsMenu{loaded: loaded, layer: loaded.layer, draft: draft, last: settingsSections[0].key,
+	return &settingsMenu{loaded: loaded, layer: loaded.layer, draft: draft, last: settingsGroups[0].key,
 		project: newProjectSettings(m.session.WorkDir, loaded.layer, loaded.project, loaded.projectErr)}
 }
 
@@ -94,9 +96,11 @@ func (m model) showMenu(menu *settingsMenu) (tea.Model, tea.Cmd) {
 }
 
 func (m model) menuOptions(menu *settingsMenu) []huh.Option[string] {
-	width := len("MCP servers")
+	width := len("This project ›")
 	for _, section := range settingsSections {
-		width = max(width, len(section.title))
+		if menu.scope == projectScope {
+			width = max(width, len(fullTitle(section)))
+		}
 	}
 	row := func(title, summary string) string {
 		return fmt.Sprintf("%-*s   %s", width, title, dimStyle.Render(summary))
@@ -105,13 +109,14 @@ func (m model) menuOptions(menu *settingsMenu) []huh.Option[string] {
 		return m.projectOptions(menu, row)
 	}
 	var options []huh.Option[string]
-	for _, section := range settingsSections {
-		options = append(options, huh.NewOption(row(section.title, section.summary(menu.draft)), section.key))
+	for _, group := range settingsGroups {
+		title := group.title
+		if len(group.sections) > 1 || len(group.extras) > 0 {
+			title += " ›"
+		}
+		summary := oneLine(m.groupSummary(menu, group), max(m.width-width-12, 20))
+		options = append(options, huh.NewOption(row(title, summary), group.key))
 	}
-	options = append(options,
-		huh.NewOption(row("Providers", "add, edit, delete"), menuProviders),
-		huh.NewOption(row("MCP servers", fmt.Sprintf("%d set up · add, edit, delete", len(menu.layer.MCP))), menuMCP),
-	)
 	if menu.project != nil {
 		options = append(options, huh.NewOption(row("This project ›", fmt.Sprintf("%d set in %s · tab", len(menu.project.set), projectFileName)), menuProject))
 	}
@@ -186,6 +191,11 @@ func (m model) openMenuChoice(menu *settingsMenu, choice string) (tea.Model, tea
 	case menuMCP:
 		return m.pickMCPServer(menu.loadedNow(), menu)
 	}
+	for _, group := range settingsGroups {
+		if group.key == choice {
+			return m.showGroup(menu, group)
+		}
+	}
 	for _, section := range settingsSections {
 		if section.key == choice {
 			return m.showSection(menu, section, "")
@@ -232,8 +242,11 @@ func (m model) showSection(menu *settingsMenu, section settingsSection, last str
 	if m.height > 0 {
 		list.Height(min(len(options)+2+lipgloss.Height(description), max(m.height-4, settingsMinHeight)))
 	}
-	back := func(m model) (tea.Model, tea.Cmd) { return m.showMenu(menu) }
+	back := func(m model) (tea.Model, tea.Cmd) { return m.sectionBack(menu, section) }
 	next := func(m model) (tea.Model, tea.Cmd) {
+		if choice == menuBack {
+			return m.sectionBack(menu, section)
+		}
 		for _, item := range items {
 			switch {
 			case item.title != choice:
@@ -243,7 +256,7 @@ func (m model) showSection(menu *settingsMenu, section settingsSection, last str
 				return m.editItem(menu, section, item)
 			}
 		}
-		return m.showMenu(menu)
+		return m.sectionBack(menu, section)
 	}
 	form := huh.NewForm(huh.NewGroup(list)).WithShowHelp(false)
 	return m.showSettings(&settingsScreen{form: form, layer: menu.layer, next: next, back: back, help: menuHelp})
@@ -277,9 +290,9 @@ func (m model) editItem(menu *settingsMenu, section settingsSection, item settin
 // crumb is the title of a section's screens, which says which screen it is in.
 func (menu *settingsMenu) crumb(section settingsSection) string {
 	if menu.scope == projectScope {
-		return "This project › " + section.title
+		return "This project › " + fullTitle(section)
 	}
-	return "Settings › " + section.title
+	return "Settings › " + fullTitle(section)
 }
 
 func fieldHelp(field huh.Field) string {

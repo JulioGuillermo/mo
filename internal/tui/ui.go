@@ -21,7 +21,6 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
@@ -457,6 +456,12 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return next, cmd
 		}
 	}
+	return m.plainKey(msg)
+}
+
+// plainKey handles a key as mo does without vim keys, as vim's normal mode
+// does too for the keys it passes on.
+func (m model) plainKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if handled, next, cmd := m.historyKey(msg.String()); handled {
 		return next, cmd
 	}
@@ -657,7 +662,7 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 	case "sidebar":
 		m.sidebarHidden = !m.sidebarHidden
 		if m.session.Config.Render.Sidebar == sidebarOff {
-			return m, printText(m.printer.Note("the side panel is off in /settings › Memory and display"))
+			return m, printText(m.printer.Note("the side panel is off in /settings › Interface › Look and keys"))
 		}
 		return m, m.fitWidth()
 	case "jobs":
@@ -885,13 +890,6 @@ func (m model) upperLayout() (string, []region) {
 // lowerLayout is the input and the status line, the whole width.
 func (m model) lowerLayout() (string, []region) {
 	status, regions := m.statusLayout()
-	if badge := m.vimBadge(); badge != "" {
-		status = ansi.Truncate(badge+status, max(m.width, lipgloss.Width(badge)), "…")
-		for i := range regions {
-			regions[i].x0 += lipgloss.Width(badge)
-			regions[i].x1 += lipgloss.Width(badge)
-		}
-	}
 	input := m.input.View()
 	return input + "\n" + status, shifted(regions, lipgloss.Height(input))
 }

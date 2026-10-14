@@ -127,6 +127,9 @@ func (m model) statusSegments(show statusParts) []segment {
 	colors := statusPalette(m.printer == nil || m.printer.isDark())
 	paint := func(c color.Color, text string) string { return lipgloss.NewStyle().Foreground(c).Render(text) }
 	var segments []segment
+	if mode := m.vimSegment(); mode.text != "" {
+		segments = append(segments, mode)
+	}
 	if policy := m.session.Agent.Permissions; policy != nil {
 		mode := policy.Mode()
 		text := lipgloss.NewStyle().Foreground(colors.mode(mode)).Bold(true).Render("● " + string(mode))

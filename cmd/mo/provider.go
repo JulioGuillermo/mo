@@ -48,7 +48,9 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 	settings, ok := cfg.Providers[name]
 	if !ok {
 		settings, ok = detectedProvider(ctx, cfg, name)
-	} else if settings.NeedsKey() && settings.Key() == "" {
+	} else if settings.OAuth == nil && settings.NeedsKey() && settings.Key() == "" {
+		// A sign-in needs no key; looking for one would probe every local
+		// server for a second.
 		if detected, found := detectedProvider(ctx, cfg, name); found && detected.Key() != "" {
 			settings = detected
 		} else if detected, found := detectedProvider(ctx, cfg, name+"-opencode"); found && detected.Key() != "" {

@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"image/color"
 	"slices"
 	"strings"
 	"time"
@@ -61,10 +62,10 @@ const vimUndoDepth = 100
 var (
 	vimCursorLine = lipgloss.NewStyle().Background(lipgloss.Color("#2a3355"))
 	vimPicked     = lipgloss.NewStyle().Reverse(true)
-	vimBadges     = map[vimMode]lipgloss.Style{
-		vimInsert: lipgloss.NewStyle().Background(lipgloss.Color("#9ece6a")).Foreground(lipgloss.Color("#1a1b26")).Bold(true),
-		vimNormal: lipgloss.NewStyle().Background(lipgloss.Color("#7aa2f7")).Foreground(lipgloss.Color("#1a1b26")).Bold(true),
-		vimVisual: lipgloss.NewStyle().Background(lipgloss.Color("#bb9af7")).Foreground(lipgloss.Color("#1a1b26")).Bold(true),
+	vimColors     = map[vimMode]color.Color{
+		vimInsert: lipgloss.Color("#9ece6a"),
+		vimNormal: lipgloss.Color("#7aa2f7"),
+		vimVisual: lipgloss.Color("#bb9af7"),
 	}
 )
 
@@ -73,23 +74,24 @@ func (m model) vimOn() bool {
 	return m.vim.enabled
 }
 
-// vimBadge names the mode and, out of the input, the pane, before the
-// status line.
-func (m model) vimBadge() string {
+// vimSegment is the first part of the status line with vim keys on: the
+// mode, and the pane when it is not the input, dark on the mode's colour.
+func (m model) vimSegment() segment {
 	if !m.vimOn() {
-		return ""
+		return segment{}
 	}
 	name := map[vimMode]string{vimInsert: "INSERT", vimNormal: "NORMAL", vimVisual: "VISUAL"}[m.vim.mode]
 	switch m.vim.pane {
 	case paneConversation:
-		name += " · conversation"
+		name += " · chat"
 	case paneSidebar:
 		name += " · panel"
 	}
 	if m.vim.pending != "" {
 		name += " " + m.vim.pending
 	}
-	return vimBadges[m.vim.mode].Render(" "+name+" ") + " "
+	text := lipgloss.NewStyle().Foreground(lipgloss.Color("#1a1b26")).Background(vimColors[m.vim.mode]).Bold(true).Render(name)
+	return segment{text: text, bg: vimColors[m.vim.mode]}
 }
 
 // vimKey handles a key with vim keys on, and tells whether it did; the
@@ -253,10 +255,10 @@ func (m model) inputKey(pressed string) (tea.Model, tea.Cmd, bool) {
 			m.selectInput(func() { m.input.CursorEnd() })
 		}
 	case "j", "down":
-		next, cmd := m.handleKey(tea.KeyPressMsg{Code: tea.KeyDown})
+		next, cmd := m.plainKey(tea.KeyPressMsg{Code: tea.KeyDown})
 		return next, cmd, true
 	case "k", "up":
-		next, cmd := m.handleKey(tea.KeyPressMsg{Code: tea.KeyUp})
+		next, cmd := m.plainKey(tea.KeyPressMsg{Code: tea.KeyUp})
 		return next, cmd, true
 	case "enter":
 		return m, nil, false

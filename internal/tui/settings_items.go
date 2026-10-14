@@ -43,10 +43,10 @@ var settingsSections = []settingsSection{
 		}
 		return summary
 	}, note: modelNote, items: modelItems},
-	{key: "tools", title: "Tools", summary: func(d *settingsDraft) string {
+	{key: "tools", title: "Loading and output", summary: func(d *settingsDraft) string {
 		return d.mode + " · ask before: " + listValue(d.confirm)
 	}, items: toolItems},
-	{key: "context", title: "Context", summary: func(d *settingsDraft) string {
+	{key: "context", title: "Context window", summary: func(d *settingsDraft) string {
 		return fmt.Sprintf("window %s · make room at %s · %s", windowValue(d), d.compactAt, d.strategy)
 	}, note: func(m model, _ *settingsMenu) string {
 		note := "Sent with every request now " + budgetText(m.session.Agent.Budget())
@@ -55,7 +55,7 @@ var settingsSections = []settingsSection{
 		}
 		return note
 	}, items: contextItems},
-	{key: "descriptions", title: "Tool descriptions", summary: func(d *settingsDraft) string {
+	{key: "descriptions", title: "Descriptions", summary: func(d *settingsDraft) string {
 		return fmt.Sprintf("%d tools", len(d.descriptions))
 	}, note: func(model, *settingsMenu) string { return "an empty one sends the tool without it" }, items: descriptionItems},
 	{key: "loop", title: "Loop guard", summary: func(d *settingsDraft) string {
@@ -71,13 +71,13 @@ var settingsSections = []settingsSection{
 		}
 		return strings.Join(ruleLines(d.instructionsFiles), ", ")
 	}, note: instructionsNote, items: instructionItems},
-	{key: "toolmodes", title: "Tool modes", summary: func(d *settingsDraft) string {
+	{key: "toolmodes", title: "Mode of each tool", summary: func(d *settingsDraft) string {
 		return modesSummary(d, toolModes, mcpModes)
 	}, note: func(model, *settingsMenu) string {
 		return "full: declared with its description · compact: declared without · search: found with tool_search\n" +
 			"group, for an MCP server: one entry in tool_search under the server's name, which gives all its tools"
 	}, items: toolModeItems},
-	{key: "skillmodes", title: "Skill modes", summary: func(d *settingsDraft) string {
+	{key: "skillmodes", title: "Mode of each skill", summary: func(d *settingsDraft) string {
 		return modesSummary(d, skillModes)
 	}, note: func(m model, _ *settingsMenu) string {
 		if len(m.session.Skills) == 0 {
@@ -104,9 +104,10 @@ var settingsSections = []settingsSection{
 		}
 		return d.notifyMethod + " · " + strings.Join(when, ", ")
 	}, note: func(model, *settingsMenu) string { return "/notify sends a test" }, items: notifyItems},
-	{key: "display", title: "Memory and display", summary: func(d *settingsDraft) string {
-		return "images " + d.images
-	}, items: displayItems},
+	{key: "appearance", title: "Look and keys", summary: func(d *settingsDraft) string {
+		return fmt.Sprintf("keys %s · panel %s · status %s", d.keys, d.sidebar, d.statusStyle)
+	}, items: appearanceItems},
+	{key: "memory", title: "Memory", summary: func(d *settingsDraft) string { return d.memoryDir }, items: memoryItems},
 }
 
 func modelItems(m model, menu *settingsMenu) []settingItem {
@@ -468,10 +469,21 @@ func notifyItems(model, *settingsMenu) []settingItem {
 	}
 }
 
-func displayItems(model, *settingsMenu) []settingItem {
+func memoryItems(model, *settingsMenu) []settingItem {
 	return []settingItem{
 		{"Memory folder", func(d *settingsDraft) string { return d.memoryDir }, func(d *settingsDraft) huh.Field {
-			return huh.NewInput().Title("Memory folder").Value(&d.memoryDir)
+			return huh.NewInput().Title("Memory folder").Description("where the notes the model keeps across conversations go").Value(&d.memoryDir)
+		}},
+	}
+}
+
+func appearanceItems(model, *settingsMenu) []settingItem {
+	return []settingItem{
+		{"Keys", func(d *settingsDraft) string { return d.keys }, func(d *settingsDraft) huh.Field {
+			return huh.NewSelect[string]().Title("Keys").Options(
+				huh.NewOption("default: type and send, as in a chat", "default"),
+				huh.NewOption("vim: insert, normal and visual modes; ctrl+h/j/k/l move between the panes; h and l go back and in through menus", "vim"),
+			).Value(&d.keys)
 		}},
 		{"Background", func(d *settingsDraft) string { return d.background }, func(d *settingsDraft) huh.Field {
 			return huh.NewInput().Title("Background").
@@ -482,12 +494,6 @@ func displayItems(model, *settingsMenu) []settingItem {
 					}
 					return nil
 				}).Value(&d.background)
-		}},
-		{"Keys", func(d *settingsDraft) string { return d.keys }, func(d *settingsDraft) huh.Field {
-			return huh.NewSelect[string]().Title("Keys").Options(
-				huh.NewOption("default: type and send, as in a chat", "default"),
-				huh.NewOption("vim: insert, normal and visual modes; ctrl+h/j/k/l move between the panes; h and l go back and in through menus", "vim"),
-			).Value(&d.keys)
 		}},
 		{"Side panel", func(d *settingsDraft) string { return d.sidebar }, func(d *settingsDraft) huh.Field {
 			return huh.NewSelect[string]().Title("Side panel").Options(
