@@ -201,4 +201,41 @@ func TestLogin(t *testing.T) {
 			t.Errorf("refresh request %v", second)
 		}
 	})
+
+	t.Run("AU-08 an exchange URL gives its own bearer for the access token, kept until it expires", func(t *testing.T) {
+		t.Setenv("XDG_DATA_HOME", t.TempDir())
+		calls := 0
+		var seen http.Header
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			seen = r.Header
+			fmt.Fprintf(w, `{"token":"copilot-%d","expires_at":%d}`, calls, time.Now().Add(time.Hour).Unix())
+		}))
+		defer server.Close()
+		_ = Save("copilot", &oauth2.Token{AccessToken: "gho_x", Expiry: time.Now().Add(time.Hour)})
+		source := NewSource("copilot", config.OAuth{Flow: config.OAuthDevice, ExchangeURL: server.URL}).WithHeaders(map[string]string{"Editor-Version": "vscode/1"})
+
+		first, err1 := source.Token(context.Background())
+		second, err2 := source.Token(context.Background())
+
+		if err1 != nil || err2 != nil || first != "copilot-1" || second != "copilot-1" || calls != 1 {
+			t.Fatalf("tokens %q %q calls %d errs %v %v", first, second, calls, err1, err2)
+		}
+		if seen.Get("Authorization") != "token gho_x" || seen.Get("Editor-Version") != "vscode/1" {
+			t.Errorf("headers %v", seen)
+		}
+	})
+
+	t.Run("AU-09 a refused exchange says the account may lack access", func(t *testing.T) {
+		t.Setenv("XDG_DATA_HOME", t.TempDir())
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "no copilot", http.StatusForbidden) }))
+		defer server.Close()
+		_ = Save("copilot", &oauth2.Token{AccessToken: "gho_x", Expiry: time.Now().Add(time.Hour)})
+
+		_, err := NewSource("copilot", config.OAuth{Flow: config.OAuthDevice, ExchangeURL: server.URL}).Token(context.Background())
+
+		if err == nil || !strings.Contains(err.Error(), "refused") || !strings.Contains(err.Error(), "no copilot") {
+			t.Errorf("err %v", err)
+		}
+	})
 }

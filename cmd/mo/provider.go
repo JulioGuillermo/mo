@@ -55,7 +55,7 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 	}
 	var token func(context.Context) (string, error)
 	if settings.OAuth != nil {
-		token = auth.NewSource(name, *settings.OAuth).Token
+		token = auth.NewSource(name, *settings.OAuth).WithHeaders(settings.Headers).Token
 	}
 	if token == nil && settings.NeedsKey() && settings.Key() == "" {
 		return chosenProvider{}, fmt.Errorf("%s needs an API key and none was found (%s)", name, keyOrigin(settings))
@@ -70,7 +70,7 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 
 	switch settings.Protocol {
 	case "openai":
-		provider := &llm.OpenAI{BaseURL: settings.BaseURL, APIKey: settings.Key(), Token: token}
+		provider := &llm.OpenAI{BaseURL: settings.BaseURL, APIKey: settings.Key(), Token: token, Headers: settings.Headers}
 		if model == "" {
 			first, err := firstModel(ctx, provider)
 			if err != nil {

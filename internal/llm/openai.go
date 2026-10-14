@@ -18,6 +18,8 @@ type OpenAI struct {
 	// Token, when set, gives the bearer at each request instead of APIKey:
 	// a sign-in's token, renewed when it expires.
 	Token func(ctx context.Context) (string, error)
+	// Headers are sent with every request.
+	Headers map[string]string
 	// PromptProgress asks for how far the server is in reading the prompt.
 	// Only for llama-server: other servers may refuse the field.
 	PromptProgress bool
@@ -326,6 +328,10 @@ func (e *StatusError) Error() string {
 }
 
 func (p *OpenAI) headers(ctx context.Context) (map[string]string, error) {
+	headers := map[string]string{}
+	for name, value := range p.Headers {
+		headers[name] = value
+	}
 	key := p.APIKey
 	if p.Token != nil {
 		token, err := p.Token(ctx)
@@ -334,10 +340,10 @@ func (p *OpenAI) headers(ctx context.Context) (map[string]string, error) {
 		}
 		key = token
 	}
-	if key == "" {
-		return nil, nil
+	if key != "" {
+		headers["Authorization"] = "Bearer " + key
 	}
-	return map[string]string{"Authorization": "Bearer " + key}, nil
+	return headers, nil
 }
 
 func (p *OpenAI) url(path string) string {

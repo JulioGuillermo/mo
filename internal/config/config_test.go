@@ -520,3 +520,16 @@ func TestSubscriptionPresets(t *testing.T) {
 		t.Error("claude-code takes JSON and codex one fixed redirect")
 	}
 }
+
+func TestMorePresets(t *testing.T) {
+	presets := Defaults().Providers
+	copilot := presets["copilot"]
+	if copilot.OAuth == nil || copilot.OAuth.Flow != OAuthDevice || copilot.OAuth.ExchangeURL == "" || copilot.Headers["Editor-Version"] == "" {
+		t.Errorf("copilot %+v", copilot)
+	}
+	for _, name := range []string{"github-models", "opencode-zen", "xai", "together", "fireworks", "cerebras", "moonshot", "zai", "qwen", "nvidia", "huggingface", "deepseek"} {
+		if preset := presets[name]; preset.Protocol != "openai" || preset.BaseURL == "" || preset.APIKeyEnv == "" {
+			t.Errorf("%s: %+v", name, preset)
+		}
+	}
+}

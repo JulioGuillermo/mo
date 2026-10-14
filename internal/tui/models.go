@@ -42,7 +42,7 @@ func listModels(ctx context.Context, provider string, settings config.ProviderCo
 	defer cancel()
 	var token func(context.Context) (string, error)
 	if settings.OAuth != nil {
-		token = auth.NewSource(provider, *settings.OAuth).Token
+		token = auth.NewSource(provider, *settings.OAuth).WithHeaders(settings.Headers).Token
 	}
 	switch settings.Protocol {
 	case "cloudcode":
@@ -52,7 +52,7 @@ func listModels(ctx context.Context, provider string, settings config.ProviderCo
 	case "anthropic", "claude-code":
 		return (&llm.Anthropic{BaseURL: settings.BaseURL, APIKey: settings.Key(), Token: token, Subscription: settings.Protocol == "claude-code"}).ListModels(ctx)
 	}
-	return (&llm.OpenAI{BaseURL: settings.BaseURL, APIKey: settings.Key(), Token: token}).ListModels(ctx)
+	return (&llm.OpenAI{BaseURL: settings.BaseURL, APIKey: settings.Key(), Token: token, Headers: settings.Headers}).ListModels(ctx)
 }
 
 // chooseModel loads the models of a provider off the UI goroutine, then

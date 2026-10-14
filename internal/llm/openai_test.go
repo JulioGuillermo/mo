@@ -348,3 +348,19 @@ func TestOpenAIToolStream(t *testing.T) {
 		}
 	})
 }
+
+func TestOpenAIHeaders(t *testing.T) {
+	var seen http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Header
+		_, _ = w.Write([]byte(`{"data":[{"id":"m"}]}`))
+	}))
+	defer server.Close()
+	provider := &OpenAI{BaseURL: server.URL, Headers: map[string]string{"Editor-Version": "vscode/1"}, Token: func(context.Context) (string, error) { return "tok", nil }}
+	if _, err := provider.ListModels(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if seen.Get("Editor-Version") != "vscode/1" || seen.Get("Authorization") != "Bearer tok" {
+		t.Errorf("headers %v", seen)
+	}
+}

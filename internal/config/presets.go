@@ -53,5 +53,33 @@ func presets() map[string]ProviderConfig {
 			Scopes:   []string{"user:profile", "user:inference", "user:sessions:claude_code", "user:mcp_servers", "user:file_upload"},
 			Params:   map[string]string{"code": "true"},
 		}},
+		// Sign in with a GitHub account that has Copilot, as VS Code does.
+		"copilot": {Protocol: "openai", BaseURL: "https://api.githubcopilot.com", Model: "gpt-4.1", Headers: map[string]string{
+			"Editor-Version":         "vscode/1.99.3",
+			"Editor-Plugin-Version":  "copilot-chat/0.26.7",
+			"Copilot-Integration-Id": "vscode-chat",
+			"User-Agent":             "GitHubCopilotChat/0.26.7",
+		}, OAuth: &OAuth{
+			Flow:        OAuthDevice,
+			ClientID:    "Iv1.b507a08c87ecfe98",
+			DeviceURL:   "https://github.com/login/device/code",
+			TokenURL:    "https://github.com/login/oauth/access_token",
+			ExchangeURL: "https://api.github.com/copilot_internal/v2/token",
+			Scopes:      []string{"read:user"},
+		}},
+		// Microsoft's and GitHub's hosted models, with a GitHub token that may use them.
+		"github-models": {Protocol: "openai", BaseURL: "https://models.github.ai/inference", APIKeyEnv: "GITHUB_TOKEN"},
+		// OpenCode's own models.
+		"opencode-zen": {Protocol: "openai", BaseURL: "https://opencode.ai/zen/v1", APIKeyEnv: "OPENCODE_API_KEY"},
+		"xai":          {Protocol: "openai", BaseURL: "https://api.x.ai/v1", APIKeyEnv: "XAI_API_KEY"},
+		"together":     {Protocol: "openai", BaseURL: "https://api.together.xyz/v1", APIKeyEnv: "TOGETHER_API_KEY"},
+		"fireworks":    {Protocol: "openai", BaseURL: "https://api.fireworks.ai/inference/v1", APIKeyEnv: "FIREWORKS_API_KEY"},
+		"cerebras":     {Protocol: "openai", BaseURL: "https://api.cerebras.ai/v1", APIKeyEnv: "CEREBRAS_API_KEY"},
+		"moonshot":     {Protocol: "openai", BaseURL: "https://api.moonshot.ai/v1", APIKeyEnv: "MOONSHOT_API_KEY"},
+		"zai":          {Protocol: "openai", BaseURL: "https://api.z.ai/api/paas/v4", APIKeyEnv: "ZAI_API_KEY"},
+		// Alibaba's DashScope, which serves Qwen.
+		"qwen":        {Protocol: "openai", BaseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", APIKeyEnv: "DASHSCOPE_API_KEY"},
+		"nvidia":      {Protocol: "openai", BaseURL: "https://integrate.api.nvidia.com/v1", APIKeyEnv: "NVIDIA_API_KEY"},
+		"huggingface": {Protocol: "openai", BaseURL: "https://router.huggingface.co/v1", APIKeyEnv: "HF_TOKEN"},
 	}
 }

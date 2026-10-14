@@ -29,6 +29,7 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -58,7 +59,7 @@ func TestProviderForm(t *testing.T) {
 
 		layer, _ := draft.applyTo(config.Config{Provider: "llama-server"})
 
-		if saved := layer.Providers["ollama"]; saved != (config.ProviderConfig{BaseURL: "http://box:11434/v1"}) || layer.Provider != "llama-server" {
+		if saved := layer.Providers["ollama"]; !reflect.DeepEqual(saved, config.ProviderConfig{BaseURL: "http://box:11434/v1"}) || layer.Provider != "llama-server" {
 			t.Errorf("saved = %+v provider = %q", saved, layer.Provider)
 		}
 	})

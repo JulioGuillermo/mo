@@ -188,6 +188,9 @@ type ProviderConfig struct {
 	APIKeyEnv  string `toml:"api_key_env,omitempty"`
 	APIKeyFrom string `toml:"api_key_from,omitempty"`
 	Model      string `toml:"model,omitempty"`
+	// Headers are sent with every request, for the servers that want their
+	// own client's.
+	Headers map[string]string `toml:"headers,omitempty"`
 	// OAuth signs in to the provider instead of a key: the token it gives
 	// is sent as the bearer and renewed when it expires.
 	OAuth *OAuth `toml:"oauth,omitempty"`
@@ -221,6 +224,10 @@ type OAuth struct {
 	// JSON says the token endpoint takes its requests and gives its answers
 	// as JSON, not as a form.
 	JSON bool `toml:"json,omitempty"`
+	// ExchangeURL, when set, is asked for the bearer in exchange for the
+	// access token, with the provider's headers: GitHub Copilot gives a
+	// short-lived token of its own that way.
+	ExchangeURL string `toml:"exchange_url,omitempty"`
 }
 
 // Secret is the client secret, written or from its variable.
@@ -608,6 +615,9 @@ func mergeProvider(base, layer ProviderConfig) ProviderConfig {
 	base.APIKeyEnv = override(base.APIKeyEnv, layer.APIKeyEnv)
 	base.APIKeyFrom = override(base.APIKeyFrom, layer.APIKeyFrom)
 	base.Model = override(base.Model, layer.Model)
+	if layer.Headers != nil {
+		base.Headers = layer.Headers
+	}
 	if layer.OAuth != nil {
 		base.OAuth = layer.OAuth
 	}

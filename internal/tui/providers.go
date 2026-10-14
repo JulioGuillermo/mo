@@ -247,6 +247,7 @@ func (d *providerDraft) applyTo(layer config.Config) (config.Config, error) {
 		APIKeyEnv:  unlessDefault(strings.TrimSpace(d.keyEnv), preset.APIKeyEnv),
 		APIKeyFrom: unlessDefault(d.keyFrom, preset.APIKeyFrom),
 		APIKey:     layer.Providers[name].APIKey,
+		Headers:    layer.Providers[name].Headers,
 	}
 	if d.forgetKey {
 		entry.APIKey = ""
@@ -268,7 +269,7 @@ func (d *providerDraft) applyTo(layer config.Config) (config.Config, error) {
 		layer.Provider = name
 		layer.Model = ""
 	}
-	if entry == (config.ProviderConfig{}) {
+	if reflect.DeepEqual(entry, config.ProviderConfig{}) {
 		layer.Providers = withoutEntry(layer.Providers, name)
 		return layer, nil
 	}

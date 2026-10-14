@@ -127,10 +127,10 @@ func TestLoginSuggestions(t *testing.T) {
 
 	t.Run("OL-12 /login and a space list the providers that sign in", func(t *testing.T) {
 		got := names(typing("/login "))
-		if !slices.Equal(got, []string{"login antigravity", "login claude-code", "login codex"}) {
+		if !slices.Equal(got, []string{"login antigravity", "login claude-code", "login codex", "login copilot"}) {
 			t.Fatalf("suggestions %v", got)
 		}
-		if got := names(typing("/login co")); !slices.Equal(got, []string{"login codex"}) {
+		if got := names(typing("/login cod")); !slices.Equal(got, []string{"login codex"}) {
 			t.Fatalf("filtered %v", got)
 		}
 		if got := names(typing("/title x")); got != nil {

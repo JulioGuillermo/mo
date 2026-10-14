@@ -98,16 +98,36 @@ func Logout(provider string) error {
 type Source struct {
 	provider string
 	settings config.OAuth
+	headers  map[string]string
 	mu       sync.Mutex
 	token    *oauth2.Token
+
+	exchangeMu     sync.Mutex
+	exchanged      string
+	exchangedUntil time.Time
 }
 
 func NewSource(provider string, settings config.OAuth) *Source {
 	return &Source{provider: provider, settings: settings}
 }
 
-// Token is a valid access token, or ErrNeedsLogin saying how to get one.
+// WithHeaders sets the headers the exchange for the bearer is asked with.
+func (s *Source) WithHeaders(headers map[string]string) *Source {
+	s.headers = headers
+	return s
+}
+
+// Token is the bearer to send: a valid access token, or what the provider
+// gives in exchange for it. ErrNeedsLogin says how to get one.
 func (s *Source) Token(ctx context.Context) (string, error) {
+	access, err := s.accessToken(ctx)
+	if err != nil || s.settings.ExchangeURL == "" {
+		return access, err
+	}
+	return s.exchange(ctx, access)
+}
+
+func (s *Source) accessToken(ctx context.Context) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.token.Valid() {
