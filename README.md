@@ -45,7 +45,7 @@ Two protocols cover almost everything (three more serve the subscription logins:
 | `groq` | openai | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` |
 | `deepseek` | openai | `https://api.deepseek.com/v1` | `DEEPSEEK_API_KEY` |
 | `mistral` | openai | `https://api.mistral.ai/v1` | `MISTRAL_API_KEY` |
-| `antigravity` | cloudcode | `https://daily-cloudcode-pa.sandbox.googleapis.com` | `/login antigravity` (below) |
+| `antigravity` | cloudcode | `https://daily-cloudcode-pa.sandbox.googleapis.com` | `/login antigravity` |
 | `copilot` | openai | `https://api.githubcopilot.com` | `/login copilot` (GitHub device code) |
 | `github-models` | openai | `https://models.github.ai/inference` | `GITHUB_TOKEN` |
 | `opencode-zen` | openai | `https://opencode.ai/zen/v1` | `OPENCODE_API_KEY` |
@@ -58,8 +58,8 @@ Two protocols cover almost everything (three more serve the subscription logins:
 | `qwen` | openai | `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` | `DASHSCOPE_API_KEY` |
 | `nvidia` | openai | `https://integrate.api.nvidia.com/v1` | `NVIDIA_API_KEY` |
 | `huggingface` | openai | `https://router.huggingface.co/v1` | `HF_TOKEN` |
-| `codex` | responses | `https://chatgpt.com/backend-api/codex` | `/login codex` (below) |
-| `claude-code` | claude-code | `https://api.anthropic.com` | `/login claude-code` (below) |
+| `codex` | responses | `https://chatgpt.com/backend-api/codex` | `/login codex` |
+| `claude-code` | claude-code | `https://api.anthropic.com` | `/login claude-code` |
 
 With no provider set, mo tries llama-server, ollama and lmstudio in that order.
 With no model set on an openai-type provider, it uses the first model the server lists.
@@ -94,26 +94,7 @@ client_secret_env = ""     # when the client has a secret
 
 `/login corp` signs in; the token is kept in `~/.local/share/mo/oauth/corp.json`, for you only, and
 renewed with its refresh token when it expires. `/logout corp` forgets it.
-Subscription logins have their own providers (below); no other tool's token is ever read.
-
-### Antigravity
-
-The `antigravity` provider signs in as Antigravity does, with its OAuth client (public, as in any
-installed app) and Google's browser flow with PKCE. In mo, run `/login antigravity`: it opens the
-browser, you pick your Google account, and the token is kept in `~/.local/share/mo/oauth/antigravity.json`
-and renewed when it expires. The client only accepts `http://localhost:51121/oauth-callback`, so that
-port must be free during the sign-in (`redirect_url` in its `[oauth]` settings). It offers Antigravity's
-Gemini, Claude and gpt-oss models: pick one in `/providers`, or `-p antigravity -m gemini-3-flash`.
-
-### Codex and Claude Code
-
-`codex` signs in with a ChatGPT account and `claude-code` with a Claude account, each as the
-official tool does: `/login codex` or `/login claude-code` opens the browser and keeps the token in
-`~/.local/share/mo/oauth/<provider>.json`, renewed when it expires; in `/providers` the same is the
-**Log in** button. `codex` needs port 1455 free during the sign-in. Their models come from the
-provider's own list (`/model`); the defaults are `gpt-5.6` and `claude-sonnet-5-5`.
-These providers send their requests like Codex and Claude Code do (their headers and, for Claude
-Code, the system line it starts with), since their servers expect that.
+Subscription logins have their own providers.
 
 ### Notes
 
