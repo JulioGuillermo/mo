@@ -527,7 +527,7 @@ func TestMorePresets(t *testing.T) {
 	if copilot.OAuth == nil || copilot.OAuth.Flow != OAuthDevice || copilot.OAuth.ExchangeURL == "" || copilot.Headers["Editor-Version"] == "" {
 		t.Errorf("copilot %+v", copilot)
 	}
-	for _, name := range []string{"github-models", "opencode-zen", "xai", "together", "fireworks", "cerebras", "moonshot", "zai", "qwen", "nvidia", "huggingface", "deepseek"} {
+	for _, name := range []string{"github-models", "opencode", "opencode-zen", "xai", "together", "fireworks", "cerebras", "moonshot", "zai", "qwen", "nvidia", "huggingface", "deepseek"} {
 		if preset := presets[name]; preset.Protocol != "openai" || preset.BaseURL == "" || preset.APIKeyEnv == "" {
 			t.Errorf("%s: %+v", name, preset)
 		}

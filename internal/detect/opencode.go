@@ -11,7 +11,11 @@ import (
 
 const opencodeOrigin = "opencode"
 
-var opencodeToPreset = map[string]string{"google": "gemini"}
+var opencodeToPreset = map[string]string{
+	"google":       "gemini",
+	"zen":          "opencode",
+	"opencode-zen": "opencode",
+}
 
 var opencodeEnvReference = regexp.MustCompile(`^\{env:([A-Za-z_][A-Za-z0-9_]*)\}$`)
 
@@ -46,7 +50,13 @@ func opencodeLogin(cfg config.Config, name string, entry config.OpencodeEntry) F
 	if mapped, ok := opencodeToPreset[name]; ok {
 		preset = mapped
 	}
-	finding := Finding{Provider: preset + "-opencode", Origin: opencodeOrigin + " " + entry.Type + " login for " + name}
+	providerName := preset + "-opencode"
+	origin := opencodeOrigin + " " + entry.Type + " login for " + name
+	if preset == "opencode" {
+		providerName = "opencode"
+		origin = opencodeOrigin + " " + entry.Type + " login"
+	}
+	finding := Finding{Provider: providerName, Origin: origin}
 	switch entry.Type {
 	case "api":
 	case "oauth":

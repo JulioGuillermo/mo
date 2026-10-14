@@ -14,11 +14,17 @@ const (
 )
 
 // KeyFrom reads an API key that another coding tool stored, at the moment it
-// is needed. source is "codex" or "opencode:<provider>". Keys that come from
+// is needed. source is "codex", "opencode" or "opencode:<provider>". Keys that come from
 // a subscription login are never returned.
 func KeyFrom(source string) string {
 	if source == KeyFromCodex {
 		return ReadCodexAuth().UsableKey()
+	}
+	if source == "opencode" {
+		if key := OpencodeAuth()["opencode"].Key; key != "" {
+			return key
+		}
+		return OpencodeAuth()["zen"].Key
 	}
 	if provider, ok := strings.CutPrefix(source, keyFromOpencodePrefix); ok {
 		return OpencodeAuth()[provider].Key

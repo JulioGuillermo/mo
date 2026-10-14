@@ -48,6 +48,7 @@ Two protocols cover almost everything (three more serve the subscription logins:
 | `antigravity` | cloudcode | `https://daily-cloudcode-pa.sandbox.googleapis.com` | `/login antigravity` |
 | `copilot` | openai | `https://api.githubcopilot.com` | `/login copilot` (GitHub device code) |
 | `github-models` | openai | `https://models.github.ai/inference` | `GITHUB_TOKEN` |
+| `opencode` | openai | `https://opencode.ai/zen/v1` | `OPENCODE_API_KEY` or opencode login |
 | `opencode-zen` | openai | `https://opencode.ai/zen/v1` | `OPENCODE_API_KEY` |
 | `xai` | openai | `https://api.x.ai/v1` | `XAI_API_KEY` |
 | `together` | openai | `https://api.together.xyz/v1` | `TOGETHER_API_KEY` |
@@ -75,7 +76,7 @@ With no model set on an openai-type provider, it uses the first model the server
 | API logins in opencode's `auth.json` | `<provider>-opencode`, key read from opencode when needed |
 | providers with a `baseURL` in `opencode.json` | `opencode-<name>`; `{env:NAME}` keys only |
 
-mo stores a reference (`api_key_from = "codex"` or `"opencode:<provider>"`), never a copy of the key.
+mo stores a reference (`api_key_from = "codex"`, `"opencode"` or `"opencode:<provider>"`), never a copy of the key.
 
 A provider can sign in with OAuth 2 instead of a key, set in its form in `/providers` or by hand:
 

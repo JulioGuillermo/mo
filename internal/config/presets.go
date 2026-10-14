@@ -70,6 +70,7 @@ func presets() map[string]ProviderConfig {
 		// Microsoft's and GitHub's hosted models, with a GitHub token that may use them.
 		"github-models": {Protocol: "openai", BaseURL: "https://models.github.ai/inference", APIKeyEnv: "GITHUB_TOKEN"},
 		// OpenCode's own models.
+		"opencode":     {Protocol: "openai", BaseURL: "https://opencode.ai/zen/v1", APIKeyEnv: "OPENCODE_API_KEY"},
 		"opencode-zen": {Protocol: "openai", BaseURL: "https://opencode.ai/zen/v1", APIKeyEnv: "OPENCODE_API_KEY"},
 		"xai":          {Protocol: "openai", BaseURL: "https://api.x.ai/v1", APIKeyEnv: "XAI_API_KEY"},
 		"together":     {Protocol: "openai", BaseURL: "https://api.together.xyz/v1", APIKeyEnv: "TOGETHER_API_KEY"},

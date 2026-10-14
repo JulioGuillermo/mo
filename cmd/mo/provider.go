@@ -48,6 +48,12 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 	settings, ok := cfg.Providers[name]
 	if !ok {
 		settings, ok = detectedProvider(ctx, cfg, name)
+	} else if settings.NeedsKey() && settings.Key() == "" {
+		if detected, found := detectedProvider(ctx, cfg, name); found && detected.Key() != "" {
+			settings = detected
+		} else if detected, found := detectedProvider(ctx, cfg, name+"-opencode"); found && detected.Key() != "" {
+			settings = detected
+		}
 	}
 	if !ok {
 		known := slices.Sorted(maps.Keys(cfg.Providers))

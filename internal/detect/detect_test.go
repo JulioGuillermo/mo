@@ -12,6 +12,7 @@ package detect
 // | DT-08 | Happy    | a keyless openai provider that answers is a usable local server      | P1       |
 // | DT-09 | Security | a codex key stored with a ChatGPT login is not usable                 | P0       |
 // | DT-10 | Security | an imported provider never keeps mo's own literal api_key            | P0       |
+// | DT-11 | Happy    | an opencode API login for opencode becomes the opencode provider      | P0       |
 
 import (
 	"context"
@@ -216,6 +217,23 @@ func TestImportedKeys(t *testing.T) {
 
 		if found == nil || found.Settings.APIKey != "" || found.Settings.Key() != "sk-codex" {
 			t.Errorf("settings = %+v", found.Settings)
+		}
+	})
+
+	t.Run("DT-11 an opencode API login for opencode becomes the opencode provider", func(t *testing.T) {
+		h := isolatedHomes(t)
+		writeFile(t, filepath.Join(h.data, "opencode", "auth.json"), `{"opencode":{"type":"api","key":"sk-opencode-test"}}`)
+
+		found := find(Run(ctx, remoteOnly()), "opencode")
+
+		if found == nil || !found.Usable || found.Settings == nil {
+			t.Fatalf("found = %+v", found)
+		}
+		if found.Settings.APIKey != "" || found.Settings.Key() != "sk-opencode-test" || found.Settings.BaseURL != "https://opencode.ai/zen/v1" {
+			t.Errorf("settings = %+v", found.Settings)
+		}
+		if key := config.KeyFrom("opencode"); key != "sk-opencode-test" {
+			t.Errorf("KeyFrom(opencode) = %q", key)
 		}
 	})
 }
