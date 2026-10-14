@@ -7,7 +7,7 @@ package tui
 // | LT-03 | Happy    | A file being written shows its path, line count and last lines; tool_call shows the tool | P1 |
 // | LT-04 | Edge     | The forming view goes when the call is whole                         | P1       |
 // | LT-05 | Happy    | The spinner says what the agent waits on, compacting, and goes back to working | P1 |
-// | LT-06 | Happy    | Each thing the agent does has its word and colour, in spinner and status | P1    |
+// | LT-06 | Happy    | Each thing the agent does has its word and colour, in the spinner only | P1      |
 // | LT-07 | Happy    | While llama-server reads the prompt, the state says how far, cache left out | P1   |
 
 import (
@@ -119,7 +119,7 @@ func TestActivity(t *testing.T) {
 }
 
 func TestStates(t *testing.T) {
-	t.Run("LT-06 each thing the agent does has its word and colour, in spinner and status", func(t *testing.T) {
+	t.Run("LT-06 each thing the agent does has its word and colour, in the spinner only", func(t *testing.T) {
 		m := conversationModel()
 		m.running, m.cancel = true, func() {}
 		colors := statePalette(true)
@@ -148,8 +148,12 @@ func TestStates(t *testing.T) {
 			if got.word != c.word || got.tint != c.tint {
 				t.Errorf("%s: word = %q", c.name, got.word)
 			}
-			if !strings.Contains(ansi.Strip(c.setup(m).statusLine()), c.word) {
-				t.Errorf("%s: the status line does not say %q", c.name, c.word)
+			spinner, _ := c.setup(m).upperLayout()
+			if !strings.Contains(ansi.Strip(spinner), c.word) {
+				t.Errorf("%s: the spinner does not say %q", c.name, c.word)
+			}
+			if strings.Contains(ansi.Strip(c.setup(m).statusLine()), c.word) {
+				t.Errorf("%s: the status line says %q too", c.name, c.word)
 			}
 		}
 	})

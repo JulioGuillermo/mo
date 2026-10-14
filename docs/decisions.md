@@ -595,7 +595,7 @@
 - The loop guard leaves the pieces of tool calls alone: a file with repeated lines is no loop.
 - The spinner says what the agent waits on besides the reply: compacting the conversation, or the
   model judging a command in auto mode.
-- While the agent works, the spinner and the start of the status line say what it does in a word
+- While the agent works, the spinner says what it does in a word
   with its colour: reasoning (blue), writing (yellow), reading with a tool (green), changing with
   one (red: write, edit, mkdir, rm, bash, and what the registry counts as a change or a warning),
   compacting (purple), reading the prompt with how far it is (teal, llama-server only), waiting for the model (grey), and your turn when a dialog waits on the user.

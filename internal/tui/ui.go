@@ -98,6 +98,8 @@ type model struct {
 	// lastEvent is the kind of what the model sent last, and runningTool
 	// the call running now: they say what the agent is doing.
 	lastEvent llm.EventKind
+	// branch is the git branch of the working directory, as last read.
+	branch string
 	// titling is the title the model is working out, after /title auto.
 	titling *titling
 	// promptRead is how far the server is in reading the prompt, when it
@@ -223,7 +225,7 @@ func (m model) Init() tea.Cmd {
 	if m.session.Continue {
 		start = tea.Sequence(start, listConversations(m.session.WorkDir, true))
 	}
-	return tea.Batch(start, tea.RequestBackgroundColor, textarea.Blink)
+	return tea.Batch(start, tea.RequestBackgroundColor, textarea.Blink, readBranch(m.session.WorkDir))
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -309,7 +311,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case toolDoneMsg:
 		m.runningTool = nil
 		m.finishTool(msg.id, msg.output, msg.isError)
-		return m, m.tickJobs()
+		return m, tea.Batch(m.tickJobs(), readBranch(m.session.WorkDir))
 	case tea.MouseWheelMsg:
 		m.scroll(msg.Button == tea.MouseWheelUp, 3)
 		return m, nil
@@ -357,12 +359,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.openDialog(msg)
 	case tea.FocusMsg:
 		m.focused = true
+		return m, readBranch(m.session.WorkDir)
+	case branchMsg:
+		m.branch = string(msg)
 		return m, nil
 	case tea.BlurMsg:
 		m.focused = false
 		return m, nil
 	case runDoneMsg:
-		return m.finishRun(msg.err)
+		finished, cmd := m.finishRun(msg.err)
+		return finished, tea.Batch(cmd, readBranch(m.session.WorkDir))
 	case spinner.TickMsg:
 		if !m.running && m.titling == nil {
 			return m, nil
@@ -934,30 +940,47 @@ func (m model) statusLayout() (string, []region) {
 	return m.appendSuffix(status, regions)
 }
 
-// appendSuffix pads the status to m.width and appends branch/folder.
+// appendSuffix puts the branch and the folder at the right end of the
+// status, as much of them as fits: both, the folder alone, or nothing. The
+// branch is left out on master and main.
 func (m model) appendSuffix(status string, regions []region) (string, []region) {
-	if m.width <= 0 || m.width <= ansi.StringWidth(status) {
+	if m.width <= 0 {
 		return status, regions
 	}
-	branch := ""
-	if b, err := repoBranch(m.session.WorkDir); err == nil && b != "" && b != "master" && b != "main" {
-		branch = b
-	}
-	folder := filepath.Base(m.session.WorkDir)
-	totalSuffix := ansi.StringWidth(branch) + 3 + ansi.StringWidth(folder) // " · " = 3
-	if totalSuffix > m.width-ansi.StringWidth(status) {
-		totalSuffix = m.width - ansi.StringWidth(status)
-	}
-	pad := m.width - ansi.StringWidth(status) - totalSuffix
-	if pad < 0 {
-		pad = 0
-	}
-	paint := func(color color.Color, text string) string {
-		return lipgloss.NewStyle().Foreground(color).Render(text)
-	}
 	colors := statusPalette(m.printer == nil || m.printer.isDark())
-	status += strings.Repeat(" ", pad) + paint(colors.model, branch) + paint(colors.label, " · ") + paint(colors.low, folder)
+	folder := lipgloss.NewStyle().Foreground(colors.label).Render(filepath.Base(m.session.WorkDir))
+	choices := []string{folder}
+	if m.branch != "" && m.branch != "master" && m.branch != "main" {
+		branch := lipgloss.NewStyle().Foreground(colors.model).Render(" " + m.branch)
+		choices = []string{branch + lipgloss.NewStyle().Foreground(colors.label).Render(" · ") + folder, folder}
+	}
+	free := m.width - ansi.StringWidth(status) - statusSuffixGap
+	for _, suffix := range choices {
+		if width := ansi.StringWidth(suffix); width <= free {
+			return status + strings.Repeat(" ", m.width-ansi.StringWidth(status)-width) + suffix, regions
+		}
+	}
 	return status, regions
+}
+
+// statusSuffixGap is the least room between the status and its suffix.
+const statusSuffixGap = 2
+
+// branchMsg is the branch checked out in the working directory, read off
+// the UI goroutine.
+type branchMsg string
+
+// readBranch reads the branch once, when it may have changed: at start,
+// after a tool or a turn, and when the terminal gets the focus back, never
+// on every redraw.
+func readBranch(workDir string) tea.Cmd {
+	return func() tea.Msg {
+		repo, err := gitops.Open(workDir)
+		if err != nil {
+			return branchMsg("")
+		}
+		return branchMsg(repo.CurrentBranch())
+	}
 }
 
 // statusParts says which parts of the status line to show.
@@ -1153,14 +1176,4 @@ func formatTokens(count int) string {
 		return fmt.Sprint(count)
 	}
 	return fmt.Sprintf("%.1fk", float64(count)/1000)
-}
-
-// repoBranch returns the git branch name of the working directory, or an
-// empty string if it's not a git repo or on master/main.
-func repoBranch(workDir string) (string, error) {
-	repo, err := gitops.Open(workDir)
-	if err != nil {
-		return "", err
-	}
-	return repo.CurrentBranch()
 }

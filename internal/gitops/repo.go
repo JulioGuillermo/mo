@@ -132,18 +132,14 @@ func (r *Repo) head() (*object.Commit, string, error) {
 	return commit, name, nil
 }
 
-// CurrentBranch returns the current branch name, or an empty string if
-// detached.
-func (r *Repo) CurrentBranch() (string, error) {
+// CurrentBranch is the branch checked out, or "" with HEAD detached or no
+// commit yet.
+func (r *Repo) CurrentBranch() string {
 	ref, err := r.repo.Head()
-	if err != nil {
-		return "", err
+	if err != nil || !ref.Name().IsBranch() {
+		return ""
 	}
-	name := ref.Name().Short()
-	if !ref.Name().IsBranch() {
-		return "", nil // detached HEAD
-	}
-	return name, nil
+	return ref.Name().Short()
 }
 
 func (r *Repo) commitOf(revision string) (*object.Commit, error) {
