@@ -297,6 +297,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.tickJobs()
 	case jobStartedMsg:
 		return m, m.tickJobs()
+	case vimPasteMsg:
+		return m.vimPasted(msg)
 	case loginMsg:
 		return m.loggedIn(msg)
 	case titledMsg:

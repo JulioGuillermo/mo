@@ -335,3 +335,21 @@ func (m *model) dropAttachment(label string) {
 	m.input.SetValue(strings.ReplaceAll(value, label, ""))
 	delete(m.attachments, label)
 }
+
+// readClipboardText reads the text on the clipboard, for vim's p.
+func readClipboardText(ctx context.Context) (string, error) {
+	var name string
+	var args []string
+	switch {
+	case runtime.GOOS == "darwin":
+		name = "pbpaste"
+	case os.Getenv("WAYLAND_DISPLAY") != "" && found("wl-paste"):
+		name, args = "wl-paste", []string{"--no-newline", "--type", "text/plain"}
+	case os.Getenv("DISPLAY") != "" && found("xclip"):
+		name, args = "xclip", []string{"-selection", "clipboard", "-o"}
+	default:
+		return "", fmt.Errorf("no clipboard program")
+	}
+	out, err := exec.CommandContext(ctx, name, args...).Output()
+	return string(out), err
+}

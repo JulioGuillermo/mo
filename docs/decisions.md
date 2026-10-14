@@ -499,9 +499,9 @@
 - The conversation gets its id when its first turn starts, not when it is first saved, so its
   commands have a folder from the first one.
 - Every command shows in the side panel while it runs, its dot red when it blocks the model and
-  orange in the background; once it ends only those run in the background stay there.
-- A tool call's dot says what it does: red a command that blocks the model, orange one in the
-  background, yellow reading a command's output, pink a change, blue a read.
+  yellow in the background; once it ends only those run in the background stay there.
+- A tool call's dot says what it does: red a command that blocks the model, yellow one in the
+  background, green reading a command's output, pink a change, blue a read.
 - The live viewer reads the job's file again every 300 ms while it runs, rather than streaming:
   the output is on disk already, and one reader for running and ended jobs keeps it simple. It
   takes the whole screen like settings do, and the agent goes on underneath.
@@ -838,3 +838,8 @@
   and out as directories do in a file manager. Text fields keep h and l for typing.
 - esc in normal mode does what it did: stop the run, or twice to go back to a prompt. ctrl+c,
   ctrl+b, ctrl+o and the others keep their meaning in every mode.
+- Copying and pasting go through the system clipboard, as vim's `+` register: y, yy, dd, x, D and a
+  visual d put what they take there, whole lines with a line break after; p and P read it, whole
+  lines going below or above. Without a clipboard program p pastes what mo kept itself.
+- u undoes one normal-mode edit or a whole insert, as vim does, from snapshots of the input;
+  ctrl+r redoes. Counts (3j) are left out.

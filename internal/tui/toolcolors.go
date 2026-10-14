@@ -27,8 +27,8 @@ var toolKindColors = map[toolKind]color.Color{
 	kindRead:       lipgloss.Color("#7aa2f7"),
 	kindWrite:      lipgloss.Color("#ff79c6"),
 	kindExec:       lipgloss.Color("#f7768e"),
-	kindBackground: lipgloss.Color("#ff9e64"),
-	kindOutput:     lipgloss.Color("#e0af68"),
+	kindBackground: lipgloss.Color("#e0af68"),
+	kindOutput:     lipgloss.Color("#9ece6a"),
 }
 
 // toolMark is the coloured dot before a tool call.

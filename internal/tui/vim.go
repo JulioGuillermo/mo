@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -42,7 +43,20 @@ type vimState struct {
 	line    int
 	anchor  int
 	item    int
+	// register is what y, d and x took, for p; linewise when whole lines.
+	register string
+	linewise bool
+	// undo and redo are the input as it was before each change.
+	undo, redo []inputSnapshot
 }
+
+// inputSnapshot is the input's text and where its cursor was.
+type inputSnapshot struct {
+	value    string
+	row, col int
+}
+
+const vimUndoDepth = 100
 
 var (
 	vimCursorLine = lipgloss.NewStyle().Background(lipgloss.Color("#2a3355"))
@@ -95,12 +109,14 @@ func (m model) vimKey(msg tea.KeyPressMsg) (bool, tea.Model, tea.Cmd) {
 	}
 	switch pressed {
 	case "ctrl+h", "ctrl+j", "ctrl+k", "ctrl+l":
+		m.input.ClearSelection()
 		m.movePane(pressed)
 		return true, m, nil
 	case "ctrl+c", "ctrl+d", "ctrl+b", "ctrl+o", "ctrl+v", "shift+tab", "pgup", "pgdown", "shift+up", "shift+down":
 		return false, m, nil
 	case "esc":
 		if m.vim.mode == vimVisual {
+			m.input.ClearSelection()
 			m.vim.mode = vimNormal
 			return true, m, nil
 		}
@@ -110,6 +126,7 @@ func (m model) vimKey(msg tea.KeyPressMsg) (bool, tea.Model, tea.Cmd) {
 		}
 		return false, m, nil
 	case ":":
+		m.remember()
 		m.vim.mode, m.vim.pane = vimInsert, paneInput
 		m.input.SetValue("/")
 		m.input.CursorEnd()
@@ -155,32 +172,43 @@ func (m *model) enterConversation() {
 }
 
 // inputKey moves and edits the input as vim's normal mode does; insert
-// keys go back to writing.
+// keys go back to writing, v selects.
 func (m model) inputKey(pressed string) (tea.Model, tea.Cmd, bool) {
 	send := func(msg tea.KeyPressMsg) {
 		m.input, _ = m.input.Update(msg)
 	}
-	if m.vim.pending == "d" {
+	if m.vim.mode == vimVisual {
+		next, cmd := m.inputVisualKey(pressed)
+		return next, cmd, true
+	}
+	if pending := m.vim.pending; pending != "" {
 		m.vim.pending = ""
-		if pressed == "d" {
+		switch pending + pressed {
+		case "dd":
+			m.remember()
+			cmd := m.yank(m.currentInputLine(), true)
 			m.deleteInputLine()
+			return m, cmd, true
+		case "yy":
+			cmd := m.yank(m.currentInputLine(), true)
+			return m, tea.Batch(cmd, m.flashNote("copied the line")), true
 		}
 		return m, nil, true
 	}
 	switch pressed {
 	case "i":
-		m.vim.mode = vimInsert
+		m.startInsert()
 	case "a":
-		m.vim.mode = vimInsert
+		m.startInsert()
 		send(tea.KeyPressMsg{Code: tea.KeyRight})
 	case "A":
-		m.vim.mode = vimInsert
+		m.startInsert()
 		m.input.CursorEnd()
 	case "I":
-		m.vim.mode = vimInsert
+		m.startInsert()
 		m.input.CursorStart()
 	case "o":
-		m.vim.mode = vimInsert
+		m.startInsert()
 		m.input.CursorEnd()
 		m.input.InsertString("\n")
 	case "h", "left":
@@ -196,11 +224,34 @@ func (m model) inputKey(pressed string) (tea.Model, tea.Cmd, bool) {
 	case "$":
 		m.input.CursorEnd()
 	case "x":
-		send(tea.KeyPressMsg{Code: tea.KeyDelete})
+		if line := []rune(m.currentInputLine()); m.input.Column() < len(line) {
+			m.remember()
+			cmd := m.yank(string(line[m.input.Column()]), false)
+			send(tea.KeyPressMsg{Code: tea.KeyDelete})
+			return m, cmd, true
+		}
 	case "D":
-		send(tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl})
-	case "d":
-		m.vim.pending = "d"
+		if line := []rune(m.currentInputLine()); m.input.Column() < len(line) {
+			m.remember()
+			cmd := m.yank(string(line[m.input.Column():]), false)
+			send(tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl})
+			return m, cmd, true
+		}
+	case "d", "y":
+		m.vim.pending = pressed
+	case "p", "P":
+		return m, pasteFromClipboard(pressed == "P"), true
+	case "u":
+		m.undoInput(true)
+	case "ctrl+r":
+		m.undoInput(false)
+	case "v", "V":
+		m.vim.mode = vimVisual
+		m.input.ClearSelection()
+		if pressed == "V" {
+			m.input.CursorStart()
+			m.selectInput(func() { m.input.CursorEnd() })
+		}
 	case "j", "down":
 		next, cmd := m.handleKey(tea.KeyPressMsg{Code: tea.KeyDown})
 		return next, cmd, true
@@ -213,6 +264,199 @@ func (m model) inputKey(pressed string) (tea.Model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 	return m, nil, true
+}
+
+// inputVisualKey extends the selection of the input with the moves of
+// normal mode, and copies or deletes it.
+func (m model) inputVisualKey(pressed string) (tea.Model, tea.Cmd) {
+	send := func(msg tea.KeyPressMsg) {
+		m.input, _ = m.input.Update(msg)
+	}
+	switch pressed {
+	case "h", "left":
+		send(tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModShift})
+	case "l", "right":
+		send(tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift})
+	case "w", "e":
+		send(tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift | tea.ModAlt})
+	case "b":
+		send(tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModShift | tea.ModAlt})
+	case "j", "down":
+		send(tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModShift})
+	case "k", "up":
+		send(tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModShift})
+	case "0", "^":
+		m.selectInput(func() { m.input.CursorStart() })
+	case "$":
+		m.selectInput(func() { m.input.CursorEnd() })
+	case "y":
+		text := m.input.SelectedText()
+		cmd := m.yank(text, false)
+		m.input.ClearSelection()
+		m.vim.mode = vimNormal
+		return m, tea.Batch(cmd, m.flashNote(fmt.Sprintf("copied %d characters", len([]rune(text)))))
+	case "d", "x":
+		m.vim.mode = vimNormal
+		if m.input.HasSelection() {
+			m.remember()
+			cmd := m.yank(m.input.SelectedText(), false)
+			m.input.DeleteSelection()
+			return m, cmd
+		}
+	case "v", "V":
+		m.input.ClearSelection()
+		m.vim.mode = vimNormal
+	}
+	return m, nil
+}
+
+// selectInput extends the selection to where move puts the cursor, a
+// character at a time as shift and the arrows do.
+func (m *model) selectInput(move func()) {
+	target := m.input
+	move()
+	row, col := m.input.Line(), m.input.Column()
+	m.input = target
+	for range 10000 {
+		switch {
+		case m.input.Line() < row || (m.input.Line() == row && m.input.Column() < col):
+			m.input, _ = m.input.Update(tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift})
+		case m.input.Line() > row || (m.input.Line() == row && m.input.Column() > col):
+			m.input, _ = m.input.Update(tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModShift})
+		default:
+			return
+		}
+	}
+}
+
+// startInsert goes to writing, remembering the input to undo all of it at
+// once.
+func (m *model) startInsert() {
+	m.remember()
+	m.vim.mode = vimInsert
+}
+
+// remember keeps the input as it is, to undo what comes next.
+func (m *model) remember() {
+	m.vim.undo = append(m.vim.undo, m.snapshot())
+	if len(m.vim.undo) > vimUndoDepth {
+		m.vim.undo = m.vim.undo[1:]
+	}
+	m.vim.redo = nil
+}
+
+func (m *model) snapshot() inputSnapshot {
+	return inputSnapshot{value: m.input.Value(), row: m.input.Line(), col: m.input.Column()}
+}
+
+// undoInput puts the input back as it was before the last change, or
+// again as it was after it.
+func (m *model) undoInput(undo bool) {
+	from, to := &m.vim.undo, &m.vim.redo
+	if !undo {
+		from, to = to, from
+	}
+	for len(*from) > 0 {
+		last := (*from)[len(*from)-1]
+		*from = (*from)[:len(*from)-1]
+		if last.value == m.input.Value() {
+			continue
+		}
+		*to = append(*to, m.snapshot())
+		m.restore(last)
+		return
+	}
+}
+
+func (m *model) restore(snapshot inputSnapshot) {
+	m.input.SetValue(snapshot.value)
+	m.input.MoveToBegin()
+	for range snapshot.row {
+		before := m.input.Line()
+		m.input.CursorDown()
+		if m.input.Line() == before {
+			break
+		}
+	}
+	m.input.SetCursorColumn(snapshot.col)
+}
+
+// yank keeps text for p, and puts it on the clipboard, a line break after
+// whole lines as vim does.
+func (m *model) yank(text string, linewise bool) tea.Cmd {
+	m.vim.register, m.vim.linewise = text, linewise
+	if linewise {
+		text += "\n"
+	}
+	return tea.Batch(tea.SetClipboard(text), copyToSystem(text))
+}
+
+// vimPasteMsg is the clipboard read for p or P.
+type vimPasteMsg struct {
+	text   string
+	ok     bool
+	before bool
+}
+
+// pasteFromClipboard reads the clipboard for p, which pastes the register
+// when it cannot be read.
+func pasteFromClipboard(before bool) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), clipboardTimeout)
+		defer cancel()
+		text, err := readClipboardText(ctx)
+		return vimPasteMsg{text: text, ok: err == nil, before: before}
+	}
+}
+
+// vimPasted pastes what the clipboard held: whole lines when it ends in a
+// line break or is what a line yank put there.
+func (m model) vimPasted(msg vimPasteMsg) (tea.Model, tea.Cmd) {
+	if msg.ok && msg.text != "" {
+		text := strings.TrimSuffix(msg.text, "\n")
+		linewise := strings.HasSuffix(msg.text, "\n") || (m.vim.linewise && text == m.vim.register)
+		m.vim.register, m.vim.linewise = text, linewise
+	}
+	m.paste(msg.before)
+	return m, nil
+}
+
+// paste puts the register after the cursor, or before with P; whole lines
+// go below the line, or above.
+func (m *model) paste(before bool) {
+	if m.vim.register == "" {
+		return
+	}
+	m.remember()
+	switch {
+	case m.vim.linewise && before:
+		m.input.CursorStart()
+		m.input.InsertString(m.vim.register + "\n")
+	case m.vim.linewise:
+		m.input.CursorEnd()
+		m.input.InsertString("\n" + m.vim.register)
+	case before:
+		m.input.InsertString(m.vim.register)
+	default:
+		if m.input.Column() < len([]rune(m.currentInputLine())) {
+			m.input, _ = m.input.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+		}
+		m.input.InsertString(m.vim.register)
+	}
+}
+
+// currentInputLine is the line of the input the cursor is on.
+func (m model) currentInputLine() string {
+	lines := strings.Split(m.input.Value(), "\n")
+	return lines[min(m.input.Line(), len(lines)-1)]
+}
+
+// flashNote says something in the status line for a moment.
+func (m *model) flashNote(text string) tea.Cmd {
+	m.flashes++
+	m.flash = text
+	number := m.flashes
+	return tea.Tick(flashTime, func(time.Time) tea.Msg { return flashDoneMsg(number) })
 }
 
 // deleteInputLine deletes the line of the input the cursor is on.
@@ -316,11 +560,8 @@ func (m model) copyLines(from, to int) (tea.Model, tea.Cmd) {
 		picked = append(picked, strings.TrimRight(ansi.Strip(line), " "))
 	}
 	text := strings.Join(picked, "\n")
-	m.flashes++
-	m.flash = fmt.Sprintf("copied %d lines", to-from+1)
-	number := m.flashes
-	return m, tea.Batch(tea.SetClipboard(text), copyToSystem(text),
-		tea.Tick(flashTime, func(time.Time) tea.Msg { return flashDoneMsg(number) }))
+	cmd := m.yank(text, true)
+	return m, tea.Batch(cmd, m.flashNote(fmt.Sprintf("copied %d lines", to-from+1)))
 }
 
 // conversationContent is what the conversation pane holds, every line.

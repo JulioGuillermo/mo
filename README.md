@@ -255,7 +255,7 @@ react, also after you stop it with esc. `/jobs tell` lets it hear one that is wa
 settings screen was open. `/jobs` lists them, `/kill <n>` stops one, and mo kills what is left when it exits.
 
 Each tool call starts with a dot coloured by what it does: red a command that blocks the model,
-orange one in the background, yellow reading a command's output, pink a change, blue a read. The
+yellow one in the background, green reading a command's output, pink a change, blue a read. The
 side panel colours running jobs the same way.
 
 `ask` lets the model ask you questions, with options or free text. What the calls of one reply
@@ -450,7 +450,7 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | ctrl+j, alt+enter | new line |
 | esc, ctrl+c | stop the current run |
 | ctrl+b | send the command that blocks the model to the background |
-| `/vim`, or `keys = "vim"` under `[render]` | vim keys: esc to normal mode, i a A I o to write; ctrl+h/j/k/l move between the conversation, the input and the side panel; in the conversation j k gg G ctrl+d ctrl+u move a cursor, l and h open and fold what it is on, v selects lines and y copies them; in the panel j k pick a task or job and l opens its menu; in the input h l w b 0 $ x D dd edit; `:` starts a command; in settings lists l goes in and h back. The mode shows before the status line |
+| `/vim`, or `keys = "vim"` under `[render]` | vim keys: esc to normal mode, i a A I o to write; ctrl+h/j/k/l move between the conversation, the input and the side panel; in the conversation j k gg G ctrl+d ctrl+u move a cursor, l and h open and fold what it is on, v selects lines and y copies them; in the panel j k pick a task or job and l opens its menu; in the input h l w b 0 $ x D dd edit, v selects, u and ctrl+r undo and redo; y yy dd x D copy to the clipboard and p P paste from it; `:` starts a command; in settings lists l goes in and h back. The mode shows before the status line |
 | ctrl+c (idle) | clear input, then quit |
 | ctrl+d | quit |
 | shift+tab | change the permission mode |
