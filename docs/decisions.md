@@ -852,3 +852,13 @@
 - Esc goes back one level at a time: setting, section, group, menu. Titles say where one is, as
   "Settings › Tools › Descriptions".
 - The project screen keeps its flat list, short as it is, with each section named with its group.
+
+## Context menus
+
+- A right click opens a small menu over the screen by the pointer, below and to the right of it,
+  moved to fit; opened from the keys (l in vim's panel) it is centred. The screen stays as it was
+  under it, instead of a settings-like screen taking its place for a choice of three.
+- Keys and clicks: ↑↓ or j k move, enter, l or a click take an option, the first letter jumps to
+  one, esc, h or a click outside close it; a right click outside opens the menu there instead.
+- It is drawn as a layer over the screen with lipgloss's compositor, so nothing under it is
+  redrawn or moved.

@@ -66,6 +66,7 @@ func (m model) rightClick(x, y int) (tea.Model, tea.Cmd) {
 	if m.dialog != nil || m.settings != nil {
 		return m, nil
 	}
+	m.clickedAt, m.clicked = point{x, y}, true
 	_, regions := m.screenLayout()
 	for _, r := range regions {
 		if r.menu != nil && r.holds(x, y) {

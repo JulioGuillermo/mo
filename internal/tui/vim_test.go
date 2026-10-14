@@ -89,7 +89,7 @@ func TestVim(t *testing.T) {
 		if m.vim.pane != paneSidebar || m.vim.item != 2 || !strings.Contains(marked, vimPicked.Render("● 1 sleep 30")) {
 			t.Errorf("pane = %d item = %d", m.vim.pane, m.vim.item)
 		}
-		if m.settings == nil || !strings.Contains(ansi.Strip(m.settings.form.View()), "Job 1") {
+		if !strings.Contains(menuView(m), "Job 1") {
 			t.Error("l did not open the job's menu")
 		}
 	})
@@ -100,7 +100,7 @@ func TestVim(t *testing.T) {
 		updated, cmd := m.Update(tea.KeyPressMsg{Code: 'l', Text: "l"})
 		in := deliver(updated.(model), cmd, 3)
 
-		if back.settings != nil {
+		if back.popup != nil || back.settings != nil {
 			t.Error("h did not leave the menu")
 		}
 		if in.viewer == nil || in.viewer.id != 1 {

@@ -125,7 +125,12 @@ type model struct {
 	// viewer shows a job's output over the whole screen while it is open.
 	viewer *outputViewer
 	// vim is where vim keys are, when they are on.
-	vim              vimState
+	vim vimState
+	// popup is a small menu over the screen; clickedAt is where the right
+	// click that opens one was, clicked unset when no click opened it.
+	popup            *popup
+	clickedAt        point
+	clicked          bool
 	settingsInFlight bool
 
 	suggestion   int
@@ -261,6 +266,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if m.settings != nil && !isAgentMsg(msg) {
 		return m.updateSettings(msg)
+	}
+	if m.popup != nil && !isAgentMsg(msg) {
+		if _, tick := msg.(viewerTickMsg); !tick {
+			return m.updatePopup(msg)
+		}
 	}
 	if _, tick := msg.(viewerTickMsg); (tick || m.viewer != nil) && !isAgentMsg(msg) {
 		if m.viewer == nil {
@@ -810,7 +820,11 @@ func (m model) View() tea.View {
 		view.WindowTitle = fmt.Sprintf("mo · job %d", m.viewer.id)
 	} else {
 		screen, _ := m.screenLayout()
-		view = tea.NewView(m.highlight(screen))
+		drawn := m.highlight(screen)
+		if m.popup != nil {
+			drawn = m.overPopup(drawn)
+		}
+		view = tea.NewView(drawn)
 		view.WindowTitle = "mo"
 	}
 	view.AltScreen = true

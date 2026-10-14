@@ -468,7 +468,7 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | drag | select text and copy it; the shared indent is taken off |
 | click | buttons, options and tabs of a dialog, a suggested command, the mode (next), the provider (its settings), the model (a list to pick from), a job (its last lines), a settings option |
 | click on the branch | the files changed, each with its kind |
-| right click | the mode: all modes to pick · a task: change its state or delete it · a job in the panel, or a bash call still running: watch its output live, its last lines, send it to the background, kill it |
+| right click | a small menu by the pointer, over the screen (↑↓ or j k, enter or a click, esc or a click outside closes it): the mode: all modes to pick · a task: change its state or delete it · a job in the panel, or a bash call still running: watch its output live, its last lines, send it to the background, kill it |
 | wheel over the side panel | scroll its tasks and jobs |
 | `/clear` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact` `/settings` `/providers` `/mcp` `/plugins` `/view <file>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
 | `/<name> text` | a plugin command |

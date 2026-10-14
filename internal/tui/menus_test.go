@@ -40,14 +40,36 @@ func rightClickOn(t *testing.T, m model, text string) model {
 	return m
 }
 
+// menuView is what the menu open shows: a popup's, or a full screen's.
+func menuView(m model) string {
+	if m.popup != nil {
+		return ansi.Strip(strings.Join(m.popupLayout().lines, "\n"))
+	}
+	if m.settings != nil {
+		return ansi.Strip(m.settings.form.View())
+	}
+	return ""
+}
+
 // pick moves a menu's cursor to the option holding text and takes it.
 func pick(t *testing.T, m model, text string) model {
 	t.Helper()
+	if m.popup != nil {
+		for range len(m.popup.options) {
+			if strings.Contains(ansi.Strip(m.popup.options[m.popup.selected].Key), text) {
+				updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+				return deliver(updated.(model), cmd, 3)
+			}
+			updated, _ := m.Update(keyDown)
+			m = updated.(model)
+		}
+		t.Fatalf("no option %q in:\n%s", text, menuView(m))
+	}
 	if m.settings == nil {
 		t.Fatal("no menu open")
 	}
 	for range 12 {
-		if strings.Contains(ansi.Strip(m.settings.form.View()), "> "+text) {
+		if strings.Contains(menuView(m), "> "+text) {
 			updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 			return deliver(updated.(model), cmd, 3)
 		}
@@ -64,7 +86,7 @@ func TestContextMenus(t *testing.T) {
 		m.session.Agent.Permissions, _ = permissions.New(permissions.ModeEdits, nil, nil)
 
 		m = rightClickOn(t, m, "● edits")
-		menu := ansi.Strip(m.settings.form.View())
+		menu := menuView(m)
 		m = pick(t, m, "ask:")
 
 		if !strings.Contains(menu, "edits: file changes go through, commands and fetches ask  ● now") || m.session.Agent.Permissions.Mode() != permissions.ModeAsk {
@@ -95,9 +117,9 @@ func TestContextMenus(t *testing.T) {
 		m := sidebarModel(t, 140)
 
 		m = rightClickOn(t, m, "sleep 30")
-		menu := ansi.Strip(m.settings.form.View())
+		menu := menuView(m)
 		m = pick(t, m, "see its last lines")
-		dialog := ansi.Strip(m.settings.form.View())
+		dialog := menuView(m)
 		m = pick(t, m, "kill it")
 
 		status, _, _ := m.jobs().Output(1, 0)
@@ -169,7 +191,7 @@ func TestForegroundMenus(t *testing.T) {
 
 		panel := ansi.Strip(m.View().Content)
 		m = rightClickOn(t, m, "echo first")
-		menu := ansi.Strip(m.settings.form.View())
+		menu := menuView(m)
 		m = pick(t, m, "send it to the background")
 
 		select {
@@ -194,7 +216,7 @@ func TestForegroundMenus(t *testing.T) {
 		result := foregroundCommand(t, m, command)
 
 		m = rightClickOn(t, m, "# build")
-		menu := ansi.Strip(m.settings.form.View())
+		menu := menuView(m)
 		m = pick(t, m, "kill it")
 
 		select {

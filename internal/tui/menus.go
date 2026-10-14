@@ -18,24 +18,11 @@ const (
 	contextHelp    = "↑↓ choose · enter do it · esc close"
 )
 
-// showMenu opens a menu of what can be done with something: a list of
-// options whose pick do runs; esc closes it.
+// showChoices opens a menu of what can be done with something, over the
+// screen where the right click was: a list of options whose pick do
+// runs; esc or a click outside closes it.
 func (m model) showChoices(title, description string, options []huh.Option[string], do func(m model, choice string) (tea.Model, tea.Cmd)) (tea.Model, tea.Cmd) {
-	choice := ""
-	if len(options) > 0 {
-		choice = options[0].Value
-	}
-	options = append(options, huh.NewOption("close", menuClose))
-	list := huh.NewSelect[string]().Title(title).Description(description).Options(options...).Value(&choice)
-	form := huh.NewForm(huh.NewGroup(list)).WithShowHelp(false)
-	next := func(m model) (tea.Model, tea.Cmd) {
-		if choice == menuClose {
-			return m, nil
-		}
-		return do(m, choice)
-	}
-	closed := func(m model) (tea.Model, tea.Cmd) { return m, nil }
-	return m.showSettings(&settingsScreen{form: form, next: next, back: closed, help: contextHelp})
+	return m.openPopup(title, description, options, do)
 }
 
 // modeMenu lists the permission modes to pick one for the session.
