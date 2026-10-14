@@ -7,7 +7,7 @@ package tui
 // | BR-04 | Happy    | With no room for a bar the context shows in one cell, in eighths          | P2       |
 // | BR-05 | Happy    | The provider shrinks to its first letter, then goes, before the speeds do | P1       |
 // | BR-06 | Happy    | The plain style joins the parts with bars, without powerline arrows       | P2       |
-// | BR-03 | Edge     | On master or main only the folder shows, with no separator left alone    | P2       |
+// | BR-03 | Edge     | The branch shows on master and main too; outside a repository only the folder | P2   |
 
 import (
 	"fmt"
@@ -62,14 +62,19 @@ func TestStatusSuffix(t *testing.T) {
 		}
 	})
 
-	t.Run("BR-03 on master or main only the folder shows, with no separator left alone", func(t *testing.T) {
-		m := suffixModel(t, "main")
+	t.Run("BR-03 the branch shows on master and main too; outside a repository only the folder", func(t *testing.T) {
+		m := suffixModel(t, "master")
 		m.width = 120
+		none := suffixModel(t, "")
+		none.width = 120
 
-		status := ansi.Strip(m.statusLine())
+		status, outside := ansi.Strip(m.statusLine()), ansi.Strip(none.statusLine())
 
-		if !strings.HasSuffix(status, "  \ue0b2 un-proyecto-largo ") || strings.Contains(status, "main") {
+		if !strings.HasSuffix(status, "\ue0a0 master \ue0b2 un-proyecto-largo ") {
 			t.Errorf("status = %q", status)
+		}
+		if !strings.HasSuffix(outside, "  \ue0b2 un-proyecto-largo ") || strings.Contains(outside, "\ue0a0") {
+			t.Errorf("outside = %q", outside)
 		}
 	})
 

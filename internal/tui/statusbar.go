@@ -153,11 +153,11 @@ func firstLetter(name string) string {
 }
 
 // suffixSegments are the branch and the folder at the right end: both,
-// the folder alone, or none. The branch is left out on master and main.
+// the folder alone, or none; the branch whichever it is, also master.
 func (m model) suffixSegments(show int) []segment {
 	colors := statusPalette(m.printer == nil || m.printer.isDark())
 	folder := segment{text: lipgloss.NewStyle().Foreground(colors.text).Render(filepath.Base(m.session.WorkDir)), bg: colors.segmentDim}
-	hasBranch := m.branch != "" && m.branch != "master" && m.branch != "main"
+	hasBranch := m.branch != ""
 	switch {
 	case show == 0:
 		return nil
