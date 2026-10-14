@@ -22,9 +22,9 @@ const (
 func readTool() Tool {
 	return Tool{
 		Name:        "read",
-		Description: "Read a text file. offset is the first line (1-based).",
+		Description: "Read a text file. offset is the first line (1-based). numbered: prefix each line with its number.",
 		Schema: json.RawMessage(`{"type":"object","properties":{
-"path":{"type":"string"},"offset":{"type":"integer"},"limit":{"type":"integer"}},"required":["path"]}`),
+"path":{"type":"string"},"offset":{"type":"integer"},"limit":{"type":"integer"},"numbered":{"type":"boolean"}},"required":["path"]}`),
 		Run:     runRead,
 		Summary: func(args json.RawMessage) string { return argField(args, "path") },
 	}
@@ -32,9 +32,10 @@ func readTool() Tool {
 
 func runRead(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	var args struct {
-		Path   string `json:"path"`
-		Offset int    `json:"offset"`
-		Limit  int    `json:"limit"`
+		Path     string `json:"path"`
+		Offset   int    `json:"offset"`
+		Limit    int    `json:"limit"`
+		Numbered bool   `json:"numbered"`
 	}
 	if err := decodeArgs(raw, &args); err != nil {
 		return "", err
@@ -73,9 +74,12 @@ func runRead(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	last := min(first-1+limit, len(lines))
 
 	var out strings.Builder
-	for _, line := range lines[first-1 : last] {
+	for i, line := range lines[first-1 : last] {
 		if len(line) > readMaxLineBytes {
 			line = cutAtRune(line, readMaxLineBytes) + " [line cut]"
+		}
+		if args.Numbered {
+			fmt.Fprintf(&out, "%d\t", first+i)
 		}
 		out.WriteString(line)
 		out.WriteByte('\n')

@@ -132,6 +132,20 @@ func TestRead(t *testing.T) {
 		}
 	})
 
+	t.Run("read numbers the lines only when asked, counting from offset", func(t *testing.T) {
+		env := newEnv(t)
+		writeFile(t, env, "a.txt", "l1\nl2\nl3\n")
+
+		output, err := runRead(ctx, env, args(t, map[string]any{"path": "a.txt", "offset": 2, "numbered": true}))
+
+		if err != nil {
+			t.Fatal(err)
+		}
+		if output != "2\tl2\n3\tl3\n" {
+			t.Errorf("output = %q", output)
+		}
+	})
+
 	t.Run("TL-05 read refuses a binary file", func(t *testing.T) {
 		env := newEnv(t)
 		writeFile(t, env, "a.bin", "ab\x00cd")
