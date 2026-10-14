@@ -2,6 +2,7 @@
 package tools
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -31,6 +32,13 @@ type Tool struct {
 	Warning          func(args json.RawMessage) string
 	AlreadyConfirmed func(args json.RawMessage) bool
 	LooseArgs        bool
+	// View tools take the view fields, offset, limit, col, width, match and
+	// numbered, and return what they asked for whole: the model chose how
+	// much. ViewLimit is the lines shown by default, ViewSelf a tool that
+	// applies the view itself, from ViewFrom.
+	View      bool
+	ViewLimit int
+	ViewSelf  bool
 }
 
 const truncateHeadPercent = 60
@@ -45,6 +53,9 @@ type Env struct {
 	Recall *Recall
 	// Titles renames the conversation; without it there is no title tool.
 	Titles *Titles
+	// MaxOutput is how much of a tool's output reaches the model, as the
+	// registry cuts it; 0 for no limit.
+	MaxOutput int
 }
 
 // Resolve turns a path from the model into an absolute one, relative paths
@@ -90,6 +101,7 @@ type Registry struct {
 }
 
 func NewRegistry(env Env, options Options) *Registry {
+	env.MaxOutput = options.MaxOutput
 	registry := &Registry{env: env, options: options}
 	for _, tool := range append(builtinsWith(options.Searcher), options.Extra...) {
 		if slices.Contains(options.Disabled, tool.Name) || (tool.Name == titleToolName && env.Titles == nil) {
@@ -97,6 +109,9 @@ func NewRegistry(env Env, options Options) *Registry {
 		}
 		if description, ok := options.Descriptions[tool.Name]; ok {
 			tool.Description = description
+		}
+		if tool.View {
+			tool.Schema = withViewSchema(tool.Schema)
 		}
 		registry.tools = append(registry.tools, tool)
 	}
@@ -137,7 +152,7 @@ func builtins() []Tool {
 func builtinsWith(searcher web.Searcher) []Tool {
 	return []Tool{
 		bashTool(), readTool(), writeTool(), editTool(), lsTool(), mkdirTool(), rmTool(), grepTool(),
-		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), jobsTool(), recallTool(), gitTool(), titleTool(),
+		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), gitTool(), titleTool(),
 	}
 }
 
@@ -194,12 +209,27 @@ func (r *Registry) Run(ctx context.Context, call llm.ToolCall) (output string, i
 	if err := checkArgNames(tool, call.Args); err != nil {
 		return err.Error(), true
 	}
-	output, err := tool.Run(ctx, r.env, call.Args)
+	if !tool.View {
+		output, err := tool.Run(ctx, r.env, call.Args)
+		if err != nil {
+			output = strings.TrimSpace(output + "\n" + err.Error())
+			isError = true
+		}
+		return Truncate(output, r.options.MaxOutput), isError
+	}
+	view, err := parseView(call.Args, cmp.Or(tool.ViewLimit, viewDefaultLimit))
+	if err != nil {
+		return err.Error(), true
+	}
+	output, err = tool.Run(context.WithValue(ctx, viewKey{}, view), r.env, call.Args)
+	if !tool.ViewSelf {
+		output = view.Apply(output)
+	}
 	if err != nil {
 		output = strings.TrimSpace(output + "\n" + err.Error())
 		isError = true
 	}
-	return Truncate(output, r.options.MaxOutput), isError
+	return output, isError
 }
 
 func (r *Registry) find(name string) (Tool, bool) {

@@ -50,9 +50,7 @@ func (m *model) saveConversation() tea.Cmd {
 		return nil
 	}
 	now := time.Now()
-	if m.thread.id == "" {
-		m.thread.id, m.thread.created = sessions.NewID(), now
-	}
+	m.ensureThread()
 	prompts := m.session.Agent.Prompts()
 	if len(prompts) > 0 && m.thread.title == "" {
 		m.thread.title = sessions.Title(prompts[0].Text)
@@ -66,13 +64,31 @@ func (m *model) saveConversation() tea.Cmd {
 	return func() tea.Msg { return savedMsg{err: sessions.Save(config.SessionDir(), record)} }
 }
 
+// ensureThread names a conversation before its first turn, so the commands
+// it runs keep their output in its folder; a fork starts with the output of
+// the one it came from.
+func (m *model) ensureThread() {
+	if m.thread.id != "" {
+		return
+	}
+	m.thread.id, m.thread.created = sessions.NewID(), time.Now()
+	if m.thread.parent != "" {
+		_ = sessions.ShareJobs(config.SessionDir(), m.thread.parent, m.thread.id)
+	}
+	m.trackThread()
+}
+
 // trackThread tells recall which conversation is in progress, to leave it
-// out of what the model searches.
+// out of what the model searches, and the jobs which one runs commands.
 func (m *model) trackThread() {
-	if m.session.Agent != nil {
-		if recall := m.session.Agent.Tools.Recall(); recall != nil {
-			recall.SetCurrent(m.thread.id)
-		}
+	if m.session.Agent == nil || m.session.Agent.Tools == nil {
+		return
+	}
+	if recall := m.session.Agent.Tools.Recall(); recall != nil {
+		recall.SetCurrent(m.thread.id)
+	}
+	if jobs := m.session.Agent.Tools.Jobs(); jobs != nil {
+		jobs.SetConversation(m.thread.id)
 	}
 }
 
@@ -109,7 +125,7 @@ func (m model) pickConversation(msg resumeListMsg) (tea.Model, tea.Cmd) {
 	}
 	var options []huh.Option[string]
 	for _, info := range msg.infos {
-		label := orDefault(info.Title, "(no prompt)")
+		label := errorStyle.Render(removeMark) + " " + orDefault(info.Title, "(no prompt)")
 		if info.Parent != "" {
 			label = "↳ " + label + dimStyle.Render(" · fork of "+orDefault(titles[info.Parent], "an older one"))
 		}
@@ -128,8 +144,9 @@ func (m model) pickConversation(msg resumeListMsg) (tea.Model, tea.Cmd) {
 	}
 	next := func(m model) (tea.Model, tea.Cmd) { return m, loadConversation(picked) }
 	back := func(m model) (tea.Model, tea.Cmd) { return m, nil }
+	remove := func(m model) (tea.Model, tea.Cmd) { return m.removeFromList(list, msg.infos) }
 	form := huh.NewForm(huh.NewGroup(list)).WithShowHelp(false)
-	return m.showSettings(&settingsScreen{form: form, next: next, back: back, help: menuHelp})
+	return m.showSettings(&settingsScreen{form: form, next: next, back: back, help: resumeHelp, remove: remove})
 }
 
 // resume puts a saved conversation in place of the current one, which was
@@ -242,7 +259,7 @@ func ago(when time.Time) string {
 // work while the model does: settings saved then apply when it finishes.
 var whileRunning = map[string]bool{
 	"help": true, "settings": true, "providers": true, "mcp": true, "plugins": true, "notify": true,
-	"sidebar": true, "jobs": true, "kill": true, "view": true, "quit": true, "exit": true, "title": true, "model": true, "login": true, "logout": true,
+	"sidebar": true, "vim": true, "jobs": true, "kill": true, "view": true, "quit": true, "exit": true, "title": true, "model": true, "login": true, "logout": true,
 }
 
 // queue keeps a message written while the model works for its next step,

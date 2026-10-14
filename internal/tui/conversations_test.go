@@ -9,9 +9,15 @@ package tui
 // | CV-03 | Happy    | Fork saves a copy naming the original; /clear starts a new one       | P1       |
 // | CV-04 | Happy    | esc twice with an empty input opens the prompts to go back to        | P1       |
 // | CV-05 | Happy    | Continuing loads the latest conversation of the folder at once       | P1       |
+// | CV-06 | Happy    | /delete asks, then deletes the conversation and its output, and starts anew | P0 |
+// | CV-07 | Happy    | ctrl+x in /resume asks before deleting; no keeps it, yes deletes it   | P0       |
+// | CV-08 | Happy    | /clean deletes, after asking, what was last used before a date or an age | P1    |
+// | CV-09 | Edge     | A fork starts with the output of the commands of the one it came from | P1       |
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -189,6 +195,118 @@ func TestConversations(t *testing.T) {
 			t.Errorf("thread = %+v", m.thread)
 		}
 	})
+}
+
+func TestDeleting(t *testing.T) {
+	keyYes := tea.KeyPressMsg{Code: 'y', Text: "y"}
+	keyNo := tea.KeyPressMsg{Code: 'n', Text: "n"}
+	saveAt := func(t *testing.T, m model, id string, updated time.Time) {
+		t.Helper()
+		_ = sessions.Save(config.SessionDir(), sessions.Record{
+			Info:    sessions.Info{ID: id, WorkDir: config.ProjectKey(m.session.WorkDir), Title: id, Updated: updated},
+			History: []llm.Message{{Role: llm.RoleUser, Text: id}},
+		})
+		_ = os.MkdirAll(sessions.JobsDir(config.SessionDir(), id), 0o700)
+	}
+	exists := func(id string) bool {
+		_, err := os.Stat(filepath.Join(config.SessionDir(), id+".json"))
+		_, dirErr := os.Stat(filepath.Join(config.SessionDir(), id))
+		return err == nil || dirErr == nil
+	}
+
+	t.Run("CV-06 /delete asks, then deletes the conversation and its output, and starts anew", func(t *testing.T) {
+		m := savedModel(t)
+		m.session.Agent.History = chat
+		m = run(t, m, m.saveConversation())
+		id := m.thread.id
+		_ = os.MkdirAll(sessions.JobsDir(config.SessionDir(), id), 0o700)
+
+		asked, _ := m.runCommand("/delete")
+		question := asked.(model).settings.form.View()
+		done, cmd := asked.(model).Update(keyYes)
+		m = run(t, done.(model), cmd)
+
+		if !strings.Contains(question, "Delete") || exists(id) || m.thread.id != "" || len(m.session.Agent.History) != 0 {
+			t.Errorf("question = %q still there = %v thread = %+v", question, exists(id), m.thread)
+		}
+	})
+
+	t.Run("CV-07 ctrl+x in /resume asks before deleting; no keeps it, yes deletes it", func(t *testing.T) {
+		m := savedModel(t)
+		saveAt(t, m, "only", time.Now())
+		m = run(t, m, listConversations(m.session.WorkDir, false))
+		if !strings.Contains(m.settings.form.View(), removeMark) {
+			t.Fatalf("no delete mark in:\n%s", m.settings.form.View())
+		}
+
+		asked, _ := m.Update(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl})
+		kept, cmd := asked.(model).Update(keyNo)
+		kept = run(t, kept.(model), cmd)
+		if !exists("only") || kept.(model).settings == nil {
+			t.Fatal("no should keep it and show the list again")
+		}
+		again, _ := kept.(model).Update(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl})
+		gone, cmd := again.(model).Update(keyYes)
+		run(t, gone.(model), cmd)
+
+		if exists("only") {
+			t.Error("yes did not delete it")
+		}
+	})
+
+	t.Run("CV-08 /clean deletes, after asking, what was last used before a date or an age", func(t *testing.T) {
+		m := savedModel(t)
+		saveAt(t, m, "ancient", time.Now().AddDate(0, -3, 0))
+		saveAt(t, m, "recent", time.Now().AddDate(0, 0, -3))
+
+		asked, _ := m.runCommand("/clean 2 months")
+		question := asked.(model).settings.form.View()
+		done, cmd := asked.(model).Update(keyYes)
+		run(t, done.(model), cmd)
+
+		if !strings.Contains(question, "Delete 1 conversations?") || exists("ancient") || !exists("recent") {
+			t.Errorf("question = %q ancient = %v recent = %v", question, exists("ancient"), exists("recent"))
+		}
+		now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.Local)
+		for argument, want := range map[string]time.Time{
+			"2 months": now.AddDate(0, -2, 0), "3 semanas": now.AddDate(0, 0, -21), "10d": now.AddDate(0, 0, -10),
+			"1 año": now.AddDate(-1, 0, 0), "2026-08-01": time.Date(2026, 8, 1, 0, 0, 0, 0, time.Local),
+		} {
+			if got, err := parseCutoff(argument, now); err != nil || !got.Equal(want) {
+				t.Errorf("%q = %v, %v", argument, got, err)
+			}
+		}
+		if _, err := parseCutoff("soon", now); err == nil {
+			t.Error("soon should not parse")
+		}
+	})
+
+	t.Run("CV-09 a fork starts with the output of the commands of the one it came from", func(t *testing.T) {
+		m := savedModel(t)
+		m.session.Agent.History = chat
+		m = run(t, m, m.saveConversation())
+		original := m.thread.id
+		dir := sessions.JobsDir(config.SessionDir(), original)
+		_ = os.MkdirAll(dir, 0o700)
+		_ = os.WriteFile(filepath.Join(dir, "1.log"), []byte("built\n"), 0o600)
+
+		forked, cmd := m.fork()
+		m = run(t, forked.(model), cmd)
+		copied, err := os.ReadFile(filepath.Join(sessions.JobsDir(config.SessionDir(), m.thread.id), "1.log"))
+
+		if err != nil || string(copied) != "built\n" {
+			t.Errorf("copied = %q err = %v", copied, err)
+		}
+	})
+}
+
+func TestRemoveMark(t *testing.T) {
+	line := "┃ > " + removeMark + " build the thing · 2 prompts"
+	column := strings.Index(line, removeMark)
+	at := len([]rune(line[:column]))
+	if !onRemoveMark(line, at) || onRemoveMark(line, at+6) {
+		t.Errorf("the mark is at column %d", at)
+	}
 }
 
 func timeAt(hour int) time.Time {

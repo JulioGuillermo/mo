@@ -16,6 +16,8 @@ type region struct {
 	do        func(m model) (tea.Model, tea.Cmd)
 	// menu, when set, is what a right click there opens.
 	menu func(m model) (tea.Model, tea.Cmd)
+	// item names what the region is part of, a task or a job taking rows.
+	item string
 }
 
 // withMenu gives regions the menu a right click opens.
@@ -70,6 +72,11 @@ func (m model) rightClick(x, y int) (tea.Model, tea.Cmd) {
 			return r.menu(m)
 		}
 	}
+	if y < m.conversationHeight() && x < m.mainWidth() {
+		if id, running := m.runningCommandAt(y); running {
+			return m.jobMenu(id)
+		}
+	}
 	return m, nil
 }
 
@@ -91,6 +98,21 @@ func (m model) clickSettings(x, y int) (tea.Model, tea.Cmd) {
 	if y < 0 || y >= len(lines) || !isOptionLine(lines[y]) {
 		return m, nil
 	}
+	moved, ok := m.moveListCursor(lines, y)
+	if !ok {
+		return m, nil
+	}
+	if moved.settings.remove != nil && onRemoveMark(lines[y], x) {
+		screen := moved.settings
+		moved.settings = nil
+		return screen.remove(moved)
+	}
+	return moved.updateSettings(tea.KeyPressMsg{Code: tea.KeyEnter})
+}
+
+// moveListCursor moves the cursor of a settings list to row y with the
+// arrow keys, as huh takes no mouse.
+func (m model) moveListCursor(lines []string, y int) (model, bool) {
 	cursor := -1
 	for i, line := range lines {
 		if isOptionLine(line) && strings.HasPrefix(strings.TrimLeft(line, "┃│ "), ">") {
@@ -98,7 +120,7 @@ func (m model) clickSettings(x, y int) (tea.Model, tea.Cmd) {
 		}
 	}
 	if cursor < 0 {
-		return m, nil
+		return m, false
 	}
 	key := tea.KeyPressMsg{Code: tea.KeyDown}
 	if y < cursor {
@@ -108,7 +130,17 @@ func (m model) clickSettings(x, y int) (tea.Model, tea.Cmd) {
 	for range abs(y - cursor) {
 		current, _ = current.(model).updateSettings(key)
 	}
-	return current.(model).updateSettings(tea.KeyPressMsg{Code: tea.KeyEnter})
+	return current.(model), true
+}
+
+// onRemoveMark tells whether x falls on the delete mark of a list line.
+func onRemoveMark(line string, x int) bool {
+	at := strings.Index(line, removeMark)
+	if at < 0 {
+		return false
+	}
+	column := ansi.StringWidth(line[:at])
+	return x >= column-1 && x <= column+1
 }
 
 // clickButton presses the button of a yes/no question under the pointer:

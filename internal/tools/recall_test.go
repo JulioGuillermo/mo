@@ -43,9 +43,26 @@ func (s recallSetup) save(t *testing.T, id, workDir, title string, when time.Tim
 	}
 }
 
+// run searches or reads through memory, taking the fields recall took: id
+// is the name read, kind memories is notes, scope here is the default and
+// limit the count.
 func (s recallSetup) run(t *testing.T, fields map[string]any) (string, bool) {
 	t.Helper()
-	return s.registry.Run(context.Background(), llm.ToolCall{Name: recallName, Args: args(t, fields)})
+	renamed := map[string]any{}
+	for key, value := range fields {
+		switch {
+		case key == "id":
+			renamed["name"] = value
+		case key == "kind" && value == "memories":
+			renamed["kind"] = "notes"
+		case key == "scope" && value == "here":
+		case key == "limit":
+			renamed["count"] = value
+		default:
+			renamed[key] = value
+		}
+	}
+	return s.registry.Run(context.Background(), llm.ToolCall{Name: "memory", Args: args(t, renamed)})
 }
 
 func user(text string) llm.Message      { return llm.Message{Role: llm.RoleUser, Text: text} }
@@ -85,7 +102,7 @@ func TestRecall(t *testing.T) {
 		if !strings.Contains(both, "m:project/vpn") || !strings.Contains(both, "m:global/me") || !strings.Contains(both, "c:net#1") || strings.Contains(memories, "c:net") {
 			t.Errorf("both:\n%s\nmemories:\n%s", both, memories)
 		}
-		if isError || whole != "VPN setup\nwireguard on port 51820, keys in vault" {
+		if isError || whole != "VPN setup\nwireguard on port 51820, keys in vault\n" {
 			t.Errorf("whole = %q", whole)
 		}
 	})

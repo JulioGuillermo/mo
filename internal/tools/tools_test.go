@@ -115,6 +115,12 @@ func TestEdit(t *testing.T) {
 	})
 }
 
+// call runs a tool through a registry, as the model calls it.
+func call(t *testing.T, env Env, name string, fields map[string]any) (string, bool) {
+	t.Helper()
+	return NewRegistry(env, Options{MaxOutput: 10000}).Run(context.Background(), llm.ToolCall{Name: name, Args: args(t, fields)})
+}
+
 func TestRead(t *testing.T) {
 	ctx := context.Background()
 
@@ -122,27 +128,42 @@ func TestRead(t *testing.T) {
 		env := newEnv(t)
 		writeFile(t, env, "a.txt", "l1\nl2\nl3\nl4\nl5\n")
 
-		output, err := runRead(ctx, env, args(t, map[string]any{"path": "a.txt", "offset": 2, "limit": 2}))
+		output, isError := call(t, env, "read", map[string]any{"path": "a.txt", "offset": 1, "limit": 2})
+		last, _ := call(t, env, "read", map[string]any{"path": "a.txt", "offset": -2})
 
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.HasPrefix(output, "l2\nl3\n") || !strings.Contains(output, "offset=4") {
+		if isError || output != "l2\nl3\n[lines 2-3 of 5; offset=3 continues]\n" {
 			t.Errorf("output = %q", output)
+		}
+		if last != "l4\nl5\n[lines 4-5 of 5]\n" {
+			t.Errorf("last = %q", last)
 		}
 	})
 
-	t.Run("read numbers the lines only when asked, counting from offset", func(t *testing.T) {
+	t.Run("read numbers the lines only when asked, and match keeps the matching ones numbered", func(t *testing.T) {
 		env := newEnv(t)
 		writeFile(t, env, "a.txt", "l1\nl2\nl3\n")
 
-		output, err := runRead(ctx, env, args(t, map[string]any{"path": "a.txt", "offset": 2, "numbered": true}))
+		plain, _ := call(t, env, "read", map[string]any{"path": "a.txt"})
+		numbered, _ := call(t, env, "read", map[string]any{"path": "a.txt", "offset": 1, "numbered": true})
+		matched, _ := call(t, env, "read", map[string]any{"path": "a.txt", "match": "l[13]"})
 
-		if err != nil {
-			t.Fatal(err)
+		if plain != "l1\nl2\nl3\n" || numbered != "2\tl2\n3\tl3\n[lines 2-3 of 3]\n" || matched != "1\tl1\n3\tl3\n" {
+			t.Errorf("plain = %q numbered = %q matched = %q", plain, numbered, matched)
 		}
-		if output != "2\tl2\n3\tl3\n" {
-			t.Errorf("output = %q", output)
+	})
+
+	t.Run("read cuts a long line, says where it goes on, and reads on from col", func(t *testing.T) {
+		env := newEnv(t)
+		writeFile(t, env, "min.js", strings.Repeat("a", 2500)+"\nshort\n")
+
+		cut, _ := call(t, env, "read", map[string]any{"path": "min.js"})
+		rest, _ := call(t, env, "read", map[string]any{"path": "min.js", "limit": 1, "col": 2490, "width": 5})
+
+		if !strings.HasSuffix(cut, " [500 bytes cut; col=2000 continues]\nshort\n") {
+			t.Errorf("cut = %q", cut[len(cut)-60:])
+		}
+		if rest != "aaaaa [5 bytes cut; col=2495 continues]\n[lines 1-1 of 2; offset=1 continues]\n" {
+			t.Errorf("rest = %q", rest)
 		}
 	})
 
@@ -224,8 +245,52 @@ func TestGrep(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.TrimSpace(output) != "main.go:2: func Hello() {}" {
+		if strings.TrimSpace(output) != "main.go\n2: func Hello() {}" {
 			t.Errorf("output = %q", output)
+		}
+	})
+}
+
+func TestGrepOutputs(t *testing.T) {
+	ctx := context.Background()
+	env := newEnv(t)
+	writeFile(t, env, "a.go", "one\n\tneedle\ntwo\nthree\nfour\nneedle\n")
+	writeFile(t, env, "b.go", "needle\n")
+
+	t.Run("grep gives only the files, or a count per file", func(t *testing.T) {
+		files, _ := runGrep(ctx, env, args(t, map[string]any{"pattern": "needle", "show": "files"}))
+		counts, _ := runGrep(ctx, env, args(t, map[string]any{"pattern": "needle", "show": "count"}))
+
+		if files != "a.go\nb.go\n" || counts != "a.go: 2\nb.go: 1\n" {
+			t.Errorf("files = %q counts = %q", files, counts)
+		}
+	})
+
+	t.Run("grep shows context lines, keeping their indent, apart by --", func(t *testing.T) {
+		output, _ := runGrep(ctx, env, args(t, map[string]any{"pattern": "needle", "context": 1, "glob": "a.go"}))
+
+		if output != "a.go\n1- one\n2: \tneedle\n3- two\n--\n5- four\n6: needle\n" {
+			t.Errorf("output = %q", output)
+		}
+	})
+}
+
+func TestEditMany(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("edit makes several replacements, or none when one fails", func(t *testing.T) {
+		env := newEnv(t)
+		writeFile(t, env, "a.txt", "alpha beta gamma\n")
+
+		done, err := runEdit(ctx, env, args(t, map[string]any{"path": "a.txt", "edits": []map[string]any{{"old": "alpha", "new": "A"}, {"old": "gamma", "new": "G"}}}))
+		_, failed := runEdit(ctx, env, args(t, map[string]any{"path": "a.txt", "edits": []map[string]any{{"old": "beta", "new": "B"}, {"old": "missing", "new": "x"}}}))
+		data, _ := os.ReadFile(filepath.Join(env.WorkDir, "a.txt"))
+
+		if err != nil || done != "made 2 edits, 2 replacement(s)" || string(data) != "A beta G\n" {
+			t.Errorf("done = %q err = %v data = %q", done, err, data)
+		}
+		if failed == nil || !strings.Contains(failed.Error(), "edit 2: old text not found") {
+			t.Errorf("failed = %v", failed)
 		}
 	})
 }
@@ -271,19 +336,26 @@ func TestTruncate(t *testing.T) {
 }
 
 func TestRegistry(t *testing.T) {
-	t.Run("TL-13 Registry drops disabled tools and truncates output", func(t *testing.T) {
+	t.Run("TL-13 Registry drops disabled tools and truncates output, but what read was asked for", func(t *testing.T) {
 		env := newEnv(t)
 		writeFile(t, env, "big.txt", strings.Repeat("x", 500))
-		registry := NewRegistry(env, Options{MaxOutput: 100, Disabled: []string{"bash", "rm"}})
+		loud := Tool{Name: "loud", Schema: json.RawMessage(`{"type":"object","properties":{}}`), Run: func(context.Context, Env, json.RawMessage) (string, error) {
+			return strings.Repeat("y", 500), nil
+		}}
+		registry := NewRegistry(env, Options{MaxOutput: 100, Disabled: []string{"bash", "rm"}, Extra: []Tool{loud}})
 
 		for _, spec := range registry.Specs(nil) {
 			if spec.Name == "bash" || spec.Name == "rm" {
 				t.Errorf("%s should be disabled", spec.Name)
 			}
 		}
-		output, isError := registry.Run(context.Background(), llm.ToolCall{Name: "read", Args: args(t, map[string]any{"path": "big.txt"})})
+		output, isError := registry.Run(context.Background(), llm.ToolCall{Name: "loud", Args: json.RawMessage(`{}`)})
 		if isError || len(output) > 150 {
 			t.Errorf("isError = %v len = %d", isError, len(output))
+		}
+		whole, _ := registry.Run(context.Background(), llm.ToolCall{Name: "read", Args: args(t, map[string]any{"path": "big.txt"})})
+		if len(whole) != 501 {
+			t.Errorf("read was cut to %d bytes", len(whole))
 		}
 	})
 
@@ -367,7 +439,7 @@ func TestSpecialFiles(t *testing.T) {
 			t.Errorf("read err = %v", err)
 		}
 		output, err := runGrep(context.Background(), env, args(t, map[string]any{"pattern": "needle"}))
-		if err != nil || strings.TrimSpace(output) != "a.txt:1: needle" {
+		if err != nil || strings.TrimSpace(output) != "a.txt\n1: needle" {
 			t.Errorf("grep output = %q err = %v", output, err)
 		}
 	})
@@ -477,6 +549,39 @@ func TestTitleTool(t *testing.T) {
 
 		if isError || got != "Arreglar el login" || !strings.Contains(output, "Arreglar el login") || missing {
 			t.Errorf("output %q got %q in bare registry %v", output, got, missing)
+		}
+	})
+}
+
+func TestHelpAndView(t *testing.T) {
+	t.Run("help lists every action in a line, explains one, and names them for an unknown one", func(t *testing.T) {
+		env := newEnv(t)
+
+		all, _ := call(t, env, "git", map[string]any{"action": "help"})
+		pull, _ := call(t, env, "git", map[string]any{"action": "help", "topic": "pull"})
+		unknown, isError := call(t, env, "memory", map[string]any{"action": "help", "topic": "fly"})
+
+		if !strings.Contains(all, "\npull: remote, name") || !strings.Contains(all, "\nview: offset") {
+			t.Errorf("all = %q", all)
+		}
+		if !strings.HasPrefix(pull, "remote, name: the branch to take") {
+			t.Errorf("pull = %q", pull)
+		}
+		if !isError || !strings.Contains(unknown, "list, read, write, delete, search, view") {
+			t.Errorf("unknown = %q", unknown)
+		}
+	})
+
+	t.Run("the view fields go after a tool's own, also when it has none", func(t *testing.T) {
+		some := withViewSchema(json.RawMessage(`{"type":"object","properties":{"path":{"type":"string","enum":["{x}"]}},"required":["path"]}`))
+		none := withViewSchema(json.RawMessage(`{"type":"object","properties":{}}`))
+
+		var parsed map[string]any
+		if json.Unmarshal(some, &parsed) != nil || json.Unmarshal(none, &parsed) != nil {
+			t.Fatalf("some = %s none = %s", some, none)
+		}
+		if !strings.HasPrefix(string(some), `{"type":"object","properties":{"path"`) || !strings.Contains(string(none), `"numbered"`) {
+			t.Errorf("some = %s none = %s", some, none)
 		}
 	})
 }

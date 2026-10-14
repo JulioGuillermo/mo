@@ -7,11 +7,16 @@ package tui
 // | CM-03 | Happy    | A right click on a job offers its output and how it stands, and kill while it runs | P1   |
 // | CM-04 | Happy    | The panel scrolls with the wheel when its tasks and jobs do not fit, saying how many are hidden | P1 |
 // | CM-05 | Happy    | With the side panel the context and the speeds sit at its bottom, not in the status line | P1 |
+// | CM-06 | Happy    | A command blocking the model shows in the panel; its menu sends it to the background | P0 |
+// | CM-07 | Happy    | A right click on a running bash call offers to send it to the background or kill it | P0 |
+// | CM-08 | Happy    | Watching a job shows its output live over the screen; it scrolls, searches, copies and closes | P1 |
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -91,7 +96,7 @@ func TestContextMenus(t *testing.T) {
 
 		m = rightClickOn(t, m, "sleep 30")
 		menu := ansi.Strip(m.settings.form.View())
-		m = pick(t, m, "see its output")
+		m = pick(t, m, "see its last lines")
 		dialog := ansi.Strip(m.settings.form.View())
 		m = pick(t, m, "kill it")
 
@@ -134,6 +139,105 @@ func TestContextMenus(t *testing.T) {
 		}
 		if !strings.Contains(ansi.Strip(narrow.statusLine()), "50%") {
 			t.Errorf("without the panel: %q", ansi.Strip(narrow.statusLine()))
+		}
+	})
+}
+
+// foregroundCommand runs a command as the model would, in the foreground,
+// and waits until the panel can see it.
+func foregroundCommand(t *testing.T, m model, command string) chan string {
+	t.Helper()
+	result := make(chan string, 1)
+	go func() {
+		_, summary, _ := m.jobs().Run(context.Background(), tools.Env{WorkDir: t.TempDir()}, command, time.Minute)
+		result <- summary
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for len(m.jobs().List()) < 2 {
+		if time.Now().After(deadline) {
+			t.Fatal("the command did not start")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return result
+}
+
+func TestForegroundMenus(t *testing.T) {
+	t.Run("CM-06 a command blocking the model shows in the panel; its menu sends it to the background", func(t *testing.T) {
+		m := sidebarModel(t, 140)
+		result := foregroundCommand(t, m, "echo first; sleep 30")
+
+		panel := ansi.Strip(m.View().Content)
+		m = rightClickOn(t, m, "echo first")
+		menu := ansi.Strip(m.settings.form.View())
+		m = pick(t, m, "send it to the background")
+
+		select {
+		case summary := <-result:
+			if summary != "first\n" {
+				t.Errorf("summary = %q", summary)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("the model was not let go on")
+		}
+		if !strings.Contains(panel, "echo first") || !strings.Contains(menu, "kill it") || m.jobs().List()[0].Foreground {
+			t.Errorf("panel:\n%s\nmenu:\n%s", panel, menu)
+		}
+	})
+
+	t.Run("CM-07 a right click on a running bash call offers to send it to the background or kill it", func(t *testing.T) {
+		m := sidebarModel(t, 140)
+		m.sidebarHidden = true
+		_ = m.fitWidth()
+		command := "sleep 30 # build"
+		m.addTool(llm.ToolCall{ID: "c1", Name: "bash", Args: []byte(`{"command":"` + command + `"}`)}, command)
+		result := foregroundCommand(t, m, command)
+
+		m = rightClickOn(t, m, "# build")
+		menu := ansi.Strip(m.settings.form.View())
+		m = pick(t, m, "kill it")
+
+		select {
+		case <-result:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the command was not killed")
+		}
+		if !strings.Contains(menu, "send it to the background") || !strings.Contains(menu, "kill it") {
+			t.Errorf("menu:\n%s", menu)
+		}
+	})
+
+	t.Run("CM-08 watching a job shows its output live over the screen; it scrolls, searches, copies and closes", func(t *testing.T) {
+		m := sidebarModel(t, 140)
+		result := foregroundCommand(t, m, "for i in $(seq 1 100); do echo line $i; done; echo needle here; sleep 30")
+		t.Cleanup(func() { m.jobs().Close(); <-result })
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			if _, text, _ := m.jobs().Text(2); strings.Contains(text, "needle") || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+
+		m = rightClickOn(t, m, "for i in")
+		m = pick(t, m, "watch its output live")
+		live := ansi.Strip(m.View().Content)
+		for _, key := range []tea.KeyPressMsg{{Code: 'g', Text: "g"}, {Code: '/', Text: "/"}, {Code: 'n', Text: "n"}, {Code: 'e', Text: "e"}, {Code: 'e', Text: "e"}, {Code: tea.KeyEnter}} {
+			updated, _ := m.Update(key)
+			m = updated.(model)
+		}
+		found := ansi.Strip(m.View().Content)
+		copied, cmd := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
+		closed, _ := copied.(model).Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
+
+		if !strings.Contains(live, "Job 2") || !strings.Contains(live, "needle here") || !strings.Contains(live, "following") {
+			t.Errorf("live:\n%s", live)
+		}
+		if !strings.Contains(found, "match 1 of 1") || !strings.Contains(found, "needle here") {
+			t.Errorf("found:\n%s", found)
+		}
+		if cmd == nil || !strings.Contains(copied.(model).viewer.notice, "copied all 101 lines") || closed.(model).viewer != nil {
+			t.Error("y should copy everything and q close")
 		}
 	})
 }

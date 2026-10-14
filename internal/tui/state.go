@@ -8,6 +8,7 @@ import (
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/tools"
 )
 
 // state is what the agent is doing now, in a word, for the spinner and the
@@ -68,7 +69,7 @@ func (m model) currentState() state {
 func (m model) toolState(name, args string, colors stateColors) state {
 	call := llm.ToolCall{Name: name, Args: []byte(args)}
 	call = m.unwrap(call)
-	changes := alwaysChanging[call.Name]
+	changes := alwaysChanging[call.Name] || (call.Name == "bash" && tools.BashChanges(call.Args))
 	if m.session.Agent != nil && m.session.Agent.Tools != nil {
 		changes = changes || m.session.Agent.Tools.Changes(call) || m.session.Agent.Tools.Warning(call) != ""
 	}
@@ -88,8 +89,9 @@ func (s state) label(withDetail bool) string {
 }
 
 // alwaysChanging are the built-in tools that change something whatever
-// their arguments; others the registry decides, as git by its action.
-var alwaysChanging = map[string]bool{"write": true, "edit": true, "mkdir": true, "rm": true, "bash": true}
+// their arguments; others the registry decides, as git and bash by their
+// action.
+var alwaysChanging = map[string]bool{"write": true, "edit": true, "mkdir": true, "rm": true}
 
 // promptDetail is how far the prompt is read, leaving out the part the
 // server had cached: "42% · 3.1k/7.4k", and how much came cached.

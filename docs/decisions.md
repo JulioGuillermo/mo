@@ -2,14 +2,28 @@
 
 ## Context budget
 
-- The built-in system prompt is four lines plus working directory, OS and date (~90 tokens). The nine
-  tool definitions are ~2.2 KB (~550 tokens) in full mode. Tool descriptions stay one line; parameters carry no
-  description unless the name is not enough.
+- The built-in system prompt is four lines plus working directory, OS and date (~90 tokens). The
+  15 tool definitions are ~5.6 KB (~1,400 tokens) in full mode. Tool descriptions stay one line;
+  parameters carry no description: their names must be enough for a model that reads nothing else.
+  What an action takes is in the tool's `help` action, asked when needed, not sent every time.
 - Requests that fail at the network level are sent once more; llama-server closes keep-alive
   connections after streaming, and a repeated model request has no side effect.
-- Tool output is cut to `tools.max_output` (10 KB) keeping 60 % head and 40 % tail: commands put
-  their summary and errors at the end, files and listings put the useful part first.
-- `read` has no line numbers: `edit` matches text, not lines, so numbers would only cost tokens.
+- No limit without a way past it. Every tool that returns text takes the same view fields, applied
+  by the registry to what the tool returns: `offset` (negative from the end), `limit` (2000 lines,
+  200 for `fetch`), `col`, `width` (2000 bytes a line), `match` and `numbered`. What is left out is
+  said with the `offset` or `col` that shows it. Seeing another part runs the tool again: listing,
+  grep, git and fetch are cheap, and a page stays cached. The fixed caps (500 entries, 200
+  matches, 400 blame lines, 8 KB pages) are gone.
+- Output of other tools, MCP's, is cut to `tools.max_output` (10 KB) keeping 60 % head and 40 %
+  tail: commands put their summary and errors at the end, files and listings the useful part first.
+- No line numbers unless asked with `numbered`, everywhere alike: `edit` matches text, not lines, so
+  numbers would mostly cost tokens. With `match` they are always there: the place is the point.
+- One tool per subject, with `action` where it does several things: `bash` runs, reads output and
+  kills; `memory` keeps notes and searches them and past conversations. `action` defaults to run in
+  `bash`, so a plain command call is what every model expects.
+- Nothing a command printed is lost: every `bash` call is a job whose output goes to disk in the
+  conversation's folder, so it can be read later by lines or searched, also after a two-hour build
+  that would cost as much again. `fetch`, `read` and `grep` are not kept: doing them again is cheap.
 
 ## Tool modes
 
@@ -31,9 +45,9 @@
   in the history, not kept apart, so resume, rewind, fork and `/clear` declare what that
   conversation found. After a compaction the search calls are gone and so are the declarations.
 - A call to a tool that exists but is not declared still runs, with the usual approvals.
-- `always_loaded` is `read`, `edit`, `write`, `bash`, `ask` and `recall` by default: the core of
+- `always_loaded` is `read`, `edit`, `write`, `bash`, `ask` and `memory` by default: the core of
   editing code; `write` because `edit` cannot create a file; `bash` covers `ls`, `grep`, `mkdir`
-  and `rm`, and the default allow rules let its reading commands through; `ask` and `recall`
+  and `rm`, and the default allow rules let its reading commands through; `ask` and `memory`
   because a model that does not see them does not think of looking for them, so it guesses
   instead of asking and never finds what earlier conversations and memories hold.
 
@@ -69,8 +83,8 @@
 - Files live in `memory.dir` (`~/.local/share/mo/memory`): `global/` and `projects/<dir>-<hash>/`.
   The hash of the full path keeps `/x/a-b` and `/x/a/b` apart.
 - Memories are not put in the system prompt, not even their first lines: most are of no use to a
-  given request and every request would carry them. The model finds them with `recall`, or
-  `memory list`, when it needs them.
+  given request and every request would carry them. The model finds them with `memory search`,
+  or `memory list`, when it needs them.
 - Writing or deleting a global memory always asks: a prompt-injected model could otherwise plant a
   note that reaches every future session in every project. Project memories do not ask.
 - The memory folder is a protected path for `write`/`edit`, and the project file cannot move it.
@@ -257,8 +271,8 @@
 ## Web
 
 - `fetch` keeps the article readability finds, else the whole page, converted to markdown with
-  absolute links, and serves it 8 KB at a time with an offset, so a long page costs what the model
-  actually reads. The last 16 pages are cached per session.
+  absolute links, and shows 200 lines unless the model asks for more, so a long page costs what
+  it actually reads. The last 16 pages are cached per session.
 - `fetch` asks by default: a prompt-injected model could send what it read to any URL. Reading on
   in a page already fetched does not ask again. Redirects are followed within the same host only;
   one to another host ends the fetch with its target, which then goes through approval itself,
@@ -406,8 +420,10 @@
 - The transcript is drawn again from the history on resume and rewind instead of being saved: it
   depends on the width and theme, and mo's notes to the model are left out of it.
 - Going back is a fork, never an edit in place: the new branch gets a new id once its first turn
-  ends, and names the conversation it came from. Nothing is saved until then, so going back and
+  starts, and names the conversation it came from. Nothing is saved until then, so going back and
   changing one's mind loses nothing.
+- Conversations are deleted only when asked: `/delete`, ✕ in `/resume`, or `/clean <date or age>`,
+  each after a confirmation. Deleting stops the jobs it runs and removes its output folder.
 - Going back does not restore files. `write` and `edit` could keep copies, but `bash` changes
   (commits, installs, deletions) cannot be undone that way, and a partial undo would mislead.
 - A prompt holding a compaction summary is not offered to go back to: what came before it is gone.
@@ -469,10 +485,30 @@
 
 ## Background jobs and the side panel
 
-- `bash` with `background: true` starts a job in its own session and returns its number at once;
-  its output is kept like a foreground command's, 1 MB of head and tail. A job outlives the turn
-  that started it. Jobs belong to the run of mo, not to a session: they survive a settings change,
-  and mo kills what is left (SIGTERM, then SIGKILL after 3 s) when it exits. mo run once has none.
+- Every `bash` call is a job numbered within its conversation, in the foreground or with
+  `background: true` in its own session, returning its number at once. Its output goes to
+  `sessions/<id>/jobs/<n>.log` as it comes, with its state in `<n>.json`: the first 25 MB, and the
+  last 25 MB in a tail file trimmed as it grows, joined after a line saying how much was dropped.
+  A conversation keeps 500 MB; past it the output of its oldest ended jobs goes. Not in `/tmp`,
+  which is often RAM, and not inside the conversation's JSON, rewritten whole after each turn.
+- The model sees only the jobs of the conversation in progress, those of earlier runs too; one
+  left running by a mo that is gone is "lost". A fork gets the output before it as hard links.
+  An ended job is told to the model of its own conversation only, when that one is in progress.
+- A job outlives the turn that started it and survives a settings change; mo kills what is left
+  (SIGTERM, then SIGKILL after 3 s) when it exits. mo run once keeps nothing and has no jobs.
+- The conversation gets its id when its first turn starts, not when it is first saved, so its
+  commands have a folder from the first one.
+- Every command shows in the side panel while it runs, its dot red when it blocks the model and
+  orange in the background; once it ends only those run in the background stay there.
+- A tool call's dot says what it does: red a command that blocks the model, orange one in the
+  background, yellow reading a command's output, pink a change, blue a read.
+- The live viewer reads the job's file again every 300 ms while it runs, rather than streaming:
+  the output is on disk already, and one reader for running and ended jobs keeps it simple. It
+  takes the whole screen like settings do, and the agent goes on underneath.
+- ctrl+b sends a command that blocks the model to the background: the call returns at once with
+  what it printed so far, and the job goes on, told when it ends like one started in the background.
+- Reading a job's output and help never ask; running and `kill` are checked against the rules, a
+  kill as "kill job <n>", which no rule lets through alone.
 - When a job ends the model is told with a note holding its last 15 lines: before its next step if
   it is working, appended to the last user-side message so two user messages never follow; and if
   it is idle, in a turn of its own started from the note, so it can react without waiting for the
@@ -502,11 +538,11 @@
 
 ## Recall
 
-- `recall` searches memories and saved conversations with BM25 and returns ids with a piece of text
+- `memory search` searches memories and saved conversations with BM25 and returns ids with a piece of text
   around the match; `read` gives a memory whole, a conversation's turns, or one turn whole. The
   model decides what to look for and what to read, instead of carrying an index it rarely needs.
 - A conversation is split at the user's prompts: a turn is the prompt, the answers and the tool
-  calls with the start of their results (300 characters when searching, 1500 when read). mo's own
+  calls with the start of their results (300 characters when searching, whole when read). mo's own
   notes stay with the turn they belong to; a compaction summary is a turn of its own.
 - `scope = here` (default) keeps to this folder's conversations and to this project's and the
   global memories; `all` takes every folder. The conversation in progress is left out: the model
@@ -787,3 +823,18 @@
   API takes no bearer key; Anthropic, the Models API's max_input_tokens. When none says, 32768, or
   200000 for Anthropic. Context › Context window overrides it, and the Context section says where
   the window in use came from.
+
+## Vim keys
+
+- Off by default, `render.keys = "vim"` or `/vim` for the session. It starts writing, as a chat
+  does; esc goes to normal mode, where letters move and act instead of typing.
+- Normal mode acts on a pane: the input, the conversation or the side panel, moved between with
+  ctrl+h/j/k/l as split windows are in vim. Writing is only in the input, so i, a and : go back
+  there from anywhere.
+- The conversation gets a line cursor of its own: j and k move it and scroll to keep it in view,
+  l and h open and fold the block it is on, v selects lines and y copies them as they read.
+- In the side panel j and k go from task to task and job to job, a job's two rows being one item,
+  and l opens what a right click would. In settings lists l is enter and h is esc, so menus go in
+  and out as directories do in a file manager. Text fields keep h and l for typing.
+- esc in normal mode does what it did: stop the run, or twice to go back to a prompt. ctrl+c,
+  ctrl+b, ctrl+o and the others keep their meaning in every mode.

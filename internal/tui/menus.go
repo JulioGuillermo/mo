@@ -67,14 +67,12 @@ func (m model) jobMenu(id int) (tea.Model, tea.Cmd) {
 	if err != nil {
 		return m.emitError(err)
 	}
-	options := []huh.Option[string]{huh.NewOption("see its output and how it stands", "show")}
-	if status.State == tools.JobRunning {
-		options = append(options, huh.NewOption("kill it", "kill"))
-	}
+	options := []huh.Option[string]{huh.NewOption("watch its output live: scroll, search, copy", "watch"), huh.NewOption("see its last lines and how it stands", "show")}
+	options = append(options, runningOptions(status)...)
 	return m.showChoices(fmt.Sprintf("Job %d", id), oneLine(status.Command, max(m.width-4, 20)), options,
 		func(m model, choice string) (tea.Model, tea.Cmd) {
-			if choice == "kill" {
-				return m.killFromMenu(id)
+			if updated, cmd, done := m.jobChoice(id, choice); done {
+				return updated, cmd
 			}
 			return m.jobDialog(id)
 		})
@@ -95,18 +93,51 @@ func (m model) jobDialog(id int) (tea.Model, tea.Cmd) {
 	if strings.TrimSpace(output) == "" {
 		output = "(no output yet)"
 	}
-	options := []huh.Option[string]{huh.NewOption("refresh", "refresh")}
-	if status.State == tools.JobRunning {
-		options = append(options, huh.NewOption("kill it", "kill"))
-	}
+	options := []huh.Option[string]{huh.NewOption("refresh", "refresh"), huh.NewOption("watch its output live: scroll, search, copy", "watch")}
+	options = append(options, runningOptions(status)...)
 	description := status.Describe() + "\n\n" + dimStyle.Render(output)
 	return m.showChoices(fmt.Sprintf("Job %d", id), description, options,
 		func(m model, choice string) (tea.Model, tea.Cmd) {
-			if choice == "kill" {
-				return m.killFromMenu(id)
+			if updated, cmd, done := m.jobChoice(id, choice); done {
+				return updated, cmd
 			}
 			return m.jobDialog(id)
 		})
+}
+
+// runningOptions are what can be done to a job while it runs: send it to
+// the background when it blocks the model, and kill it.
+func runningOptions(status tools.JobStatus) []huh.Option[string] {
+	if status.State != tools.JobRunning {
+		return nil
+	}
+	var options []huh.Option[string]
+	if status.Foreground {
+		options = append(options, huh.NewOption("send it to the background, so the model goes on", "background"))
+	}
+	return append(options, huh.NewOption("kill it", "kill"))
+}
+
+// jobChoice does what was picked in a job's menu, when it is an action.
+func (m model) jobChoice(id int, choice string) (tea.Model, tea.Cmd, bool) {
+	switch choice {
+	case "watch":
+		updated, cmd := m.openViewer(id)
+		return updated, cmd, true
+	case "kill":
+		updated, cmd := m.killFromMenu(id)
+		return updated, cmd, true
+	case "background":
+		jobs := m.jobs()
+		if err := jobs.DetachJob(id); err != nil {
+			updated, cmd := m.emitError(err)
+			return updated, cmd, true
+		}
+		tick := m.tickJobs()
+		updated, cmd := m.emit(m.printer.Note(fmt.Sprintf("job %d goes on in the background", id)))
+		return updated, tea.Batch(cmd, tick), true
+	}
+	return m, nil, false
 }
 
 func (m model) killFromMenu(id int) (tea.Model, tea.Cmd) {

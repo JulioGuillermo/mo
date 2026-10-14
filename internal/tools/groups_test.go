@@ -75,7 +75,7 @@ func TestToolModes(t *testing.T) {
 		before, _ := specOf(registry.Specs(nil), "grep")
 		after, _ := specOf(registry.Specs(history), "grep")
 
-		if !strings.Contains(found, "grep: Search file contents") || before.Description != "" || after.Description == "" {
+		if !strings.Contains(found, "grep: Search files for") || before.Description != "" || after.Description == "" {
 			t.Errorf("found %q before %q after %q", found, before.Description, after.Description)
 		}
 		if listed := registry.list(""); strings.Contains(listed, "grep") {

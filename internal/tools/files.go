@@ -14,28 +14,22 @@ import (
 	"github.com/jg/mo/internal/render"
 )
 
-const (
-	readDefaultLimit = 2000
-	readMaxLineBytes = 2000
-)
+const readMaxLineBytes = 2000
 
 func readTool() Tool {
 	return Tool{
 		Name:        "read",
-		Description: "Read a text file. offset is the first line (1-based). numbered: prefix each line with its number.",
-		Schema: json.RawMessage(`{"type":"object","properties":{
-"path":{"type":"string"},"offset":{"type":"integer"},"limit":{"type":"integer"},"numbered":{"type":"boolean"}},"required":["path"]}`),
-		Run:     runRead,
-		Summary: func(args json.RawMessage) string { return argField(args, "path") },
+		Description: "Read a text file.",
+		Schema:      json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`),
+		Run:         runRead,
+		View:        true,
+		Summary:     func(args json.RawMessage) string { return argField(args, "path") },
 	}
 }
 
 func runRead(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	var args struct {
-		Path     string `json:"path"`
-		Offset   int    `json:"offset"`
-		Limit    int    `json:"limit"`
-		Numbered bool   `json:"numbered"`
+		Path string `json:"path"`
 	}
 	if err := decodeArgs(raw, &args); err != nil {
 		return "", err
@@ -61,33 +55,7 @@ func runRead(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	if len(data) == 0 {
 		return "(empty file)", nil
 	}
-
-	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
-	first := max(args.Offset, 1)
-	if first > len(lines) {
-		return "", fmt.Errorf("offset %d is past the end (%d lines)", first, len(lines))
-	}
-	limit := args.Limit
-	if limit <= 0 {
-		limit = readDefaultLimit
-	}
-	last := min(first-1+limit, len(lines))
-
-	var out strings.Builder
-	for i, line := range lines[first-1 : last] {
-		if len(line) > readMaxLineBytes {
-			line = cutAtRune(line, readMaxLineBytes) + " [line cut]"
-		}
-		if args.Numbered {
-			fmt.Fprintf(&out, "%d\t", first+i)
-		}
-		out.WriteString(line)
-		out.WriteByte('\n')
-	}
-	if last < len(lines) {
-		fmt.Fprintf(&out, "[lines %d-%d of %d; continue with offset=%d]\n", first, last, len(lines), last+1)
-	}
-	return out.String(), nil
+	return string(data), nil
 }
 
 // describeImage answers a read of an image with its size and a marker, so
@@ -112,7 +80,7 @@ func writeTool() Tool {
 	return Tool{
 		ChangesPathArg: true,
 		Name:           "write",
-		Description:    "Create or overwrite a file. Creates parent directories.",
+		Description:    "Create or overwrite a file, and its folders.",
 		Schema: json.RawMessage(`{"type":"object","properties":{
 "path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}`),
 		Run:     runWrite,
@@ -142,26 +110,41 @@ func editTool() Tool {
 	return Tool{
 		ChangesPathArg: true,
 		Name:           "edit",
-		Description:    "Replace exact text in a file. old must match once unless all is true.",
+		Description:    "Replace exact text in a file: old must be found once, or set all. edits: several at once, all or none.",
 		Schema: json.RawMessage(`{"type":"object","properties":{
-"path":{"type":"string"},"old":{"type":"string"},"new":{"type":"string"},"all":{"type":"boolean"}},"required":["path","old","new"]}`),
+"path":{"type":"string"},"old":{"type":"string"},"new":{"type":"string"},"all":{"type":"boolean"},
+"edits":{"type":"array","items":{"type":"object","properties":{"old":{"type":"string"},"new":{"type":"string"},"all":{"type":"boolean"}},"required":["old","new"]}}},"required":["path"]}`),
 		Run:     runEdit,
 		Summary: func(args json.RawMessage) string { return argField(args, "path") },
 	}
 }
 
+type replacement struct {
+	Old string `json:"old"`
+	New string `json:"new"`
+	All bool   `json:"all"`
+}
+
 func runEdit(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	var args struct {
-		Path string `json:"path"`
-		Old  string `json:"old"`
-		New  string `json:"new"`
-		All  bool   `json:"all"`
+		Path  string        `json:"path"`
+		Old   *string       `json:"old"`
+		New   *string       `json:"new"`
+		All   bool          `json:"all"`
+		Edits []replacement `json:"edits"`
 	}
 	if err := decodeArgs(raw, &args); err != nil {
 		return "", err
 	}
-	if args.Old == "" {
-		return "", errors.New("old is empty; use write to create a file")
+	edits := args.Edits
+	if args.Old != nil || args.New != nil {
+		if args.Old == nil || args.New == nil {
+			return "", errors.New("give both old and new")
+		}
+		edits = append([]replacement{{Old: *args.Old, New: *args.New, All: args.All}}, edits...)
+	}
+	if len(edits) == 0 {
+		return "", errors.New("give old and new, or edits")
 	}
 	path := env.Resolve(args.Path)
 	data, err := os.ReadFile(path)
@@ -169,20 +152,34 @@ func runEdit(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 		return "", err
 	}
 	content := string(data)
-	count := strings.Count(content, args.Old)
-	if count == 0 {
-		return "", errors.New("old text not found")
+	total := 0
+	for i, edit := range edits {
+		where := ""
+		if len(edits) > 1 {
+			where = fmt.Sprintf("edit %d: ", i+1)
+		}
+		if edit.Old == "" {
+			return "", errors.New(where + "old is empty; use write to create a file")
+		}
+		count := strings.Count(content, edit.Old)
+		if count == 0 {
+			return "", errors.New(where + "old text not found")
+		}
+		if count > 1 && !edit.All {
+			return "", fmt.Errorf("%sold text found %d times; add context to make it unique or set all", where, count)
+		}
+		content = strings.ReplaceAll(content, edit.Old, edit.New)
+		total += count
 	}
-	if count > 1 && !args.All {
-		return "", fmt.Errorf("old text found %d times; add context to make it unique or set all", count)
-	}
-	updated := strings.ReplaceAll(content, args.Old, args.New)
 	info, err := os.Stat(path)
 	if err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(path, []byte(updated), info.Mode().Perm()); err != nil {
+	if err := os.WriteFile(path, []byte(content), info.Mode().Perm()); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("replaced %d occurrence(s)", count), nil
+	if len(edits) > 1 {
+		return fmt.Sprintf("made %d edits, %d replacement(s)", len(edits), total), nil
+	}
+	return fmt.Sprintf("replaced %d occurrence(s)", total), nil
 }

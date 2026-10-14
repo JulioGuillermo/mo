@@ -9,14 +9,13 @@ import (
 	"strings"
 )
 
-const lsMaxEntries = 500
-
 func lsTool() Tool {
 	return Tool{
 		Name:        "ls",
-		Description: "List a directory. Directories end in /.",
+		Description: "List a directory; folders end in /.",
 		Schema:      json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}}}`),
 		Run:         runLs,
+		View:        true,
 		Summary:     func(args json.RawMessage) string { return argField(args, "path") },
 	}
 }
@@ -39,11 +38,7 @@ func runLs(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 		return "(empty directory)", nil
 	}
 	var out strings.Builder
-	for i, entry := range entries {
-		if i == lsMaxEntries {
-			fmt.Fprintf(&out, "[%d more entries]\n", len(entries)-lsMaxEntries)
-			break
-		}
+	for _, entry := range entries {
 		out.WriteString(entry.Name())
 		if entry.IsDir() {
 			out.WriteByte('/')
@@ -57,7 +52,7 @@ func mkdirTool() Tool {
 	return Tool{
 		ChangesPathArg: true,
 		Name:           "mkdir",
-		Description:    "Create a directory and its parents.",
+		Description:    "Create a folder.",
 		Schema:         json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`),
 		Run:            runMkdir,
 		Summary:        func(args json.RawMessage) string { return argField(args, "path") },
@@ -81,7 +76,7 @@ func rmTool() Tool {
 	return Tool{
 		ChangesPathArg: true,
 		Name:           "rm",
-		Description:    "Delete a file, or a directory with recursive=true.",
+		Description:    "Delete a file, or a folder with recursive.",
 		Schema: json.RawMessage(`{"type":"object","properties":{
 "path":{"type":"string"},"recursive":{"type":"boolean"}},"required":["path"]}`),
 		Run:     runRm,

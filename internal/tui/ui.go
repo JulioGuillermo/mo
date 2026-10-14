@@ -21,6 +21,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
@@ -114,14 +115,18 @@ type model struct {
 	titling *titling
 	// promptRead is how far the server is in reading the prompt, when it
 	// says so.
-	promptRead       llm.PromptProgress
-	runningTool      *llm.ToolCall
-	streamDone       string
-	reasoning        string
-	dialog           *dialog
-	usage            llm.Usage
-	speed            llm.Usage
-	settings         *settingsScreen
+	promptRead  llm.PromptProgress
+	runningTool *llm.ToolCall
+	streamDone  string
+	reasoning   string
+	dialog      *dialog
+	usage       llm.Usage
+	speed       llm.Usage
+	settings    *settingsScreen
+	// viewer shows a job's output over the whole screen while it is open.
+	viewer *outputViewer
+	// vim is where vim keys are, when they are on.
+	vim              vimState
 	settingsInFlight bool
 
 	suggestion   int
@@ -173,7 +178,9 @@ func Run(session Session) error {
 		spinner:  spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(workingStyle)),
 		focused:  true,
 		history:  loadHistory(),
+		vim:      vimState{enabled: session.Config.Render.Keys == "vim"},
 	}
+	printer.setKind(m.toolKind)
 	program := tea.NewProgram(m)
 	bridge.program = program
 	if titles := session.Agent.Tools.Titles(); titles != nil {
@@ -181,6 +188,7 @@ func Run(session Session) error {
 	}
 	if jobs := session.Agent.Tools.Jobs(); jobs != nil {
 		jobs.OnEnd(func(status tools.JobStatus) { bridge.send(jobEndedMsg(status)) })
+		jobs.OnStart(func(status tools.JobStatus) { bridge.send(jobStartedMsg(status)) })
 	}
 	final, err := program.Run()
 	close(bridge.exited)
@@ -247,11 +255,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.openSettings(msg)
 	case settingsSavedMsg:
 		return m.finishSettings(msg)
+	case deletedMsg:
+		return m.conversationsDeleted(msg)
 	case modelsMsg:
 		return m.showModels(msg)
 	}
 	if m.settings != nil && !isAgentMsg(msg) {
 		return m.updateSettings(msg)
+	}
+	if _, tick := msg.(viewerTickMsg); (tick || m.viewer != nil) && !isAgentMsg(msg) {
+		if m.viewer == nil {
+			return m, nil
+		}
+		return m.updateViewer(msg)
 	}
 	switch msg := msg.(type) {
 	case printMsg:
@@ -278,6 +294,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.jobEnded(tools.JobStatus(msg))
 	case jobTickMsg:
 		m.jobsTicking = false
+		return m, m.tickJobs()
+	case jobStartedMsg:
 		return m, m.tickJobs()
 	case loginMsg:
 		return m.loggedIn(msg)
@@ -432,6 +450,11 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.dialog != nil {
 		return m.handleDialogKey(msg)
 	}
+	if m.vimOn() {
+		if handled, next, cmd := m.vimKey(msg); handled {
+			return next, cmd
+		}
+	}
 	if handled, next, cmd := m.historyKey(msg.String()); handled {
 		return next, cmd
 	}
@@ -455,6 +478,8 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+o":
 		m.toggleDetails()
 		return m, nil
+	case "ctrl+b":
+		return m.toBackground()
 	case "pgup", "shift+up":
 		m.scroll(true, m.pageSize(msg.String()))
 		return m, nil
@@ -568,6 +593,7 @@ func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 // start runs work on the agent in the background, after first, until it
 // ends or is stopped.
 func (m model) start(first tea.Cmd, work func(context.Context, agent.Hooks) error) (tea.Model, tea.Cmd) {
+	m.ensureThread()
 	ctx, cancel := context.WithCancel(context.Background())
 	finished := make(chan struct{})
 	m.running = true
@@ -602,6 +628,10 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		return m, listConversations(m.session.WorkDir, false)
 	case "fork":
 		return m.fork()
+	case "delete":
+		return m.deleteCurrent()
+	case "clean":
+		return m.clean(argument)
 	case "title":
 		return m.retitle(argument)
 	case "model":
@@ -615,6 +645,13 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 			return m.emit(m.printer.Note("the model is working already"))
 		}
 		return m.start(printText(m.printer.Note("continuing…")), m.session.Agent.Continue)
+	case "vim":
+		m.vim = vimState{enabled: !m.vim.enabled}
+		state := "off"
+		if m.vim.enabled {
+			state = "on: esc for normal mode, i to write"
+		}
+		return m.emit(m.printer.Note("vim keys " + state))
 	case "sidebar":
 		m.sidebarHidden = !m.sidebarHidden
 		if m.session.Config.Render.Sidebar == sidebarOff {
@@ -761,6 +798,9 @@ func (m model) View() tea.View {
 	if m.settings != nil {
 		view = tea.NewView(m.settings.form.View() + "\n" + dimStyle.Render(m.settings.helpLine()))
 		view.WindowTitle = "mo · settings"
+	} else if m.viewer != nil {
+		view = tea.NewView(m.viewerView())
+		view.WindowTitle = fmt.Sprintf("mo · job %d", m.viewer.id)
 	} else {
 		screen, _ := m.screenLayout()
 		view = tea.NewView(m.highlight(screen))
@@ -843,6 +883,13 @@ func (m model) upperLayout() (string, []region) {
 // lowerLayout is the input and the status line, the whole width.
 func (m model) lowerLayout() (string, []region) {
 	status, regions := m.statusLayout()
+	if badge := m.vimBadge(); badge != "" {
+		status = ansi.Truncate(badge+status, max(m.width, lipgloss.Width(badge)), "…")
+		for i := range regions {
+			regions[i].x0 += lipgloss.Width(badge)
+			regions[i].x1 += lipgloss.Width(badge)
+		}
+	}
 	input := m.input.View()
 	return input + "\n" + status, shifted(regions, lipgloss.Height(input))
 }
@@ -882,8 +929,7 @@ func (m model) conversation(height int) viewport.Model {
 	conversation := m.viewport
 	conversation.SetWidth(m.mainWidth())
 	conversation.SetHeight(max(height, 1))
-	transcript, _ := m.transcript()
-	conversation.SetContent(strings.TrimRight(transcript+m.liveText(), "\n"))
+	conversation.SetContent(m.markConversation(m.conversationContent()))
 	if !m.scrolled {
 		conversation.GotoBottom()
 	}

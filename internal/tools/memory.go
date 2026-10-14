@@ -20,36 +20,71 @@ const (
 
 var memoryNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
+var memoryHelp = []helpTopic{
+	{"list", "the notes of this project and the global ones, each with its summary, the first line."},
+	{"read", "name: a note, or an id from search: m:… a note, c:<conversation> its turns, c:<conversation>#<n> one turn whole."},
+	{"write", "name (lowercase letters, digits, - and _), content: save a note; scope: project (default) or global, for every project."},
+	{"delete", "name, scope: delete a note."},
+	{"search", "query: words to find in the notes and the past conversations of this project; scope all: of every project. kind: notes or conversations only. count: results (6, at most 20)."},
+}
+
 func memoryTool() Tool {
 	return Tool{
 		Name:        "memory",
-		Description: "Notes that persist across sessions. list, read, write or delete one by name; recall searches them. The first line of content is its summary. scope: project (default) or global.",
+		Description: "Notes kept across conversations, and search over them and past conversations. help explains each action.",
 		Schema: json.RawMessage(`{"type":"object","properties":{
-"action":{"type":"string","enum":["list","read","write","delete"]},
-"name":{"type":"string"},"content":{"type":"string"},
-"scope":{"type":"string","enum":["project","global"]}},"required":["action"]}`),
-		Run: runMemory,
+"action":{"type":"string","enum":["list","read","write","delete","search","help"]},
+"name":{"type":"string"},"content":{"type":"string"},"query":{"type":"string"},
+"scope":{"type":"string","enum":["project","global","all"]},"kind":{"type":"string","enum":["notes","conversations"]},
+"count":{"type":"integer"},"topic":{"type":"string"}},"required":["action"]}`),
+		Run:  runMemory,
+		View: true,
 		Summary: func(args json.RawMessage) string {
-			return strings.TrimSpace(argField(args, "action") + " " + argField(args, "name"))
+			return strings.TrimSpace(argField(args, "action") + " " + argField(args, "name") + argField(args, "query") + argField(args, "topic"))
 		},
 	}
 }
 
 func runMemory(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	var args struct {
-		Action  string `json:"action"`
-		Name    string `json:"name"`
-		Content string `json:"content"`
-		Scope   string `json:"scope"`
+		Action, Name, Content, Query, Scope, Kind, Topic string
+		Count                                            int
 	}
 	if err := decodeArgs(raw, &args); err != nil {
 		return "", err
+	}
+	switch args.Action {
+	case "help":
+		return help(memoryHelp, args.Topic)
+	case "search":
+		if env.Recall == nil {
+			return "", errors.New("search is not available here")
+		}
+		count := args.Count
+		if count <= 0 {
+			count = recallResults
+		}
+		kind := map[string]string{"notes": kindMemories, "conversations": kindConversations}[args.Kind]
+		scope := ""
+		if args.Scope == "all" {
+			scope = scopeAll
+		}
+		return env.Recall.search(env, args.Query, scope, kind, min(count, mostRecallResults))
 	}
 	if env.MemoryDir == "" {
 		return "", errors.New("memory is not configured")
 	}
 	if args.Action == "list" {
 		return memoryList(env), nil
+	}
+	if args.Action == "read" && strings.Contains(args.Name, ":") {
+		if env.Recall == nil {
+			return readMemory(env, strings.TrimPrefix(args.Name, memoryPrefix))
+		}
+		return env.Recall.read(env, args.Name)
+	}
+	if args.Scope == "all" {
+		return "", errors.New("scope all is for search: use project or global")
 	}
 	path, err := memoryPath(env, args.Scope, args.Name)
 	if err != nil {
@@ -76,7 +111,7 @@ func runMemory(_ context.Context, env Env, raw json.RawMessage) (string, error) 
 		}
 		return "deleted", nil
 	}
-	return "", fmt.Errorf("unknown action %q", args.Action)
+	return "", fmt.Errorf("action %q: use list, read, write, delete, search or help", args.Action)
 }
 
 func memoryPath(env Env, scope, name string) (string, error) {

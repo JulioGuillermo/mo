@@ -4,19 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"sync"
 
 	"github.com/jg/mo/internal/web"
 )
 
 const (
-	fetchPageBytes   = 8000
+	fetchShownLines  = 200
 	fetchCachedPages = 16
 )
 
-// pageCache keeps the pages fetched in this session, so reading on with a
-// larger offset neither downloads the page again nor asks again.
+// pageCache keeps the pages fetched in this session, so reading on from
+// another offset neither downloads the page again nor asks again.
 type pageCache struct {
 	mu    sync.Mutex
 	pages map[string]web.Page
@@ -60,13 +59,11 @@ func fetchTool() Tool {
 	cache := &pageCache{pages: map[string]web.Page{}}
 	return Tool{
 		Name:        "fetch",
-		Description: "Fetch a URL as markdown, 8 KB at a time. offset continues a long page.",
-		Schema: json.RawMessage(`{"type":"object","properties":{
-"url":{"type":"string"},"offset":{"type":"integer"}},"required":["url"]}`),
+		Description: "Fetch a URL as markdown, 200 lines unless limit says more.",
+		Schema:      json.RawMessage(`{"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}`),
 		Run: func(ctx context.Context, _ Env, raw json.RawMessage) (string, error) {
 			var args struct {
-				URL    string `json:"url"`
-				Offset int    `json:"offset"`
+				URL string `json:"url"`
 			}
 			if err := decodeArgs(raw, &args); err != nil {
 				return "", err
@@ -75,28 +72,17 @@ func fetchTool() Tool {
 			if err != nil {
 				return "", err
 			}
-			return pageWindow(page, args.Offset), nil
+			header := page.URL + "\n\n"
+			if page.Title != "" {
+				header = "# " + page.Title + "\n" + header
+			}
+			return header + page.Markdown, nil
 		},
+		View:             true,
+		ViewLimit:        fetchShownLines,
 		Summary:          func(args json.RawMessage) string { return argField(args, "url") },
 		AlreadyConfirmed: func(args json.RawMessage) bool { return cache.has(argField(args, "url")) },
 	}
-}
-
-func pageWindow(page web.Page, offset int) string {
-	text := page.Markdown
-	if offset < 0 || offset > len(text) {
-		return fmt.Sprintf("offset %d is past the end (%d bytes)", offset, len(text))
-	}
-	window := cutAtRune(text[offset:], fetchPageBytes)
-	header := page.URL + "\n\n"
-	if page.Title != "" && offset == 0 {
-		header = "# " + page.Title + "\n" + header
-	}
-	next := offset + len(window)
-	if next < len(text) {
-		return fmt.Sprintf("%s%s\n\n[continues: offset=%d of %d]", header, window, next, len(text))
-	}
-	return header + window
 }
 
 func webSearchTool(searcher web.Searcher) Tool {

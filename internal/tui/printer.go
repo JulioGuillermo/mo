@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -11,6 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/render"
 )
 
@@ -56,6 +58,8 @@ type printer struct {
 	markdown *glamour.TermRenderer
 	images   render.Mode
 	workDir  string
+	// kind tells what a tool call does, for the colour of its mark.
+	kind func(call llm.ToolCall) toolKind
 }
 
 func newPrinter() *printer {
@@ -226,12 +230,31 @@ func (p *printer) User(text string) string {
 
 // ToolStart names the tool and shows what it is about to do, a command on
 // its own shaded lines, after a blank line.
-func (p *printer) ToolStart(name, summary string) string {
-	header := "\n" + toolName.Render("● "+name)
+func (p *printer) ToolStart(name string, args json.RawMessage, summary string) string {
+	header := "\n" + p.toolHeader(name, args)
 	if !strings.Contains(summary, "\n") && len(summary) < 60 && name != "bash" {
 		return header + " " + summary
 	}
 	return header + "\n" + p.command(summary)
+}
+
+// toolHeader is a tool's name after a mark coloured by what the call does.
+func (p *printer) toolHeader(name string, args json.RawMessage) string {
+	p.mu.Lock()
+	kind := p.kind
+	p.mu.Unlock()
+	call := llm.ToolCall{Name: name, Args: args}
+	mark := toolMark(toolKindOf(call, nil))
+	if kind != nil {
+		mark = toolMark(kind(call))
+	}
+	return mark + toolName.Render(" "+name)
+}
+
+func (p *printer) setKind(kind func(call llm.ToolCall) toolKind) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.kind = kind
 }
 
 func (p *printer) command(text string) string {
@@ -283,13 +306,13 @@ func (p *printer) Tool(run toolRun, open bool) string {
 	change, changed := fileChangeOf(run.name, run.args)
 	switch {
 	case open && changed:
-		parts = append(parts, "\n"+toolName.Render("● "+run.name)+" "+run.summary+dimStyle.Render("  "+change.summary())+"\n"+p.fileChangeLines(change))
+		parts = append(parts, "\n"+p.toolHeader(run.name, run.args)+" "+run.summary+dimStyle.Render("  "+change.summary())+"\n"+p.fileChangeLines(change))
 	case open:
-		parts = append(parts, "\n"+toolName.Render("● "+run.name)+"\n"+p.commandLines(run.summary, true))
+		parts = append(parts, "\n"+p.toolHeader(run.name, run.args)+"\n"+p.commandLines(run.summary, true))
 	case changed:
-		parts = append(parts, p.ToolStart(run.name, run.summary+dimStyle.Render("  "+change.summary())))
+		parts = append(parts, p.ToolStart(run.name, run.args, run.summary+dimStyle.Render("  "+change.summary())))
 	default:
-		parts = append(parts, p.ToolStart(run.name, run.summary))
+		parts = append(parts, p.ToolStart(run.name, run.args, run.summary))
 	}
 	switch {
 	case !run.done:

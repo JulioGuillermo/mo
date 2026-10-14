@@ -56,6 +56,7 @@ type settingsDraft struct {
 	sidebar      string
 	statusStyle  string
 	icons        string
+	keys         string
 	memoryDir    string
 
 	instructionsOn    bool
@@ -133,6 +134,7 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		sidebar:       cfg.Render.Sidebar,
 		statusStyle:   cfg.Render.Status,
 		icons:         cfg.Render.Icons,
+		keys:          cfg.Render.Keys,
 
 		instructionsOn:    cfg.Instructions.Enabled == nil || *cfg.Instructions.Enabled,
 		instructionsFiles: strings.Join(cfg.Instructions.Files, "\n"),
@@ -265,6 +267,7 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	layer.Render.Sidebar = unlessDefault(d.sidebar, defaults.Render.Sidebar)
 	layer.Render.Status = unlessDefault(d.statusStyle, defaults.Render.Status)
 	layer.Render.Icons = unlessDefault(d.icons, defaults.Render.Icons)
+	layer.Render.Keys = unlessDefault(d.keys, defaults.Render.Keys)
 	layer.Notify = config.Notify{
 		Finish:   unlessDefaultFlag(d.notifyFinish, *defaults.Notify.Finish),
 		Approval: unlessDefaultFlag(d.notifyApproval, *defaults.Notify.Approval),

@@ -30,7 +30,6 @@ const (
 	writtenFile    = "MO_WRITTEN"
 	rebaseFile     = "MO_REBASE"
 	shownLog       = 20
-	shownBlame     = 400
 	fallbackName   = "mo"
 	fallbackEmail  = "mo@localhost"
 )
@@ -380,10 +379,6 @@ func (r *Repo) Blame(path string) (string, error) {
 	}
 	var out strings.Builder
 	for i, line := range result.Lines {
-		if i == shownBlame {
-			fmt.Fprintf(&out, "… %d more lines\n", len(result.Lines)-shownBlame)
-			break
-		}
 		fmt.Fprintf(&out, "%s %-12s %4d  %s\n", line.Hash.String()[:7], cutName(line.AuthorName), i+1, line.Text)
 	}
 	return out.String(), nil

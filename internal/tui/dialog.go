@@ -667,7 +667,7 @@ func (b *bridge) interact(ctx context.Context, interaction agent.Interaction) ag
 	for i, request := range interaction.Approvals {
 		if i < len(answered.Decisions) && answered.Decisions[i] == agent.Deny {
 			b.draw(func() string {
-				return b.printer.ToolStart(request.Call.Name, request.Summary) + "\n" + b.printer.Denied(request.Call.Name)
+				return b.printer.ToolStart(request.Call.Name, request.Call.Args, request.Summary) + "\n" + b.printer.Denied(request.Call.Name)
 			})
 		}
 	}

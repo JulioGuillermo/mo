@@ -229,6 +229,29 @@ func (m *model) toggleDetails() {
 
 // clickDetails opens or folds the block at row y of the screen, and tells
 // whether there was one there.
+// runningCommandAt is the job of the bash command still running in the
+// tool call drawn at row y of the conversation.
+func (m model) runningCommandAt(y int) (int, bool) {
+	jobs := m.jobs()
+	if jobs == nil {
+		return 0, false
+	}
+	conversation := m.conversation(m.conversationHeight())
+	_, foldable := m.transcript()
+	i, found := foldable[y+conversation.YOffset()]
+	if !found || m.blocks[i].tool == nil {
+		return 0, false
+	}
+	run := m.blocks[i].tool
+	var args struct {
+		Command string `json:"command"`
+	}
+	if run.name != "bash" || run.done || json.Unmarshal(run.args, &args) != nil || args.Command == "" {
+		return 0, false
+	}
+	return jobs.RunningCommand(args.Command)
+}
+
 func (m *model) clickDetails(y int) bool {
 	conversation := m.conversation(m.conversationHeight())
 	_, foldable := m.transcript()

@@ -6,9 +6,18 @@ package tools
 // | JB-02 | Happy    | Killing a job stops what it started and is not told as an end        | P0       |
 // | JB-03 | Security | Closing kills every job left, and nothing starts after              | P0       |
 // | JB-04 | Error    | Without jobs, background is refused instead of run in the foreground  | P1       |
+// | JB-05 | Happy    | A foreground command is a job: its whole output stays to read by lines | P0      |
+// | JB-06 | Happy    | Long output comes back cut, with the job to read the rest             | P0       |
+// | JB-07 | Happy    | match searches one job or every job of the conversation             | P1       |
+// | JB-11 | Happy    | The user sends a blocking command to the background; the model hears when it ends | P0 |
+// | JB-12 | Happy    | Reading output and help never ask; running and killing do          | P0       |
+// | JB-08 | Edge     | A log keeps its first and last bytes and says how much it dropped    | P0       |
+// | JB-09 | Edge     | Each conversation numbers and sees its own jobs, also after a restart | P0      |
+// | JB-10 | Edge     | Past the conversation's limit the oldest output goes                 | P1       |
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,7 +40,8 @@ func waitFor(t *testing.T, done func() bool) {
 
 func jobsRegistry(t *testing.T) (*Registry, *Jobs) {
 	t.Helper()
-	jobs := NewJobs()
+	jobs := NewJobs(t.TempDir())
+	jobs.SetConversation("c1")
 	t.Cleanup(jobs.Close)
 	return NewRegistry(Env{WorkDir: t.TempDir(), Jobs: jobs}, Options{MaxOutput: 10000}), jobs
 }
@@ -64,7 +74,7 @@ func TestJobs(t *testing.T) {
 		marker := filepath.Join(t.TempDir(), "still-running")
 		registry.Run(context.Background(), llm.ToolCall{Name: "bash", Args: args(t, map[string]any{"command": "(sleep 1; touch " + marker + ") & sleep 30", "background": true})})
 
-		output, isError := registry.Run(context.Background(), llm.ToolCall{Name: "jobs", Args: args(t, map[string]any{"action": "kill", "id": 1})})
+		output, isError := registry.Run(context.Background(), llm.ToolCall{Name: "bash", Args: args(t, map[string]any{"action": "kill", "id": 1})})
 		time.Sleep(1300 * time.Millisecond)
 
 		_, err := os.Stat(marker)
@@ -74,7 +84,8 @@ func TestJobs(t *testing.T) {
 	})
 
 	t.Run("JB-03 closing kills every job left, and nothing starts after", func(t *testing.T) {
-		jobs := NewJobs()
+		jobs := NewJobs(t.TempDir())
+		jobs.SetConversation("c1")
 		env := Env{WorkDir: t.TempDir(), Jobs: jobs}
 		_, _ = jobs.Start(env, "sleep 30")
 		_, _ = jobs.Start(env, "sleep 30")
@@ -99,6 +110,158 @@ func TestJobs(t *testing.T) {
 
 		if !isError || !strings.Contains(output, "not available") {
 			t.Errorf("output = %q", output)
+		}
+	})
+
+	t.Run("JB-05 a foreground command is a job: its whole output stays to read by lines", func(t *testing.T) {
+		registry, _ := jobsRegistry(t)
+
+		output, isError := registry.Run(context.Background(), llm.ToolCall{Name: "bash", Args: args(t, map[string]any{"command": "seq 1 5; exit 2"})})
+		read, readError := registry.Run(context.Background(), llm.ToolCall{Name: "bash", Args: args(t, map[string]any{"action": "output", "id": 1, "offset": 1, "limit": 2, "numbered": true})})
+		list, _ := registry.Run(context.Background(), llm.ToolCall{Name: "bash", Args: args(t, map[string]any{"action": "output"})})
+
+		if !isError || !strings.Contains(output, "5\n[job 1]") || !strings.Contains(output, "exit status 2") {
+			t.Errorf("output = %q", output)
+		}
+		if readError || !strings.HasSuffix(read, "\n2\t2\n3\t3\n[lines 2-3 of 5; offset=3 continues]\n") {
+			t.Errorf("read = %q", read)
+		}
+		if !strings.Contains(list, "job 1 failed with exit 2") {
+			t.Errorf("list = %q", list)
+		}
+	})
+
+	t.Run("JB-06 long output comes back cut, with the job to read the rest", func(t *testing.T) {
+		jobs := NewJobs(t.TempDir())
+		jobs.SetConversation("c1")
+		t.Cleanup(jobs.Close)
+		registry := NewRegistry(Env{WorkDir: t.TempDir(), Jobs: jobs}, Options{MaxOutput: 500})
+
+		output, _ := registry.Run(context.Background(), llm.ToolCall{Name: "bash", Args: args(t, map[string]any{"command": "seq 1 5000"})})
+		middle, _ := registry.Run(context.Background(), llm.ToolCall{Name: "bash", Args: args(t, map[string]any{"id": 1, "offset": 2499, "limit": 1})})
+
+		if len(output) > 500 || !strings.Contains(output, "action output with id 1") || !strings.HasPrefix(output, "1\n2\n") {
+			t.Errorf("output (%d bytes) = %q", len(output), output)
+		}
+		if !strings.Contains(middle, "\n2500\n[lines 2500-2500 of 5000") {
+			t.Errorf("middle = %q", middle)
+		}
+	})
+
+	t.Run("JB-07 match searches one job or every job of the conversation", func(t *testing.T) {
+		registry, _ := jobsRegistry(t)
+		registry.Run(context.Background(), llm.ToolCall{Name: "bash", Args: args(t, map[string]any{"command": "echo ok; echo error: one"})})
+		registry.Run(context.Background(), llm.ToolCall{Name: "bash", Args: args(t, map[string]any{"command": "echo ERROR: two"})})
+
+		every, _ := registry.Run(context.Background(), llm.ToolCall{Name: "bash", Args: args(t, map[string]any{"action": "output", "match": "(?i)error"})})
+		one, _ := registry.Run(context.Background(), llm.ToolCall{Name: "bash", Args: args(t, map[string]any{"action": "output", "id": 2, "match": "error"})})
+
+		if every != "1:2: error: one\n2:1: ERROR: two\n" {
+			t.Errorf("every = %q", every)
+		}
+		if !strings.HasSuffix(one, "no line matches \"error\"") {
+			t.Errorf("one = %q", one)
+		}
+	})
+
+	t.Run("JB-08 a log keeps its first and last bytes and says how much it dropped", func(t *testing.T) {
+		head, tail := jobLogHead, jobLogTail
+		jobLogHead, jobLogTail = 10, 10
+		t.Cleanup(func() { jobLogHead, jobLogTail = head, tail })
+		path := filepath.Join(t.TempDir(), "1.log")
+		log, err := newJobLog(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for i := range 20 {
+			fmt.Fprintf(log, "line %02d\n", i)
+		}
+		running, _ := log.Text()
+		log.Close()
+		ended, _ := os.ReadFile(path)
+
+		if !strings.HasPrefix(string(ended), "line 00\nli") || !strings.HasSuffix(string(ended), "line 19\n") || !strings.Contains(string(ended), "bytes cut") {
+			t.Errorf("ended = %q", ended)
+		}
+		if !strings.HasSuffix(running, "line 19\n") || log.Size() != 160 {
+			t.Errorf("running = %q size = %d", running, log.Size())
+		}
+		if _, err := os.Stat(path + ".tail"); !os.IsNotExist(err) {
+			t.Error("the tail file was left behind")
+		}
+	})
+
+	t.Run("JB-09 each conversation numbers and sees its own jobs, also after a restart", func(t *testing.T) {
+		root := t.TempDir()
+		env := Env{WorkDir: t.TempDir()}
+		first := NewJobs(root)
+		first.SetConversation("a")
+		first.Run(context.Background(), env, "echo from a", time.Minute)
+		first.SetConversation("b")
+		first.Run(context.Background(), env, "echo from b", time.Minute)
+		first.Close()
+
+		again := NewJobs(root)
+		t.Cleanup(again.Close)
+		again.SetConversation("a")
+		status, _, _ := again.Run(context.Background(), env, "echo again", time.Minute)
+		_, text, err := again.Text(1)
+
+		if status.ID != 2 || err != nil || text != "from a\n" || len(again.All()) != 2 {
+			t.Errorf("id = %d text = %q err = %v all = %+v", status.ID, text, err, again.All())
+		}
+	})
+
+	t.Run("JB-10 past the conversation's limit the oldest output goes", func(t *testing.T) {
+		kept := jobsKeptBytes
+		jobsKeptBytes = 15
+		t.Cleanup(func() { jobsKeptBytes = kept })
+		jobs := NewJobs(t.TempDir())
+		jobs.SetConversation("c1")
+		t.Cleanup(jobs.Close)
+		env := Env{WorkDir: t.TempDir(), Jobs: jobs}
+
+		jobs.Run(context.Background(), env, "echo first output", time.Minute)
+		jobs.Run(context.Background(), env, "echo second output", time.Minute)
+		jobs.Run(context.Background(), env, "echo third", time.Minute)
+		_, _, firstErr := jobs.Text(1)
+		_, second, secondErr := jobs.Text(2)
+
+		if firstErr == nil || !strings.Contains(firstErr.Error(), "deleted") || secondErr != nil || second != "second output\n" {
+			t.Errorf("first err = %v second = %q err = %v", firstErr, second, secondErr)
+		}
+	})
+
+	t.Run("JB-11 the user sends a blocking command to the background; the model hears when it ends", func(t *testing.T) {
+		registry, jobs := jobsRegistry(t)
+		told := make(chan JobStatus, 1)
+		jobs.OnEnd(func(status JobStatus) { told <- status })
+		go func() {
+			waitFor(t, func() bool { return len(jobs.Detach()) == 1 })
+		}()
+
+		output, isError := registry.Run(context.Background(), llm.ToolCall{Name: "bash", Args: args(t, map[string]any{"command": "echo started; sleep 0.5; echo finished"})})
+		ended := <-told
+
+		if isError || !strings.Contains(output, "sent this command to the background") || !strings.Contains(output, "[job 1]") {
+			t.Errorf("output = %q", output)
+		}
+		if _, text, _ := jobs.Text(1); ended.State != JobDone || text != "started\nfinished\n" || jobs.List()[0].Foreground {
+			t.Errorf("ended = %+v text = %q", ended, text)
+		}
+	})
+
+	t.Run("JB-12 reading output and help never ask; running and killing do", func(t *testing.T) {
+		registry, _ := jobsRegistry(t)
+		for fields, changes := range map[string]bool{
+			`{"command":"ls"}`: true, `{"action":"kill","id":1}`: true,
+			`{"action":"output","id":1}`: false, `{"id":1}`: false, `{"action":"help"}`: false,
+		} {
+			call := llm.ToolCall{Name: "bash", Args: []byte(fields)}
+			if registry.Changes(call) != changes || registry.AlreadyConfirmed(call) == changes {
+				t.Errorf("%s: changes = %v", fields, registry.Changes(call))
+			}
 		}
 	})
 }

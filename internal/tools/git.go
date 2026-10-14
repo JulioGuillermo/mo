@@ -15,24 +15,51 @@ import (
 var gitChanges = []string{"add", "commit", "branch", "switch", "merge", "cherry_pick", "rebase", "continue", "abort", "pull", "push",
 	"stash", "stash_apply", "stash_pop", "stash_drop", "tag", "reset"}
 
+var gitHelp = []helpTopic{
+	{"status", "branch, what is staged, changed and untracked."},
+	{"diff", "changes not staged; staged: true, those staged. paths: only these."},
+	{"log", "commits, the latest first. count: how many (20). path: only those touching it."},
+	{"show", "revision: a commit with its diff (HEAD)."},
+	{"blame", "path: who last changed each line."},
+	{"branches", "local and remote branches, the current one marked."},
+	{"check", "the files with conflict markers left."},
+	{"fetch", "remote: get its branches and tags (origin)."},
+	{"stash_list", "the stashes, 0 the newest."},
+	{"tags", "the tags."},
+	{"add", "paths: stage them; none: stage everything."},
+	{"commit", "message: commit what is staged."},
+	{"branch", "name: create a branch at HEAD."},
+	{"switch", "name: switch to a branch; create: true makes it first."},
+	{"merge", "revision: merge it into the current branch."},
+	{"cherry_pick", "revision: apply that commit here."},
+	{"rebase", "revision: replay the current branch onto it."},
+	{"continue", "go on with a merge, cherry_pick or rebase once its conflicts are fixed."},
+	{"abort", "give up a merge, cherry_pick or rebase."},
+	{"pull", "remote, name: the branch to take (the one tracked); rebase: true replays yours on top, false merges, unset as git's pull.rebase says."},
+	{"push", "remote: push the current branch (origin); never forced."},
+	{"stash", "message: put the changes aside."},
+	{"stash_apply", "index: apply a stash and keep it (0, the newest)."},
+	{"stash_pop", "index: apply a stash and drop it."},
+	{"stash_drop", "index: drop a stash for good."},
+	{"tag", "name, revision (HEAD), message: annotated when given."},
+	{"reset", "revision, mode: soft, mixed (default) or hard."},
+	{"conflicts", "they stay as markers in the files: edit them away, then continue; commit and continue refuse while markers are left. Untracked files are never touched; hooks do not run."},
+}
+
 func gitTool() Tool {
 	return Tool{
-		Name: "git",
-		Description: "Git in the working directory, without the git command. Read: status, diff (staged: the index), log (path, limit), show (revision), blame (path), branches, " +
-			"check (conflicts left), fetch (remote), stash_list, tags. Change: add (paths; none: all), commit (message), branch (name), switch (branch, create), merge (revision), cherry_pick (revision), " +
-			"rebase (revision to replay onto), continue, abort, " +
-			"pull (remote, branch: theirs to take, default the one tracked; rebase: true replays yours on top, false merges, unset as git's pull.rebase says), push (remote; never forced), " +
-			"stash (message), stash_apply/stash_pop/stash_drop (index, 0 newest), tag (name, revision, message: annotated), reset (revision, mode soft|mixed|hard). " +
-			"Untracked files are never touched. " +
-			"Conflicts are left as markers in the files: edit them away, then continue; commit and continue refuse while markers are left. Hooks do not run.",
+		Name:        "git",
+		Description: "Git in the working directory. help lists what each action takes.",
 		Schema: json.RawMessage(`{"type":"object","properties":{
-"action":{"type":"string","enum":["status","diff","log","show","blame","branches","check","fetch","stash_list","tags","add","commit","branch","switch","merge","cherry_pick","rebase","continue","abort","pull","push","stash","stash_apply","stash_pop","stash_drop","tag","reset"]},"remote":{"type":"string"},"mode":{"type":"string","enum":["soft","mixed","hard"]},"index":{"type":"integer"},
-"paths":{"type":"array","items":{"type":"string"}},"path":{"type":"string"},"revision":{"type":"string"},"message":{"type":"string"},
-"branch":{"type":"string"},"rebase":{"type":"boolean"},"name":{"type":"string"},"create":{"type":"boolean"},"staged":{"type":"boolean"},"limit":{"type":"integer"}},"required":["action"]}`),
-		Run: runGit,
+"action":{"type":"string","enum":["status","diff","log","show","blame","branches","check","fetch","stash_list","tags","add","commit","branch","switch","merge","cherry_pick","rebase","continue","abort","pull","push","stash","stash_apply","stash_pop","stash_drop","tag","reset","help"]},
+"paths":{"type":"array","items":{"type":"string"}},"path":{"type":"string"},"revision":{"type":"string"},"name":{"type":"string"},"message":{"type":"string"},
+"remote":{"type":"string"},"staged":{"type":"boolean"},"create":{"type":"boolean"},"rebase":{"type":"boolean"},"mode":{"type":"string","enum":["soft","mixed","hard"]},
+"index":{"type":"integer"},"count":{"type":"integer"},"topic":{"type":"string"}},"required":["action"]}`),
+		Run:  runGit,
+		View: true,
 		Summary: func(args json.RawMessage) string {
 			parts := []string{argField(args, "action")}
-			for _, field := range []string{"revision", "branch", "name", "path", "message"} {
+			for _, field := range []string{"revision", "name", "path", "message", "topic"} {
 				if value := argField(args, field); value != "" {
 					parts = append(parts, value)
 				}
@@ -56,15 +83,17 @@ func gitTool() Tool {
 
 func runGit(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	var args struct {
-		Action, Path, Revision, Message, Branch, Name, Remote, Mode string
-		Index                                                       int
-		Paths                                                       []string
-		Create, Staged                                              bool
-		Limit                                                       int
-		Rebase                                                      *bool
+		Action, Path, Revision, Message, Name, Remote, Mode, Topic string
+		Index, Count                                               int
+		Paths                                                      []string
+		Create, Staged                                             bool
+		Rebase                                                     *bool
 	}
 	if err := decodeArgs(raw, &args); err != nil {
 		return "", err
+	}
+	if args.Action == "help" {
+		return help(gitHelp, args.Topic)
 	}
 	repo, err := gitops.Open(env.WorkDir)
 	if err != nil {
@@ -76,7 +105,7 @@ func runGit(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	case "diff":
 		return repo.Diff(args.Staged, args.Paths)
 	case "log":
-		return repo.Log(args.Limit, args.Path)
+		return repo.Log(args.Count, args.Path)
 	case "show":
 		return repo.Show(args.Revision)
 	case "blame":
@@ -90,9 +119,9 @@ func runGit(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	case "commit":
 		return repo.Commit(args.Message)
 	case "branch":
-		return repo.Branch(firstNonEmpty(args.Name, args.Branch))
+		return repo.Branch(args.Name)
 	case "switch":
-		return repo.Switch(firstNonEmpty(args.Branch, args.Name), args.Create)
+		return repo.Switch(args.Name, args.Create)
 	case "merge":
 		return repo.Merge(args.Revision)
 	case "cherry_pick":
@@ -102,7 +131,7 @@ func runGit(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	case "fetch":
 		return repo.Fetch(args.Remote)
 	case "pull":
-		return repo.Pull(gitops.PullOptions{Remote: args.Remote, Branch: args.Branch, Rebase: args.Rebase})
+		return repo.Pull(gitops.PullOptions{Remote: args.Remote, Branch: args.Name, Rebase: args.Rebase})
 	case "push":
 		return repo.Push(args.Remote)
 	case "stash":
@@ -118,7 +147,7 @@ func runGit(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	case "tags":
 		return repo.Tags()
 	case "tag":
-		return repo.Tag(firstNonEmpty(args.Name, args.Branch), args.Revision, args.Message)
+		return repo.Tag(args.Name, args.Revision, args.Message)
 	case "reset":
 		return repo.Reset(args.Revision, args.Mode)
 	case "continue":

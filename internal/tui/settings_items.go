@@ -483,6 +483,12 @@ func displayItems(model, *settingsMenu) []settingItem {
 					return nil
 				}).Value(&d.background)
 		}},
+		{"Keys", func(d *settingsDraft) string { return d.keys }, func(d *settingsDraft) huh.Field {
+			return huh.NewSelect[string]().Title("Keys").Options(
+				huh.NewOption("default: type and send, as in a chat", "default"),
+				huh.NewOption("vim: insert, normal and visual modes; ctrl+h/j/k/l move between the panes; h and l go back and in through menus", "vim"),
+			).Value(&d.keys)
+		}},
 		{"Side panel", func(d *settingsDraft) string { return d.sidebar }, func(d *settingsDraft) huh.Field {
 			return huh.NewSelect[string]().Title("Side panel").Options(
 				huh.NewOption("auto: tasks and background jobs beside the conversation when the terminal is wide enough", "auto"),

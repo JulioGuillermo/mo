@@ -17,7 +17,8 @@ import (
 
 func jobsAgent(t *testing.T, provider llm.Provider) (*Agent, *tools.Jobs) {
 	t.Helper()
-	jobs := tools.NewJobs()
+	jobs := tools.NewJobs(t.TempDir())
+	jobs.SetConversation("c1")
 	t.Cleanup(jobs.Close)
 	agent := newAgent(t, provider)
 	agent.Tools = tools.NewRegistry(tools.Env{WorkDir: t.TempDir(), Jobs: jobs}, tools.Options{MaxOutput: 1000})

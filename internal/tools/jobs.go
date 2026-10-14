@@ -5,222 +5,675 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/jg/mo/internal/sessions"
 )
 
 const (
-	jobKeptOutput    = 1 << 20
 	jobShownLines    = 40
 	jobEndedTail     = 15
 	jobStopWait      = 3 * time.Second
+	jobSummaryBytes  = 64 << 10
+	jobFooterRoom    = 160
 	JobRunning       = "running"
 	JobDone          = "done"
 	JobFailed        = "failed"
 	JobKilled        = "killed"
-	jobsToolName     = "jobs"
+	JobLost          = "lost"
 	jobsUnavailable  = "background jobs are not available here: run the command without background"
-	jobNotFound      = "no job %d; jobs list names them"
-	jobStartedResult = "started job %d in the background. You are told when it ends; jobs output %d reads its output so far."
+	jobNotFound      = "no job %d; bash action output without id lists them"
+	jobPrunedNote    = "the output of job %d was deleted to keep this conversation's under 500 MB"
+	jobStartedResult = "started job %d in the background. You are told when it ends; action output with id %d reads its output, also while it runs."
 )
 
-// Jobs runs commands in the background for the whole session and tells
-// whoever listens when one ends. A job outlives the turn that started it,
-// and mo kills what is left when it exits.
+// jobsKeptBytes is how much output a conversation keeps; past it the
+// oldest goes.
+var jobsKeptBytes int64 = 500 << 20
+
+// Jobs runs the commands of bash, in the foreground or in the background,
+// and keeps the output of each in the folder of the conversation, so the
+// model can read any part of it later, also after mo restarts. A job is
+// numbered within its conversation; one in the background outlives the
+// turn that started it, and mo kills what is left when it exits.
 type Jobs struct {
-	mu     sync.Mutex
-	next   int
-	jobs   []*job
-	ended  []JobStatus
-	onEnd  func(JobStatus)
-	closed bool
+	mu           sync.Mutex
+	root         string
+	conversation string
+	jobs         []*job
+	ended        []JobStatus
+	onEnd        func(JobStatus)
+	onStart      func(JobStatus)
+	closed       bool
 }
 
 type job struct {
-	status JobStatus
-	output *HeadTailBuffer
-	cmd    *exec.Cmd
-	done   chan struct{}
+	status  JobStatus
+	dir     string
+	log     *jobLog
+	summary *HeadTailBuffer
+	cmd     *exec.Cmd
+	done    chan struct{}
+	// detached closes when a foreground command goes to the background.
+	detached chan struct{}
 }
 
-// JobStatus is what is known of a job.
+// JobStatus is what is known of a job. Conversation is the one it ran in.
 type JobStatus struct {
-	ID       int
-	Command  string
-	State    string
-	ExitCode int
-	Started  time.Time
-	Ended    time.Time
+	ID           int       `json:"id"`
+	Command      string    `json:"command"`
+	State        string    `json:"state"`
+	ExitCode     int       `json:"exit_code"`
+	Started      time.Time `json:"started"`
+	Ended        time.Time `json:"ended,omitzero"`
+	Foreground   bool      `json:"foreground,omitempty"`
+	Bytes        int64     `json:"bytes"`
+	Pruned       bool      `json:"pruned,omitempty"`
+	Conversation string    `json:"-"`
 }
 
-func NewJobs() *Jobs {
-	return &Jobs{}
+// NewJobs keeps the output of commands under root, the folder of the saved
+// conversations.
+func NewJobs(root string) *Jobs {
+	return &Jobs{root: root}
 }
 
-// OnEnd sets what is told when a job ends; it runs on the job's goroutine.
+// SetConversation names the conversation in progress: the commands run from
+// now on are kept in its folder, and the model sees its jobs only.
+func (j *Jobs) SetConversation(id string) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.conversation = id
+}
+
+// OnEnd sets what is told when a background job ends; it runs on the job's
+// goroutine.
 func (j *Jobs) OnEnd(notify func(JobStatus)) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	j.onEnd = notify
 }
 
-// Start runs a command in its own session in the working directory.
+// OnStart sets what is told when any command starts, so a panel can show
+// it while it runs.
+func (j *Jobs) OnStart(notify func(JobStatus)) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.onStart = notify
+}
+
+// started tells that a job started; the lock is not held.
+func (j *Jobs) started(status JobStatus) {
+	j.mu.Lock()
+	notify := j.onStart
+	j.mu.Unlock()
+	if notify != nil {
+		notify(status)
+	}
+}
+
+// ready says whether commands can be kept: there is a conversation to keep
+// them in.
+func (j *Jobs) ready() bool {
+	if j == nil {
+		return false
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.root != "" && j.conversation != ""
+}
+
+// begin numbers a new job in the conversation and opens its log; the lock
+// is held.
+func (j *Jobs) begin(env Env, command string, foreground bool) (*job, error) {
+	if j.closed {
+		return nil, errors.New("mo is exiting")
+	}
+	if j.root == "" || j.conversation == "" {
+		return nil, errors.New(jobsUnavailable)
+	}
+	dir := sessions.JobsDir(j.root, j.conversation)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	j.prune(dir)
+	id := j.nextID(dir)
+	log, err := newJobLog(filepath.Join(dir, strconv.Itoa(id)+".log"))
+	if err != nil {
+		return nil, err
+	}
+	created := &job{
+		status: JobStatus{ID: id, Command: command, State: JobRunning, Started: time.Now(), Foreground: foreground, Conversation: j.conversation},
+		dir:    dir, log: log, summary: NewHeadTailBuffer(summaryBytes(env.MaxOutput)), done: make(chan struct{}), detached: make(chan struct{}),
+	}
+	_ = writeJobStatus(dir, created.status)
+	j.jobs = append(j.jobs, created)
+	return created, nil
+}
+
+// summaryBytes is how much of a command's output comes back with it: what
+// the model is sent, less room for the line saying where the rest is.
+func summaryBytes(maxOutput int) int {
+	if maxOutput <= 0 {
+		return jobSummaryBytes
+	}
+	return max(maxOutput-jobFooterRoom, jobFooterRoom)
+}
+
+// nextID follows the highest number used in the folder or in this run.
+func (j *Jobs) nextID(dir string) int {
+	highest := 0
+	entries, _ := os.ReadDir(dir)
+	for _, entry := range entries {
+		if number, isStatus := strings.CutSuffix(entry.Name(), ".json"); isStatus {
+			if id, err := strconv.Atoi(number); err == nil {
+				highest = max(highest, id)
+			}
+		}
+	}
+	for _, each := range j.jobs {
+		if each.dir == dir {
+			highest = max(highest, each.status.ID)
+		}
+	}
+	return highest + 1
+}
+
+// prune deletes the output of the oldest ended jobs while the folder holds
+// more than jobsKeptBytes; the lock is held.
+func (j *Jobs) prune(dir string) {
+	statuses := readJobStatuses(dir)
+	var total int64
+	sizes := map[int]int64{}
+	for _, status := range statuses {
+		if info, err := os.Stat(filepath.Join(dir, strconv.Itoa(status.ID)+".log")); err == nil {
+			sizes[status.ID] = info.Size()
+			total += info.Size()
+		}
+	}
+	for _, status := range statuses {
+		if total <= jobsKeptBytes {
+			return
+		}
+		if sizes[status.ID] == 0 || j.live(dir, status.ID) != nil {
+			continue
+		}
+		if os.Remove(filepath.Join(dir, strconv.Itoa(status.ID)+".log")) == nil {
+			total -= sizes[status.ID]
+			status.Pruned = true
+			_ = writeJobStatus(dir, status)
+			for _, each := range j.jobs {
+				if each.dir == dir && each.status.ID == status.ID {
+					each.status.Pruned = true
+				}
+			}
+		}
+	}
+}
+
+// live is the job of this run with that folder and number that still runs.
+func (j *Jobs) live(dir string, id int) *job {
+	for _, each := range j.jobs {
+		if each.dir == dir && each.status.ID == id && each.status.State == JobRunning {
+			return each
+		}
+	}
+	return nil
+}
+
+// Start runs a command in the background, in its own session, in the
+// working directory.
 func (j *Jobs) Start(env Env, command string) (JobStatus, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	if j.closed {
-		return JobStatus{}, errors.New("mo is exiting")
+	started, err := j.begin(env, command, false)
+	if err != nil {
+		return JobStatus{}, err
 	}
-	j.next++
 	cmd := exec.Command("bash", "-c", command)
 	cmd.Dir = env.WorkDir
-	output := NewHeadTailBuffer(jobKeptOutput)
+	output := io.MultiWriter(started.log, started.summary)
 	cmd.Stdout, cmd.Stderr = output, output
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
+		j.forget(started)
 		return JobStatus{}, err
 	}
-	running := &job{
-		status: JobStatus{ID: j.next, Command: command, State: JobRunning, Started: time.Now()},
-		output: output, cmd: cmd, done: make(chan struct{}),
+	started.cmd = cmd
+	go j.wait(started)
+	go j.started(started.status)
+	return started.status, nil
+}
+
+// forget drops a job that never started, its files too; the lock is held.
+func (j *Jobs) forget(failed *job) {
+	failed.log.Close()
+	j.jobs = slices.DeleteFunc(j.jobs, func(each *job) bool { return each == failed })
+	base := filepath.Join(failed.dir, strconv.Itoa(failed.status.ID))
+	os.Remove(base + ".log")
+	os.Remove(base + ".json")
+}
+
+// Run runs a command in the foreground until it ends, timeout passes, ctx
+// is cancelled or the user sends it to the background, and returns its
+// status and the start and end of its output so far. A command sent to the
+// background goes on as a job, told to the model when it ends.
+func (j *Jobs) Run(ctx context.Context, env Env, command string, timeout time.Duration) (JobStatus, string, error) {
+	j.mu.Lock()
+	running, err := j.begin(env, command, true)
+	if err != nil {
+		j.mu.Unlock()
+		return JobStatus{}, "", err
 	}
-	j.jobs = append(j.jobs, running)
+	cmd := exec.Command("bash", "-c", command)
+	cmd.Dir = env.WorkDir
+	output := io.MultiWriter(running.log, running.summary)
+	cmd.Stdout, cmd.Stderr = output, output
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.WaitDelay = bashWaitForOutput
+	if err := cmd.Start(); err != nil {
+		j.forget(running)
+		j.mu.Unlock()
+		return JobStatus{}, "", err
+	}
+	running.cmd = cmd
+	status := running.status
+	j.mu.Unlock()
 	go j.wait(running)
-	return running.status, nil
+	j.started(status)
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-running.done:
+	case <-running.detached:
+		j.mu.Lock()
+		status := j.current(running)
+		j.mu.Unlock()
+		return status, running.summary.String(), nil
+	case <-timer.C:
+		j.stop(running)
+		return running.status, running.summary.String(), fmt.Errorf("timed out after %s", timeout)
+	case <-ctx.Done():
+		j.stop(running)
+		return running.status, running.summary.String(), ctx.Err()
+	}
+	j.mu.Lock()
+	status = running.status
+	j.mu.Unlock()
+	if status.State == JobKilled {
+		return status, running.summary.String(), errors.New("killed by the user")
+	}
+	if status.State == JobFailed {
+		return status, running.summary.String(), fmt.Errorf("exit status %d", status.ExitCode)
+	}
+	return status, running.summary.String(), nil
+}
+
+// Detach sends the commands running in the foreground of the conversation
+// in progress to the background, as the user asks when one blocks the
+// model.
+func (j *Jobs) Detach() []JobStatus {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	var moved []JobStatus
+	for _, each := range j.jobs {
+		if each.status.Conversation == j.conversation && each.status.Foreground && each.status.State == JobRunning {
+			moved = append(moved, j.detach(each))
+		}
+	}
+	return moved
+}
+
+// DetachJob sends one command of the conversation in progress to the
+// background.
+func (j *Jobs) DetachJob(id int) error {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.conversation == "" {
+		return fmt.Errorf(jobNotFound, id)
+	}
+	running := j.live(sessions.JobsDir(j.root, j.conversation), id)
+	switch {
+	case running == nil:
+		return fmt.Errorf("job %d is not running", id)
+	case !running.status.Foreground:
+		return fmt.Errorf("job %d runs in the background already", id)
+	}
+	j.detach(running)
+	return nil
+}
+
+// detach lets the model go on without a job; the lock is held.
+func (j *Jobs) detach(running *job) JobStatus {
+	running.status.Foreground = false
+	_ = writeJobStatus(running.dir, running.status)
+	close(running.detached)
+	return j.current(running)
+}
+
+// RunningCommand is the job of the conversation in progress that runs
+// command in the foreground, the latest if more do.
+func (j *Jobs) RunningCommand(command string) (int, bool) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	for _, each := range slices.Backward(j.jobs) {
+		status := each.status
+		if status.Conversation == j.conversation && status.Foreground && status.State == JobRunning && status.Command == command {
+			return status.ID, true
+		}
+	}
+	return 0, false
 }
 
 func (j *Jobs) wait(running *job) {
-	err := running.cmd.Wait()
-	j.mu.Lock()
-	status := &running.status
-	status.Ended = time.Now()
-	var exitErr *exec.ExitError
-	switch {
-	case status.State == JobKilled:
-	case err == nil:
-		status.State = JobDone
-	case errors.As(err, &exitErr):
-		status.State, status.ExitCode = JobFailed, exitErr.ExitCode()
-	default:
-		status.State, status.ExitCode = JobFailed, -1
+	_ = running.cmd.Wait()
+	status := j.finish(running, running.cmd.ProcessState)
+	if status.Foreground {
+		return
 	}
-	ended := *status
-	if ended.State != JobKilled {
-		j.ended = append(j.ended, ended)
+	j.mu.Lock()
+	if status.State != JobKilled {
+		j.ended = append(j.ended, status)
 	}
 	notify := j.onEnd
-	close(running.done)
 	j.mu.Unlock()
 	if notify != nil {
-		notify(ended)
+		notify(status)
 	}
 }
 
-// List returns every job of the session, the latest first.
+// finish closes a job's log and records how it ended.
+func (j *Jobs) finish(running *job, state *os.ProcessState) JobStatus {
+	_ = running.log.Close()
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	status := &running.status
+	status.Ended = time.Now()
+	status.Bytes = running.log.Size()
+	switch {
+	case status.State == JobKilled:
+	case state != nil && state.Success():
+		status.State = JobDone
+	case state != nil && state.ExitCode() >= 0:
+		status.State, status.ExitCode = JobFailed, state.ExitCode()
+	default:
+		status.State, status.ExitCode = JobFailed, -1
+	}
+	_ = writeJobStatus(running.dir, *status)
+	close(running.done)
+	return *status
+}
+
+// List returns the jobs of the conversation in progress run since mo
+// started, the latest first: those in the background, and those in the
+// foreground while they run.
 func (j *Jobs) List() []JobStatus {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	var statuses []JobStatus
 	for _, each := range slices.Backward(j.jobs) {
-		statuses = append(statuses, each.status)
+		if each.status.Conversation == j.conversation && (!each.status.Foreground || each.status.State == JobRunning) {
+			statuses = append(statuses, j.current(each))
+		}
 	}
 	return statuses
 }
 
-// TakeEnded returns the jobs that ended since it was last called, other
-// than those killed on purpose, to tell the model.
-func (j *Jobs) TakeEnded() []JobStatus {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	ended := j.ended
-	j.ended = nil
-	return ended
-}
-
-// HasEnded tells whether some job ended that the model was not told about.
-func (j *Jobs) HasEnded() bool {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	return len(j.ended) > 0
-}
-
-// Untold names the jobs that ended without the model being told yet.
-func (j *Jobs) Untold() map[int]bool {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	untold := map[int]bool{}
-	for _, status := range j.ended {
-		untold[status.ID] = true
+// current is a job's status with the output written so far; the lock is held.
+func (j *Jobs) current(each *job) JobStatus {
+	status := each.status
+	if status.State == JobRunning {
+		status.Bytes = each.log.Size()
 	}
-	return untold
+	return status
+}
+
+// All returns every job of the conversation in progress, those of earlier
+// runs of mo too, the latest first.
+func (j *Jobs) All() []JobStatus {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.root == "" || j.conversation == "" {
+		return nil
+	}
+	dir := sessions.JobsDir(j.root, j.conversation)
+	statuses := readJobStatuses(dir)
+	for i, status := range statuses {
+		statuses[i] = j.known(dir, status)
+	}
+	slices.Reverse(statuses)
+	return statuses
+}
+
+// known is a status read from disk as this run knows it: current while it
+// runs here, lost when it was left running by a mo that is gone; the lock
+// is held.
+func (j *Jobs) known(dir string, status JobStatus) JobStatus {
+	status.Conversation = j.conversation
+	if status.State != JobRunning {
+		return status
+	}
+	if running := j.live(dir, status.ID); running != nil {
+		return j.current(running)
+	}
+	for _, each := range j.jobs {
+		if each.status.State == JobRunning && each.status.Command == status.Command && each.status.Started.Equal(status.Started) {
+			return j.current(each)
+		}
+	}
+	status.State = JobLost
+	return status
+}
+
+// Status is how a job of the conversation in progress stands.
+func (j *Jobs) Status(id int) (JobStatus, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	status, _, err := j.lookup(id)
+	return status, err
+}
+
+// lookup finds a job of the conversation in progress, and the log to read
+// while it runs, if it runs here; the lock is held.
+func (j *Jobs) lookup(id int) (JobStatus, *jobLog, error) {
+	if j.root == "" || j.conversation == "" {
+		return JobStatus{}, nil, fmt.Errorf(jobNotFound, id)
+	}
+	dir := sessions.JobsDir(j.root, j.conversation)
+	for _, each := range j.jobs {
+		if each.dir == dir && each.status.ID == id {
+			return j.current(each), each.log, nil
+		}
+	}
+	status, err := readJobStatus(dir, id)
+	if err != nil {
+		return JobStatus{}, nil, fmt.Errorf(jobNotFound, id)
+	}
+	return j.known(dir, status), nil, nil
+}
+
+// Text is all the output a job of the conversation in progress kept.
+func (j *Jobs) Text(id int) (JobStatus, string, error) {
+	j.mu.Lock()
+	status, log, err := j.lookup(id)
+	dir := sessions.JobsDir(j.root, j.conversation)
+	j.mu.Unlock()
+	if err != nil {
+		return status, "", err
+	}
+	if status.Pruned {
+		return status, "", fmt.Errorf(jobPrunedNote, id)
+	}
+	if log != nil {
+		text, err := log.Text()
+		return status, text, err
+	}
+	text, err := readJobLog(filepath.Join(dir, strconv.Itoa(id)+".log"), true, 0)
+	return status, text, err
 }
 
 // Output returns the last lines a job wrote.
 func (j *Jobs) Output(id, lines int) (JobStatus, string, error) {
-	j.mu.Lock()
-	found := j.find(id)
-	j.mu.Unlock()
-	if found == nil {
-		return JobStatus{}, "", fmt.Errorf(jobNotFound, id)
+	status, text, err := j.Text(id)
+	if err != nil {
+		return status, "", err
 	}
-	j.mu.Lock()
-	status := found.status
-	j.mu.Unlock()
-	return status, lastLines(found.output.String(), lines), nil
+	return status, lastLines(text, lines), nil
 }
 
-// Kill stops a job and everything it started.
+// Kill stops a job of the conversation in progress and everything it
+// started.
 func (j *Jobs) Kill(id int) error {
 	j.mu.Lock()
-	found := j.find(id)
+	var found *job
+	if j.conversation != "" {
+		found = j.live(sessions.JobsDir(j.root, j.conversation), id)
+	}
+	j.mu.Unlock()
 	if found == nil {
-		j.mu.Unlock()
-		return fmt.Errorf(jobNotFound, id)
+		if _, err := j.Status(id); err != nil {
+			return err
+		}
+		return fmt.Errorf("job %d is not running", id)
 	}
-	if found.status.State != JobRunning {
+	j.stop(found)
+	return nil
+}
+
+// stop kills a running job and what it started, gently first.
+func (j *Jobs) stop(running *job) {
+	j.mu.Lock()
+	if running.status.State != JobRunning || running.cmd == nil || running.cmd.Process == nil {
 		j.mu.Unlock()
-		return fmt.Errorf("job %d already ended", id)
+		return
 	}
-	found.status.State = JobKilled
-	pid := found.cmd.Process.Pid
+	running.status.State = JobKilled
+	pid := running.cmd.Process.Pid
 	j.mu.Unlock()
 	_ = syscall.Kill(-pid, syscall.SIGTERM)
 	select {
-	case <-found.done:
+	case <-running.done:
 	case <-time.After(jobStopWait):
 		_ = syscall.Kill(-pid, syscall.SIGKILL)
-		<-found.done
+		<-running.done
 	}
-	return nil
+}
+
+// KillConversation stops the jobs that run in a conversation, before it is
+// deleted.
+func (j *Jobs) KillConversation(id string) {
+	j.mu.Lock()
+	var running []*job
+	for _, each := range j.jobs {
+		if each.status.Conversation == id && each.status.State == JobRunning {
+			running = append(running, each)
+		}
+	}
+	j.mu.Unlock()
+	for _, each := range running {
+		j.stop(each)
+	}
 }
 
 // Close kills every job left; nothing starts after it.
 func (j *Jobs) Close() {
 	j.mu.Lock()
 	j.closed = true
-	var running []int
+	var running []*job
 	for _, each := range j.jobs {
 		if each.status.State == JobRunning {
-			running = append(running, each.status.ID)
+			running = append(running, each)
 		}
 	}
 	j.mu.Unlock()
-	for _, id := range running {
-		_ = j.Kill(id)
+	for _, each := range running {
+		j.stop(each)
 	}
 }
 
-func (j *Jobs) find(id int) *job {
-	for _, each := range j.jobs {
-		if each.status.ID == id {
-			return each
+// TakeEnded returns the background jobs of the conversation in progress
+// that ended since it was last called, other than those killed on purpose,
+// to tell the model. Those of other conversations wait until it is theirs.
+func (j *Jobs) TakeEnded() []JobStatus {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	var taken, kept []JobStatus
+	for _, status := range j.ended {
+		if status.Conversation == j.conversation {
+			taken = append(taken, status)
+		} else {
+			kept = append(kept, status)
 		}
 	}
-	return nil
+	j.ended = kept
+	return taken
+}
+
+// HasEnded tells whether a job of the conversation in progress ended that
+// the model was not told about.
+func (j *Jobs) HasEnded() bool {
+	return len(j.Untold()) > 0
+}
+
+// Untold names the jobs of the conversation in progress that ended without
+// the model being told yet.
+func (j *Jobs) Untold() map[int]bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	untold := map[int]bool{}
+	for _, status := range j.ended {
+		if status.Conversation == j.conversation {
+			untold[status.ID] = true
+		}
+	}
+	return untold
+}
+
+func writeJobStatus(dir string, status JobStatus) error {
+	encoded, err := json.Marshal(status)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, strconv.Itoa(status.ID)+".json"), encoded, 0o600)
+}
+
+func readJobStatus(dir string, id int) (JobStatus, error) {
+	var status JobStatus
+	data, err := os.ReadFile(filepath.Join(dir, strconv.Itoa(id)+".json"))
+	if err != nil {
+		return status, err
+	}
+	err = json.Unmarshal(data, &status)
+	return status, err
+}
+
+// readJobStatuses reads every job of a folder, the oldest first.
+func readJobStatuses(dir string) []JobStatus {
+	entries, _ := os.ReadDir(dir)
+	var statuses []JobStatus
+	for _, entry := range entries {
+		number, isStatus := strings.CutSuffix(entry.Name(), ".json")
+		id, err := strconv.Atoi(number)
+		if !isStatus || err != nil {
+			continue
+		}
+		if status, err := readJobStatus(dir, id); err == nil {
+			statuses = append(statuses, status)
+		}
+	}
+	slices.SortFunc(statuses, func(a, b JobStatus) int { return a.ID - b.ID })
+	return statuses
 }
 
 func lastLines(text string, count int) string {
@@ -240,6 +693,8 @@ func (s JobStatus) Describe() string {
 		return fmt.Sprintf("job %d done after %s: %s", s.ID, s.Ended.Sub(s.Started).Round(time.Second), s.Command)
 	case JobKilled:
 		return fmt.Sprintf("job %d killed: %s", s.ID, s.Command)
+	case JobLost:
+		return fmt.Sprintf("job %d stopped when mo exited: %s", s.ID, s.Command)
 	}
 	return fmt.Sprintf("job %d failed with exit %d after %s: %s", s.ID, s.ExitCode, s.Ended.Sub(s.Started).Round(time.Second), s.Command)
 }
@@ -253,57 +708,46 @@ func (j *Jobs) EndedNote(status JobStatus) string {
 	return "Background " + status.Describe() + "\nLast lines:\n" + output
 }
 
-func jobsTool() Tool {
-	return Tool{
-		Name:        jobsToolName,
-		Description: "Background jobs started with bash background=true. action: list, output (last lines of job id), or kill (job id).",
-		Schema: json.RawMessage(`{"type":"object","properties":{
-"action":{"type":"string","enum":["list","output","kill"]},"id":{"type":"integer"},"lines":{"type":"integer"}},"required":["action"]}`),
-		Run: runJobs,
-		Summary: func(args json.RawMessage) string {
-			return strings.TrimSpace(argField(args, "action") + " " + argField(args, "id"))
-		},
+// listJobs is one line for each job, the latest first.
+func listJobs(statuses []JobStatus) string {
+	if len(statuses) == 0 {
+		return "no commands run in this conversation yet"
 	}
+	var lines []string
+	for _, status := range statuses {
+		line := status.Describe()
+		if !status.Foreground {
+			line += " · background"
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
 }
 
-func runJobs(_ context.Context, env Env, raw json.RawMessage) (string, error) {
-	if env.Jobs == nil {
-		return "", errors.New(jobsUnavailable)
-	}
-	var args struct {
-		Action string `json:"action"`
-		ID     int    `json:"id"`
-		Lines  int    `json:"lines"`
-	}
-	if err := decodeArgs(raw, &args); err != nil {
-		return "", err
-	}
-	switch args.Action {
-	case "list":
-		statuses := env.Jobs.List()
-		if len(statuses) == 0 {
-			return "no background jobs", nil
-		}
-		var lines []string
-		for _, status := range statuses {
-			lines = append(lines, status.Describe())
-		}
-		return strings.Join(lines, "\n"), nil
-	case "output":
-		lines := args.Lines
-		if lines <= 0 {
-			lines = jobShownLines
-		}
-		status, output, err := env.Jobs.Output(args.ID, lines)
+// searchJobs gives the lines of every job of the conversation that match,
+// as job:line: text, oldest job first.
+func searchJobs(jobs *Jobs, re *regexp.Regexp) string {
+	var out strings.Builder
+	for _, status := range slices.Backward(jobs.All()) {
+		_, text, err := jobs.Text(status.ID)
 		if err != nil {
-			return "", err
+			continue
 		}
-		return status.Describe() + "\n" + output, nil
-	case "kill":
-		if err := env.Jobs.Kill(args.ID); err != nil {
-			return "", err
+		for number, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
+			if re.MatchString(line) {
+				fmt.Fprintf(&out, "%d:%d: %s\n", status.ID, number+1, line)
+			}
 		}
-		return fmt.Sprintf("job %d killed", args.ID), nil
 	}
-	return "", fmt.Errorf("action %q: use list, output or kill", args.Action)
+	return out.String()
+}
+
+func byteSize(size int64) string {
+	switch {
+	case size >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(size)/(1<<20))
+	case size >= 1<<10:
+		return fmt.Sprintf("%.1f KB", float64(size)/(1<<10))
+	}
+	return fmt.Sprintf("%d bytes", size)
 }

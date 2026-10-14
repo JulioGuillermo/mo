@@ -94,6 +94,16 @@ func (a *Agent) approvalFor(ctx context.Context, call llm.ToolCall, hooks Hooks)
 func ruledSubjects(call llm.ToolCall) (subjects []permissions.Command, ruled bool, err error) {
 	switch call.Name {
 	case "bash":
+		switch action := argText(call, "action"); {
+		case action == "kill":
+			var job struct {
+				ID int `json:"id"`
+			}
+			_ = json.Unmarshal(call.Args, &job)
+			return []permissions.Command{{Text: fmt.Sprintf("kill job %d", job.ID), Writes: true}}, true, nil
+		case action != "" && action != "run", argText(call, "command") == "":
+			return nil, false, nil
+		}
 		subjects, err = permissions.Commands(argText(call, "command"))
 		return subjects, true, err
 	case "fetch":

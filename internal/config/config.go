@@ -175,6 +175,9 @@ type Render struct {
 	// Icons are Nerd Font icons in the status line, or "text" for plain
 	// characters.
 	Icons string `toml:"icons,omitempty"`
+	// Keys are the usual keys, or "vim": modes to write, move and select,
+	// and ctrl+h/j/k/l between the panes.
+	Keys string `toml:"keys,omitempty"`
 }
 
 type Memory struct {
@@ -263,7 +266,7 @@ func Defaults() Config {
 		Tools: Tools{
 			Mode:         tools.ModeFull,
 			Load:         tools.LoadContext,
-			AlwaysLoaded: []string{"read", "edit", "write", "bash", "ask", "recall"},
+			AlwaysLoaded: []string{"read", "edit", "write", "bash", "ask", "memory"},
 			Confirm:      []string{"bash", "rm", "fetch"},
 			MaxOutput:    10000,
 		},
@@ -272,7 +275,7 @@ func Defaults() Config {
 		Skills:       Skills{Mode: tools.ModeFull},
 		Instructions: Instructions{Enabled: ptr(true), Files: []string{"AGENTS.md", "AGENT.md"}},
 		Web:          Web{Search: web.SearchDuckDuckGo},
-		Render:       Render{Images: render.ModeAuto, Background: "#00081a", Sidebar: "auto", Status: "powerline", Icons: "nerd"},
+		Render:       Render{Images: render.ModeAuto, Background: "#00081a", Sidebar: "auto", Status: "powerline", Icons: "nerd", Keys: "default"},
 		Loop:         Loop{Enabled: ptr(true), Replies: 10, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2)},
 		Permissions:  Permissions{Mode: "edits", Allow: DefaultAllow},
 		Notify:       Notify{Finish: ptr(true), Approval: ptr(true), Method: "auto", Focused: ptr(false)},
@@ -345,6 +348,9 @@ func validate(cfg Config) error {
 	}
 	if cfg.Render.Status != "powerline" && cfg.Render.Status != "plain" {
 		return fmt.Errorf("render.status %q: use powerline or plain", cfg.Render.Status)
+	}
+	if cfg.Render.Keys != "default" && cfg.Render.Keys != "vim" {
+		return fmt.Errorf("render.keys %q: use default or vim", cfg.Render.Keys)
 	}
 	if cfg.Render.Sidebar != "auto" && cfg.Render.Sidebar != "off" {
 		return fmt.Errorf("render.sidebar %q: use auto or off", cfg.Render.Sidebar)
@@ -576,6 +582,7 @@ func mergeHarmless(base, layer Config) Config {
 	base.Render.Images = override(base.Render.Images, layer.Render.Images)
 	base.Render.Background = override(base.Render.Background, layer.Render.Background)
 	base.Render.Sidebar = override(base.Render.Sidebar, layer.Render.Sidebar)
+	base.Render.Keys = override(base.Render.Keys, layer.Render.Keys)
 	base.Render.Status = override(base.Render.Status, layer.Render.Status)
 	base.Render.Icons = override(base.Render.Icons, layer.Render.Icons)
 	base.Loop = mergeLoop(base.Loop, layer.Loop)

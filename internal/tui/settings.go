@@ -70,6 +70,9 @@ type settingsScreen struct {
 	// leaves the user file alone when only the project's changed.
 	project  *config.Config
 	keepUser bool
+	// remove, when set, deletes what the cursor of the list is on: ctrl+x,
+	// delete or a click on its mark.
+	remove func(m model) (tea.Model, tea.Cmd)
 }
 
 func (screen *settingsScreen) helpLine() string {
@@ -140,6 +143,16 @@ func (m model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.settings = nil
 		return screen.tab(m)
 	}
+	if key, ok := msg.(tea.KeyPressMsg); ok {
+		if mapped, changed := m.vimSettingsKey(key); changed {
+			msg = mapped
+		}
+	}
+	if key, ok := msg.(tea.KeyPressMsg); ok && m.settings.remove != nil && (key.String() == "ctrl+x" || (key.String() == "delete" && !m.filteringList())) {
+		screen := m.settings
+		m.settings = nil
+		return screen.remove(m)
+	}
 	if key, ok := msg.(tea.KeyPressMsg); ok && (key.String() == "esc" || key.String() == "ctrl+c") {
 		screen := m.settings
 		m.settings = nil
@@ -163,6 +176,13 @@ func (m model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, printText(m.printer.Note("settings unchanged"))
 	}
 	return m, cmd
+}
+
+// filteringList tells whether the list in focus takes typed text as its
+// filter, so delete edits the filter instead.
+func (m model) filteringList() bool {
+	list, isList := m.settings.form.GetFocusedField().(*huh.Select[string])
+	return isList && list.GetFiltering()
 }
 
 // saveSettings builds a session from the edited settings first and writes
@@ -205,6 +225,10 @@ func (m model) finishSettings(msg settingsSavedMsg) (tea.Model, tea.Cmd) {
 		return m.emitError(msg.err)
 	}
 	m.session = msg.session
+	m.printer.setKind(m.toolKind)
+	if enabled := m.session.Config.Render.Keys == "vim"; enabled != m.vim.enabled {
+		m.vim = vimState{enabled: enabled}
+	}
 	m.usage = m.session.Agent.LastUsage
 	redraw := m.applyScreen(m.printer.isDark())
 	note := fmt.Sprintf("settings saved to %s · %s · %s", strings.Join(msg.saved, " and "), m.session.Provider, shortModelName(m.session.Model))
@@ -213,7 +237,7 @@ func (m model) finishSettings(msg settingsSavedMsg) (tea.Model, tea.Cmd) {
 
 func isAgentMsg(msg tea.Msg) bool {
 	switch msg.(type) {
-	case streamMsg, streamEndMsg, usageMsg, interactionMsg, runDoneMsg, spinner.TickMsg, printMsg, reasoningMsg, drawMsg, redrawMsg, rulesSavedMsg, toolStartMsg, toolDoneMsg, savedMsg, jobEndedMsg, jobTickMsg, flashDoneMsg, activityMsg, titledMsg, titleEventMsg, titleSetMsg, repoMsg, loginMsg, tea.FocusMsg, tea.BlurMsg:
+	case streamMsg, streamEndMsg, usageMsg, interactionMsg, runDoneMsg, spinner.TickMsg, printMsg, reasoningMsg, drawMsg, redrawMsg, rulesSavedMsg, toolStartMsg, toolDoneMsg, savedMsg, jobEndedMsg, jobTickMsg, jobStartedMsg, flashDoneMsg, activityMsg, titledMsg, titleEventMsg, titleSetMsg, repoMsg, loginMsg, tea.FocusMsg, tea.BlurMsg:
 		return true
 	}
 	return false

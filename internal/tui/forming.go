@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strconv"
@@ -107,10 +108,11 @@ func (m model) formingView() string {
 }
 
 func (m model) formingCallView(name, args string) string {
-	header := "\n" + toolName.Render("● "+name) + " " + m.spinner.View()
+	mark := m.printer.toolHeader(name, json.RawMessage(args))
+	header := "\n" + mark + " " + m.spinner.View()
 	path, _ := partialString(args, "path")
 	if path != "" {
-		header = "\n" + toolName.Render("● "+name) + " " + path + " " + m.spinner.View()
+		header = "\n" + mark + " " + path + " " + m.spinner.View()
 	}
 	switch name {
 	case "bash":

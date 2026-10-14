@@ -135,7 +135,7 @@ system_prompt = ""         # empty: built-in prompt (~80 tokens)
 mode = "full"              # full | compact (no descriptions) | search (find tools on demand)
 load = "context"           # search mode: context (found tools stay in the conversation, called
                            # through tool_call) | declare (found tools are declared from then on)
-always_loaded = ["read", "edit", "write", "bash", "ask", "recall"]   # search mode: declared from the start
+always_loaded = ["read", "edit", "write", "bash", "ask", "memory"]   # search mode: declared from the start
 confirm = ["bash", "rm", "fetch"]   # ask before these; [] never asks. A list of your own
                                     # replaces this one: keep "fetch" in it to be asked
 disabled = []              # e.g. ["mkdir", "ls"] to save context
@@ -183,6 +183,7 @@ dir = "~/.local/share/mo/memory"
 background = "#00081a"     # painted behind everything so mo looks the same in any terminal;
                            # "terminal" keeps the terminal's own
 sidebar = "auto"           # side panel of tasks and jobs when wide enough; "off" never
+keys = "default"           # "vim" for vim keys: modes, and ctrl+h/j/k/l between the panes
 status = "powerline"       # segments on backgrounds with arrows (needs a Nerd Font); "plain" for any font
 icons = "nerd"             # Nerd Font icons for the branch and its changes; "text": + ~ - » ? ! ✓
 
@@ -215,22 +216,47 @@ model = "qwen3-coder"
 
 ## Tools
 
-`bash` `read` `write` `edit` `ls` `mkdir` `rm` `grep` `memory` `fetch` `web_search` `todo` `ask` `jobs` `recall` `git`, plus `tool_search` in
+`bash` `read` `write` `edit` `ls` `mkdir` `rm` `grep` `memory` `fetch` `web_search` `todo` `ask` `git` `title`, plus `tool_search` in
 search mode and the tools of your MCP servers.
-Output is cut to `max_output`, keeping the head and the tail.
 
-`fetch` reads a URL as markdown (the article of an HTML page, indented JSON, plain text), 8 KB at a
-time. `web_search` uses DuckDuckGo by default, with no key; see `[web]` below for the others.
+Every tool that returns text takes the same view fields, so the model never loses what is beyond a
+limit: `offset` lines to skip (from the end when negative), `limit` lines to show (2000; 200 for
+`fetch`), `col` and `width` the bytes of each line (0 and 2000, for minified files), `match` only
+the lines matching a regexp, and `numbered` for line numbers. What is left out is said, with the
+`offset` or `col` that shows it. Other output, as an MCP tool's, is cut to `max_output`, keeping the
+head and the tail. `bash`, `git` and `memory` take an `action`, and `help` explains each.
+
+`grep` gives matches under their file, or with `show` only the files or a count, and `context`
+lines around them. `edit` takes several replacements at once in `edits`, all or none.
+
+`fetch` reads a URL as markdown (the article of an HTML page, indented JSON, plain text).
+`web_search` uses DuckDuckGo by default, with no key; see `[web]` below for the others.
 
 `todo` is the model's task list for work of several steps. On a terminal 110 columns or wider it
 shows in a side panel beside the conversation, whole, with the background jobs; on a narrower one,
 above the input while a task is left. `/sidebar` hides or shows the panel.
 
+Every `bash` command is a job of the conversation, numbered, with its whole output kept in
+`~/.local/share/mo/sessions/<conversation>/jobs/`: the first and the last 25 MB of each, and up to
+500 MB a conversation, the oldest going first. A long output reaches the model cut, with the job
+number; `bash` with `action: output` and its `id` shows any part of it, and without an `id` lists
+the jobs, or with `match` searches all of them, also after mo restarts. The output lasts as long
+as the conversation. Reading output never asks; running and `kill` do.
+
 `bash` with `background: true` runs a command as a job, for servers, watchers and long builds, and
-returns at once; the `jobs` tool lists them, reads their output and kills them. When a job ends the
+returns at once. Every command shows in the side panel while it runs. When one in the foreground
+blocks the model, ctrl+b, or a right click on it or on its call, sends it to the background: the
+model goes on with what it printed so far. "Watch its output live" in that menu shows a job's
+output over the whole screen as a terminal would, following the end while it runs: scroll with
+the arrows, the wheel, pgup and pgdn, search with `/` and `n`/`N`, copy lines by dragging over
+them or all with `y`, `b` to the background, `x` to kill, esc to close. When a background job ends the
 model is told: at its next step if it is working, or in a turn of its own if it is idle, so it can
 react, also after you stop it with esc. `/jobs tell` lets it hear one that is waiting, as when a
 settings screen was open. `/jobs` lists them, `/kill <n>` stops one, and mo kills what is left when it exits.
+
+Each tool call starts with a dot coloured by what it does: red a command that blocks the model,
+orange one in the background, yellow reading a command's output, pink a change, blue a read. The
+side panel colours running jobs the same way.
 
 `ask` lets the model ask you questions, with options or free text. What the calls of one reply
 need from you, approvals and questions, is asked at once in a dialog above the input: tabs show
@@ -250,9 +276,9 @@ with conflicts leaves markers in the files for the model to resolve, then `conti
 `continue` refuse while a marker is left, and `check` says where. Hooks do not run.
 
 `memory` keeps notes across sessions, per project or global. They are not put in the prompt:
-`recall` searches them and the saved conversations (BM25, by words) and reads one whole, a memory,
-a conversation's turns, or one turn, when the model decides it needs it. It keeps to this folder
-unless asked for all.
+its `search` looks through them and the saved conversations (BM25, by words), and `read` gives one
+whole, a note, a conversation's turns, or one turn, when the model decides it needs it. It keeps
+to this folder unless asked for all.
 
 Changes outside the working directory, to mo's config, under `.git` or to hidden files in your home
 always ask, even with `-y` or after answering "always", in every mode but `all`. So do changes to
@@ -294,6 +320,10 @@ Every conversation is saved after each turn in `~/.local/share/mo/sessions/`, re
   the input to edit and send, and the conversation goes on from before it, in a fork. The
   conversation as it was stays in `/resume`.
 - `/fork` goes on in a copy; `/clear` starts a new conversation. Neither loses the old one.
+- `/delete` deletes the conversation in progress, with the output of its commands, after asking. In
+  `/resume`, ctrl+x, delete or a click on ✕ deletes one, after asking too. `/clean <date or age>`
+  deletes those of this folder last used before it: `/clean 2026-08-01`, `/clean 2 months`,
+  `/clean 3 weeks`. Nothing is deleted on its own.
 - A conversation is named after its first prompt. `/title <name>` renames it, `/title auto` asks
   the model for a short title in the language you write in (a spinner says where it is, with the
   last two lines it writes under it, and esc stops it; the title is what it puts in <title></title>), and `/title` alone says the current
@@ -419,6 +449,8 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | enter | send |
 | ctrl+j, alt+enter | new line |
 | esc, ctrl+c | stop the current run |
+| ctrl+b | send the command that blocks the model to the background |
+| `/vim`, or `keys = "vim"` under `[render]` | vim keys: esc to normal mode, i a A I o to write; ctrl+h/j/k/l move between the conversation, the input and the side panel; in the conversation j k gg G ctrl+d ctrl+u move a cursor, l and h open and fold what it is on, v selects lines and y copies them; in the panel j k pick a task or job and l opens its menu; in the input h l w b 0 $ x D dd edit; `:` starts a command; in settings lists l goes in and h back. The mode shows before the status line |
 | ctrl+c (idle) | clear input, then quit |
 | ctrl+d | quit |
 | shift+tab | change the permission mode |
@@ -431,7 +463,7 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | drag | select text and copy it; the shared indent is taken off |
 | click | buttons, options and tabs of a dialog, a suggested command, the mode (next), the provider (its settings), the model (a list to pick from), a job (its last lines), a settings option |
 | click on the branch | the files changed, each with its kind |
-| right click | the mode: all modes to pick · a task: change its state or delete it · a job: its output and how it stands, or kill it |
+| right click | the mode: all modes to pick · a task: change its state or delete it · a job in the panel, or a bash call still running: watch its output live, its last lines, send it to the background, kill it |
 | wheel over the side panel | scroll its tasks and jobs |
-| `/clear` `/resume` `/rewind` `/fork` `/title` `/model` `/login` `/logout` `/compact` `/settings` `/providers` `/mcp` `/plugins` `/view <file>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
+| `/clear` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact` `/settings` `/providers` `/mcp` `/plugins` `/view <file>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
 | `/<name> text` | a plugin command |

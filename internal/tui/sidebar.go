@@ -28,6 +28,9 @@ type jobEndedMsg tools.JobStatus
 
 type jobTickMsg struct{}
 
+// jobStartedMsg says a command started, to show it in the panel at once.
+type jobStartedMsg tools.JobStatus
+
 // sidebarShown tells whether the side panel has room: it follows what is
 // being done, the tasks and the background jobs, beside the conversation.
 func (m model) sidebarShown() bool {
@@ -111,6 +114,7 @@ func (m model) sidebarLayout(height int) (string, []region) {
 	width := sidebarWidth - 2
 	base := lipgloss.NewStyle().Background(colors.background).Foreground(colors.text)
 	lines, regions := m.sidebarLines()
+	lines = m.markSidebar(lines, regions)
 	context := m.contextBlock(width, base, colors)
 	room := height
 	if len(context) > 0 {
@@ -173,11 +177,11 @@ func (m model) sidebarLines() ([]string, []region) {
 		}
 		menu := func(m model) (tea.Model, tea.Cmd) { return m.taskMenu(i) }
 		for y := first; y < len(lines); y++ {
-			regions = append(regions, region{y: y, x0: 0, x1: 1 << 30, do: menu, menu: menu})
+			regions = append(regions, region{y: y, x0: 0, x1: 1 << 30, do: menu, menu: menu, item: fmt.Sprint("task ", i)})
 		}
 	}
 	add("")
-	add(paint(colors.title).Bold(true).Render("Background"))
+	add(paint(colors.title).Bold(true).Render("Jobs"))
 	statuses := []tools.JobStatus{}
 	untold := map[int]bool{}
 	if jobs := m.jobs(); jobs != nil {
@@ -191,7 +195,10 @@ func (m model) sidebarLines() ([]string, []region) {
 			add(paint(colors.dim).Render(fmt.Sprintf("… +%d older", len(statuses)-shownJobs)))
 			break
 		}
-		mark, tint, state := "●", colors.active, "running "+time.Since(status.Started).Round(time.Second).String()
+		mark, tint, state := "●", toolKindColors[kindBackground], "running "+time.Since(status.Started).Round(time.Second).String()
+		if status.Foreground {
+			tint = toolKindColors[kindExec]
+		}
 		switch status.State {
 		case tools.JobDone:
 			mark, tint, state = "✓", colors.done, "done · "+status.Ended.Sub(status.Started).Round(time.Second).String()
@@ -203,7 +210,11 @@ func (m model) sidebarLines() ([]string, []region) {
 		id := status.ID
 		show := func(m model) (tea.Model, tea.Cmd) { return m.showJob(id) }
 		menu := func(m model) (tea.Model, tea.Cmd) { return m.jobMenu(id) }
-		regions = append(regions, withMenu([]region{row(len(lines), show), row(len(lines)+1, show)}, menu)...)
+		job := []region{row(len(lines), show), row(len(lines)+1, show)}
+		for i := range job {
+			job[i].item = fmt.Sprint("job ", id)
+		}
+		regions = append(regions, withMenu(job, menu)...)
 		add(paint(tint).Render(fmt.Sprintf("%s %d ", mark, status.ID)) + base.Render(oneLine(status.Command, width-4)))
 		if untold[status.ID] && !m.running {
 			state += " · /jobs tell"
@@ -279,6 +290,26 @@ func (m model) tellJobs() (tea.Model, tea.Cmd) {
 		return m.emit(m.printer.Note("no job ended that the model has not heard of"))
 	}
 	return m.reactToJobs()
+}
+
+// toBackground sends the command that blocks the model to the background:
+// the model goes on with what it printed so far and hears when it ends.
+func (m model) toBackground() (tea.Model, tea.Cmd) {
+	jobs := m.jobs()
+	if !m.running || jobs == nil {
+		return m.emit(m.printer.Note("no command is running"))
+	}
+	moved := jobs.Detach()
+	if len(moved) == 0 {
+		return m.emit(m.printer.Note("no command is running in the foreground"))
+	}
+	var notes []string
+	for _, status := range moved {
+		notes = append(notes, fmt.Sprintf("job %d goes on in the background: %s", status.ID, oneLine(status.Command, shownPrompt)))
+	}
+	tick := m.tickJobs()
+	updated, note := m.emit(m.printer.Note(strings.Join(notes, "\n")))
+	return updated, tea.Batch(note, tick)
 }
 
 func (m model) killJob(argument string) (tea.Model, tea.Cmd) {

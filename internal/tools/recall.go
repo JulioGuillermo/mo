@@ -1,8 +1,6 @@
 package tools
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -20,13 +18,12 @@ import (
 )
 
 const (
-	recallName          = "recall"
 	recallResults       = 6
 	mostRecallResults   = 20
 	snippetLength       = 220
 	recalledToolInput   = 200
 	recalledToolOutput  = 300
-	readToolOutput      = 1500
+	readToolOutput      = 0
 	bm25K1              = 1.2
 	bm25B               = 0.75
 	scopeHere           = "here"
@@ -85,46 +82,6 @@ func (r *Recall) SetCurrent(id string) {
 	r.current = id
 }
 
-func recallTool() Tool {
-	return Tool{
-		Name: recallName,
-		Description: "Search your saved memories and the user's past conversations, then read what you need. " +
-			"search: query words, scope here (this project, default) or all, kind memories or conversations (default both). " +
-			"read: an id from the results; c:<conversation> lists its turns.",
-		Schema: json.RawMessage(`{"type":"object","properties":{
-"action":{"type":"string","enum":["search","read"]},"query":{"type":"string"},"id":{"type":"string"},
-"scope":{"type":"string","enum":["here","all"]},"kind":{"type":"string","enum":["memories","conversations"]},"limit":{"type":"integer"}},"required":["action"]}`),
-		Run: runRecall,
-		Summary: func(args json.RawMessage) string {
-			return strings.TrimSpace(argField(args, "action") + " " + argField(args, "query") + argField(args, "id"))
-		},
-	}
-}
-
-func runRecall(_ context.Context, env Env, raw json.RawMessage) (string, error) {
-	if env.Recall == nil {
-		return "", errors.New("nothing to recall here")
-	}
-	var args struct {
-		Action, Query, ID, Scope, Kind string
-		Limit                          int
-	}
-	if err := decodeArgs(raw, &args); err != nil {
-		return "", err
-	}
-	switch args.Action {
-	case "search":
-		limit := args.Limit
-		if limit <= 0 {
-			limit = recallResults
-		}
-		return env.Recall.search(env, args.Query, args.Scope, args.Kind, min(limit, mostRecallResults))
-	case "read":
-		return env.Recall.read(env, args.ID)
-	}
-	return "", fmt.Errorf("action %q: use search or read", args.Action)
-}
-
 // search ranks memories and turns by BM25 and shows the best with a piece
 // of text around where the query matched.
 func (r *Recall) search(env Env, query, scope, kind string, limit int) (string, error) {
@@ -147,7 +104,7 @@ func (r *Recall) search(env Env, query, scope, kind string, limit int) (string, 
 	for _, chunk := range ranked[:min(limit, len(ranked))] {
 		fmt.Fprintf(&out, "%s · %s · %s\n  %s\n", chunk.id, chunk.title, chunk.when.Format("2006-01-02"), snippet(chunk.text, words))
 	}
-	out.WriteString("read one whole with recall action=read id=<id>")
+	out.WriteString("read one whole with memory action read and its id as name")
 	return out.String(), nil
 }
 
@@ -369,9 +326,10 @@ func turnsOf(history []llm.Message, toolOutput int) []recalledTurn {
 	return turns
 }
 
+// cut shortens a text to length characters; 0 keeps it whole.
 func cut(text string, length int) string {
 	text = strings.TrimSpace(text)
-	if runes := []rune(text); len(runes) > length {
+	if runes := []rune(text); length > 0 && len(runes) > length {
 		return string(runes[:length]) + "…"
 	}
 	return text

@@ -121,3 +121,66 @@ func List(dir, workDir string) ([]Info, error) {
 	slices.SortFunc(infos, func(a, b Info) int { return b.Updated.Compare(a.Updated) })
 	return infos, nil
 }
+
+// JobsDir is where the commands run in a conversation keep their output,
+// beside its file, so the output lasts as long as the conversation.
+func JobsDir(dir, id string) string {
+	return filepath.Join(dir, id, "jobs")
+}
+
+// Delete removes a conversation and the output of its commands.
+func Delete(dir, id string) error {
+	if id == "" || strings.ContainsAny(id, `/\.`) {
+		return fmt.Errorf("bad conversation id %q", id)
+	}
+	if err := os.Remove(filepath.Join(dir, id+".json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return os.RemoveAll(filepath.Join(dir, id))
+}
+
+// Older returns the conversations of workDir last updated before when.
+func Older(dir, workDir string, when time.Time) ([]Info, error) {
+	infos, err := List(dir, workDir)
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(infos, func(info Info) bool { return !info.Updated.Before(when) }), nil
+}
+
+// ShareJobs gives a fork the output of the commands run before it, as hard
+// links, or copies where links cannot be made: each conversation keeps its
+// own, and deleting one leaves the other whole.
+func ShareJobs(dir, from, to string) error {
+	if from == "" || to == "" {
+		return nil
+	}
+	source, target := JobsDir(dir, from), JobsDir(dir, to)
+	entries, err := os.ReadDir(source)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || strings.HasSuffix(entry.Name(), ".tail") {
+			continue
+		}
+		from, to := filepath.Join(source, entry.Name()), filepath.Join(target, entry.Name())
+		if os.Link(from, to) == nil {
+			continue
+		}
+		data, err := os.ReadFile(from)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(to, data, 0o600); err != nil {
+			return err
+		}
+	}
+	return nil
+}

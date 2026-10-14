@@ -24,7 +24,8 @@ import (
 func sidebarModel(t *testing.T, width int) model {
 	t.Helper()
 	m := conversationModel()
-	jobs := tools.NewJobs()
+	jobs := tools.NewJobs(t.TempDir())
+	jobs.SetConversation("c1")
 	t.Cleanup(jobs.Close)
 	m.session.Agent = &agent.Agent{Tools: tools.NewRegistry(tools.Env{WorkDir: t.TempDir(), Jobs: jobs}, tools.Options{})}
 	m.width, m.height = width, 30
@@ -40,7 +41,7 @@ func TestSidebar(t *testing.T) {
 
 		view := ansi.Strip(m.View().Content)
 
-		for _, want := range []string{"Tasks  1/2", "✓ read the code", "◐ write the sidebar", "that wraps", "Background", "● 1 sleep 30", "running"} {
+		for _, want := range []string{"Tasks  1/2", "✓ read the code", "◐ write the sidebar", "that wraps", "Jobs", "● 1 sleep 30", "running"} {
 			if !strings.Contains(view, want) {
 				t.Errorf("missing %q", want)
 			}

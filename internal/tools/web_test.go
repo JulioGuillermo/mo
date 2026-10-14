@@ -2,7 +2,7 @@ package tools
 
 // Test Traceability Table
 // | ID    | Category | Description                                                     | Priority |
-// | WT-01 | Happy    | A long page is served 8 KB at a time with the offset to go on   | P0       |
+// | WT-01 | Happy    | A long page comes 200 lines at a time with the offset to go on  | P0       |
 // | WT-02 | Edge     | An offset past the end says so                                  | P2       |
 // | WT-03 | Happy    | Reading on with an offset does not download the page again      | P1       |
 // | WT-04 | Error    | web_search without a searcher says it is not configured         | P2       |
@@ -18,45 +18,55 @@ import (
 	"testing"
 
 	"github.com/jg/mo/internal/llm"
-	"github.com/jg/mo/internal/web"
 )
 
 func TestFetchTool(t *testing.T) {
-	t.Run("WT-01 a long page is served 8 KB at a time with the offset to go on", func(t *testing.T) {
-		page := web.Page{URL: "https://x", Title: "T", Markdown: strings.Repeat("a", fetchPageBytes+100)}
+	page := func(downloads *int) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			*downloads++
+			w.Header().Set("Content-Type", "text/plain")
+			for i := range 300 {
+				fmt.Fprintf(w, "line %d\n", i+1)
+			}
+		}))
+	}
 
-		first := pageWindow(page, 0)
-		rest := pageWindow(page, fetchPageBytes)
+	t.Run("WT-01 a long page comes 200 lines at a time with the offset to go on", func(t *testing.T) {
+		downloads := 0
+		server := page(&downloads)
+		defer server.Close()
 
-		if !strings.HasPrefix(first, "# T\nhttps://x\n\n") || !strings.HasSuffix(first, fmt.Sprintf("[continues: offset=%d of %d]", fetchPageBytes, fetchPageBytes+100)) {
-			t.Errorf("first ends with %q", first[len(first)-60:])
+		first, _ := call(t, Env{}, "fetch", map[string]any{"url": server.URL})
+		rest, _ := call(t, Env{}, "fetch", map[string]any{"url": server.URL, "offset": 200})
+
+		if !strings.HasPrefix(first, server.URL+"\n\nline 1\n") || !strings.HasSuffix(first, "[lines 1-200 of 302; offset=200 continues]\n") {
+			t.Errorf("first = %q", first[len(first)-80:])
 		}
-		if strings.Contains(rest, "continues") || strings.Count(rest, "a") != 100 {
+		if !strings.HasPrefix(rest, "line 199\n") || !strings.Contains(rest, "line 300\n[lines 201-302 of 302]") {
 			t.Errorf("rest = %q", rest)
 		}
 	})
 
 	t.Run("WT-02 an offset past the end says so", func(t *testing.T) {
-		if text := pageWindow(web.Page{Markdown: "short"}, 99); !strings.Contains(text, "past the end") {
+		downloads := 0
+		server := page(&downloads)
+		defer server.Close()
+
+		text, _ := call(t, Env{}, "fetch", map[string]any{"url": server.URL, "offset": 999})
+
+		if !strings.Contains(text, "past the end") {
 			t.Errorf("text = %q", text)
 		}
 	})
 
 	t.Run("WT-03 reading on with an offset does not download the page again", func(t *testing.T) {
 		downloads := 0
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			downloads++
-			w.Header().Set("Content-Type", "text/plain")
-			fmt.Fprint(w, strings.Repeat("b", fetchPageBytes*2))
-		}))
+		server := page(&downloads)
 		defer server.Close()
-		tool := fetchTool()
+		registry := NewRegistry(Env{}, Options{})
 
-		for _, offset := range []int{0, fetchPageBytes} {
-			args, _ := json.Marshal(map[string]any{"url": server.URL, "offset": offset})
-			if _, err := tool.Run(context.Background(), Env{}, args); err != nil {
-				t.Fatal(err)
-			}
+		for _, offset := range []int{0, 200} {
+			registry.Run(context.Background(), llm.ToolCall{Name: "fetch", Args: args(t, map[string]any{"url": server.URL, "offset": offset})})
 		}
 
 		if downloads != 1 {

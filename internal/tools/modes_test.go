@@ -94,7 +94,7 @@ func TestToolSearch(t *testing.T) {
 	t.Run("MD-04 tool_search tells what the matching tools do and take", func(t *testing.T) {
 		output := runSearch(t, searchRegistry(t), "select:grep")
 
-		if !strings.HasPrefix(output, "grep: Search file contents") || !strings.Contains(output, `parameters: {"type":"object","properties":{"pattern"`) || !strings.Contains(output, "tool_call") {
+		if !strings.HasPrefix(output, "grep: Search files for") || !strings.Contains(output, `parameters: {"type":"object","properties":{"pattern"`) || !strings.Contains(output, "tool_call") {
 			t.Errorf("output = %q", output)
 		}
 		for _, spec := range searchRegistry(t).Specs(nil) {
