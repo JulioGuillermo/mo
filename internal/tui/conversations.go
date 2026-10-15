@@ -184,6 +184,7 @@ func (m model) resume(msg resumedMsg) (tea.Model, tea.Cmd) {
 		return m.emit(m.printer.Note("stop the current run first"))
 	}
 	record := msg.record
+	m.worked = 0
 	m.session.Agent.Restore(record.History, record.Usage)
 	m.usage = record.Usage
 	m.thread = conversation{id: record.ID, title: record.Title, parent: record.Parent, forked: record.Forked, created: record.Created}
@@ -250,6 +251,7 @@ func (m model) rewind(prompt agent.Prompt) (tea.Model, tea.Cmd) {
 
 // newConversation starts over; the old one stays saved.
 func (m *model) newConversation() {
+	m.worked = 0
 	m.session.Agent.Clear()
 	m.usage = llm.Usage{}
 	m.thread = conversation{}

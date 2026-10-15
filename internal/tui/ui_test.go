@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -314,6 +315,35 @@ func TestCommandOutputSetting(t *testing.T) {
 
 		if updated.(model).jobs().Kept() {
 			t.Error("with outputs none the jobs should keep nothing")
+		}
+	})
+}
+
+func TestWorkedTime(t *testing.T) {
+	t.Run("the state says how long the turn has run, and once over how long it worked", func(t *testing.T) {
+		m := conversationModel()
+		m.width, m.height = 100, 30
+		m.running, m.cancel = true, func() {}
+		m.runStarted = time.Now().Add(-75 * time.Second)
+
+		working := ansi.Strip(m.bottom())
+		finished, _ := m.finishRun(nil)
+		idle := ansi.Strip(finished.(model).bottom())
+		cleared, _ := finished.(model).runCommand("/clear")
+
+		if !strings.Contains(working, "1m 15s") || !strings.Contains(working, "esc to stop") {
+			t.Errorf("working:\n%s", working)
+		}
+		if !strings.Contains(idle, "idle · worked 1m 15s") {
+			t.Errorf("idle:\n%s", idle)
+		}
+		if strings.Contains(ansi.Strip(cleared.(model).bottom()), "worked") {
+			t.Error("/clear should drop it")
+		}
+		for d, want := range map[time.Duration]string{5 * time.Second: "5s", 61 * time.Second: "1m 01s", 2*time.Hour + 3*time.Minute: "2h 03m"} {
+			if got := formatElapsed(d); got != want {
+				t.Errorf("%v = %q", d, got)
+			}
 		}
 	})
 }

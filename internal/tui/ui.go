@@ -127,6 +127,10 @@ type model struct {
 	viewer *outputViewer
 	// vim is where vim keys are, when they are on.
 	vim vimState
+	// runStarted is when the turn running began; worked how long the last
+	// one took, shown once it ends.
+	runStarted time.Time
+	worked     time.Duration
 	// newPrompt is set while a prompt is sent, so the turn it starts counts
 	// as a new one for the jobs.
 	newPrompt bool
@@ -639,6 +643,7 @@ func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 // ends or is stopped.
 func (m model) start(first tea.Cmd, work func(context.Context, agent.Hooks) error) (tea.Model, tea.Cmd) {
 	m.ensureThread()
+	m.runStarted = time.Now()
 	m.trackTurn(m.newPrompt)
 	m.newPrompt = false
 	ctx, cancel := context.WithCancel(context.Background())
@@ -763,6 +768,9 @@ func (m *model) stop() {
 
 func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 	m.running = false
+	if !m.runStarted.IsZero() {
+		m.worked = time.Since(m.runStarted)
+	}
 	m.activity = ""
 	m.runningTool = nil
 	m.cancel()
@@ -920,7 +928,13 @@ func (m model) upperLayout() (string, []region) {
 		if count := m.session.Agent.QueuedCount(); count > 0 {
 			queued = fmt.Sprintf(" · %d queued", count)
 		}
-		add(m.spinner.View()+" "+m.currentState().label(true)+dimStyle.Render(queued+" · esc to stop"), nil)
+		elapsed := ""
+		if !m.runStarted.IsZero() {
+			elapsed = " · " + formatElapsed(time.Since(m.runStarted))
+		}
+		add(m.spinner.View()+" "+m.currentState().label(true)+dimStyle.Render(elapsed+queued+" · esc to stop"), nil)
+	case m.worked > 0 && m.titling == nil:
+		add(dimStyle.Render("  idle · worked "+formatElapsed(m.worked)), nil)
 	}
 	if m.titling != nil {
 		stop := ""
@@ -1132,6 +1146,19 @@ func statusPalette(dark bool) statusColors {
 
 // shortModelName drops the directories and the extension from model ids that
 // are file paths, as llama-server reports them.
+// formatElapsed says how long something took: seconds, minutes and
+// seconds, or hours and minutes.
+func formatElapsed(d time.Duration) string {
+	seconds := int(d.Round(time.Second).Seconds())
+	switch {
+	case seconds < 60:
+		return fmt.Sprintf("%ds", seconds)
+	case seconds < 3600:
+		return fmt.Sprintf("%dm %02ds", seconds/60, seconds%60)
+	}
+	return fmt.Sprintf("%dh %02dm", seconds/3600, seconds%3600/60)
+}
+
 func shortModelName(model string) string {
 	return strings.TrimSuffix(filepath.Base(model), ".gguf")
 }
