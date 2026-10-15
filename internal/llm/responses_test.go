@@ -148,7 +148,15 @@ func TestAnthropicSubscription(t *testing.T) {
 	if got.header.Get("Authorization") != "Bearer tok" || got.header.Get("anthropic-beta") != claudeCodeBeta || got.header.Get("x-api-key") != "" {
 		t.Fatalf("headers %v", got.header)
 	}
-	if len(sent.System) != 2 || sent.System[0].Text != claudeCodeSystem || sent.System[1].Text != "mine" {
+	if len(sent.System) != 3 || sent.System[0].Text != claudeCodeSystem || sent.System[1].Text != claudeCodeBridge || sent.System[2].Text != "mine" {
 		t.Fatalf("system %+v", sent.System)
+	}
+
+	provider.NoPreamble = true
+	_, _ = provider.Stream(context.Background(), Request{Model: "m", System: "mine", Messages: []Message{{Role: RoleUser, Text: "x"}}}, func(Event) {})
+	sent.System = nil
+	_ = json.Unmarshal(got.body, &sent)
+	if len(sent.System) != 1 || sent.System[0].Text != "mine" {
+		t.Fatalf("without the preamble, system %+v", sent.System)
 	}
 }

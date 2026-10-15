@@ -98,7 +98,9 @@
   uses since 2026, so it can stop working. It signs in with Claude Code's OAuth client (token
   endpoint speaks JSON, hence `oauth.json`), sends the `oauth-2025-04-20` beta header, and puts
   "You are Claude Code, Anthropic's official CLI for Claude." first in the system prompt, which
-  the API requires for these tokens.
+  the API requires for these tokens, then a line saying the model runs inside mo and that mo's
+  instructions take the place of Claude Code's. `preamble = false` leaves both out, at the risk
+  of the API refusing the tokens; the bridge line is checked by tests, not against the API.
 - `codex` is the Responses API as the ChatGPT backend serves it (`chatgpt.com/backend-api/codex`):
   system prompt as `instructions` (never empty), `store: false`, no `max_output_tokens`, and the
   ChatGPT account id, read from the access token's own claims, as a header. Reasoning items are

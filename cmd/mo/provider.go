@@ -97,7 +97,8 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 		if model == "" {
 			return chosenProvider{}, fmt.Errorf("%s needs a model: use -m or set model in the config", name)
 		}
-		provider := &llm.Anthropic{BaseURL: settings.BaseURL, APIKey: key, Token: token, Subscription: settings.Protocol == "claude-code"}
+		provider := &llm.Anthropic{BaseURL: settings.BaseURL, APIKey: key, Token: token, Subscription: settings.Protocol == "claude-code",
+			NoPreamble: settings.Preamble != nil && !*settings.Preamble}
 		window, from := cfg.Context.Window, windowFromSettings
 		if window == 0 {
 			window, from = anthropicWindow(ctx, provider, model)

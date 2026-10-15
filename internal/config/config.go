@@ -202,9 +202,11 @@ type ProviderConfig struct {
 	// OAuth signs in to the provider instead of a key: the token it gives
 	// is sent as the bearer and renewed when it expires.
 	OAuth *OAuth `toml:"oauth,omitempty"`
-	// Preamble, for a cloudcode provider, starts the system prompt as
-	// Antigravity's own requests do, followed by a line saying the model
-	// runs inside mo; false sends mo's prompt alone. Unset is true.
+	// Preamble, for a cloudcode or claude-code provider, starts the system
+	// prompt as Antigravity's or Claude Code's own requests do, followed by
+	// a line saying the model runs inside mo; false sends mo's prompt
+	// alone, which Claude accounts' tokens may be refused for. Unset is
+	// true.
 	Preamble *bool `toml:"preamble,omitempty"`
 }
 

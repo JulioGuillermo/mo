@@ -23,6 +23,10 @@ var providerTypes = map[string]string{
 }
 
 // protocolNeedsModel are the types that cannot pick a model by themselves.
+// preambleProducts are the protocols whose requests start the system
+// prompt as another product's do, by that product's name.
+var preambleProducts = map[string]string{"cloudcode": "Antigravity", "claude-code": "Claude Code"}
+
 var protocolNeedsModel = map[string]bool{"anthropic": true, "claude-code": true, "responses": true, "cloudcode": true}
 
 // providerDraft holds what the provider form edits for one provider.
@@ -45,7 +49,7 @@ type providerDraft struct {
 	// oauth is the sign-in being edited; flow "" signs in with a key.
 	oauth       config.OAuth
 	oauthScopes string
-	// preamble, for Cloud Code, sends Antigravity's opening first.
+	// preamble, for Cloud Code and Claude Code, sends their opening first.
 	preamble bool
 }
 
@@ -133,11 +137,14 @@ func (d *providerDraft) entries(cfg config.Config) []entry {
 				EchoMode(huh.EchoModePassword).Value(&d.key)
 		}},
 	)
-	if d.protocol == "cloudcode" {
-		entries = append(entries, entry{"Antigravity's preamble", func() string { return yesNo(d.preamble) }, func() huh.Field {
-			return huh.NewConfirm().Title("Antigravity's preamble").
-				Description("start the system prompt as Antigravity's requests do, with a line saying the model runs inside mo; no: mo's prompt alone").
-				Value(&d.preamble)
+	if product, ok := preambleProducts[d.protocol]; ok {
+		title := product + "'s preamble"
+		description := "start the system prompt as " + product + "'s requests do, with a line saying the model runs inside mo; no: mo's prompt alone"
+		if d.protocol == "claude-code" {
+			description += ", which the API may refuse for a Claude account"
+		}
+		entries = append(entries, entry{title, func() string { return yesNo(d.preamble) }, func() huh.Field {
+			return huh.NewConfirm().Title(title).Description(description).Value(&d.preamble)
 		}})
 	}
 	if d.savedKey {
@@ -262,7 +269,7 @@ func (d *providerDraft) applyTo(layer config.Config) (config.Config, error) {
 	if d.forgetKey {
 		entry.APIKey = ""
 	}
-	if d.protocol == "cloudcode" && !d.preamble {
+	if _, ok := preambleProducts[d.protocol]; ok && !d.preamble {
 		off := false
 		entry.Preamble = &off
 	}

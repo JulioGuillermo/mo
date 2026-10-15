@@ -20,11 +20,17 @@ type Anthropic struct {
 	// account's sign-in: its beta header and the line its system prompt
 	// must start with.
 	Subscription bool
+	// NoPreamble, with Subscription, sends mo's system prompt alone,
+	// without Claude Code's opening line and the line after it.
+	NoPreamble bool
 }
 
 const (
 	claudeCodeBeta   = "oauth-2025-04-20"
 	claudeCodeSystem = "You are Claude Code, Anthropic's official CLI for Claude."
+	// claudeCodeBridge follows that line, so the model does not take the
+	// two openings for two identities.
+	claudeCodeBridge = "Here you run inside mo, a coding agent in the user's terminal: the instructions that follow are mo's and take the place of Claude Code's."
 	claudeCodeAgent  = "claude-cli/2.1.299 (external, cli)"
 )
 
@@ -119,8 +125,8 @@ func (p *Anthropic) Stream(ctx context.Context, req Request, onEvent func(Event)
 	}
 	url := strings.TrimRight(p.BaseURL, "/") + "/v1/messages"
 	body := buildAnthropicRequest(req)
-	if p.Subscription {
-		body.System = append([]anthropicBlock{{Type: "text", Text: claudeCodeSystem}}, body.System...)
+	if p.Subscription && !p.NoPreamble {
+		body.System = append([]anthropicBlock{{Type: "text", Text: claudeCodeSystem}, {Type: "text", Text: claudeCodeBridge}}, body.System...)
 	}
 	resp, err := postJSON(ctx, clientOrDefault(p.Client), url, headers, body)
 	if err != nil {

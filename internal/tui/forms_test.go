@@ -377,3 +377,20 @@ func TestPreambleSetting(t *testing.T) {
 		}
 	})
 }
+
+func TestClaudeCodePreambleSetting(t *testing.T) {
+	t.Run("a Claude Code provider offers its preamble too, saved as false when turned off", func(t *testing.T) {
+		cfg := config.Defaults()
+		draft := newProviderDraft("claude-code", cfg, nil)
+		var titles []string
+		for _, each := range draft.entries(cfg) {
+			titles = append(titles, each.title)
+		}
+		draft.preamble = false
+		off, err := draft.applyTo(config.Config{})
+
+		if !slices.Contains(titles, "Claude Code's preamble") || err != nil || off.Providers["claude-code"].Preamble == nil || *off.Providers["claude-code"].Preamble {
+			t.Errorf("entries = %v saved = %+v err = %v", titles, off.Providers["claude-code"], err)
+		}
+	})
+}
