@@ -133,7 +133,7 @@ func (j *Jobs) Kept() bool {
 // pruneTurns lets go of the output of the jobs of turns older than those
 // kept, in memory and on disk; the lock is held.
 func (j *Jobs) pruneTurns() {
-	if j.keepTurns <= 0 || j.conversation == "" {
+	if j.keepTurns <= 0 || j.conversation == "" || j.turn == 0 {
 		return
 	}
 	oldest := j.turn - j.keepTurns
@@ -168,6 +168,11 @@ func (j *Jobs) pruneTurns() {
 func (j *Jobs) SetConversation(id string) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
+	if id != j.conversation {
+		// The turn counted is the one in progress there, unknown until it
+		// starts: nothing is let go of meanwhile.
+		j.turn = 0
+	}
 	j.conversation = id
 }
 

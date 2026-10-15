@@ -13,6 +13,7 @@ package tools
 // | JB-13 | Happy    | In memory the output reads as on disk, and nothing reaches the folder | P0 |
 // | JB-14 | Happy    | With none only the start and end come back, and output says it was not kept | P1 |
 // | JB-15 | Happy    | Output older than the turns kept goes; that of later turns stays      | P0 |
+// | JB-16 | Edge     | Switching conversations prunes nothing until a turn of the new one starts | P0 |
 // | JB-12 | Happy    | Reading output and help never ask; running and killing do          | P0       |
 // | JB-08 | Edge     | A log keeps its first and last bytes and says how much it dropped    | P0       |
 // | JB-09 | Edge     | Each conversation numbers and sees its own jobs, also after a restart | P0      |
@@ -322,6 +323,25 @@ func TestJobs(t *testing.T) {
 		}
 		if third != "turn 3\n" {
 			t.Errorf("turn 3 should stay: %q", third)
+		}
+	})
+
+	t.Run("JB-16 switching conversations prunes nothing until a turn of the new one starts", func(t *testing.T) {
+		jobs := NewJobs(t.TempDir())
+		t.Cleanup(jobs.Close)
+		env := Env{WorkDir: t.TempDir(), Jobs: jobs}
+		jobs.SetConversation("short")
+		jobs.SetTurn(2)
+		jobs.Run(context.Background(), env, "echo kept", time.Minute)
+		jobs.SetConversation("long")
+		jobs.SetTurn(40)
+		jobs.SetConversation("short")
+
+		jobs.Configure(OutputsDisk, 3)
+		_, text, err := jobs.Text(1)
+
+		if err != nil || text != "kept\n" {
+			t.Errorf("text = %q err = %v", text, err)
 		}
 	})
 }
