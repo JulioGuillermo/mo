@@ -9,12 +9,15 @@ package tui
 // | SM-05 | Happy    | Esc in a provider form goes back to the list, then to the menu       | P1       |
 // | SM-06 | Happy    | A section lists its settings with their values; one opens on its own | P0       |
 // | SM-07 | Edge     | Esc in a setting puts its old value back; enter keeps the new one    | P0       |
+// | SM-09 | Happy    | An MCP server is one row of the tool modes; its list has its mode, and its tools unless it is a group | P0 |
+// | SM-10 | Happy    | A choice opens in a box over the list it came from; a click outside it cancels | P1 |
 // | SM-08 | Happy    | The menu opens groups; a group lists its sections; esc goes back a level at a time | P0 |
 
 import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/agent"
@@ -104,7 +107,7 @@ func TestSettingsMenu(t *testing.T) {
 		opened, _ := section.(model).settings.next(section.(model))
 
 		view := opened.(model).settings.form.View()
-		if !strings.Contains(list, "Same text in a row") || !strings.Contains(list, "‹ back") || strings.Contains(view, "Same text in a row") || !strings.Contains(view, "Watch for loops") {
+		if !strings.Contains(list, "Loop: same text in a row") || !strings.Contains(list, "‹ back") || strings.Contains(view, "Loop: same text in a row") || !strings.Contains(view, "Watch for loops") {
 			t.Errorf("list:\n%s\nopened:\n%s", list, view)
 		}
 	})
@@ -121,12 +124,12 @@ func TestSettingsMenu(t *testing.T) {
 		menu.draft.loopRepeats = "7"
 		opened.(model).settings.next(opened.(model))
 
-		if afterEsc == "9" || menu.draft.loopRepeats != "7" || !strings.Contains(cancelled.(model).settings.form.View(), "Settings › Safety › Loop guard") {
+		if afterEsc == "9" || menu.draft.loopRepeats != "7" || !strings.Contains(cancelled.(model).settings.form.View(), "Settings › Safety") {
 			t.Errorf("after esc = %q after enter = %q", afterEsc, menu.draft.loopRepeats)
 		}
 	})
 
-	t.Run("SM-08 the menu opens groups; a group lists its sections and lists; esc goes back a level at a time", func(t *testing.T) {
+	t.Run("SM-08 the menu opens groups; a group lists its settings and its long lists; esc goes back a level at a time", func(t *testing.T) {
 		m, menu := menuModel()
 		top := ansi.Strip(m.settings.form.View())
 
@@ -141,13 +144,63 @@ func TestSettingsMenu(t *testing.T) {
 				t.Errorf("menu misses %q:\n%s", want, top)
 			}
 		}
-		for _, want := range []string{"Settings › Tools", "Loading and output", "Mode of each tool", "Descriptions", "Web search", "MCP servers", "‹ back"} {
+		for _, want := range []string{"Settings › Tools", "Tool mode", "Max tool output", "Web search", "Mode of each tool ›", "Descriptions ›", "MCP servers ›", "‹ back"} {
 			if !strings.Contains(listed, want) {
 				t.Errorf("group misses %q:\n%s", want, listed)
 			}
 		}
 		if !strings.Contains(ansi.Strip(toGroup.(model).settings.form.View()), "Settings › Tools") || !strings.Contains(ansi.Strip(toMenu.(model).settings.form.View()), "Conversation ›") {
 			t.Error("esc should go back to the group, then to the menu")
+		}
+	})
+
+	t.Run("SM-09 an MCP server is one row of the tool modes; its list has its mode, and its tools unless it is a group", func(t *testing.T) {
+		m, menu := menuModel()
+		m.session.ToolNames = []string{"read", "bash", "mcp__playwright__browser_click", "mcp__playwright__browser_type"}
+		menu.layer.MCP = map[string]config.MCPServer{"playwright": {Command: "npx"}}
+
+		modes, _ := m.openMenuChoice(menu, "toolmodes")
+		list := ansi.Strip(modes.(model).settings.form.View())
+		server, _ := m.showSection(menu, serverModeSection("playwright"), "")
+		tools := ansi.Strip(server.(model).settings.form.View())
+		*menu.draft.modeOf(mcpModes, "playwright") = "group"
+		grouped, _ := m.showSection(menu, serverModeSection("playwright"), "")
+		alone := ansi.Strip(grouped.(model).settings.form.View())
+		back, _ := grouped.(model).Update(keyEsc)
+
+		if !strings.Contains(list, "playwright (MCP server) ›") || strings.Contains(list, "browser_click") || !strings.Contains(list, "bash") {
+			t.Errorf("tool modes:\n%s", list)
+		}
+		if !strings.Contains(tools, "browser_click") || !strings.Contains(tools, "browser_type") || !strings.Contains(tools, "Mode of each tool › playwright") {
+			t.Errorf("server not grouped:\n%s", tools)
+		}
+		if strings.Contains(alone, "browser_click") || !strings.Contains(alone, "group") {
+			t.Errorf("server grouped:\n%s", alone)
+		}
+		if !strings.Contains(ansi.Strip(back.(model).settings.form.View()), "playwright (MCP server) ›") {
+			t.Error("esc should go back to the tool modes")
+		}
+		opened, _ := grouped.(model).settings.next(grouped.(model))
+		if view := ansi.Strip(opened.(model).settings.form.View()); !strings.Contains(view, "group: one entry for the server") {
+			t.Errorf("the server's mode should open to be changed:\n%s", view)
+		}
+	})
+
+	t.Run("SM-10 a choice opens in a box over the list it came from; a click outside it cancels", func(t *testing.T) {
+		m, menu := menuModel()
+		m.width, m.height = 110, 30
+		before := menu.draft.keys
+		group, _ := m.openMenuChoice(menu, groupPrefix+"interface")
+		updated, cmd := group.(model).Update(keyEnter)
+		opened := deliver(updated.(model), cmd, 3)
+
+		screen := ansi.Strip(opened.View().Content)
+		if opened.settings == nil || !opened.settings.floating || !strings.Contains(screen, "vim: insert") || !strings.Contains(screen, "Status line") {
+			t.Fatalf("screen:\n%s", screen)
+		}
+		closed, _ := opened.Update(tea.MouseClickMsg(tea.Mouse{X: 1, Y: 1, Button: tea.MouseLeft}))
+		if after := closed.(model); after.settings == nil || after.settings.floating || menu.draft.keys != before {
+			t.Errorf("a click outside should cancel back to the list: keys = %q", menu.draft.keys)
 		}
 	})
 }

@@ -76,6 +76,10 @@ type settingsScreen struct {
 	// remove, when set, deletes what the cursor of the list is on: ctrl+x,
 	// delete or a click on its mark.
 	remove func(m model) (tea.Model, tea.Cmd)
+	// floating draws the form in a box over under, the screen it was
+	// opened from, which stays in view.
+	floating bool
+	under    string
 }
 
 func (screen *settingsScreen) helpLine() string {
@@ -121,7 +125,8 @@ func (m model) openSettings(msg settingsLoadedMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) showSettings(screen *settingsScreen) (tea.Model, tea.Cmd) {
-	screen.form = fitForm(screen.form.WithTheme(huh.ThemeFunc(settingsTheme)), m.width, m.height)
+	screen.form = screen.form.WithTheme(huh.ThemeFunc(settingsTheme))
+	screen.form = m.fitScreen(screen)
 	m.settings = screen
 	return m, screen.form.Init()
 }
@@ -131,15 +136,34 @@ func fitForm(form *huh.Form, width, height int) *huh.Form {
 	return form.WithWidth(width).WithHeight(max(height-2, settingsMinHeight))
 }
 
+// fitScreen sizes a screen's form: the whole screen, or a box's inside.
+func (m model) fitScreen(screen *settingsScreen) *huh.Form {
+	if screen.floating {
+		width, height := floatingSize(m.width, m.height)
+		return screen.form.WithWidth(width).WithHeight(height)
+	}
+	return fitForm(screen.form, m.width, m.height)
+}
+
 // updateSettings feeds the form and acts once it is completed or left.
 func (m model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if size, ok := msg.(tea.WindowSizeMsg); ok {
 		redraw := m.resize(size)
-		m.settings.form = fitForm(m.settings.form, size.Width, size.Height)
+		m.settings.form = m.fitScreen(m.settings)
 		return m, redraw
 	}
 	if click, ok := msg.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft {
-		return m.clickSettings(click.X, click.Y)
+		if m.settings.floating {
+			box := m.floatingBox()
+			rows := lipgloss.Height(m.floatingFrame())
+			if click.X < box.x0 || click.X >= box.x1 || click.Y < box.y || click.Y >= box.y+rows {
+				msg = tea.KeyPressMsg{Code: tea.KeyEscape}
+			} else {
+				return m.clickSettings(click.X-box.x0-floatingInset, click.Y-box.y-1)
+			}
+		} else {
+			return m.clickSettings(click.X, click.Y)
+		}
 	}
 	if key, ok := msg.(tea.KeyPressMsg); ok && key.String() == "tab" && m.settings.tab != nil {
 		screen := m.settings
@@ -258,6 +282,7 @@ func (m model) finishSettings(msg settingsSavedMsg) (tea.Model, tea.Cmd) {
 func (m model) useSession(session Session) (tea.Model, tea.Cmd) {
 	m.session = session
 	m.printer.setKind(m.toolKind)
+	m.configureJobs()
 	if enabled := m.session.Config.Render.Keys == "vim"; enabled != m.vim.enabled {
 		m.vim = vimState{enabled: enabled}
 	}

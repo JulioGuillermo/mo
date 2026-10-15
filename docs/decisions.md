@@ -496,6 +496,10 @@
   An ended job is told to the model of its own conversation only, when that one is in progress.
 - A job outlives the turn that started it and survives a settings change; mo kills what is left
   (SIGTERM, then SIGKILL after 3 s) when it exits. mo run once keeps nothing and has no jobs.
+- Where the output is kept is a setting: `disk` by default, `memory` for nothing on disk (gone when
+  mo exits), `none` for only what the command returned. `output_turns` lets go of the output of
+  turns older than the last N, counted in the conversation's prompts so a restart keeps the count.
+  The job's state stays, marked as pruned, so its number still says what ran.
 - The conversation gets its id when its first turn starts, not when it is first saved, so its
   commands have a folder from the first one.
 - Every command shows in the side panel while it runs, its dot red when it blocks the model and
@@ -849,10 +853,16 @@
 ## Settings menu
 
 - The menu is six groups, not a flat list of sixteen sections: Model, Conversation, Tools, Skills,
-  Safety and Interface, each opening its sections and, for Model and Tools, the provider and MCP
-  server lists. A group's row shows the values of its first section, the ones most looked for.
-- Esc goes back one level at a time: setting, section, group, menu. Titles say where one is, as
-  "Settings › Tools › Descriptions".
+  Safety and Interface. A group lists its settings directly, without a level of sections in
+  between; titles that would read ambiguously there say what they belong to ("Notify by", "Loop:
+  within the last replies"). Only the long lists, as long as the tools or skills there are, open
+  on their own: the mode of each tool and skill, the descriptions, the providers, the MCP servers.
+- In the tool modes an MCP server is one row opening its own list: its mode, and its tools only
+  when the server is not a group, since in a group they are found together and have no mode.
+- A group's row shows the values of its first section, the ones most looked for. Esc goes back one
+  level at a time: setting, list, group, menu.
+- A short field, a choice, yes or no, a line, opens in a box over the middle of the list it came
+  from, which stays in view; a click outside the box cancels it. Long text keeps the whole screen.
 - The project screen keeps its flat list, short as it is, with each section named with its group.
 
 ## Context menus

@@ -108,10 +108,12 @@ Subscription logins have their own providers.
 `~/.config/mo/config.toml`, then `.mo/settings.toml` in the project (the old `.mo.toml` is still
 read when that does not exist). Each layer overrides only what it sets.
 
-`/settings` groups what it sets under six headings, each opening its sections: **Model** (and
-the providers), **Conversation** (context window, instructions files, memory), **Tools** (loading
-and output, the mode of each tool, descriptions, web search, MCP servers), **Skills**, **Safety**
-(permissions, loop guard) and **Interface** (look and keys, notifications). Esc goes back a level.
+`/settings` groups what it sets under six headings, each listing its settings directly: **Model**,
+**Conversation** (context window, instructions files, memory), **Tools** (with web search),
+**Skills**, **Safety** (permissions, loop guard) and **Interface** (keys, look, notifications).
+Only the long lists open on their own, marked ›: the mode of each tool and of each skill, the
+tool descriptions, the providers and the MCP servers. In the tool modes an MCP server is one row:
+it opens its mode and, unless that is `group`, its tools one by one. Esc goes back a level.
 
 It has two screens, switched with tab: **Global**, for every project, and **This project**
 (`/settings project`), which shows only what a project can override (provider and model, tools
@@ -146,6 +148,8 @@ confirm = ["bash", "rm", "fetch"]   # ask before these; [] never asks. A list of
 disabled = []              # e.g. ["mkdir", "ls"] to save context
 mcp_disabled = []          # MCP servers set up but not started, e.g. ["docs"]
 max_output = 10000         # bytes of tool output sent to the model
+outputs = "disk"           # whole command output kept: disk, memory or none
+output_turns = 0           # for how many of your turns; 0 for the whole conversation
 
 [tools.descriptions]       # replace what the model reads about a tool; "" sends none
 grep = "Regex search in files."
@@ -246,7 +250,10 @@ Every `bash` command is a job of the conversation, numbered, with its whole outp
 500 MB a conversation, the oldest going first. A long output reaches the model cut, with the job
 number; `bash` with `action: output` and its `id` shows any part of it, and without an `id` lists
 the jobs, or with `match` searches all of them, also after mo restarts. The output lasts as long
-as the conversation. Reading output never asks; running and `kill` do.
+as the conversation. Reading output never asks; running and `kill` do. `tools.outputs`, also in
+`/settings › Tools`, keeps it on `disk` (the default), in `memory` until mo exits, or `none`: only
+the start and end the command returned. `tools.output_turns = N` lets go of the output of
+commands older than your last N turns; 0 keeps it for the whole conversation.
 
 `bash` with `background: true` runs a command as a job, for servers, watchers and long builds, and
 returns at once. Every command shows in the side panel while it runs. When one in the foreground
@@ -293,7 +300,7 @@ global memories.
 
 mo reads `AGENTS.md` (and `AGENT.md`) into the system prompt: yours in `~/.config/mo/`, then each one
 from the repository's root down to the working folder, so the closest come last. `/settings ›
-Conversation › Instructions` turns them off or names other files, such as `CLAUDE.md`, globally or per project.
+Conversation` turns them off or names other files, such as `CLAUDE.md`, globally or per project.
 
 ## Skills
 
@@ -368,7 +375,7 @@ takes `ls`, `ls * /home` takes `ls -la /home`), inside a word any characters of 
 others (`find *`, `xargs *`, `env *`, `sudo *`) lets those through too.
 
 When a command asks, `a` opens the parts no rule allows as rules: put the `*` where you want, then
-save them for every project or for this folder only. `/settings` › Safety › Permissions edits the lists, one
+save them for every project or for this folder only. `/settings` › Safety edits the lists, one
 rule per line, and has a field to try a command against them.
 
 In `auto` the model is asked in a separate request that holds only your request and the commands,
@@ -398,7 +405,7 @@ trust = true               # run its tools without asking
 
 Their tools are named `mcp__<server>__<tool>` and ask before running unless the server has
 `trust = true`. In `search` tool mode they stay out of the context until the model looks for them.
-`/mcp` shows which servers answered and edits them. `/settings › Tools › Loading and output › MCP servers off` stops
+`/mcp` shows which servers answered and edits them. `/settings › Tools › MCP servers off` stops
 one without deleting it, everywhere or only in a project. A server's stderr goes to `~/.local/share/mo/logs/mcp-<name>.log`.
 `[web]` and `[mcp]` are read from the user file only, never from a project's `.mo/settings.toml`.
 

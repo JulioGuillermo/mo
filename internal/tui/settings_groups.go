@@ -2,9 +2,12 @@ package tui
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 )
 
 const groupPrefix = "group:"
@@ -49,8 +52,11 @@ func groupOf(section settingsSection) (settingsGroup, bool) {
 }
 
 // fullTitle names a section with its group when the group has more than
-// it, as "Tools › Descriptions".
+// it, as "Tools › Descriptions", and a nested one after its parent.
 func fullTitle(section settingsSection) string {
+	if parent, ok := sectionByKey(section.parent); ok {
+		return fullTitle(parent) + " › " + section.title
+	}
 	if group, ok := groupOf(section); ok && len(group.sections) > 1 {
 		return group.title + " › " + section.title
 	}
@@ -64,39 +70,82 @@ func (m model) groupSummary(menu *settingsMenu, group settingsGroup) string {
 	return section.summary(menu.draft)
 }
 
-// showGroup lists the sections of a group with their values, and the
-// lists that go with them.
-func (m model) showGroup(menu *settingsMenu, group settingsGroup) (tea.Model, tea.Cmd) {
-	type row struct{ title, summary, key string }
-	var rows []row
+// listSections are the sections that stay a list of their own inside a
+// group: long, and as long as the tools or skills there are.
+var listSections = []string{"toolmodes", "skillmodes", "descriptions"}
+
+// inGroup is the group a section's settings are shown in, directly: every
+// section but the long lists.
+func inGroup(section settingsSection) (settingsGroup, bool) {
+	group, ok := groupOf(section)
+	return group, ok && !slices.Contains(listSections, section.key)
+}
+
+const itemSeparator = "\x00"
+
+func itemKey(section settingsSection, title string) string {
+	return section.key + itemSeparator + title
+}
+
+// showGroup lists a group's settings with their values, then the lists
+// that open on their own: the long ones, providers and MCP servers.
+func (m model) showGroup(menu *settingsMenu, group settingsGroup, last string) (tea.Model, tea.Cmd) {
+	type row struct{ title, value, key string }
+	var rows, lists []row
+	var notes []string
+	items := map[string]struct {
+		section settingsSection
+		item    settingItem
+	}{}
 	for _, key := range group.sections {
 		section, _ := sectionByKey(key)
-		rows = append(rows, row{section.title, section.summary(menu.draft), section.key})
+		if _, direct := inGroup(section); !direct {
+			lists = append(lists, row{section.title + " ›", section.summary(menu.draft), section.key})
+			continue
+		}
+		if section.note != nil {
+			if note := section.note(m, menu); note != "" {
+				notes = append(notes, note)
+			}
+		}
+		for _, item := range section.items(m, menu) {
+			key := itemKey(section, item.title)
+			items[key] = struct {
+				section settingsSection
+				item    settingItem
+			}{section, item}
+			rows = append(rows, row{item.title, item.value(menu.draft), key})
+		}
 	}
 	for _, extra := range group.extras {
 		switch extra {
 		case menuProviders:
-			rows = append(rows, row{"Providers", "add, edit, delete", menuProviders})
+			lists = append(lists, row{"Providers ›", "add, edit, delete", menuProviders})
 		case menuMCP:
-			rows = append(rows, row{"MCP servers", fmt.Sprintf("%d set up · add, edit, delete", len(menu.layer.MCP)), menuMCP})
+			lists = append(lists, row{"MCP servers ›", fmt.Sprintf("%d set up · add, edit, delete", len(menu.layer.MCP)), menuMCP})
 		}
 	}
+	rows = append(rows, lists...)
 	width := 0
 	for _, r := range rows {
 		width = max(width, len(r.title))
 	}
 	var options []huh.Option[string]
 	for _, r := range rows {
-		options = append(options, huh.NewOption(fmt.Sprintf("%-*s   %s", width, r.title, dimStyle.Render(r.summary)), r.key))
+		options = append(options, huh.NewOption(fmt.Sprintf("%-*s   %s", width, r.title, dimStyle.Render(oneLine(r.value, shownValueLength))), r.key))
 	}
 	options = append(options, huh.NewOption("‹ back", menuBack))
-	choice := menu.lastIn[group.key]
+	choice := last
 	if choice == "" {
+		choice = menu.lastIn[group.key]
+	}
+	if choice == "" && len(rows) > 0 {
 		choice = rows[0].key
 	}
-	list := huh.NewSelect[string]().Title("Settings › " + group.title).Options(options...).Value(&choice)
+	description := strings.Join(notes, "\n")
+	list := huh.NewSelect[string]().Title("Settings › " + group.title).Description(description).Options(options...).Value(&choice)
 	if m.height > 0 {
-		list.Height(min(len(options)+2, max(m.height-4, settingsMinHeight)))
+		list.Height(min(len(options)+2+lipgloss.Height(description), max(m.height-4, settingsMinHeight)))
 	}
 	next := func(m model) (tea.Model, tea.Cmd) {
 		if choice == menuBack {
@@ -106,6 +155,9 @@ func (m model) showGroup(menu *settingsMenu, group settingsGroup) (tea.Model, te
 			menu.lastIn = map[string]string{}
 		}
 		menu.lastIn[group.key] = choice
+		if picked, ok := items[choice]; ok {
+			return m.editItem(menu, picked.section, picked.item)
+		}
 		return m.openMenuChoice(menu, choice)
 	}
 	back := func(m model) (tea.Model, tea.Cmd) { return m.showMenu(menu) }
@@ -113,11 +165,14 @@ func (m model) showGroup(menu *settingsMenu, group settingsGroup) (tea.Model, te
 	return m.showSettings(&settingsScreen{form: form, layer: menu.layer, next: next, back: back, help: menuHelp})
 }
 
-// sectionBack is where esc from a section goes: its group in the global
-// menu, the menu in the project one.
+// sectionBack is where esc from a section goes: the list a nested one was
+// opened from, its group in the global menu, the menu in the project one.
 func (m model) sectionBack(menu *settingsMenu, section settingsSection) (tea.Model, tea.Cmd) {
+	if parent, ok := sectionByKey(section.parent); ok {
+		return m.showSection(menu, parent, section.from)
+	}
 	if group, ok := groupOf(section); ok && menu.scope != projectScope {
-		return m.showGroup(menu, group)
+		return m.showGroup(menu, group, section.key)
 	}
 	return m.showMenu(menu)
 }

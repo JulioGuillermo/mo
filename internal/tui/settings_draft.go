@@ -27,6 +27,8 @@ type settingsDraft struct {
 	disabled      []string
 	mcpDisabled   []string
 	maxOutput     string
+	outputs       string
+	outputTurns   string
 	window        string
 	compactAt     string
 	strategy      string
@@ -114,6 +116,8 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		disabled:      slices.Clone(cfg.Tools.Disabled),
 		mcpDisabled:   slices.Clone(cfg.Tools.MCPDisabled),
 		maxOutput:     strconv.Itoa(cfg.Tools.MaxOutput),
+		outputs:       cfg.Tools.Outputs,
+		outputTurns:   strconv.Itoa(cfg.Tools.OutputTurns),
 		window:        strconv.Itoa(cfg.Context.Window),
 		compactAt:     strconv.FormatFloat(*cfg.Context.CompactAt, 'f', -1, 64),
 		strategy:      cfg.Context.Strategy,
@@ -233,6 +237,12 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 		Modes:    d.modesOf(skillModes),
 	}
 	layer.Tools.MaxOutput = unlessDefault(maxOutput, defaults.Tools.MaxOutput)
+	outputTurns, err := strconv.Atoi(strings.TrimSpace(orDefault(d.outputTurns, "0")))
+	if err != nil || outputTurns < 0 {
+		return layer, fmt.Errorf("command output turns: use 0 or a number of turns")
+	}
+	layer.Tools.Outputs = unlessDefault(d.outputs, defaults.Tools.Outputs)
+	layer.Tools.OutputTurns = unlessDefault(outputTurns, defaults.Tools.OutputTurns)
 	layer.Tools.Descriptions = d.changedDescriptions()
 	layer.Context.Window = window
 	layer.Context.CompactAt = &compactAt

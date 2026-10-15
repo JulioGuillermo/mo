@@ -183,7 +183,7 @@ func runAsJob(ctx context.Context, env Env, command string, timeout time.Duratio
 	if given {
 		_, text, textErr := env.Jobs.Text(status.ID)
 		if textErr != nil {
-			return "", textErr
+			text = summary
 		}
 		return view.Apply(text) + fmt.Sprintf("[job %d]", status.ID), err
 	}
@@ -192,6 +192,9 @@ func runAsJob(ctx context.Context, env Env, command string, timeout time.Duratio
 	footer := fmt.Sprintf("[job %d]", status.ID)
 	if !whole || (env.MaxOutput > 0 && len(summary)+len(footer)+1 > env.MaxOutput) {
 		footer = fmt.Sprintf("[job %d: %s of output, cut; action output with id %d shows any part]", status.ID, byteSize(status.Bytes), status.ID)
+		if !env.Jobs.Kept() {
+			footer = fmt.Sprintf("[job %d: %s of output, cut; the rest was not kept]", status.ID, byteSize(status.Bytes))
+		}
 		if env.MaxOutput > 0 {
 			summary = Truncate(summary, max(env.MaxOutput-len(footer)-len(cutMarker)-24, 0))
 		}

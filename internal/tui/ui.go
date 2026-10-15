@@ -127,6 +127,9 @@ type model struct {
 	viewer *outputViewer
 	// vim is where vim keys are, when they are on.
 	vim vimState
+	// newPrompt is set while a prompt is sent, so the turn it starts counts
+	// as a new one for the jobs.
+	newPrompt bool
 	// popup is a small menu over the screen; clickedAt is where the right
 	// click that opens one was, clicked unset when no click opened it.
 	popup            *popup
@@ -186,6 +189,7 @@ func Run(session Session) error {
 		vim:      vimState{enabled: session.Config.Render.Keys == "vim"},
 	}
 	printer.setKind(m.toolKind)
+	m.configureJobs()
 	program := tea.NewProgram(m)
 	bridge.program = program
 	if titles := session.Agent.Tools.Titles(); titles != nil {
@@ -605,6 +609,7 @@ func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 	}
 
 	m.scrolled = false
+	m.newPrompt = true
 	echo := drawText(func() string { return m.printer.User(prompt) })
 	sent := m.withAttachments(prompt)
 	return m.start(echo, func(ctx context.Context, hooks agent.Hooks) error {
@@ -616,6 +621,8 @@ func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 // ends or is stopped.
 func (m model) start(first tea.Cmd, work func(context.Context, agent.Hooks) error) (tea.Model, tea.Cmd) {
 	m.ensureThread()
+	m.trackTurn(m.newPrompt)
+	m.newPrompt = false
 	ctx, cancel := context.WithCancel(context.Background())
 	finished := make(chan struct{})
 	m.running = true
@@ -821,7 +828,10 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 
 func (m model) View() tea.View {
 	var view tea.View
-	if m.settings != nil {
+	if m.settings != nil && m.settings.floating {
+		view = tea.NewView(m.floatingView())
+		view.WindowTitle = "mo · settings"
+	} else if m.settings != nil {
 		view = tea.NewView(m.settings.form.View() + "\n" + dimStyle.Render(m.settings.helpLine()))
 		view.WindowTitle = "mo · settings"
 	} else if m.viewer != nil {

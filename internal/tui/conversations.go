@@ -78,6 +78,28 @@ func (m *model) ensureThread() {
 	m.trackThread()
 }
 
+// configureJobs tells the jobs where to keep command output and for how
+// many turns, as the settings say.
+func (m model) configureJobs() {
+	if jobs := m.jobs(); jobs != nil {
+		jobs.Configure(m.session.Config.Tools.Outputs, m.session.Config.Tools.OutputTurns)
+	}
+}
+
+// trackTurn tells the jobs which of the user's turns runs, counted in the
+// conversation, a new prompt being the next one.
+func (m model) trackTurn(newPrompt bool) {
+	jobs := m.jobs()
+	if jobs == nil || m.session.Agent == nil {
+		return
+	}
+	turn := len(m.session.Agent.Prompts())
+	if newPrompt {
+		turn++
+	}
+	jobs.SetTurn(turn)
+}
+
 // trackThread tells recall which conversation is in progress, to leave it
 // out of what the model searches, and the jobs which one runs commands.
 func (m *model) trackThread() {

@@ -37,6 +37,18 @@ type settingsMenu struct {
 	project *projectSettings
 	// lastIn is the row last opened in each group.
 	lastIn map[string]string
+	// nested are the rows that open a list of their own instead of a
+	// field, by section and title, as an MCP server's mode and tools.
+	nested map[string]settingsSection
+}
+
+// opens makes the row of key, a section's and title, open a list of its
+// own.
+func (menu *settingsMenu) opens(key string, section settingsSection) {
+	if menu.nested == nil {
+		menu.nested = map[string]settingsSection{}
+	}
+	menu.nested[key] = section
 }
 
 func (m model) newSettingsMenu(loaded settingsLoadedMsg) *settingsMenu {
@@ -193,7 +205,7 @@ func (m model) openMenuChoice(menu *settingsMenu, choice string) (tea.Model, tea
 	}
 	for _, group := range settingsGroups {
 		if group.key == choice {
-			return m.showGroup(menu, group)
+			return m.showGroup(menu, group, "")
 		}
 	}
 	for _, section := range settingsSections {
@@ -207,19 +219,31 @@ func (m model) openMenuChoice(menu *settingsMenu, choice string) (tea.Model, tea
 // showSection lists the settings of a section with their values; each one
 // opens on its own.
 func (m model) showSection(menu *settingsMenu, section settingsSection, last string) (tea.Model, tea.Cmd) {
+	if group, direct := inGroup(section); direct && menu.scope != projectScope {
+		if items := section.items(m, menu); last == "" && len(items) > 0 {
+			last = items[0].title
+		}
+		return m.showGroup(menu, group, itemKey(section, last))
+	}
 	draft := menu.sectionDraft(section)
 	overriding := menu.overriding(section)
 	items := section.items(m, menu)
 	if overriding {
 		items = overridable(section, items)
 	}
+	title := func(item settingItem) string {
+		if _, nested := menu.nested[itemKey(section, item.title)]; nested {
+			return item.title + " ›"
+		}
+		return item.title
+	}
 	width := 0
 	for _, item := range items {
-		width = max(width, len(item.title))
+		width = max(width, len(title(item)))
 	}
 	var options []huh.Option[string]
 	for _, item := range items {
-		label := fmt.Sprintf("%-*s   %s", width, item.title, dimStyle.Render(item.value(draft)))
+		label := fmt.Sprintf("%-*s   %s", width, title(item), dimStyle.Render(item.value(draft)))
 		if overriding {
 			label += menu.overrideMark(section, item)
 		}
@@ -246,6 +270,9 @@ func (m model) showSection(menu *settingsMenu, section settingsSection, last str
 	next := func(m model) (tea.Model, tea.Cmd) {
 		if choice == menuBack {
 			return m.sectionBack(menu, section)
+		}
+		if nested, ok := menu.nested[itemKey(section, choice)]; ok {
+			return m.showSection(menu, nested, "")
 		}
 		for _, item := range items {
 			switch {
@@ -284,13 +311,30 @@ func (m model) editItem(menu *settingsMenu, section settingsSection, item settin
 		return toSection(m)
 	}
 	form := huh.NewForm(huh.NewGroup(field).Title(menu.crumb(section))).WithShowHelp(false)
-	return m.showSettings(&settingsScreen{form: form, layer: menu.layer, next: keep, back: cancel, help: fieldHelp(field)})
+	screen := &settingsScreen{form: form, layer: menu.layer, next: keep, back: cancel, help: fieldHelp(field)}
+	if floats(field) {
+		screen.floating, screen.under = true, m.screenOf(toSection)
+	}
+	return m.showSettings(screen)
+}
+
+// screenOf is the screen a function shows, drawn, to keep it in view
+// under a box opened from it.
+func (m model) screenOf(show func(m model) (tea.Model, tea.Cmd)) string {
+	shown, _ := show(m)
+	if under := shown.(model); under.settings != nil {
+		return under.settings.form.View() + "\n" + dimStyle.Render(under.settings.helpLine())
+	}
+	return ""
 }
 
 // crumb is the title of a section's screens, which says which screen it is in.
 func (menu *settingsMenu) crumb(section settingsSection) string {
 	if menu.scope == projectScope {
 		return "This project › " + fullTitle(section)
+	}
+	if group, direct := inGroup(section); direct {
+		return "Settings › " + group.title
 	}
 	return "Settings › " + fullTitle(section)
 }

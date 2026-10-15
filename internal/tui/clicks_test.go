@@ -109,9 +109,9 @@ func TestClicks(t *testing.T) {
 		m, _ := menuModel()
 
 		m = clickOn(t, m, "Safety ›")
-		m = clickOn(t, m, "Loop guard")
+		m = clickOn(t, m, "Watch for loops")
 
-		if m.settings == nil || !strings.Contains(m.settings.form.View(), "Settings › Safety › Loop guard") {
+		if m.settings == nil || !strings.Contains(m.settings.form.View(), "Watch for loops") || strings.Contains(m.settings.form.View(), "‹ back") {
 			t.Errorf("view:\n%s", ansi.Strip(m.settings.form.View()))
 		}
 	})

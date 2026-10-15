@@ -189,3 +189,67 @@ func readJobLog(path string, closed bool, dropped int64) (string, error) {
 	}
 	return string(head) + string(tail), nil
 }
+
+// outputLog is where a command's output goes: a file, memory, or nowhere
+// but the count of what it wrote.
+type outputLog interface {
+	io.Writer
+	Close() error
+	Size() int64
+	Text() (string, error)
+}
+
+// memoryLog keeps a command's output in memory, its first and last bytes
+// as a file would; it is gone when mo exits.
+type memoryLog struct {
+	mu     sync.Mutex
+	kept   *HeadTailBuffer
+	size   int64
+	closed bool
+}
+
+func newMemoryLog() *memoryLog {
+	return &memoryLog{kept: NewHeadTailBuffer(int(jobLogHead + jobLogTail))}
+}
+
+func (l *memoryLog) Write(data []byte) (int, error) {
+	l.mu.Lock()
+	l.size += int64(len(data))
+	l.mu.Unlock()
+	return l.kept.Write(data)
+}
+
+func (l *memoryLog) Close() error { return nil }
+
+func (l *memoryLog) Size() int64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.size
+}
+
+func (l *memoryLog) Text() (string, error) { return l.kept.String(), nil }
+
+// countingLog keeps nothing of a command's output but how much there was.
+type countingLog struct {
+	mu   sync.Mutex
+	size int64
+}
+
+func (l *countingLog) Write(data []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.size += int64(len(data))
+	return len(data), nil
+}
+
+func (l *countingLog) Close() error { return nil }
+
+func (l *countingLog) Size() int64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.size
+}
+
+func (l *countingLog) Text() (string, error) {
+	return "", errors.New("the output was not kept: tools.outputs is none, so only its start and end came back when it ran")
+}

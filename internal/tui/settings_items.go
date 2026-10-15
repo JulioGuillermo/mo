@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"charm.land/huh/v2"
@@ -33,6 +34,9 @@ type settingsSection struct {
 	summary func(d *settingsDraft) string
 	note    func(m model, menu *settingsMenu) string
 	items   func(m model, menu *settingsMenu) []settingItem
+	// parent is the section a nested one goes back to, with the row it
+	// was opened from.
+	parent, from string
 }
 
 var settingsSections = []settingsSection{
@@ -194,6 +198,29 @@ func toolItems(m model, menu *settingsMenu) []settingItem {
 		{"Max tool output (bytes)", func(d *settingsDraft) string { return d.maxOutput }, func(d *settingsDraft) huh.Field {
 			return huh.NewInput().Title("Max tool output (bytes)").Validate(validCount).Value(&d.maxOutput)
 		}},
+		{"Command output kept", func(d *settingsDraft) string { return d.outputs }, func(d *settingsDraft) huh.Field {
+			return huh.NewSelect[string]().Title("Command output kept").
+				Description("the whole output of each bash command, for the model to read any part of later").Options(
+				huh.NewOption("disk: in the conversation's folder, also after mo restarts", tools.OutputsDisk),
+				huh.NewOption("memory: until mo exits, never on disk", tools.OutputsMemory),
+				huh.NewOption("none: only its start and end, as the command returns them", tools.OutputsNone),
+			).Value(&d.outputs)
+		}},
+		{"Command output for (turns)", func(d *settingsDraft) string {
+			if strings.TrimSpace(d.outputTurns) == "0" || d.outputTurns == "" {
+				return "the whole conversation"
+			}
+			return d.outputTurns + " turns"
+		}, func(d *settingsDraft) huh.Field {
+			return huh.NewInput().Title("Command output for (turns)").
+				Description("how many of your turns the output of commands is kept for; 0 for the whole conversation").
+				Validate(func(text string) error {
+					if turns, err := strconv.Atoi(strings.TrimSpace(text)); err != nil || turns < 0 {
+						return fmt.Errorf("use 0 or a number of turns")
+					}
+					return nil
+				}).Value(&d.outputTurns)
+		}},
 	}...)
 }
 
@@ -235,26 +262,65 @@ func modeItem(title string, kind modeKind, name string, fallback func(d *setting
 	if group {
 		options = append(options, huh.NewOption("group: one entry for the server, all its tools when looked for", string(tools.ModeGroup)))
 	}
-	return settingItem{title, func(d *settingsDraft) string {
+	return settingItem{title: title, value: func(d *settingsDraft) string {
 		if mode := *d.modeOf(kind, name); mode != "" {
 			return mode
 		}
 		return fallback(d) + " (default)"
-	}, func(d *settingsDraft) huh.Field {
+	}, field: func(d *settingsDraft) huh.Field {
 		return huh.NewSelect[string]().Title(title).Options(options...).Value(d.modeOf(kind, name))
 	}}
 }
 
+// mcpToolPrefix starts the names of an MCP server's tools.
+func mcpToolPrefix(server string) string {
+	return "mcp__" + server + "__"
+}
+
+// toolModeItems are mo's tools and the plugins' one by one, and each MCP
+// server as one row opening its mode and, unless it is a group, its tools.
 func toolModeItems(m model, menu *settingsMenu) []settingItem {
 	var items []settingItem
 	toolDefault := func(d *settingsDraft) string { return d.mode }
+	servers := mcpNames(m, menu)
 	for _, name := range toolNames(m.session) {
+		if slices.ContainsFunc(servers, func(server string) bool { return strings.HasPrefix(name, mcpToolPrefix(server)) }) {
+			continue
+		}
 		items = append(items, modeItem(name, toolModes, name, toolDefault, false))
 	}
-	for _, server := range mcpNames(m, menu) {
-		items = append(items, modeItem(server+mcpSuffix, mcpModes, server, toolDefault, true))
+	for _, server := range servers {
+		item := modeItem(server+mcpSuffix, mcpModes, server, toolDefault, true)
+		menu.opens(itemKey(settingsSection{key: "toolmodes"}, item.title), serverModeSection(server))
+		items = append(items, item)
 	}
 	return items
+}
+
+// serverModeSection is an MCP server's own list: its mode, then its tools
+// one by one, which only a server out of group mode has to set.
+func serverModeSection(server string) settingsSection {
+	toolDefault := func(d *settingsDraft) string { return d.mode }
+	return settingsSection{
+		key: "toolmodes:" + server, title: server + mcpSuffix, parent: "toolmodes", from: server + mcpSuffix,
+		summary: func(d *settingsDraft) string { return orDefault(*d.modeOf(mcpModes, server), "as the default") },
+		note: func(model, *settingsMenu) string {
+			return "group: the model finds all its tools at once by the server's name, so they have no mode of their own"
+		},
+		items: func(m model, menu *settingsMenu) []settingItem {
+			items := []settingItem{modeItem(server+mcpSuffix, mcpModes, server, toolDefault, true)}
+			section := serverModeSection(server)
+			if *menu.sectionDraft(section).modeOf(mcpModes, server) == string(tools.ModeGroup) {
+				return items
+			}
+			for _, name := range toolNames(m.session) {
+				if strings.HasPrefix(name, mcpToolPrefix(server)) {
+					items = append(items, modeItem(strings.TrimPrefix(name, mcpToolPrefix(server)), toolModes, name, toolDefault, false))
+				}
+			}
+			return items
+		},
+	}
 }
 
 func skillModeItems(m model, _ *settingsMenu) []settingItem {
@@ -376,10 +442,10 @@ func loopItems(model, *settingsMenu) []settingItem {
 		{"Watch for loops", func(d *settingsDraft) string { return onOff(d.loopEnabled) }, func(d *settingsDraft) huh.Field {
 			return huh.NewConfirm().Title("Watch for loops").Value(&d.loopEnabled)
 		}},
-		count("Same tool call, same result", "times before it is not run", 2, func(d *settingsDraft) *string { return &d.loopRepeats }),
-		count("Within the last", "replies of the model in this turn", 1, func(d *settingsDraft) *string { return &d.loopReplies }),
-		count("Same text in a row", "times before the reply is cut", 2, func(d *settingsDraft) *string { return &d.loopStreamRepeats }),
-		count("Warnings to the model", "per turn; the next loop stops the turn", 0, func(d *settingsDraft) *string { return &d.loopWarnings }),
+		count("Loop: same tool call, same result", "times before it is not run", 2, func(d *settingsDraft) *string { return &d.loopRepeats }),
+		count("Loop: within the last replies", "replies of the model in this turn", 1, func(d *settingsDraft) *string { return &d.loopReplies }),
+		count("Loop: same text in a row", "times before the reply is cut", 2, func(d *settingsDraft) *string { return &d.loopStreamRepeats }),
+		count("Loop: warnings to the model", "per turn; the next loop stops the turn", 0, func(d *settingsDraft) *string { return &d.loopWarnings }),
 	}
 }
 
@@ -427,7 +493,7 @@ func permissionItems(model, *settingsMenu) []settingItem {
 		}}
 	}
 	items := []settingItem{
-		{"Mode to start in", func(d *settingsDraft) string { return d.permMode }, func(d *settingsDraft) huh.Field {
+		{"Permission mode to start in", func(d *settingsDraft) string { return d.permMode }, func(d *settingsDraft) huh.Field {
 			return huh.NewSelect[string]().Title("Mode to start in").Options(modeOptions...).Value(&d.permMode)
 		}},
 		rules("Allowed commands", "run without asking in every project", func(d *settingsDraft) *string { return &d.allow }),
@@ -454,9 +520,9 @@ func notifyItems(model, *settingsMenu) []settingItem {
 		}}
 	}
 	return []settingItem{
-		flag("When a turn ends", "also when the model ends asking you something", func(d *settingsDraft) *bool { return &d.notifyFinish }),
-		flag("When it asks for permission", "", func(d *settingsDraft) *bool { return &d.notifyApproval }),
-		{"How", func(d *settingsDraft) string { return d.notifyMethod }, func(d *settingsDraft) huh.Field {
+		flag("Notify when a turn ends", "also when the model ends asking you something", func(d *settingsDraft) *bool { return &d.notifyFinish }),
+		flag("Notify when it asks for permission", "", func(d *settingsDraft) *bool { return &d.notifyApproval }),
+		{"Notify by", func(d *settingsDraft) string { return d.notifyMethod }, func(d *settingsDraft) huh.Field {
 			return huh.NewSelect[string]().Title("How").Options(
 				huh.NewOption("auto: the terminal's own when it has them, else the desktop's, else the bell", string(notify.MethodAuto)),
 				huh.NewOption("terminal: Ghostty, kitty, WezTerm, iTerm2, foot; works over ssh", string(notify.MethodTerminal)),
@@ -465,7 +531,7 @@ func notifyItems(model, *settingsMenu) []settingItem {
 				huh.NewOption("off", string(notify.MethodOff)),
 			).Value(&d.notifyMethod)
 		}},
-		flag("Also while you look at mo", "no: only when the terminal is not focused", func(d *settingsDraft) *bool { return &d.notifyFocused }),
+		flag("Notify while you look at mo", "no: only when the terminal is not focused", func(d *settingsDraft) *bool { return &d.notifyFocused }),
 	}
 }
 

@@ -33,8 +33,16 @@ const (
 	JobLost          = "lost"
 	jobsUnavailable  = "background jobs are not available here: run the command without background"
 	jobNotFound      = "no job %d; bash action output without id lists them"
-	jobPrunedNote    = "the output of job %d was deleted to keep this conversation's under 500 MB"
+	jobPrunedNote    = "the output of job %d was deleted: older than the turns kept, or past the 500 MB a conversation keeps"
 	jobStartedResult = "started job %d in the background. You are told when it ends; action output with id %d reads its output, also while it runs."
+)
+
+// Where the output of commands is kept: in the conversation's folder, in
+// memory until mo exits, or not at all.
+const (
+	OutputsDisk   = "disk"
+	OutputsMemory = "memory"
+	OutputsNone   = "none"
 )
 
 // jobsKeptBytes is how much output a conversation keeps; past it the
@@ -55,12 +63,18 @@ type Jobs struct {
 	onEnd        func(JobStatus)
 	onStart      func(JobStatus)
 	closed       bool
+	// outputs is where output is kept, keepTurns for how many of the
+	// user's turns (0 for good), and turn the one in progress.
+	outputs   string
+	keepTurns int
+	turn      int
 }
 
 type job struct {
 	status  JobStatus
 	dir     string
-	log     *jobLog
+	onDisk  bool
+	log     outputLog
 	summary *HeadTailBuffer
 	cmd     *exec.Cmd
 	done    chan struct{}
@@ -79,13 +93,74 @@ type JobStatus struct {
 	Foreground   bool      `json:"foreground,omitempty"`
 	Bytes        int64     `json:"bytes"`
 	Pruned       bool      `json:"pruned,omitempty"`
+	Turn         int       `json:"turn,omitempty"`
 	Conversation string    `json:"-"`
 }
 
 // NewJobs keeps the output of commands under root, the folder of the saved
 // conversations.
 func NewJobs(root string) *Jobs {
-	return &Jobs{root: root}
+	return &Jobs{root: root, outputs: OutputsDisk}
+}
+
+// Configure sets where output is kept from now on, and for how many turns.
+func (j *Jobs) Configure(outputs string, keepTurns int) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if outputs != OutputsMemory && outputs != OutputsNone {
+		outputs = OutputsDisk
+	}
+	j.outputs, j.keepTurns = outputs, keepTurns
+	j.pruneTurns()
+}
+
+// SetTurn names the user's turn in progress, counted in the conversation,
+// and lets go of the output of turns past those kept.
+func (j *Jobs) SetTurn(turn int) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.turn = turn
+	j.pruneTurns()
+}
+
+// Kept tells whether output is kept to read later.
+func (j *Jobs) Kept() bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.outputs != OutputsNone
+}
+
+// pruneTurns lets go of the output of the jobs of turns older than those
+// kept, in memory and on disk; the lock is held.
+func (j *Jobs) pruneTurns() {
+	if j.keepTurns <= 0 || j.conversation == "" {
+		return
+	}
+	oldest := j.turn - j.keepTurns
+	for _, each := range j.jobs {
+		status := &each.status
+		if status.Conversation != j.conversation || status.State == JobRunning || status.Pruned || status.Turn > oldest {
+			continue
+		}
+		status.Pruned = true
+		each.log = &countingLog{size: each.log.Size()}
+		if each.onDisk {
+			os.Remove(filepath.Join(each.dir, strconv.Itoa(status.ID)+".log"))
+			_ = writeJobStatus(each.dir, *status)
+		}
+	}
+	if j.root == "" {
+		return
+	}
+	dir := sessions.JobsDir(j.root, j.conversation)
+	for _, status := range readJobStatuses(dir) {
+		if status.Pruned || status.Turn > oldest || status.State == JobRunning {
+			continue
+		}
+		status.Pruned = true
+		os.Remove(filepath.Join(dir, strconv.Itoa(status.ID)+".log"))
+		_ = writeJobStatus(dir, status)
+	}
 }
 
 // SetConversation names the conversation in progress: the commands run from
@@ -130,7 +205,7 @@ func (j *Jobs) ready() bool {
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	return j.root != "" && j.conversation != ""
+	return j.conversation != "" && (j.root != "" || j.outputs != OutputsDisk)
 }
 
 // begin numbers a new job in the conversation and opens its log; the lock
@@ -139,24 +214,35 @@ func (j *Jobs) begin(env Env, command string, foreground bool) (*job, error) {
 	if j.closed {
 		return nil, errors.New("mo is exiting")
 	}
-	if j.root == "" || j.conversation == "" {
+	if j.conversation == "" || (j.root == "" && j.outputs == OutputsDisk) {
 		return nil, errors.New(jobsUnavailable)
 	}
-	dir := sessions.JobsDir(j.root, j.conversation)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, err
-	}
-	j.prune(dir)
-	id := j.nextID(dir)
-	log, err := newJobLog(filepath.Join(dir, strconv.Itoa(id)+".log"))
-	if err != nil {
-		return nil, err
-	}
 	created := &job{
-		status: JobStatus{ID: id, Command: command, State: JobRunning, Started: time.Now(), Foreground: foreground, Conversation: j.conversation},
-		dir:    dir, log: log, summary: NewHeadTailBuffer(summaryBytes(env.MaxOutput)), done: make(chan struct{}), detached: make(chan struct{}),
+		status:  JobStatus{Command: command, State: JobRunning, Started: time.Now(), Foreground: foreground, Conversation: j.conversation, Turn: j.turn},
+		summary: NewHeadTailBuffer(summaryBytes(env.MaxOutput)), done: make(chan struct{}), detached: make(chan struct{}),
 	}
-	_ = writeJobStatus(dir, created.status)
+	switch j.outputs {
+	case OutputsMemory:
+		created.log = newMemoryLog()
+	case OutputsNone:
+		created.log = &countingLog{}
+	}
+	if j.root != "" {
+		created.dir = sessions.JobsDir(j.root, j.conversation)
+	}
+	created.status.ID = j.nextID(created.dir)
+	if created.log == nil {
+		if err := os.MkdirAll(created.dir, 0o700); err != nil {
+			return nil, err
+		}
+		j.prune(created.dir)
+		log, err := newJobLog(filepath.Join(created.dir, strconv.Itoa(created.status.ID)+".log"))
+		if err != nil {
+			return nil, err
+		}
+		created.log, created.onDisk = log, true
+		_ = writeJobStatus(created.dir, created.status)
+	}
 	j.jobs = append(j.jobs, created)
 	return created, nil
 }
@@ -173,7 +259,10 @@ func summaryBytes(maxOutput int) int {
 // nextID follows the highest number used in the folder or in this run.
 func (j *Jobs) nextID(dir string) int {
 	highest := 0
-	entries, _ := os.ReadDir(dir)
+	var entries []os.DirEntry
+	if dir != "" {
+		entries, _ = os.ReadDir(dir)
+	}
 	for _, entry := range entries {
 		if number, isStatus := strings.CutSuffix(entry.Name(), ".json"); isStatus {
 			if id, err := strconv.Atoi(number); err == nil {
@@ -182,7 +271,7 @@ func (j *Jobs) nextID(dir string) int {
 		}
 	}
 	for _, each := range j.jobs {
-		if each.dir == dir {
+		if each.status.Conversation == j.conversation {
 			highest = max(highest, each.status.ID)
 		}
 	}
@@ -221,10 +310,11 @@ func (j *Jobs) prune(dir string) {
 	}
 }
 
-// live is the job of this run with that folder and number that still runs.
-func (j *Jobs) live(dir string, id int) *job {
+// live is the job of this run of the conversation in progress with that
+// number that still runs.
+func (j *Jobs) live(_ string, id int) *job {
 	for _, each := range j.jobs {
-		if each.dir == dir && each.status.ID == id && each.status.State == JobRunning {
+		if each.status.Conversation == j.conversation && each.status.ID == id && each.status.State == JobRunning {
 			return each
 		}
 	}
@@ -259,6 +349,9 @@ func (j *Jobs) Start(env Env, command string) (JobStatus, error) {
 func (j *Jobs) forget(failed *job) {
 	failed.log.Close()
 	j.jobs = slices.DeleteFunc(j.jobs, func(each *job) bool { return each == failed })
+	if !failed.onDisk {
+		return
+	}
 	base := filepath.Join(failed.dir, strconv.Itoa(failed.status.ID))
 	os.Remove(base + ".log")
 	os.Remove(base + ".json")
@@ -357,7 +450,9 @@ func (j *Jobs) DetachJob(id int) error {
 // detach lets the model go on without a job; the lock is held.
 func (j *Jobs) detach(running *job) JobStatus {
 	running.status.Foreground = false
-	_ = writeJobStatus(running.dir, running.status)
+	if running.onDisk {
+		_ = writeJobStatus(running.dir, running.status)
+	}
 	close(running.detached)
 	return j.current(running)
 }
@@ -410,7 +505,9 @@ func (j *Jobs) finish(running *job, state *os.ProcessState) JobStatus {
 	default:
 		status.State, status.ExitCode = JobFailed, -1
 	}
-	_ = writeJobStatus(running.dir, *status)
+	if running.onDisk {
+		_ = writeJobStatus(running.dir, *status)
+	}
 	close(running.done)
 	return *status
 }
@@ -440,19 +537,26 @@ func (j *Jobs) current(each *job) JobStatus {
 }
 
 // All returns every job of the conversation in progress, those of earlier
-// runs of mo too, the latest first.
+// runs of mo kept on disk too, the latest first.
 func (j *Jobs) All() []JobStatus {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	if j.root == "" || j.conversation == "" {
+	if j.conversation == "" {
 		return nil
 	}
-	dir := sessions.JobsDir(j.root, j.conversation)
-	statuses := readJobStatuses(dir)
-	for i, status := range statuses {
-		statuses[i] = j.known(dir, status)
+	var statuses []JobStatus
+	if j.root != "" {
+		dir := sessions.JobsDir(j.root, j.conversation)
+		for _, status := range readJobStatuses(dir) {
+			statuses = append(statuses, j.known(dir, status))
+		}
 	}
-	slices.Reverse(statuses)
+	for _, each := range j.jobs {
+		if each.status.Conversation == j.conversation && !each.onDisk {
+			statuses = append(statuses, j.current(each))
+		}
+	}
+	slices.SortFunc(statuses, func(a, b JobStatus) int { return b.ID - a.ID })
 	return statuses
 }
 
@@ -484,18 +588,21 @@ func (j *Jobs) Status(id int) (JobStatus, error) {
 	return status, err
 }
 
-// lookup finds a job of the conversation in progress, and the log to read
-// while it runs, if it runs here; the lock is held.
-func (j *Jobs) lookup(id int) (JobStatus, *jobLog, error) {
-	if j.root == "" || j.conversation == "" {
+// lookup finds a job of the conversation in progress, and its output if
+// this run has it; the lock is held.
+func (j *Jobs) lookup(id int) (JobStatus, outputLog, error) {
+	if j.conversation == "" {
 		return JobStatus{}, nil, fmt.Errorf(jobNotFound, id)
 	}
-	dir := sessions.JobsDir(j.root, j.conversation)
 	for _, each := range j.jobs {
-		if each.dir == dir && each.status.ID == id {
+		if each.status.Conversation == j.conversation && each.status.ID == id {
 			return j.current(each), each.log, nil
 		}
 	}
+	if j.root == "" {
+		return JobStatus{}, nil, fmt.Errorf(jobNotFound, id)
+	}
+	dir := sessions.JobsDir(j.root, j.conversation)
 	status, err := readJobStatus(dir, id)
 	if err != nil {
 		return JobStatus{}, nil, fmt.Errorf(jobNotFound, id)
@@ -507,7 +614,10 @@ func (j *Jobs) lookup(id int) (JobStatus, *jobLog, error) {
 func (j *Jobs) Text(id int) (JobStatus, string, error) {
 	j.mu.Lock()
 	status, log, err := j.lookup(id)
-	dir := sessions.JobsDir(j.root, j.conversation)
+	dir := ""
+	if j.root != "" {
+		dir = sessions.JobsDir(j.root, j.conversation)
+	}
 	j.mu.Unlock()
 	if err != nil {
 		return status, "", err

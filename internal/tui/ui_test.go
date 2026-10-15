@@ -302,3 +302,18 @@ func TestInputLines(t *testing.T) {
 		}
 	})
 }
+
+func TestCommandOutputSetting(t *testing.T) {
+	t.Run("the setting of where command output is kept reaches the jobs with the session", func(t *testing.T) {
+		m := sidebarModel(t, 140)
+		session := m.session
+		session.Config = config.Defaults()
+		session.Config.Tools.Outputs = "none"
+
+		updated, _ := m.useSession(session)
+
+		if updated.(model).jobs().Kept() {
+			t.Error("with outputs none the jobs should keep nothing")
+		}
+	})
+}

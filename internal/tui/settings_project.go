@@ -61,10 +61,10 @@ var projectFields = map[string]projectField{
 	"System prompt":                        {"system_prompt", func(d *settingsDraft) any { return &d.systemPrompt }},
 	"Summary prompt":                       {"context.compact_prompt", func(d *settingsDraft) any { return &d.compactPrompt }},
 	"Watch for loops":                      {"loop.enabled", func(d *settingsDraft) any { return &d.loopEnabled }},
-	"Same tool call, same result":          {"loop.repeats", func(d *settingsDraft) any { return &d.loopRepeats }},
-	"Within the last":                      {"loop.replies", func(d *settingsDraft) any { return &d.loopReplies }},
-	"Same text in a row":                   {"loop.stream_repeats", func(d *settingsDraft) any { return &d.loopStreamRepeats }},
-	"Warnings to the model":                {"loop.warnings", func(d *settingsDraft) any { return &d.loopWarnings }},
+	"Loop: same tool call, same result":    {"loop.repeats", func(d *settingsDraft) any { return &d.loopRepeats }},
+	"Loop: within the last replies":        {"loop.replies", func(d *settingsDraft) any { return &d.loopReplies }},
+	"Loop: same text in a row":             {"loop.stream_repeats", func(d *settingsDraft) any { return &d.loopStreamRepeats }},
+	"Loop: warnings to the model":          {"loop.warnings", func(d *settingsDraft) any { return &d.loopWarnings }},
 }
 
 // projectSectionKeys are the sections of the project screen, besides its
@@ -81,8 +81,10 @@ var modePrefixes = map[modeKind]string{toolModes: "tools.modes.", mcpModes: "too
 func fieldOf(section settingsSection, item settingItem) (projectField, bool) {
 	kind, name := toolModes, item.title
 	switch {
-	case section.key == "toolmodes" && strings.HasSuffix(item.title, mcpSuffix):
+	case strings.HasPrefix(section.key, "toolmodes") && strings.HasSuffix(item.title, mcpSuffix):
 		kind, name = mcpModes, strings.TrimSuffix(item.title, mcpSuffix)
+	case strings.HasPrefix(section.key, "toolmodes:"):
+		name = mcpToolPrefix(strings.TrimPrefix(section.key, "toolmodes:")) + item.title
 	case section.key == "toolmodes":
 	case section.key == "skillmodes":
 		kind = skillModes

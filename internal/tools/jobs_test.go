@@ -10,6 +10,9 @@ package tools
 // | JB-06 | Happy    | Long output comes back cut, with the job to read the rest             | P0       |
 // | JB-07 | Happy    | match searches one job or every job of the conversation             | P1       |
 // | JB-11 | Happy    | The user sends a blocking command to the background; the model hears when it ends | P0 |
+// | JB-13 | Happy    | In memory the output reads as on disk, and nothing reaches the folder | P0 |
+// | JB-14 | Happy    | With none only the start and end come back, and output says it was not kept | P1 |
+// | JB-15 | Happy    | Output older than the turns kept goes; that of later turns stays      | P0 |
 // | JB-12 | Happy    | Reading output and help never ask; running and killing do          | P0       |
 // | JB-08 | Edge     | A log keeps its first and last bytes and says how much it dropped    | P0       |
 // | JB-09 | Edge     | Each conversation numbers and sees its own jobs, also after a restart | P0      |
@@ -262,6 +265,63 @@ func TestJobs(t *testing.T) {
 			if registry.Changes(call) != changes || registry.AlreadyConfirmed(call) == changes {
 				t.Errorf("%s: changes = %v", fields, registry.Changes(call))
 			}
+		}
+	})
+
+	t.Run("JB-13 in memory the output reads as on disk, and nothing reaches the folder", func(t *testing.T) {
+		root := t.TempDir()
+		jobs := NewJobs(root)
+		jobs.SetConversation("c1")
+		jobs.Configure(OutputsMemory, 0)
+		t.Cleanup(jobs.Close)
+		registry := NewRegistry(Env{WorkDir: t.TempDir(), Jobs: jobs}, Options{MaxOutput: 10000})
+
+		registry.Run(context.Background(), llm.ToolCall{Name: "bash", Args: args(t, map[string]any{"command": "seq 1 3"})})
+		read, _ := registry.Run(context.Background(), llm.ToolCall{Name: "bash", Args: args(t, map[string]any{"id": 1, "offset": 1, "limit": 1})})
+		list, _ := registry.Run(context.Background(), llm.ToolCall{Name: "bash", Args: args(t, map[string]any{"action": "output"})})
+		entries, _ := os.ReadDir(root)
+
+		if !strings.Contains(read, "\n2\n[lines 2-2 of 3") || !strings.Contains(list, "job 1 done") || len(entries) != 0 {
+			t.Errorf("read = %q list = %q folder = %d entries", read, list, len(entries))
+		}
+	})
+
+	t.Run("JB-14 with none only the start and end come back, and output says it was not kept", func(t *testing.T) {
+		jobs := NewJobs(t.TempDir())
+		jobs.SetConversation("c1")
+		jobs.Configure(OutputsNone, 0)
+		t.Cleanup(jobs.Close)
+		registry := NewRegistry(Env{WorkDir: t.TempDir(), Jobs: jobs}, Options{MaxOutput: 300})
+
+		ran, _ := registry.Run(context.Background(), llm.ToolCall{Name: "bash", Args: args(t, map[string]any{"command": "seq 1 2000"})})
+		read, isError := registry.Run(context.Background(), llm.ToolCall{Name: "bash", Args: args(t, map[string]any{"id": 1})})
+
+		if !strings.Contains(ran, "the rest was not kept") || !isError || !strings.Contains(read, "not kept") {
+			t.Errorf("ran = %q read = %q", ran, read)
+		}
+	})
+
+	t.Run("JB-15 output older than the turns kept goes; that of later turns stays", func(t *testing.T) {
+		jobs := NewJobs(t.TempDir())
+		jobs.SetConversation("c1")
+		jobs.Configure(OutputsDisk, 2)
+		t.Cleanup(jobs.Close)
+		env := Env{WorkDir: t.TempDir(), Jobs: jobs}
+		for turn := 1; turn <= 3; turn++ {
+			jobs.SetTurn(turn)
+			jobs.Run(context.Background(), env, fmt.Sprintf("echo turn %d", turn), time.Minute)
+		}
+		jobs.SetTurn(4)
+
+		_, _, first := jobs.Text(1)
+		_, second, secondErr := jobs.Text(2)
+		_, third, _ := jobs.Text(3)
+
+		if first == nil || secondErr == nil {
+			t.Errorf("turns 1 and 2 should be gone: %v %q", first, second)
+		}
+		if third != "turn 3\n" {
+			t.Errorf("turn 3 should stay: %q", third)
 		}
 	})
 }

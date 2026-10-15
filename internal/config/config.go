@@ -52,6 +52,11 @@ type Tools struct {
 	// turned off everywhere or in one project.
 	MCPDisabled  []string          `toml:"mcp_disabled,omitempty"`
 	MaxOutput    int               `toml:"max_output,omitzero"`
+	// Outputs is where the whole output of commands is kept, to read
+	// later: disk, memory until mo exits, or none; OutputTurns for how many
+	// of the user's turns, 0 for as long as the conversation.
+	Outputs      string            `toml:"outputs,omitempty"`
+	OutputTurns  int               `toml:"output_turns,omitzero"`
 	Descriptions map[string]string `toml:"descriptions,omitempty"`
 	// Modes set the mode of single tools over Mode: full, compact, or
 	// search, found with tool_search.
@@ -269,6 +274,7 @@ func Defaults() Config {
 			AlwaysLoaded: []string{"read", "edit", "write", "bash", "ask", "memory"},
 			Confirm:      []string{"bash", "rm", "fetch"},
 			MaxOutput:    10000,
+			Outputs:      "disk",
 		},
 		Context:      Context{CompactAt: ptr(0.75), Strategy: "compact", KeepReasoning: ptr(false)},
 		Memory:       Memory{Dir: defaultMemoryDir()},
@@ -348,6 +354,12 @@ func validate(cfg Config) error {
 	}
 	if cfg.Render.Status != "powerline" && cfg.Render.Status != "plain" {
 		return fmt.Errorf("render.status %q: use powerline or plain", cfg.Render.Status)
+	}
+	if !slices.Contains([]string{"disk", "memory", "none"}, cfg.Tools.Outputs) {
+		return fmt.Errorf("tools.outputs %q: use disk, memory or none", cfg.Tools.Outputs)
+	}
+	if cfg.Tools.OutputTurns < 0 {
+		return fmt.Errorf("tools.output_turns %d: use 0 to keep it all, or a number of turns", cfg.Tools.OutputTurns)
 	}
 	if cfg.Render.Keys != "default" && cfg.Render.Keys != "vim" {
 		return fmt.Errorf("render.keys %q: use default or vim", cfg.Render.Keys)
@@ -561,6 +573,8 @@ func mergeHarmless(base, layer Config) Config {
 		base.Instructions.Files = layer.Instructions.Files
 	}
 	base.Tools.MaxOutput = override(base.Tools.MaxOutput, layer.Tools.MaxOutput)
+	base.Tools.Outputs = override(base.Tools.Outputs, layer.Tools.Outputs)
+	base.Tools.OutputTurns = override(base.Tools.OutputTurns, layer.Tools.OutputTurns)
 	if layer.Tools.AlwaysLoaded != nil {
 		base.Tools.AlwaysLoaded = layer.Tools.AlwaysLoaded
 	}
