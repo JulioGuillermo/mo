@@ -123,7 +123,7 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 		if window == 0 {
 			window, from = defaultCloudCodeWindow(model), windowFromDefault
 		}
-		return chosenProvider{name: name, model: model, window: window, provider: &llm.CloudCode{BaseURL: settings.BaseURL, Token: token}, windowFrom: from}, nil
+		return chosenProvider{name: name, model: model, window: window, provider: &llm.CloudCode{BaseURL: settings.BaseURL, Token: token, NoPreamble: settings.Preamble != nil && !*settings.Preamble}, windowFrom: from}, nil
 	}
 	return chosenProvider{}, fmt.Errorf("provider %q has unknown type %q (use openai, anthropic, claude-code, responses or cloudcode)", name, settings.Protocol)
 }

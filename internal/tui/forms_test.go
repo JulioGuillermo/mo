@@ -30,6 +30,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -347,6 +348,32 @@ func TestReviewFixes(t *testing.T) {
 
 		if switched.Provider != "ollama" || switched.Model != "" || same.Model != "qwen3" {
 			t.Errorf("switched = %+v same = %+v", switched, same)
+		}
+	})
+}
+
+func TestPreambleSetting(t *testing.T) {
+	t.Run("a Cloud Code provider offers Antigravity's preamble; turned off it is saved as false", func(t *testing.T) {
+		cfg := config.Defaults()
+		draft := newProviderDraft("antigravity", cfg, nil)
+		var titles []string
+		for _, each := range draft.entries(cfg) {
+			titles = append(titles, each.title)
+		}
+		if !slices.Contains(titles, "Antigravity's preamble") || !draft.preamble {
+			t.Fatalf("entries = %v preamble = %v", titles, draft.preamble)
+		}
+
+		draft.preamble = false
+		off, err := draft.applyTo(config.Config{})
+		draft.preamble = true
+		on, _ := draft.applyTo(config.Config{})
+
+		if err != nil || off.Providers["antigravity"].Preamble == nil || *off.Providers["antigravity"].Preamble {
+			t.Errorf("off = %+v err = %v", off.Providers["antigravity"], err)
+		}
+		if on.Providers["antigravity"].Preamble != nil {
+			t.Errorf("on should leave the default: %+v", on.Providers["antigravity"])
 		}
 	})
 }

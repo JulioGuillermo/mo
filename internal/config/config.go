@@ -202,6 +202,10 @@ type ProviderConfig struct {
 	// OAuth signs in to the provider instead of a key: the token it gives
 	// is sent as the bearer and renewed when it expires.
 	OAuth *OAuth `toml:"oauth,omitempty"`
+	// Preamble, for a cloudcode provider, starts the system prompt as
+	// Antigravity's own requests do, followed by a line saying the model
+	// runs inside mo; false sends mo's prompt alone. Unset is true.
+	Preamble *bool `toml:"preamble,omitempty"`
 }
 
 // OAuth flows a provider may sign in with.
@@ -641,6 +645,9 @@ func mergeProvider(base, layer ProviderConfig) ProviderConfig {
 	}
 	if layer.OAuth != nil {
 		base.OAuth = layer.OAuth
+	}
+	if layer.Preamble != nil {
+		base.Preamble = layer.Preamble
 	}
 	return base
 }

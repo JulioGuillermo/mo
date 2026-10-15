@@ -37,6 +37,9 @@ type CloudCode struct {
 	Client  *http.Client
 	// Token gives the bearer at each request.
 	Token func(ctx context.Context) (string, error)
+	// NoPreamble sends mo's system prompt alone, without Antigravity's
+	// opening and the line after it.
+	NoPreamble bool
 
 	mu      sync.Mutex
 	project string
@@ -193,9 +196,15 @@ func (p *CloudCode) buildRequest(req Request) ccRequest {
 	p.mu.Unlock()
 
 	out := ccRequest{SessionID: session}
-	out.SystemInstruction = &ccContent{Role: "user", Parts: []ccPart{{Text: cloudCodePreamble}, {Text: cloudCodeBridge}}}
+	out.SystemInstruction = &ccContent{Role: "user"}
+	if !p.NoPreamble {
+		out.SystemInstruction.Parts = []ccPart{{Text: cloudCodePreamble}, {Text: cloudCodeBridge}}
+	}
 	if req.System != "" {
 		out.SystemInstruction.Parts = append(out.SystemInstruction.Parts, ccPart{Text: req.System})
+	}
+	if len(out.SystemInstruction.Parts) == 0 {
+		out.SystemInstruction = nil
 	}
 	out.GenerationConfig.MaxOutputTokens = req.MaxTokens
 	if strings.Contains(req.Model, "gemini-3") {

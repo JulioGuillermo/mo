@@ -64,6 +64,9 @@ Two protocols cover almost everything (three more serve the subscription logins:
 
 With no provider set, mo tries llama-server, ollama and lmstudio in that order.
 With no model set on an openai-type provider, it uses the first model the server lists.
+`antigravity` starts the system prompt as Antigravity's own requests do, then says the model runs
+inside mo; `preamble = false` under `[providers.antigravity]`, or the provider's form in
+`/providers`, sends mo's prompt alone.
 
 ### Reusing other tools' credentials
 

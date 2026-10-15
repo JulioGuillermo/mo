@@ -114,3 +114,19 @@ func TestCloudCodeListModels(t *testing.T) {
 		t.Fatalf("models = %v, %v", models, err)
 	}
 }
+
+func TestCloudCodeWithoutPreamble(t *testing.T) {
+	t.Run("without the preamble the system prompt is mo's alone, and none at all without one", func(t *testing.T) {
+		provider := &CloudCode{NoPreamble: true}
+
+		alone := provider.buildRequest(Request{Model: "gemini-3-flash", System: "be brief"})
+		empty := provider.buildRequest(Request{Model: "gemini-3-flash"})
+
+		if alone.SystemInstruction == nil || len(alone.SystemInstruction.Parts) != 1 || alone.SystemInstruction.Parts[0].Text != "be brief" {
+			t.Errorf("alone = %+v", alone.SystemInstruction)
+		}
+		if empty.SystemInstruction != nil {
+			t.Errorf("empty = %+v", empty.SystemInstruction)
+		}
+	})
+}

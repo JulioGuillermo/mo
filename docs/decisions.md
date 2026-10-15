@@ -111,7 +111,9 @@
   sandbox endpoint serves it for a plain account: prod answers 429 and autopush 403. The request is
   sent as Antigravity's (`requestType: agent`, its system preamble and user agent), since that is
   what the API expects. A line right after the preamble says the model runs inside mo and that mo's
-  instructions take the place of Antigravity's, so it does not read two identities. Function calls keep their thought signature in `ToolCall.Extra`; a call
+  instructions take the place of Antigravity's, so it does not read two identities. Both go with
+  `preamble = false` on the provider, which the provider's form offers; on by default, as the
+  API's expectations are not known for every model. Function calls keep their thought signature in `ToolCall.Extra`; a call
   without one gets Gemini's skip value.
 - Anthropic requests mark the system prompt, the last tool and the last message as cache
   breakpoints, so every turn rereads the shared prefix from the prompt cache.

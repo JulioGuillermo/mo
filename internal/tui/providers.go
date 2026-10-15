@@ -45,11 +45,13 @@ type providerDraft struct {
 	// oauth is the sign-in being edited; flow "" signs in with a key.
 	oauth       config.OAuth
 	oauthScopes string
+	// preamble, for Cloud Code, sends Antigravity's opening first.
+	preamble bool
 }
 
 func newProviderDraft(name string, cfg config.Config, findings []detect.Finding) *providerDraft {
 	if name == newProviderChoice {
-		return &providerDraft{isNew: true, protocol: "openai", baseURL: defaultNewURL, use: true}
+		return &providerDraft{isNew: true, protocol: "openai", baseURL: defaultNewURL, use: true, preamble: true}
 	}
 	settings, known := cfg.Providers[name]
 	if found := findingFor(findings, name); !known && found != nil && found.Settings != nil {
@@ -70,6 +72,7 @@ func newProviderDraft(name string, cfg config.Config, findings []detect.Finding)
 		keyEnv:    settings.APIKeyEnv,
 		keyFrom:   settings.APIKeyFrom,
 		inUse:     inUse,
+		preamble:  settings.Preamble == nil || *settings.Preamble,
 	}
 	if settings.OAuth != nil {
 		draft.oauth = *settings.OAuth
@@ -130,6 +133,13 @@ func (d *providerDraft) entries(cfg config.Config) []entry {
 				EchoMode(huh.EchoModePassword).Value(&d.key)
 		}},
 	)
+	if d.protocol == "cloudcode" {
+		entries = append(entries, entry{"Antigravity's preamble", func() string { return yesNo(d.preamble) }, func() huh.Field {
+			return huh.NewConfirm().Title("Antigravity's preamble").
+				Description("start the system prompt as Antigravity's requests do, with a line saying the model runs inside mo; no: mo's prompt alone").
+				Value(&d.preamble)
+		}})
+	}
 	if d.savedKey {
 		entries = append(entries, entry{"Forget the saved key", func() string { return yesNo(d.forgetKey) }, func() huh.Field {
 			return huh.NewConfirm().Title("Forget the saved API key").Value(&d.forgetKey)
@@ -251,6 +261,10 @@ func (d *providerDraft) applyTo(layer config.Config) (config.Config, error) {
 	}
 	if d.forgetKey {
 		entry.APIKey = ""
+	}
+	if d.protocol == "cloudcode" && !d.preamble {
+		off := false
+		entry.Preamble = &off
 	}
 	if d.oauth.Flow != "" {
 		oauth := d.oauth
