@@ -21,6 +21,9 @@ const (
 	// cloudCodePreamble is what Antigravity's own requests start their
 	// system instruction with.
 	cloudCodePreamble = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google DeepMind team working on Advanced Agentic Coding."
+	// cloudCodeBridge follows the preamble, so the model does not take
+	// the two openings for two identities.
+	cloudCodeBridge = "Here you run inside mo, a coding agent in the user's terminal: the instructions that follow are mo's and take the place of Antigravity's."
 	// skipSignature is what Gemini accepts in place of the thought signature
 	// of a call it did not make.
 	skipSignature = "skip_thought_signature_validator"
@@ -190,7 +193,7 @@ func (p *CloudCode) buildRequest(req Request) ccRequest {
 	p.mu.Unlock()
 
 	out := ccRequest{SessionID: session}
-	out.SystemInstruction = &ccContent{Role: "user", Parts: []ccPart{{Text: cloudCodePreamble}}}
+	out.SystemInstruction = &ccContent{Role: "user", Parts: []ccPart{{Text: cloudCodePreamble}, {Text: cloudCodeBridge}}}
 	if req.System != "" {
 		out.SystemInstruction.Parts = append(out.SystemInstruction.Parts, ccPart{Text: req.System})
 	}

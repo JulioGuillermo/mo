@@ -14,6 +14,8 @@ package tools
 // | JB-14 | Happy    | With none only the start and end come back, and output says it was not kept | P1 |
 // | JB-15 | Happy    | Output older than the turns kept goes; that of later turns stays      | P0 |
 // | JB-16 | Edge     | Switching conversations prunes nothing until a turn of the new one starts | P0 |
+// | JB-17 | Happy    | A server in the background returns once a line matches until, going on | P0 |
+// | JB-18 | Edge     | One that dies before returns at once with its exit, not told again later | P0 |
 // | JB-12 | Happy    | Reading output and help never ask; running and killing do          | P0       |
 // | JB-08 | Edge     | A log keeps its first and last bytes and says how much it dropped    | P0       |
 // | JB-09 | Edge     | Each conversation numbers and sees its own jobs, also after a restart | P0      |
@@ -342,6 +344,35 @@ func TestJobs(t *testing.T) {
 
 		if err != nil || text != "kept\n" {
 			t.Errorf("text = %q err = %v", text, err)
+		}
+	})
+
+	t.Run("JB-17 a server in the background returns once a line matches until, going on", func(t *testing.T) {
+		registry, jobs := jobsRegistry(t)
+
+		started := time.Now()
+		output, isError := registry.Run(context.Background(), llm.ToolCall{Name: "bash", Args: args(t, map[string]any{
+			"command": "echo booting; sleep 0.3; echo listening on :8080; sleep 30", "background": true, "until": "listening on",
+		})})
+
+		if isError || !strings.Contains(output, `a line matched "listening on"`) || !strings.Contains(output, "booting\nlistening on :8080") || time.Since(started) > 5*time.Second {
+			t.Errorf("output = %q", output)
+		}
+		if jobs.List()[0].State != JobRunning {
+			t.Error("the server should go on")
+		}
+	})
+
+	t.Run("JB-18 one that dies before returns at once with its exit, not told again later", func(t *testing.T) {
+		registry, jobs := jobsRegistry(t)
+
+		output, _ := registry.Run(context.Background(), llm.ToolCall{Name: "bash", Args: args(t, map[string]any{
+			"command": "echo port in use; exit 3", "background": true, "until": "listening", "wait": 20,
+		})})
+		time.Sleep(200 * time.Millisecond)
+
+		if !strings.Contains(output, "failed with exit 3") || !strings.Contains(output, "port in use") || len(jobs.TakeEnded()) != 0 {
+			t.Errorf("output = %q", output)
 		}
 	})
 }

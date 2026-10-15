@@ -50,8 +50,8 @@ type Tools struct {
 	Disabled     []string   `toml:"disabled,omitempty"`
 	// MCPDisabled are MCP servers not started: set up in the user file,
 	// turned off everywhere or in one project.
-	MCPDisabled  []string          `toml:"mcp_disabled,omitempty"`
-	MaxOutput    int               `toml:"max_output,omitzero"`
+	MCPDisabled []string `toml:"mcp_disabled,omitempty"`
+	MaxOutput   int      `toml:"max_output,omitzero"`
 	// Outputs is where the whole output of commands is kept, to read
 	// later: disk, memory until mo exits, or none; OutputTurns for how many
 	// of the user's turns, 0 for as long as the conversation.

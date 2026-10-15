@@ -80,6 +80,8 @@ type job struct {
 	done    chan struct{}
 	// detached closes when a foreground command goes to the background.
 	detached chan struct{}
+	// told is set when the model saw the job end without a note.
+	told bool
 }
 
 // JobStatus is what is known of a job. Conversation is the one it ran in.
@@ -483,7 +485,7 @@ func (j *Jobs) wait(running *job) {
 		return
 	}
 	j.mu.Lock()
-	if status.State != JobKilled {
+	if status.State != JobKilled && !running.told {
 		j.ended = append(j.ended, status)
 	}
 	notify := j.onEnd
@@ -733,6 +735,34 @@ func (j *Jobs) TakeEnded() []JobStatus {
 	}
 	j.ended = kept
 	return taken
+}
+
+// Printed is how a job of the conversation in progress stands and the
+// start and end of what it printed so far, as the model gets a command's.
+func (j *Jobs) Printed(id int) (JobStatus, string) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	for _, each := range j.jobs {
+		if each.status.Conversation == j.conversation && each.status.ID == id {
+			return j.current(each), each.summary.String()
+		}
+	}
+	return JobStatus{}, ""
+}
+
+// Told takes a job out of those the model is to hear ended: it saw so
+// already.
+func (j *Jobs) Told(id int) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	for _, each := range j.jobs {
+		if each.status.Conversation == j.conversation && each.status.ID == id {
+			each.told = true
+		}
+	}
+	j.ended = slices.DeleteFunc(j.ended, func(status JobStatus) bool {
+		return status.Conversation == j.conversation && status.ID == id
+	})
 }
 
 // HasEnded tells whether a job of the conversation in progress ended that

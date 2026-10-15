@@ -110,7 +110,8 @@
   registered. mo keeps its own token; it does not read opencode's or the IDE's. Only the `daily`
   sandbox endpoint serves it for a plain account: prod answers 429 and autopush 403. The request is
   sent as Antigravity's (`requestType: agent`, its system preamble and user agent), since that is
-  what the API expects. Function calls keep their thought signature in `ToolCall.Extra`; a call
+  what the API expects. A line right after the preamble says the model runs inside mo and that mo's
+  instructions take the place of Antigravity's, so it does not read two identities. Function calls keep their thought signature in `ToolCall.Extra`; a call
   without one gets Gemini's skip value.
 - Anthropic requests mark the system prompt, the last tool and the last message as cache
   breakpoints, so every turn rereads the shared prefix from the prompt cache.
@@ -509,6 +510,13 @@
 - The live viewer reads the job's file again every 300 ms while it runs, rather than streaming:
   the output is on disk already, and one reader for running and ended jobs keeps it simple. It
   takes the whole screen like settings do, and the agent goes on underneath.
+- `bash` in the background with `until` (a regexp) or `wait` (seconds) returns when a line of the
+  output matches, the time is up or the command ends, with what it printed: a server's start is
+  read in the same call instead of after a blind sleep. One that ended meanwhile is not told
+  again later.
+- The `git` tool reimplements git (go-git), so it takes no git flags; its description sends what
+  it does not do to git in `bash`. Its output is kept short by default: a log is one line a commit,
+  about a seventh of `git log`.
 - ctrl+b sends a command that blocks the model to the background: the call returns at once with
   what it printed so far, and the job goes on, told when it ends like one started in the background.
 - Reading a job's output and help never ask; running and `kill` are checked against the rules, a

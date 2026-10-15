@@ -58,7 +58,7 @@ func TestCloudCodeStream(t *testing.T) {
 		t.Fatalf("sent %+v, events %v", sent, events)
 	}
 	system := sent.Request.SystemInstruction
-	if system.Role != "user" || len(system.Parts) != 2 || system.Parts[1].Text != "be brief" {
+	if system.Role != "user" || len(system.Parts) != 3 || system.Parts[0].Text != cloudCodePreamble || system.Parts[1].Text != cloudCodeBridge || system.Parts[2].Text != "be brief" {
 		t.Fatalf("system = %+v", system)
 	}
 }

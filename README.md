@@ -256,7 +256,9 @@ the start and end the command returned. `tools.output_turns = N` lets go of the 
 commands older than your last N turns; 0 keeps it for the whole conversation.
 
 `bash` with `background: true` runs a command as a job, for servers, watchers and long builds, and
-returns at once. Every command shows in the side panel while it runs. When one in the foreground
+returns at once; with `until: "listening|ready"` or `wait: 5` it first waits for a line that
+matches, the seconds, or the command's end, and returns what it printed, so a server's start is
+seen in the same call. Every command shows in the side panel while it runs. When one in the foreground
 blocks the model, ctrl+b, or a right click on it or on its call, sends it to the background: the
 model goes on with what it printed so far. "Watch its output live" in that menu shows a job's
 output over the whole screen as a terminal would, following the end while it runs: scroll with

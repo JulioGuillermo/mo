@@ -49,7 +49,7 @@ var gitHelp = []helpTopic{
 func gitTool() Tool {
 	return Tool{
 		Name:        "git",
-		Description: "Git in the working directory. help lists what each action takes.",
+		Description: "Git in the working directory, its output kept short. help lists what each action takes; for what it does not do, run git with bash.",
 		Schema: json.RawMessage(`{"type":"object","properties":{
 "action":{"type":"string","enum":["status","diff","log","show","blame","branches","check","fetch","stash_list","tags","add","commit","branch","switch","merge","cherry_pick","rebase","continue","abort","pull","push","stash","stash_apply","stash_pop","stash_drop","tag","reset","help"]},
 "paths":{"type":"array","items":{"type":"string"}},"path":{"type":"string"},"revision":{"type":"string"},"name":{"type":"string"},"message":{"type":"string"},

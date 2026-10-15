@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"regexp"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -17,11 +19,14 @@ const (
 	bashKeptOutput     = 1 << 20
 	bashWaitForOutput  = 2 * time.Second
 	bashUncaptured     = "(output of background processes not captured)"
+	bashDefaultWait    = 30 * time.Second
+	bashWaitPoll       = 100 * time.Millisecond
 )
 
 var bashHelp = []helpTopic{
 	{"run", "the default: command runs in the working directory, without stdin. timeout: seconds, 120 by default, 600 at most. " +
 		"background: returns at once, for servers, watchers and long builds; you are told when it ends. " +
+		"until (a regexp) and wait (seconds, 30 by default with until, 600 at most): with background, return when a line matches, the time is up or it ends, with what it printed so far, as a server's start. " +
 		"Every command is a job, [job N] after its output; a long output comes cut to its start and end, and is kept whole."},
 	{"output", "id: the output and state of a job; without id, the jobs of this conversation; without id but with match, the matching lines of every job, as job:line: text."},
 	{"kill", "id: stop a job and what it started."},
@@ -33,7 +38,7 @@ func bashTool() Tool {
 		Description: "Run a shell command. Each is a job whose whole output stays: output reads it, kill stops it, help explains.",
 		Schema: json.RawMessage(`{"type":"object","properties":{
 "command":{"type":"string"},"action":{"type":"string","enum":["run","output","kill","help"]},
-"timeout":{"type":"integer"},"background":{"type":"boolean"},"id":{"type":"integer"},"topic":{"type":"string"}}}`),
+"timeout":{"type":"integer"},"background":{"type":"boolean"},"until":{"type":"string"},"wait":{"type":"integer"},"id":{"type":"integer"},"topic":{"type":"string"}}}`),
 		Run:      runBash,
 		View:     true,
 		ViewSelf: true,
@@ -84,6 +89,8 @@ func runBash(ctx context.Context, env Env, raw json.RawMessage) (string, error) 
 		Command    string `json:"command"`
 		Timeout    int    `json:"timeout"`
 		Background bool   `json:"background"`
+		Until      string `json:"until"`
+		Wait       int    `json:"wait"`
 		ID         int    `json:"id"`
 		Topic      string `json:"topic"`
 	}
@@ -116,11 +123,26 @@ func runBash(ctx context.Context, env Env, raw json.RawMessage) (string, error) 
 		if env.Jobs == nil {
 			return "", errors.New(jobsUnavailable)
 		}
+		var until *regexp.Regexp
+		if args.Until != "" {
+			re, err := regexp.Compile(args.Until)
+			if err != nil {
+				return "", fmt.Errorf("until: %w", err)
+			}
+			until = re
+		}
 		status, err := env.Jobs.Start(env, args.Command)
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf(jobStartedResult, status.ID, status.ID), nil
+		if until == nil && args.Wait <= 0 {
+			return fmt.Sprintf(jobStartedResult, status.ID, status.ID), nil
+		}
+		wait := bashDefaultWait
+		if args.Wait > 0 {
+			wait = min(time.Duration(args.Wait)*time.Second, bashMaxTimeout)
+		}
+		return waitForStart(ctx, env.Jobs, status.ID, until, wait)
 	}
 	timeout := bashDefaultTimeout
 	if args.Timeout > 0 {
@@ -134,6 +156,43 @@ func runBash(ctx context.Context, env Env, raw json.RawMessage) (string, error) 
 		output = view.Apply(output)
 	}
 	return output, err
+}
+
+// waitForStart watches a job just started in the background until a line
+// of its output matches until, wait passes or it ends, and says which with
+// what it printed so far. One that ended is not told again later.
+func waitForStart(ctx context.Context, jobs *Jobs, id int, until *regexp.Regexp, wait time.Duration) (string, error) {
+	started := time.Now()
+	deadline := time.NewTimer(wait)
+	defer deadline.Stop()
+	tick := time.NewTicker(bashWaitPoll)
+	defer tick.Stop()
+	for {
+		status, printed := jobs.Printed(id)
+		matched := until != nil && slices.ContainsFunc(strings.Split(printed, "\n"), until.MatchString)
+		var how string
+		switch {
+		case matched:
+			how = fmt.Sprintf("a line matched %q after %s; it goes on in the background", until.String(), time.Since(started).Round(100*time.Millisecond))
+		case status.State != JobRunning:
+			jobs.Told(id)
+			how = "it ended: " + status.Describe()
+		}
+		if how == "" {
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-deadline.C:
+				how = fmt.Sprintf("still running after %s", wait)
+				if until != nil {
+					how += fmt.Sprintf(", no line matched %q yet", until.String())
+				}
+			case <-tick.C:
+				continue
+			}
+		}
+		return fmt.Sprintf("Job %d in the background: %s. You are told when it ends.\nOutput so far:\n%s\n[job %d]", id, how, orNoOutput(strings.TrimSuffix(printed, "\n")), id), nil
+	}
 }
 
 // runAlone runs a command where no job can keep it, as when mo answers
