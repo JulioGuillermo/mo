@@ -53,6 +53,9 @@ type Env struct {
 	Recall *Recall
 	// Titles renames the conversation; without it there is no title tool.
 	Titles *Titles
+	// UIs holds the interfaces the model draws; without it there is no ui
+	// tool.
+	UIs *UIs
 	// MaxOutput is how much of a tool's output reaches the model, as the
 	// registry cuts it; 0 for no limit.
 	MaxOutput int
@@ -104,7 +107,7 @@ func NewRegistry(env Env, options Options) *Registry {
 	env.MaxOutput = options.MaxOutput
 	registry := &Registry{env: env, options: options}
 	for _, tool := range append(builtinsWith(options.Searcher), options.Extra...) {
-		if slices.Contains(options.Disabled, tool.Name) || (tool.Name == titleToolName && env.Titles == nil) {
+		if slices.Contains(options.Disabled, tool.Name) || (tool.Name == titleToolName && env.Titles == nil) || (tool.Name == "ui" && env.UIs == nil) {
 			continue
 		}
 		if description, ok := options.Descriptions[tool.Name]; ok {
@@ -152,7 +155,7 @@ func builtins() []Tool {
 func builtinsWith(searcher web.Searcher) []Tool {
 	return []Tool{
 		bashTool(), readTool(), writeTool(), editTool(), lsTool(), mkdirTool(), rmTool(), grepTool(),
-		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), gitTool(), titleTool(),
+		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), gitTool(), titleTool(), uiTool(),
 	}
 }
 
@@ -170,6 +173,14 @@ func (r *Registry) Titles() *Titles {
 		return nil
 	}
 	return r.env.Titles
+}
+
+// UIs are the interfaces the model drew, or nil, also for no registry.
+func (r *Registry) UIs() *UIs {
+	if r == nil {
+		return nil
+	}
+	return r.env.UIs
 }
 
 // Jobs are the session's background jobs, or nil, also for no registry.

@@ -275,6 +275,17 @@ Each tool call starts with a dot coloured by what it does: red a command that bl
 yellow one in the background, green reading a command's output, pink a change, blue a read. The
 side panel colours running jobs the same way.
 
+`ui` lets the model draw an interface for you: panels laying out their children in a row or a
+column (`justify` start, center, end, space-between, space-around; `align`; `gap`; `grow`),
+cards with a border and a title, labels, buttons and inputs, each with `bg`, `fg`, `padding`,
+`margin`, `width`, `height`, `visible` and, for buttons, `disabled`. It is listed under **UIs**
+in the side panel, new until you open it; a click opens it as a dialog over the screen, and a
+click outside hides it again. In it, tab moves, enter presses, and what you type fills the input
+in focus. `on_click`, `on_input` and `on_change` take `notify` (the model hears the event),
+`submit` (it hears every input's value) or `close` (the interface goes, and it hears so); a
+button without one notifies. The model hears at its next step, or in a turn of its own when idle.
+A right click in the panel opens or removes one. They last until mo exits.
+
 `ask` lets the model ask you questions, with options or free text. What the calls of one reply
 need from you, approvals and questions, is asked at once in a dialog above the input: tabs show
 how many there are and which one you are on, tab moves between them, and the agent goes on once

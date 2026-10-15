@@ -180,6 +180,23 @@ func (m model) sidebarLines() ([]string, []region) {
 			regions = append(regions, region{y: y, x0: 0, x1: 1 << 30, do: menu, menu: menu, item: fmt.Sprint("task ", i)})
 		}
 	}
+	if uis := m.uis(); uis != nil {
+		if list := uis.List(); len(list) > 0 {
+			add("")
+			add(paint(colors.title).Bold(true).Render("UIs"))
+			for _, ui := range list {
+				id := ui.ID
+				open := func(m model) (tea.Model, tea.Cmd) { return m.openUI(id) }
+				menu := func(m model) (tea.Model, tea.Cmd) { return m.uiMenu(id) }
+				mark, tint := "▣", colors.text
+				if !ui.Seen {
+					mark, tint = "●", colors.active
+				}
+				regions = append(regions, region{y: len(lines), x0: 0, x1: 1 << 30, do: open, menu: menu, item: fmt.Sprint("ui ", id)})
+				add(paint(tint).Render(fmt.Sprintf("%s %d ", mark, id)) + base.Render(oneLine(ui.Title, width-4)))
+			}
+		}
+	}
 	add("")
 	add(paint(colors.title).Bold(true).Render("Jobs"))
 	statuses := []tools.JobStatus{}

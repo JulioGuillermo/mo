@@ -292,7 +292,7 @@ func (m model) useSession(session Session) (tea.Model, tea.Cmd) {
 
 func isAgentMsg(msg tea.Msg) bool {
 	switch msg.(type) {
-	case streamMsg, streamEndMsg, usageMsg, interactionMsg, runDoneMsg, spinner.TickMsg, printMsg, reasoningMsg, drawMsg, redrawMsg, rulesSavedMsg, toolStartMsg, toolDoneMsg, savedMsg, jobEndedMsg, jobTickMsg, jobStartedMsg, flashDoneMsg, activityMsg, titledMsg, titleEventMsg, titleSetMsg, repoMsg, loginMsg, tea.FocusMsg, tea.BlurMsg:
+	case streamMsg, streamEndMsg, usageMsg, interactionMsg, runDoneMsg, spinner.TickMsg, printMsg, reasoningMsg, drawMsg, redrawMsg, rulesSavedMsg, toolStartMsg, toolDoneMsg, savedMsg, jobEndedMsg, jobTickMsg, jobStartedMsg, uiChangedMsg, flashDoneMsg, activityMsg, titledMsg, titleEventMsg, titleSetMsg, repoMsg, loginMsg, tea.FocusMsg, tea.BlurMsg:
 		return true
 	}
 	return false

@@ -132,7 +132,11 @@ type model struct {
 	newPrompt bool
 	// popup is a small menu over the screen; clickedAt is where the right
 	// click that opens one was, clicked unset when no click opened it.
-	popup            *popup
+	popup *popup
+	// uiOpen is the interface shown as a dialog, 0 for none; uiLives what
+	// the user did in each.
+	uiOpen           int
+	uiLives          map[int]*uiLive
 	clickedAt        point
 	clicked          bool
 	settingsInFlight bool
@@ -198,6 +202,9 @@ func Run(session Session) error {
 	if jobs := session.Agent.Tools.Jobs(); jobs != nil {
 		jobs.OnEnd(func(status tools.JobStatus) { bridge.send(jobEndedMsg(status)) })
 		jobs.OnStart(func(status tools.JobStatus) { bridge.send(jobStartedMsg(status)) })
+	}
+	if uis := session.Agent.Tools.UIs(); uis != nil {
+		uis.OnChange(func() { bridge.send(uiChangedMsg{}) })
 	}
 	final, err := program.Run()
 	close(bridge.exited)
@@ -276,9 +283,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.settings != nil && !isAgentMsg(msg) {
 		return m.updateSettings(msg)
 	}
+	if _, changed := msg.(uiChangedMsg); changed {
+		if _, ok := m.uis().Get(m.uiOpen); !ok {
+			m.uiOpen = 0
+		}
+		return m, nil
+	}
 	if m.popup != nil && !isAgentMsg(msg) {
 		if _, tick := msg.(viewerTickMsg); !tick {
 			return m.updatePopup(msg)
+		}
+	}
+	if m.uiOpen != 0 && m.popup == nil && !isAgentMsg(msg) {
+		if _, tick := msg.(viewerTickMsg); !tick {
+			return m.updateUI(msg)
 		}
 	}
 	if _, tick := msg.(viewerTickMsg); (tick || m.viewer != nil) && !isAgentMsg(msg) {
@@ -840,6 +858,9 @@ func (m model) View() tea.View {
 	} else {
 		screen, _ := m.screenLayout()
 		drawn := m.highlight(screen)
+		if m.uiOpen != 0 {
+			drawn = m.overUI(drawn)
+		}
 		if m.popup != nil {
 			drawn = m.overPopup(drawn)
 		}

@@ -110,6 +110,7 @@ func run() error {
 func startJobs(loaded *extensions) func() {
 	loaded.jobs = tools.NewJobs(config.SessionDir())
 	loaded.titles = tools.NewTitles()
+	loaded.uis = tools.NewUIs()
 	return loaded.jobs.Close
 }
 

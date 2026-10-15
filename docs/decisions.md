@@ -886,3 +886,18 @@
   one, esc, h or a click outside close it; a right click outside opens the menu there instead.
 - It is drawn as a layer over the screen with lipgloss's compositor, so nothing under it is
   redrawn or moved.
+
+## Interfaces the model draws
+
+- One tool, `ui`, with create, update and remove: the model never chooses how an interface is
+  shown. Its call shows in the conversation as any tool's; the interface itself is listed under
+  UIs in the side panel and opens as a dialog over the screen, where it is used, so scrolling
+  never loses it and the input is never fought over for the keys. A click outside hides it.
+- A tree of five nodes, panel, card, label, button and input, all taking the same style fields,
+  laid out by a small flex of our own over lipgloss: no flexbox library fitted without its own
+  model. Sizes are in cells, so bars of a chart are panels of a width and a colour.
+- Events name what to do: notify, submit or close; the model hears them as notes, as it hears of
+  ended jobs, and an idle model gets a turn of its own. Nothing blocks a tool call while the user
+  thinks. Validation is meant for Lua handlers, to come; until then a handler naming a function
+  is refused with that said.
+- Interfaces live in memory for the run of mo; they are not rebuilt on resume yet.

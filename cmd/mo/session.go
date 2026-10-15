@@ -44,6 +44,8 @@ type extensions struct {
 	titles *tools.Titles
 	// recall searches memories and saved conversations.
 	recall *tools.Recall
+	// uis are the interfaces the model draws; nil when mo answers once.
+	uis *tools.UIs
 }
 
 // pendingHub is a connection to the MCP servers being made in the
@@ -133,6 +135,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	env.Jobs = loaded.jobs
 	env.Titles = loaded.titles
 	env.Recall = loaded.recall
+	env.UIs = loaded.uis
 	found := skills.Find(cfg.SkillDirs(workDir))
 	instructions := agent.FindInstructions(cfg.InstructionFiles(), filepath.Join(config.ConfigHome(), "mo"), workDir)
 	extra := extraTools(hub, loaded.plugins)

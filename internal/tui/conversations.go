@@ -112,6 +112,9 @@ func (m *model) trackThread() {
 	if jobs := m.session.Agent.Tools.Jobs(); jobs != nil {
 		jobs.SetConversation(m.thread.id)
 	}
+	if uis := m.session.Agent.Tools.UIs(); uis != nil {
+		uis.SetConversation(m.thread.id)
+	}
 }
 
 // listConversations reads the conversations of the working directory.

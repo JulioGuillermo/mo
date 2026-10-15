@@ -48,7 +48,7 @@ import (
 
 func newEnv(t *testing.T) Env {
 	t.Helper()
-	return Env{WorkDir: t.TempDir(), Titles: NewTitles()}
+	return Env{WorkDir: t.TempDir(), Titles: NewTitles(), UIs: NewUIs()}
 }
 
 func writeFile(t *testing.T, env Env, name, content string) string {
