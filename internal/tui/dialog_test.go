@@ -181,12 +181,13 @@ func TestCommandView(t *testing.T) {
 	})
 
 	t.Run("DG-07 each part of a bash command shows what the rules say of it", func(t *testing.T) {
-		m, _ := asking(agent.Interaction{Approvals: []agent.ApprovalRequest{bash("ls -la && git push origin main; echo x > out.txt")}})
+		m, _ := asking(agent.Interaction{Approvals: []agent.ApprovalRequest{bash(`ls -la && git push origin main; echo "hello  world" > out.txt`)}})
 		m.session.Agent.Permissions, _ = permissions.New(permissions.ModeEdits, []string{"ls *", "echo *"}, []string{"git push *"})
 
 		view := ansi.Strip(m.dialogView())
 
-		for _, want := range []string{"3 parts", "✓ ls -la  allowed: ls *", "✗ git push origin main  deny rule: git push *", "✎ echo x  allowed: echo * · writes a file"} {
+		for _, want := range []string{"3 parts", "✓ ls -la", "allowed: ls *", "✗ git push origin main", "deny rule: git push *",
+			`✎ echo "hello  world" > out.txt`, "allowed: echo * · writes a file"} {
 			if !strings.Contains(view, want) {
 				t.Errorf("missing %q in:\n%s", want, view)
 			}

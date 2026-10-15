@@ -11,6 +11,9 @@ import (
 // reads them, quotes removed.
 type Command struct {
 	Text string
+	// Source is the command as written in the script, quotes and
+	// redirections kept, to show.
+	Source string
 	// Writes is set when the command sends its output to a file: such a
 	// command is never let through by a rule alone.
 	Writes bool
@@ -43,7 +46,11 @@ func Commands(script string) ([]Command, error) {
 			words = append(words, source(command))
 		}
 		if len(words) > 0 {
-			commands = append(commands, Command{Text: strings.Join(words, " "), Writes: writesFile(statement.Redirs)})
+			written := strings.Join(words, " ")
+			if start, end := int(statement.Pos().Offset()), int(statement.End().Offset()); start >= 0 && end <= len(script) && start < end {
+				written = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(script[start:end]), ";"))
+			}
+			commands = append(commands, Command{Text: strings.Join(words, " "), Source: written, Writes: writesFile(statement.Redirs)})
 		}
 		return true
 	})

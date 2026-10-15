@@ -573,8 +573,15 @@ func (m model) commandParts(request agent.ApprovalRequest, body lipgloss.Style, 
 		if part.Writes {
 			mark, note = "✎", note+" · writes a file"
 		}
-		text := oneLine(part.Text, max(width-ansi.StringWidth(note)-8, 12))
-		lines = append(lines, body.Foreground(tint).Render("  "+mark+" ")+body.Render(text)+body.Foreground(colors.dim).Render("  "+note))
+		shown := orDefault(part.Source, part.Text)
+		for j, line := range highlightLines(shown, "bash", max(width-4, 12), colors.body, m.printer == nil || m.printer.isDark()) {
+			lead := "    "
+			if j == 0 {
+				lead = "  " + mark + " "
+			}
+			lines = append(lines, body.Foreground(tint).Render(lead)+line)
+		}
+		lines = append(lines, body.Foreground(colors.dim).Render("    "+oneLine(note, max(width-4, 12))))
 	}
 	return lines
 }
