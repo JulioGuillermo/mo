@@ -662,18 +662,19 @@ radio     options, value, label, direction row|column, on_change
 any node  id, fg, bg (#rrggbb or text|dim|accent|error|warning|success|surface|background), bold, visible, border rounded|normal|thick|double|none,
           padding, margin (1, 2 or 4 numbers, as in CSS), width, height, grow (share of the room left in a row)`},
 	{"events", `on_click (button), on_input (each key in an input), on_change (an input when left or on enter; any other control at each change) take:
-notify   tell you of this event
+notify   tell you of this event (only when you must act on it)
 submit   tell you every control's value, and close the dialog
 close    close the dialog; the interface stays
 remove   remove the interface, telling you
 <name>   call that function of the script
 A button without on_click notifies.`},
-	{"script", `Lua (base, table, string, math), run on the user's side; telling you is up to it. A function gets e.id, e.type (click|input|change), e.value.
+	{"script", `Lua (base, table, string, math), run on the user's side. A function gets e.id, e.type (click|input|change), e.value.
+ui.set shows its change at once: updating the interface needs no notify. Tell yourself only what you must act on, usually once, with submit.
 ui.set(id, {text=..., ...})  change a node: text, label, value, options, min, max, step, placeholder, title, fg, bg, border, bold, visible, disabled, width, height
 ui.get(id)                   a node's fields, and checked
 ui.value(id)                 a control's value; a checkbox's is "true" or "false"
 ui.state                     a table kept between events
-ui.notify(data)              tell you, with data; ui.submit(data) also sends every value
+ui.notify(data)              optional: tell you, with data; ui.submit(data) also sends every value
 ui.close()                   close the dialog; ui.remove() removes the interface
 Validate in on_input, and submit from a button's function once valid.`},
 	{"example", `{"action":"create","title":"Login","tree":` + uiTreeExample + `}
@@ -687,7 +688,7 @@ func uiTool() Tool {
 	return Tool{
 		Name: "ui",
 		Description: "Show the user an interface in a dialog: labels, buttons, inputs, selects, sliders, checkboxes, switches and radios, laid out in panels and cards. " +
-			`What they do comes back to you as notes. Unsure how? Call {"action":"help"}. A tree: ` + uiTreeExample,
+			`Its Lua script updates it on the user's side by itself; you hear only what it notifies or submits. Unsure how? Call {"action":"help"}. A tree: ` + uiTreeExample,
 		Schema: json.RawMessage(`{"type":"object","properties":{
 "action":{"type":"string","enum":["create","update","remove","help"]},
 "id":{"type":"integer","description":"for update and remove"},
