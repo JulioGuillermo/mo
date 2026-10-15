@@ -45,7 +45,7 @@ func TestFileComments(t *testing.T) {
 		if len(comments) != 1 || comments[0].from != 2 || comments[0].text != "rename this" {
 			t.Fatalf("comments = %+v", comments)
 		}
-		if !strings.Contains(screen, "3◆func main() {}") || !strings.Contains(screen, "◆ rename this") {
+		if !strings.Contains(screen, "◆3 func main() {}") || !strings.Contains(screen, "◆ rename this") {
 			t.Errorf("screen:\n%s", screen)
 		}
 		if len(deleted.comments()) != 0 {

@@ -453,7 +453,8 @@ func (m model) viewerView() string {
 		}
 		header = toolName.Render(oneLine(v.file, width/2)) + " " + dimStyle.Render(about+" · only you see it")
 		help = fileHelp
-		gutter = len(fmt.Sprint(len(v.lines))) + 1
+		// The comment mark, the line's number, a space.
+		gutter = 1 + len(fmt.Sprint(len(v.lines))) + 1
 	}
 	var out []string
 	out = append(out, header)
@@ -500,7 +501,7 @@ func (m model) viewerView() string {
 			if _, _, commented := m.commentAt(i); commented {
 				mark = commentMark.Render("◆")
 			}
-			line = dimStyle.Render(fmt.Sprintf("%*d", gutter-1, i+1)) + mark + line
+			line = mark + dimStyle.Render(fmt.Sprintf("%*d ", gutter-2, i+1)) + line
 		}
 		out = append(out, line)
 	}
