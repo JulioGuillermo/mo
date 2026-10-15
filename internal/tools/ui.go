@@ -735,7 +735,7 @@ func runUI(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	if env.UIs == nil {
 		return "", errors.New("interfaces are not available here")
 	}
-	tree, err := parseUITree(args.Tree)
+	tree, err := ParseUITree(args.Tree)
 	if err != nil {
 		return "", err
 	}

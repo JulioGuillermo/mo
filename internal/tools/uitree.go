@@ -48,11 +48,11 @@ var uiTypeAliases = map[string]string{
 const uiTreeExample = `{"type":"card","title":"Login","children":[{"type":"label","text":"Your name"},` +
 	`{"type":"input","id":"name","placeholder":"name"},{"type":"button","id":"ok","label":"OK","on_click":"submit"}]}`
 
-// parseUITree reads the tree a call gave, mending what small models get
+// ParseUITree reads the tree a call gave, mending what small models get
 // wrong when what they meant is plain: a tree sent as a string, a list of
 // nodes, a node under its type's name, other names for fields and types,
 // and a missing type that the other fields tell.
-func parseUITree(raw json.RawMessage) (*UINode, error) {
+func ParseUITree(raw json.RawMessage) (*UINode, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, nil
 	}
@@ -298,4 +298,23 @@ func optionText(option any) string {
 func isBool(value any) bool {
 	_, ok := value.(bool)
 	return ok
+}
+
+// Fields are a node's fields besides its type, id, words and children,
+// in the order a node lists them, each value as JSON.
+func (n UINode) Fields() [][2]string {
+	encoded, _ := json.Marshal(n)
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(encoded, &fields)
+	var out [][2]string
+	for _, name := range uiNodeKeys {
+		switch name {
+		case "type", "id", "title", "label", "text", "children":
+			continue
+		}
+		if value, ok := fields[name]; ok {
+			out = append(out, [2]string{name, string(value)})
+		}
+	}
+	return out
 }

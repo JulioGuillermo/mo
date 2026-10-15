@@ -909,6 +909,10 @@
 - What the user typed, what scripts changed and their `ui.state` are kept with the interface, in
   `sessions/<id>/uis.json`, written after each event and change: resuming a conversation runs
   its scripts again with their state, so interfaces come back as they were left.
+- An opened ui call shows what the model gave, in blocks like a write's: its tree under guides
+  (├─ └─), a node to a line with its type, #id, words and other fields coloured as code is, as
+  the tool mended it, so what is read is what is drawn; and its script highlighted as Lua. JSON
+  of a whole tree is too long to read in a transcript.
 - A grid lays its children row by row in columns, each as wide as its widest cell: labels line
   up beside their controls without the model guessing a width for each, and data reads as a
   table. Its children stay a flat list, as every container's, so ids, focus and scripts treat a

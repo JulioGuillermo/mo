@@ -7,6 +7,7 @@ package tui
 // | UD-03 | Happy    | A click outside or close hides the dialog; remove takes it away and tells the model | P1 |
 // | UD-04 | Happy    | A script reacts to typing in the dialog; its error shows under the interface | P0   |
 // | UD-06 | Happy    | A grid lines each column's cells up, as wide as the widest, a fixed width kept, a click reaching a cell | P1 |
+// | UD-07 | Happy    | An opened ui call shows its tree under guides, as mended, and its script highlighted; folded, a hint says so | P1 |
 // | UD-05 | Happy    | Select, slider, checkbox, switch and radio are drawn, change by keys and clicks, and go with submit | P0 |
 
 import (
@@ -239,6 +240,28 @@ func TestUIDialog(t *testing.T) {
 		}
 		if !ticked.Checked() {
 			t.Error("a click on the cell should tick it")
+		}
+	})
+}
+
+func TestUICallOpened(t *testing.T) {
+	t.Run("UD-07 an opened ui call shows its tree as an outline, as mended, and its script; folded, a hint says so", func(t *testing.T) {
+		m := sidebarModel(t, 100)
+		args, _ := json.Marshal(map[string]any{"action": "create", "title": "Vol", "script": "function moved(e)\n  ui.set('show', {text = e.value})\nend",
+			"tree": map[string]any{"type": "card", "title": "Vol", "children": []any{
+				map[string]any{"type": "slider", "id": "vol", "on_change": "moved", "max": 10},
+				map[string]any{"type": "btn", "id": "ok", "text": "OK", "onClick": "submit"}}}})
+		run := toolRun{name: "ui", summary: "create Vol", args: args, done: true, output: "UI 1 created"}
+		folded := ansi.Strip(m.printer.Tool(run, false))
+		opened := ansi.Strip(m.printer.Tool(run, true))
+
+		if strings.Contains(folded, "card") || !strings.Contains(folded, "ctrl+o or click for the whole call") {
+			t.Errorf("folded:\n%s", folded)
+		}
+		for _, want := range []string{"tree", `card "Vol"`, `├─ slider #vol max=10 on_change="moved"`, `└─ button #ok "OK" on_click="submit"`, "script", "function moved(e)", "  ui.set('show'"} {
+			if !strings.Contains(opened, want) {
+				t.Errorf("%q not in:\n%s", want, opened)
+			}
 		}
 	})
 }

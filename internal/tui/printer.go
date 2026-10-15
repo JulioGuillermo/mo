@@ -3,6 +3,7 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
+	"image/color"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/render"
+	"github.com/jg/mo/internal/tools"
 )
 
 const toolPreviewLines = 4
@@ -349,6 +351,9 @@ func (p *printer) Tool(run toolRun, open bool) string {
 		parts = append(parts, "\n"+p.toolHeader(run.name, run.args)+" "+run.summary+dimStyle.Render("  "+change.summary())+"\n"+p.fileChangeLines(change))
 	case open:
 		parts = append(parts, "\n"+p.toolHeader(run.name, run.args)+"\n"+p.commandLines(run.summary, true))
+		if run.name == "ui" {
+			parts = append(parts, p.uiCall(run.args)...)
+		}
 	case changed:
 		parts = append(parts, p.ToolStart(run.name, run.args, run.summary+dimStyle.Render("  "+change.summary())))
 	default:
@@ -371,9 +376,118 @@ func (p *printer) Tool(run toolRun, open bool) string {
 	return strings.Join(parts, "\n")
 }
 
+// uiCall is what a ui call gave, to read when it is opened: the tree, as
+// the tool mended it, drawn as a tree, and the script highlighted as Lua.
+func (p *printer) uiCall(args json.RawMessage) []string {
+	var call struct {
+		Tree   json.RawMessage `json:"tree"`
+		Script string          `json:"script"`
+	}
+	if json.Unmarshal(args, &call) != nil {
+		return nil
+	}
+	p.mu.Lock()
+	width, dark := p.width, p.dark
+	p.mu.Unlock()
+	colors := changePalette(dark)
+	inner := max(width-8, 20)
+	block := lipgloss.NewStyle().Background(colors.block)
+	pad := func(line string) string {
+		fill := block.Render(strings.Repeat(" ", max(inner+2-ansi.StringWidth(line), 0)))
+		return commandEdge.Render("  ▌") + block.Render(" ") + line + fill
+	}
+	var parts []string
+	if len(call.Tree) > 0 && string(call.Tree) != "null" {
+		var lines []string
+		if tree, err := tools.ParseUITree(call.Tree); err == nil && tree != nil {
+			lines = uiTreeLines(*tree, colors.block, dark, inner)
+		} else {
+			lines = highlightLines(string(call.Tree), "json", inner, colors.block, dark)
+		}
+		var out []string
+		for _, line := range lines {
+			out = append(out, pad(line))
+		}
+		parts = append(parts, dimStyle.Render("    tree")+"\n"+strings.Join(out, "\n"))
+	}
+	if script := strings.Trim(call.Script, "\n"); strings.TrimSpace(script) != "" {
+		var out []string
+		for _, line := range highlightLines(script, "lua", inner, colors.block, dark) {
+			out = append(out, pad(line))
+		}
+		parts = append(parts, dimStyle.Render("    script")+"\n"+strings.Join(out, "\n"))
+	}
+	return parts
+}
+
+// uiTreeLines draws an interface's tree a node to a line under guides:
+// its type, #id and words, then its other fields, each coloured as code
+// is.
+func uiTreeLines(root tools.UINode, background color.Color, dark bool, width int) []string {
+	colors := syntaxPalette(dark)
+	paint := func(c color.Color, bold bool) func(string) string {
+		style := lipgloss.NewStyle().Background(background).Foreground(c).Bold(bold)
+		return func(text string) string { return style.Render(text) }
+	}
+	guide, kind, id, words := paint(colors.comment, false), paint(colors.keyword, true), paint(colors.variable, false), paint(colors.str, false)
+	name, equals := paint(colors.builtin, false), paint(colors.operator, false)
+	value := func(raw string) string {
+		switch {
+		case strings.HasPrefix(raw, `"`):
+			return paint(colors.str, false)(raw)
+		case raw == "true" || raw == "false":
+			return paint(colors.keyword, false)(raw)
+		case strings.HasPrefix(raw, "["):
+			return paint(colors.text, false)(raw)
+		}
+		return paint(colors.number, false)(raw)
+	}
+	var lines []string
+	var walk func(n tools.UINode, lead, branch string)
+	walk = func(n tools.UINode, lead, branch string) {
+		pieces := []string{guide(lead+branch) + kind(n.Type)}
+		if n.ID != "" {
+			pieces = append(pieces, id("#"+n.ID))
+		}
+		for _, text := range []string{n.Title, n.Label, n.Text} {
+			if text != "" {
+				pieces = append(pieces, words(fmt.Sprintf("%q", text)))
+			}
+		}
+		for _, field := range n.Fields() {
+			pieces = append(pieces, name(field[0])+equals("=")+value(field[1]))
+		}
+		space := lipgloss.NewStyle().Background(background).Render(" ")
+		line := strings.Join(pieces, space)
+		if ansi.StringWidth(line) > width {
+			line = ansi.Truncate(line, width-1, "") + guide("…")
+		}
+		lines = append(lines, line)
+		next := lead
+		switch branch {
+		case "├─ ":
+			next += "│  "
+		case "└─ ":
+			next += "   "
+		}
+		for i, child := range n.Children {
+			mark := "├─ "
+			if i == len(n.Children)-1 {
+				mark = "└─ "
+			}
+			walk(child, next, mark)
+		}
+	}
+	walk(root, "", "")
+	return lines
+}
+
 // toolHidesSome tells whether the folded view leaves lines out or cuts them.
 func (p *printer) toolHidesSome(run toolRun) bool {
 	if _, changed := fileChangeOf(run.name, run.args); changed {
+		return true
+	}
+	if run.name == "ui" && len(p.uiCall(run.args)) > 0 {
 		return true
 	}
 	command := strings.Split(strings.TrimRight(run.summary, "\n"), "\n")
