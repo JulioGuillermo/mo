@@ -5,6 +5,7 @@ package tui
 // | VF-01 | Happy    | tab after /view offers folders then files; a folder fills in, a file runs | P0      |
 // | VF-02 | Happy    | /view on code opens it highlighted, numbered, for the user only          | P0       |
 // | VF-04 | Happy    | A file without an extension is highlighted as its #! line says             | P1       |
+// | VF-05 | Happy    | The cursor's line keeps its highlighting under the cursor's background     | P1       |
 // | VF-03 | Edge     | A folder, a binary file or a picture are not opened as text             | P1       |
 
 import (
@@ -100,6 +101,20 @@ func TestViewFile(t *testing.T) {
 		}
 		if viewer := python.(model).viewer; viewer == nil || !strings.HasPrefix(viewer.language, "Python") {
 			t.Errorf("python language = %q", python.(model).viewer.language)
+		}
+	})
+
+	t.Run("VF-05 the cursor's line keeps its highlighting under the cursor's background", func(t *testing.T) {
+		opened, _ := viewModel(t).runCommand("/view main.go")
+		lines := strings.Split(opened.(model).View().Content, "\n")
+		cursor := lines[1]
+
+		if !strings.Contains(cursor, cursorBackground) || !strings.Contains(cursor, "38;2;") || !strings.Contains(ansi.Strip(cursor), "package main") {
+			t.Errorf("cursor line = %q", cursor)
+		}
+		reset := strings.LastIndex(cursor[:len(cursor)-len("\x1b[m")], "\x1b[m")
+		if reset >= 0 && !strings.HasPrefix(cursor[reset+len("\x1b[m"):], cursorBackground) {
+			t.Errorf("the background should come back after each reset: %q", cursor)
 		}
 	})
 }

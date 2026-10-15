@@ -23,7 +23,6 @@ const (
 )
 
 var (
-	viewerCursor  = lipgloss.NewStyle().Background(lipgloss.Color("#292e42"))
 	commentMark   = lipgloss.NewStyle().Foreground(warning).Bold(true)
 	commentFooter = lipgloss.NewStyle().Foreground(warning)
 	skippedDirs   = map[string]bool{"node_modules": true, "vendor": true, "target": true, "dist": true, "__pycache__": true}
@@ -301,8 +300,16 @@ func (m *model) completeMention(chosen command) {
 	m.suggestion = 0
 }
 
-// cursorRow paints the line the viewer's cursor is on.
+// cursorBackground is the cursor line's background as an escape
+// sequence, put back after each reset of the highlighting's colours.
+const cursorBackground = "\x1b[48;2;41;46;66m"
+
+// cursorRow paints the background of the line the viewer's cursor is on,
+// keeping the colours of its highlighting, to the width of the screen.
 func cursorRow(line string, width int) string {
-	plain := ansi.Strip(line)
-	return viewerCursor.Render(plain + strings.Repeat(" ", max(width-ansi.StringWidth(plain), 0)))
+	padded := line + strings.Repeat(" ", max(width-ansi.StringWidth(line), 0))
+	for _, reset := range []string{"\x1b[0m", "\x1b[m"} {
+		padded = strings.ReplaceAll(padded, reset, reset+cursorBackground)
+	}
+	return cursorBackground + padded + "\x1b[m"
 }

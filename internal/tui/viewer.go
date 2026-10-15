@@ -487,9 +487,10 @@ func (m model) viewerView() string {
 				style = viewerCurrent
 			}
 			line = re.ReplaceAllStringFunc(line, func(found string) string { return style.Render(found) })
-		case v.file != "" && i == v.cursor && !v.commenting:
-			line = cursorRow(line, room)
-		case v.commenting && i >= v.commentFrom && i <= v.commentTo:
+		case (v.file != "" && i == v.cursor && !v.commenting) || (v.commenting && i >= v.commentFrom && i <= v.commentTo):
+			if v.colored != nil {
+				line = ansi.Cut(v.colored[i], v.left, v.left+room)
+			}
 			line = cursorRow(line, room)
 		case v.colored != nil:
 			line = ansi.Cut(v.colored[i], v.left, v.left+room)
