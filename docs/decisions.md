@@ -531,8 +531,9 @@
   user. Also after esc: the user started the job to hear when it ends, and a stop of the model is
   not a stop of the job. A note says why the model goes on; esc again stops it, and nothing is left
   to start it once more. A job killed on purpose is not told as an end.
-- The side panel follows what is being done: the conversation, the tasks whole and wrapped, and
-  the jobs with their state and time. It shows from 110 columns, 36 wide; the conversation is drawn
+- The side panel follows what is being done: the conversation, the tasks whole and wrapped, the
+  interfaces, and the jobs with their state and time. A section shows only once it has
+  something, so an empty one takes no room; with none, one dim line says so. It shows from 110 columns, 36 wide; the conversation is drawn
   at the width left. Narrower, the tasks go back above the input.
 
 ## Mouse

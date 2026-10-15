@@ -155,15 +155,16 @@ func (m model) sidebarLines() ([]string, []region) {
 
 	add("")
 	wrapped(paint(colors.text).Bold(true), "", "", orDefault(m.thread.title, sidebarConversion))
-	add("")
-	done, _ := tools.TodoProgress(m.todos)
-	header := paint(colors.title).Bold(true).Render("Tasks")
-	if len(m.todos) > 0 {
-		header += paint(colors.dim).Render(fmt.Sprintf("  %d/%d", done, len(m.todos)))
+	// Each section shows once it has something, a blank line before it.
+	sections := 0
+	section := func(header string) {
+		add("")
+		add(header)
+		sections++
 	}
-	add(header)
-	if len(m.todos) == 0 {
-		add(paint(colors.dim).Render("none yet"))
+	if len(m.todos) > 0 {
+		done, _ := tools.TodoProgress(m.todos)
+		section(paint(colors.title).Bold(true).Render("Tasks") + paint(colors.dim).Render(fmt.Sprintf("  %d/%d", done, len(m.todos))))
 	}
 	for i, todo := range m.todos {
 		first := len(lines)
@@ -182,8 +183,7 @@ func (m model) sidebarLines() ([]string, []region) {
 	}
 	if uis := m.uis(); uis != nil {
 		if list := uis.List(); len(list) > 0 {
-			add("")
-			add(paint(colors.title).Bold(true).Render("UIs"))
+			section(paint(colors.title).Bold(true).Render("UIs"))
 			for _, ui := range list {
 				id := ui.ID
 				open := func(m model) (tea.Model, tea.Cmd) { return m.openUI(id) }
@@ -197,15 +197,13 @@ func (m model) sidebarLines() ([]string, []region) {
 			}
 		}
 	}
-	add("")
-	add(paint(colors.title).Bold(true).Render("Jobs"))
 	statuses := []tools.JobStatus{}
 	untold := map[int]bool{}
 	if jobs := m.jobs(); jobs != nil {
 		statuses, untold = jobs.List(), jobs.Untold()
 	}
-	if len(statuses) == 0 {
-		add(paint(colors.dim).Render("no jobs"))
+	if len(statuses) > 0 {
+		section(paint(colors.title).Bold(true).Render("Jobs"))
 	}
 	for i, status := range statuses {
 		if i == shownJobs {
@@ -237,6 +235,10 @@ func (m model) sidebarLines() ([]string, []region) {
 			state += " · /jobs tell"
 		}
 		add(paint(colors.dim).Render("    " + state))
+	}
+	if sections == 0 {
+		add("")
+		add(paint(colors.dim).Render("no tasks, jobs or interfaces yet"))
 	}
 
 	return lines, regions

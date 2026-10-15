@@ -152,3 +152,24 @@ func TestJobsAfterStop(t *testing.T) {
 		}
 	})
 }
+
+func TestSidebarSections(t *testing.T) {
+	t.Run("a section shows once it has something; with nothing, one line says so", func(t *testing.T) {
+		m := sidebarModel(t, 140)
+		withJob := ansi.Strip(m.sidebar(30))
+		m.todos = nil
+		onlyJob := ansi.Strip(m.sidebar(30))
+		m.session.Agent = &agent.Agent{}
+		empty := ansi.Strip(m.sidebar(30))
+
+		if !strings.Contains(withJob, "Tasks") || !strings.Contains(withJob, "Jobs") {
+			t.Errorf("with tasks and a job:\n%s", withJob)
+		}
+		if strings.Contains(onlyJob, "Tasks") || strings.Contains(onlyJob, "none yet") || !strings.Contains(onlyJob, "Jobs") {
+			t.Errorf("only a job:\n%s", onlyJob)
+		}
+		if strings.Contains(empty, "Jobs") || strings.Contains(empty, "UIs") || !strings.Contains(empty, "no tasks, jobs or interfaces yet") {
+			t.Errorf("empty:\n%s", empty)
+		}
+	})
+}
