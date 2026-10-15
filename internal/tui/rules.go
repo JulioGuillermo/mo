@@ -17,7 +17,7 @@ import (
 const (
 	everyProject  = "user"
 	thisProject   = "project"
-	rulesHelp     = "enter next · ctrl+j new line · esc back to the question"
+	rulesHelp     = "enter next · shift+enter new line · esc back to the question"
 	ruleSyntax    = "one per line · * alone is any words or none, inside a word any characters · re: starts a regex"
 	ruleSyntaxTip = "e.g. ls * · ls -la * /home · git log* · re:^npm (test|run lint)$ · fetch https://github.com/*"
 )
@@ -35,7 +35,7 @@ func (m model) editRules(index int) (tea.Model, tea.Cmd) {
 	request := m.dialog.request(m.dialog.items[index])
 	text := strings.Join(request.Commands, "\n")
 	where := everyProject
-	form := huh.NewForm(huh.NewGroup(
+	form := newForm(huh.NewGroup(
 		huh.NewText().Title("Allow from now on").Description(ruleSyntax+"\n"+ruleSyntaxTip).
 			Lines(max(len(request.Commands)+1, 3)).Validate(validRules).Value(&text),
 		huh.NewSelect[string]().Title("Where").Options(

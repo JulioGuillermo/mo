@@ -161,7 +161,7 @@ func (m model) showGroup(menu *settingsMenu, group settingsGroup, last string) (
 		return m.openMenuChoice(menu, choice)
 	}
 	back := func(m model) (tea.Model, tea.Cmd) { return m.showMenu(menu) }
-	form := huh.NewForm(huh.NewGroup(list)).WithShowHelp(false)
+	form := newForm(huh.NewGroup(list)).WithShowHelp(false)
 	return m.showSettings(&settingsScreen{form: form, layer: menu.layer, next: next, back: back, help: menuHelp})
 }
 

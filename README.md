@@ -510,7 +510,7 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | Key | Action |
 |---|---|
 | enter | send |
-| ctrl+j, alt+enter | new line |
+| shift+enter, ctrl+j, alt+enter | new line, in the input and in the boxes of forms |
 | esc, ctrl+c | stop the current run |
 | ctrl+b | send the command that blocks the model to the background |
 | `/vim`, or `keys = "vim"` under `[render]` | vim keys: esc to normal mode, i a A I o to write; ctrl+h/j/k/l move between the conversation, the input and the side panel; in the conversation j k gg G ctrl+d ctrl+u move a cursor, l and h open and fold what it is on, v selects lines and y copies them; in the panel j k pick a task or job and l opens its menu; in the input h l w b 0 $ x D dd edit, v selects, u and ctrl+r undo and redo; y yy dd x D copy to the clipboard and p P paste from it; `:` starts a command; in settings lists l goes in and h back. The mode shows before the status line |

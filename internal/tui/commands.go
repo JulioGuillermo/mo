@@ -58,7 +58,7 @@ var builtinCommands = []command{
 
 var keyHelp = [][2]string{
 	{"enter", "send"},
-	{"ctrl+j, alt+enter", "new line"},
+	{"shift+enter, ctrl+j, alt+enter", "new line"},
 	{"tab, ↑ ↓", "complete a command"},
 	{"esc, ctrl+c", "stop the current run"},
 	{"ctrl+b", "send the command that blocks the model to the background"},

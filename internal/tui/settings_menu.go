@@ -94,7 +94,7 @@ func (m model) showMenu(menu *settingsMenu) (tea.Model, tea.Cmd) {
 		description = menu.notice
 		menu.notice = ""
 	}
-	form := huh.NewForm(huh.NewGroup(
+	form := newForm(huh.NewGroup(
 		huh.NewSelect[string]().Title(title).Description(scopeTabs(menu.scope) + "\n" + description).
 			Options(m.menuOptions(menu)...).Value(&choice),
 	)).WithShowHelp(false)
@@ -285,7 +285,7 @@ func (m model) showSection(menu *settingsMenu, section settingsSection, last str
 		}
 		return m.sectionBack(menu, section)
 	}
-	form := huh.NewForm(huh.NewGroup(list)).WithShowHelp(false)
+	form := newForm(huh.NewGroup(list)).WithShowHelp(false)
 	return m.showSettings(&settingsScreen{form: form, layer: menu.layer, next: next, back: back, help: menuHelp})
 }
 
@@ -310,7 +310,7 @@ func (m model) editItem(menu *settingsMenu, section settingsSection, item settin
 		restore()
 		return toSection(m)
 	}
-	form := huh.NewForm(huh.NewGroup(field).Title(menu.crumb(section))).WithShowHelp(false)
+	form := newForm(huh.NewGroup(field).Title(menu.crumb(section))).WithShowHelp(false)
 	screen := &settingsScreen{form: form, layer: menu.layer, next: keep, back: cancel, help: fieldHelp(field)}
 	if floats(field) {
 		screen.floating, screen.under = true, m.screenOf(toSection)
@@ -342,7 +342,7 @@ func (menu *settingsMenu) crumb(section settingsSection) string {
 func fieldHelp(field huh.Field) string {
 	switch field.(type) {
 	case *huh.Text:
-		return "enter keep · ctrl+j new line · esc cancel"
+		return "enter keep · shift+enter new line · esc cancel"
 	case *huh.MultiSelect[string]:
 		return "↑↓ move · space or x toggle · enter keep · esc cancel"
 	case *huh.Confirm:
@@ -359,7 +359,7 @@ func (m model) leaveMenu(menu *settingsMenu) (tea.Model, tea.Cmd) {
 		return m, printText(m.printer.Note("settings unchanged"))
 	}
 	discard := false
-	form := huh.NewForm(huh.NewGroup(
+	form := newForm(huh.NewGroup(
 		huh.NewConfirm().Title("Close without saving?").Description("the changes made in this menu are lost").
 			Affirmative("Discard").Negative("Keep editing").Value(&discard),
 	)).WithShowHelp(false)

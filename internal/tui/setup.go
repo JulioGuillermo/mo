@@ -78,7 +78,7 @@ func setupForm(problem ProviderProblem, setup *providerSetup) *huh.Form {
 	known := func() bool {
 		return setup.choice != newProviderChoice && setup.choice != continueChoice && setup.choice != quitChoice
 	}
-	return huh.NewForm(
+	return newForm(
 		huh.NewGroup(
 			huh.NewNote().Title("mo cannot talk to a provider").Description(problem.Err.Error()+"\n\nPick one, set up a new one, or quit."),
 			huh.NewSelect[string]().Title("Provider").Options(setupOptions(problem)...).Value(&setup.choice),

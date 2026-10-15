@@ -34,7 +34,7 @@ type deletedMsg struct {
 // undone; no goes back.
 func (m model) confirm(title, description string, yes, back func(m model) (tea.Model, tea.Cmd)) (tea.Model, tea.Cmd) {
 	sure := false
-	form := huh.NewForm(huh.NewGroup(
+	form := newForm(huh.NewGroup(
 		huh.NewConfirm().Title(title).Description(description).Affirmative("Yes, delete").Negative("No").Value(&sure),
 	)).WithShowHelp(false)
 	next := func(m model) (tea.Model, tea.Cmd) {

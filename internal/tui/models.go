@@ -100,7 +100,7 @@ func (m model) showModels(msg modelsMsg) (tea.Model, tea.Cmd) {
 		}
 		return choice.pick(m, picked)
 	}
-	form := huh.NewForm(huh.NewGroup(list)).WithShowHelp(false)
+	form := newForm(huh.NewGroup(list)).WithShowHelp(false)
 	return m.showSettings(&settingsScreen{form: form, next: next, back: choice.back, help: modelsHelp})
 }
 
@@ -112,7 +112,7 @@ func (m model) typeModelName(choice modelChoice, problem string) (tea.Model, tea
 	if problem != "" {
 		description = errorStyle.Render(problem) + "\n" + description
 	}
-	form := huh.NewForm(huh.NewGroup(huh.NewInput().Title("Model · " + choice.provider).Description(description).Value(&name))).WithShowHelp(false)
+	form := newForm(huh.NewGroup(huh.NewInput().Title("Model · " + choice.provider).Description(description).Value(&name))).WithShowHelp(false)
 	next := func(m model) (tea.Model, tea.Cmd) { return choice.pick(m, strings.TrimSpace(name)) }
 	return m.showSettings(&settingsScreen{form: form, next: next, back: choice.back, help: "enter take · esc back"})
 }

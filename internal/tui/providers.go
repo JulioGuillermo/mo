@@ -329,7 +329,7 @@ func (m model) pickProvider(msg settingsLoadedMsg, menu *settingsMenu) (tea.Mode
 	options := providerOptions(cfg, msg.findings, msg.layer.Provider)[1:]
 	options = append([]huh.Option[string]{huh.NewOption(keyStyle.Render("Active provider")+"   "+dimStyle.Render(orDefault(msg.layer.Provider, "auto")+" · pick the one mo uses"), activeProviderChoice)}, options...)
 	options = append(options, huh.NewOption("+ set up a new provider", newProviderChoice))
-	form := huh.NewForm(huh.NewGroup(
+	form := newForm(huh.NewGroup(
 		huh.NewSelect[string]().Title("Provider to edit").Options(options...).Value(&picked),
 	)).WithShowHelp(false)
 	next := func(m model) (tea.Model, tea.Cmd) {
@@ -349,7 +349,7 @@ func (m model) pickProvider(msg settingsLoadedMsg, menu *settingsMenu) (tea.Mode
 // provider found in another tool and not in the config yet comes along.
 func (m model) chooseActiveProvider(msg settingsLoadedMsg, cfg config.Config, menu *settingsMenu) (tea.Model, tea.Cmd) {
 	chosen := msg.layer.Provider
-	form := huh.NewForm(huh.NewGroup(
+	form := newForm(huh.NewGroup(
 		huh.NewSelect[string]().Title("Active provider").Description("the model comes from its own settings; /model picks another").
 			Options(providerOptions(cfg, msg.findings, msg.layer.Provider)...).Value(&chosen),
 	)).WithShowHelp(false)

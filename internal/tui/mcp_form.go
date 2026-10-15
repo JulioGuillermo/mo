@@ -153,7 +153,7 @@ func (m model) pickMCPServer(msg settingsLoadedMsg, menu *settingsMenu) (tea.Mod
 		options = append(options, huh.NewOption(name, name))
 	}
 	options = append(options, huh.NewOption("+ add a server", newServerChoice))
-	form := huh.NewForm(huh.NewGroup(
+	form := newForm(huh.NewGroup(
 		huh.NewSelect[string]().Title("MCP server to edit").Description("esc leaves them as they are").Options(options...).Value(&picked),
 	)).WithShowHelp(false)
 	next := func(m model) (tea.Model, tea.Cmd) {

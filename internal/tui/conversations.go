@@ -170,7 +170,7 @@ func (m model) pickConversation(msg resumeListMsg) (tea.Model, tea.Cmd) {
 	next := func(m model) (tea.Model, tea.Cmd) { return m, loadConversation(picked) }
 	back := func(m model) (tea.Model, tea.Cmd) { return m, nil }
 	remove := func(m model) (tea.Model, tea.Cmd) { return m.removeFromList(list, msg.infos) }
-	form := huh.NewForm(huh.NewGroup(list)).WithShowHelp(false)
+	form := newForm(huh.NewGroup(list)).WithShowHelp(false)
 	return m.showSettings(&settingsScreen{form: form, next: next, back: back, help: resumeHelp, remove: remove})
 }
 
@@ -232,7 +232,7 @@ func (m model) pickPrompt() (tea.Model, tea.Cmd) {
 		return m.rewind(prompts[index])
 	}
 	back := func(m model) (tea.Model, tea.Cmd) { return m, nil }
-	form := huh.NewForm(huh.NewGroup(list)).WithShowHelp(false)
+	form := newForm(huh.NewGroup(list)).WithShowHelp(false)
 	return m.showSettings(&settingsScreen{form: form, next: next, back: back, help: menuHelp})
 }
 

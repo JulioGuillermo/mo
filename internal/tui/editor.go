@@ -100,7 +100,7 @@ func (m model) showEditor(e *editor, last string) (tea.Model, tea.Cmd) {
 		}
 		return m.showEditor(e, "")
 	}
-	form := huh.NewForm(huh.NewGroup(list)).WithShowHelp(false)
+	form := newForm(huh.NewGroup(list)).WithShowHelp(false)
 	return m.showSettings(&settingsScreen{form: form, next: next, back: e.back, help: menuHelp})
 }
 
@@ -123,13 +123,13 @@ func (m model) editEntry(e *editor, field entry) (tea.Model, tea.Cmd) {
 		restore()
 		return toList(m)
 	}
-	form := huh.NewForm(huh.NewGroup(input).Title(e.title)).WithShowHelp(false)
+	form := newForm(huh.NewGroup(input).Title(e.title)).WithShowHelp(false)
 	return m.showSettings(&settingsScreen{form: form, next: toList, back: cancel, help: fieldHelp(input)})
 }
 
 func (m model) confirmRemove(e *editor) (tea.Model, tea.Cmd) {
 	sure := false
-	form := huh.NewForm(huh.NewGroup(
+	form := newForm(huh.NewGroup(
 		huh.NewConfirm().Title(e.removeLabel + "?").Affirmative("Yes").Negative("No").Value(&sure),
 	).Title(e.title)).WithShowHelp(false)
 	next := func(m model) (tea.Model, tea.Cmd) {

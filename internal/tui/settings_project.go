@@ -293,7 +293,7 @@ func (m model) chooseOverride(menu *settingsMenu, section settingsSection, item 
 	field, _ := fieldOf(section, item)
 	choice := overrideChange
 	global := item.value(menu.draft)
-	form := huh.NewForm(huh.NewGroup(
+	form := newForm(huh.NewGroup(
 		huh.NewSelect[string]().Title("This project › "+item.title).Description("set here: "+item.value(menu.project.draft)).Options(
 			huh.NewOption("Change it for this project", overrideChange),
 			huh.NewOption("Use the global value  "+dimStyle.Render(global), overrideGlobal),

@@ -27,7 +27,7 @@ const (
 	settingsMinHeight     = 3
 	maxToolChoiceHeight   = 14
 	autoProvider          = ""
-	settingsHelp          = "enter next · shift+tab previous field · ←→ yes/no · ctrl+j new line in a box · esc back"
+	settingsHelp          = "enter next · shift+tab previous field · ←→ yes/no · shift+enter new line in a box · esc back"
 )
 
 type settingsKind int
