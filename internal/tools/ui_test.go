@@ -12,6 +12,7 @@ package tools
 // | UI-08 | Happy    | help lists every topic with an example, and one topic alone              | P1       |
 // | UI-09 | Happy    | Controls start at their defaults, move within their options and range, and go with submit | P0 |
 // | UI-10 | Error    | A control's bad options, range or value are refused; a script sets one only to a valid value | P0 |
+// | UI-12 | Happy    | A grid takes columns or widths, refuses neither; rows of cells are flattened, short rows filled | P1 |
 // | UI-11 | Edge     | Controls as small models send them are mended: other names, options as objects or children, bools and numbers | P1 |
 
 import (
@@ -62,8 +63,8 @@ func TestUITool(t *testing.T) {
 			"used twice":  {"type": "panel", "children": []any{map[string]any{"type": "input", "id": "a"}, map[string]any{"type": "button", "id": "a"}}},
 			`bg "pink"`:   {"type": "label", "bg": "pink"},
 
-			"only a panel or a card":  {"type": "label", "children": []any{map[string]any{"type": "label"}}},
-			"padding takes 1, 2 or 4": {"type": "label", "padding": []int{1, 2, 3}},
+			"only a panel, a card or a grid": {"type": "label", "children": []any{map[string]any{"type": "label"}}},
+			"padding takes 1, 2 or 4":        {"type": "label", "padding": []int{1, 2, 3}},
 		} {
 			output, isError := registry.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args(t, map[string]any{"action": "create", "tree": bad})})
 			if !isError || !strings.Contains(output, want) {
@@ -318,6 +319,28 @@ function good() ui.set("size", {value = "L", options = {"M", "L"}}) ui.set("vol"
 			if got[id] != value {
 				t.Errorf("%s = %q, want %q", id, got[id], value)
 			}
+		}
+	})
+
+	t.Run("UI-12 a grid takes columns or widths, refuses neither; rows of cells are flattened, short rows filled", func(t *testing.T) {
+		registry, uis := uiRegistry(t)
+		bad, isError := registry.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args(t, map[string]any{"action": "create",
+			"tree": map[string]any{"type": "grid", "children": []any{"a", "b"}}})})
+		if !isError || !strings.Contains(bad, "needs columns") {
+			t.Errorf("bad = %q", bad)
+		}
+		output, isError := registry.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args(t, map[string]any{"action": "create",
+			"tree": map[string]any{"type": "table", "rows": []any{[]any{"Host", "Status"}, []any{"db1"}, []any{"web", map[string]any{"type": "switch", "id": "on"}}}}})})
+		ui, _ := uis.Get(1)
+		widths, _ := registry.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args(t, map[string]any{"action": "create",
+			"tree": map[string]any{"widths": []any{10, 0}, "children": []any{"a", "b"}}})})
+		second, _ := uis.Get(2)
+
+		if isError || ui.Tree.Type != UIGrid || ui.Tree.GridColumns() != 2 || len(ui.Tree.Children) != 6 || ui.Tree.Children[3].Text != "" || ui.Tree.Children[5].ID != "on" {
+			t.Errorf("output = %q tree = %+v", output, ui.Tree)
+		}
+		if second.Tree.Type != UIGrid || second.Tree.GridColumns() != 2 {
+			t.Errorf("widths = %q tree = %+v", widths, second.Tree)
 		}
 	})
 }

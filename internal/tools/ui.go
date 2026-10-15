@@ -26,6 +26,8 @@ const (
 	UILabel  = "label"
 	UIButton = "button"
 	UIInput  = "input"
+	// A grid lays its children in columns, row by row, as a table.
+	UIGrid = "grid"
 	// Controls holding a value the user picks.
 	UISelect   = "select"
 	UISlider   = "slider"
@@ -35,7 +37,7 @@ const (
 )
 
 // UITypes are every node type.
-var UITypes = []string{UIPanel, UICard, UILabel, UIButton, UIInput, UISelect, UISlider, UICheckbox, UISwitch, UIRadio}
+var UITypes = []string{UIPanel, UICard, UIGrid, UILabel, UIButton, UIInput, UISelect, UISlider, UICheckbox, UISwitch, UIRadio}
 
 // UI event actions an element can name: send the event to the model, send
 // every input's value, close the dialog, or remove the UI and say so.
@@ -63,6 +65,8 @@ type UINode struct {
 	Step        float64  `json:"step,omitempty"`
 	Title       string   `json:"title,omitempty"`
 	Direction   string   `json:"direction,omitempty"`
+	Columns     int      `json:"columns,omitempty"`
+	Widths      []int    `json:"widths,omitempty"`
 	Justify     string   `json:"justify,omitempty"`
 	Align       string   `json:"align,omitempty"`
 	Gap         int      `json:"gap,omitempty"`
@@ -122,8 +126,14 @@ func validateUI(root UINode) error {
 			}
 			ids[n.ID] = true
 		}
-		if len(n.Children) > 0 && n.Type != UIPanel && n.Type != UICard {
-			return fmt.Errorf("%s: only a panel or a card has children", where)
+		if len(n.Children) > 0 && n.Type != UIPanel && n.Type != UICard && n.Type != UIGrid {
+			return fmt.Errorf("%s: only a panel, a card or a grid has children", where)
+		}
+		if n.Type == UIGrid && n.Columns < 1 && len(n.Widths) == 0 {
+			return fmt.Errorf(`%s needs columns, e.g. "columns":2 for labels beside their controls`, where)
+		}
+		if slices.ContainsFunc(n.Widths, func(w int) bool { return w < 0 }) {
+			return fmt.Errorf("%s: widths are cells, 0 for as wide as needed", where)
 		}
 		for name, value := range map[string]string{"bg": n.BG, "fg": n.FG} {
 			if value != "" && !hexColor.MatchString(value) && !slices.Contains(UIColors, value) {
@@ -648,9 +658,12 @@ var uiHelp = []helpTopic{
 	{"create", "title, tree, script (optional): shows the interface and returns its id. What the user does in it comes to you as notes."},
 	{"update", "id, and any of title, tree, script: replaces them. What the user set and the script's state stay."},
 	{"remove", "id: removes the interface."},
-	{"nodes", `Every node is {"type": ..., more fields}; panel and card hold nodes in "children". Buttons and controls need an id.
+	{"nodes", `Every node is {"type": ..., more fields}; panel, card and grid hold nodes in "children". Buttons and controls need an id.
 panel     children, direction row|column, gap, justify start|center|end|space-between|space-around, align start|center|end|stretch
 card      a panel with a border and a title
+grid      children row by row in columns (a number), each column as wide as its widest cell, like a table; gap between columns,
+          widths [12,0] fixes some (0: auto), align start|center|end|stretch in the cells, a cell's grow widens its column.
+          Use it to line labels up beside their controls.
 label     text
 button    label, on_click, disabled
 input     value, placeholder, on_input, on_change
@@ -680,14 +693,14 @@ Validate in on_input, and submit from a button's function once valid.`},
 	{"example", `{"action":"create","title":"Login","tree":` + uiTreeExample + `}
 with a script:
 {"action":"create","title":"Name","script":"function check(e) ui.set(\"ok\", {disabled = e.value == \"\"}) end","tree":{"type":"panel","children":[{"type":"input","id":"name","on_input":"check"},{"type":"button","id":"ok","label":"Send","disabled":true,"on_click":"submit"}]}}
-controls:
-{"action":"create","title":"Prefs","tree":{"type":"panel","children":[{"type":"select","id":"size","label":"Size","options":["S","M","L"],"value":"M"},{"type":"slider","id":"volume","label":"Volume","min":0,"max":10,"value":"4"},{"type":"checkbox","id":"terms","label":"I agree"},{"type":"switch","id":"dark","label":"Dark mode","value":"true"},{"type":"radio","id":"plan","options":["free","pro"],"direction":"row"},{"type":"button","id":"go","label":"Save","on_click":"submit"}]}}`},
+controls, labels lined up in a grid:
+{"action":"create","title":"Prefs","tree":{"type":"card","title":"Prefs","children":[{"type":"grid","columns":2,"gap":2,"children":[{"type":"label","text":"Size"},{"type":"select","id":"size","options":["S","M","L"],"value":"M"},{"type":"label","text":"Volume"},{"type":"slider","id":"volume","min":0,"max":10,"value":"4"},{"type":"label","text":"Dark mode"},{"type":"switch","id":"dark","value":"true"},{"type":"label","text":"Plan"},{"type":"radio","id":"plan","options":["free","pro"],"direction":"row"}]},{"type":"checkbox","id":"terms","label":"I agree"},{"type":"button","id":"go","label":"Save","on_click":"submit"}]}}`},
 }
 
 func uiTool() Tool {
 	return Tool{
 		Name: "ui",
-		Description: "Show the user an interface in a dialog: labels, buttons, inputs, selects, sliders, checkboxes, switches and radios, laid out in panels and cards. " +
+		Description: "Show the user an interface in a dialog: labels, buttons, inputs, selects, sliders, checkboxes, switches and radios, laid out in panels, cards and grids. " +
 			`Its Lua script updates it on the user's side by itself; you hear only what it notifies or submits. Unsure how? Call {"action":"help"}. A tree: ` + uiTreeExample,
 		Schema: json.RawMessage(`{"type":"object","properties":{
 "action":{"type":"string","enum":["create","update","remove","help"]},

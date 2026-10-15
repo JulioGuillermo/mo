@@ -11,7 +11,7 @@ import (
 
 // uiNodeKeys are the fields a node takes, as UINode names them.
 var uiNodeKeys = []string{
-	"type", "id", "text", "label", "value", "placeholder", "options", "min", "max", "step", "title", "direction", "justify", "align", "gap", "grow",
+	"type", "id", "text", "label", "value", "placeholder", "options", "min", "max", "step", "title", "direction", "columns", "widths", "justify", "align", "gap", "grow",
 	"width", "height", "padding", "margin", "bg", "fg", "border", "bold", "visible", "disabled", "on_click", "on_input",
 	"on_change", "children",
 }
@@ -25,6 +25,7 @@ var uiKeyAliases = map[string]string{
 	"oninput": "on_input", "onInput": "on_input", "onchange": "on_change", "onChange": "on_change",
 	"items": "children", "elements": "children", "nodes": "children", "content_items": "children",
 	"choices": "options", "values": "options", "checked": "value", "selected": "value", "default": "value",
+	"cols": "columns", "column_count": "columns", "column_widths": "widths", "cells": "children",
 	"minimum": "min", "maximum": "max", "increment": "step",
 	"color": "fg", "foreground": "fg", "background": "bg", "flex": "grow", "layout": "direction",
 }
@@ -34,6 +35,7 @@ var uiKeyAliases = map[string]string{
 var uiTypeAliases = map[string]string{
 	"row": UIPanel, "column": UIPanel, "col": UIPanel, "box": UIPanel, "container": UIPanel, "div": UIPanel,
 	"stack": UIPanel, "vbox": UIPanel, "hbox": UIPanel, "form": UIPanel, "view": UIPanel, "group": UIPanel,
+	"table": UIGrid, "form_grid": UIGrid,
 	"section": UICard, "frame": UICard, "window": UICard, "dialog": UICard,
 	"text": UILabel, "span": UILabel, "p": UILabel, "heading": UILabel, "title": UILabel, "h1": UILabel, "h2": UILabel,
 	"dropdown": UISelect, "combo": UISelect, "combobox": UISelect, "picker": UISelect, "choice": UISelect, "menu": UISelect,
@@ -96,6 +98,36 @@ func mendUINode(value any, path string) (map[string]any, error) {
 					node["type"] = uiTypeOf(name)
 				}
 			}
+		}
+	}
+	// A grid as rows of cells: its children row by row, as many columns
+	// as the widest row.
+	if rows, ok := node["rows"].([]any); ok {
+		lists := make([][]any, len(rows))
+		columns := 0
+		for i, row := range rows {
+			each, isList := row.([]any)
+			if !isList {
+				each = []any{row}
+			}
+			lists[i] = each
+			columns = max(columns, len(each))
+		}
+		var cells []any
+		for _, each := range lists {
+			cells = append(cells, each...)
+			for range columns - len(each) {
+				cells = append(cells, map[string]any{"type": UILabel})
+			}
+		}
+		node = maps.Clone(node)
+		delete(node, "rows")
+		node["children"] = cells
+		if node["columns"] == nil && node["cols"] == nil {
+			node["columns"] = columns
+		}
+		if node["type"] == nil {
+			node["type"] = UIGrid
 		}
 	}
 	mended := map[string]any{}
@@ -219,6 +251,8 @@ func guessUIType(node map[string]any) string {
 		return false
 	}
 	switch {
+	case has("columns", "widths"):
+		return UIGrid
 	case has("children"):
 		if has("title") {
 			return UICard

@@ -273,6 +273,9 @@ func (r uiRenderer) content(n tools.UINode, width int, bg string, fill bool) uiB
 	case tools.UIRadio:
 		return r.radio(n, width, bg)
 	}
+	if n.Type == tools.UIGrid {
+		return r.grid(n, width, bg, fill)
+	}
 	if n.Direction == "row" {
 		return r.row(n, width, bg, fill)
 	}
@@ -427,6 +430,112 @@ func (r uiRenderer) row(n tools.UINode, width int, bg string, fill bool) uiBox {
 		}
 		line.WriteString(blank(total-at, bg))
 		out.lines = append(out.lines, line.String())
+	}
+	return out
+}
+
+// grid lays the children in columns, row by row: each column as wide as
+// its widest cell or as widths fixes it, shrunk when they do not fit,
+// and the room left given to columns with a cell that grows. gap parts
+// the columns; rows sit close, as a table's do.
+func (r uiRenderer) grid(n tools.UINode, width int, bg string, fill bool) uiBox {
+	columns := n.GridColumns()
+	cells := n.Children
+	if len(cells) == 0 {
+		return uiBox{}
+	}
+	gaps := n.Gap * (columns - 1)
+	fixed := func(column int) int {
+		if column < len(n.Widths) {
+			return n.Widths[column]
+		}
+		return 0
+	}
+	widths := make([]int, columns)
+	grows := make([]int, columns)
+	for i, cell := range cells {
+		column := i % columns
+		grows[column] = max(grows[column], cell.Grow)
+		if fixed(column) > 0 {
+			widths[column] = fixed(column)
+			continue
+		}
+		widths[column] = max(widths[column], r.render(cell, width, bg, false).width)
+	}
+	used := 0
+	for _, w := range widths {
+		used += w
+	}
+	if room := max(width-gaps, columns); used > room {
+		natural := max(used, 1)
+		used = 0
+		for column, w := range widths {
+			widths[column] = max(w*room/natural, 1)
+			used += widths[column]
+		}
+	}
+	growth := 0
+	for _, grow := range grows {
+		growth += grow
+	}
+	if left := width - gaps - used; growth > 0 && left > 0 {
+		for column, grow := range grows {
+			widths[column] += left * grow / growth
+		}
+	}
+	stretch := n.Align == "stretch"
+	var out uiBox
+	for start := 0; start < len(cells); start += columns {
+		boxes := make([]uiBox, columns)
+		height := 0
+		for column := range columns {
+			if start+column >= len(cells) {
+				continue
+			}
+			cell := cells[start+column]
+			boxes[column] = r.render(cell, widths[column], bg, stretch || grows[column] > 0 || fixed(column) > 0)
+			height = max(height, boxes[column].height())
+		}
+		top := len(out.lines)
+		for y := range height {
+			var line strings.Builder
+			x := 0
+			for column, box := range boxes {
+				if column > 0 {
+					line.WriteString(blank(n.Gap, bg))
+					x += n.Gap
+				}
+				left := 0
+				switch n.Align {
+				case "center":
+					left = (widths[column] - box.width) / 2
+				case "end":
+					left = widths[column] - box.width
+				}
+				left = max(left, 0)
+				line.WriteString(blank(left, bg))
+				if y < box.height() {
+					line.WriteString(box.lines[y])
+				} else {
+					line.WriteString(blank(box.width, bg))
+				}
+				line.WriteString(blank(widths[column]-left-box.width, bg))
+				if y == 0 {
+					for _, hit := range box.hits {
+						out.hits = append(out.hits, hit.moved(x+left, top))
+					}
+				}
+				x += widths[column]
+			}
+			out.lines = append(out.lines, line.String())
+		}
+	}
+	out.width = gaps
+	for _, w := range widths {
+		out.width += w
+	}
+	if fill {
+		out = widen(out, width, bg)
 	}
 	return out
 }

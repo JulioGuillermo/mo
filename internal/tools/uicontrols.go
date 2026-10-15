@@ -147,3 +147,12 @@ func checkValue(n UINode, where string) error {
 	}
 	return nil
 }
+
+// GridColumns is how many columns a grid has: as said, else as many as
+// its widths.
+func (n UINode) GridColumns() int {
+	if n.Columns > 0 {
+		return n.Columns
+	}
+	return max(len(n.Widths), 1)
+}

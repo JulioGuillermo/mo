@@ -6,6 +6,7 @@ package tui
 // | UD-02 | Happy    | Typing fills the focused input; submit sends every value to the model    | P0       |
 // | UD-03 | Happy    | A click outside or close hides the dialog; remove takes it away and tells the model | P1 |
 // | UD-04 | Happy    | A script reacts to typing in the dialog; its error shows under the interface | P0   |
+// | UD-06 | Happy    | A grid lines each column's cells up, as wide as the widest, a fixed width kept, a click reaching a cell | P1 |
 // | UD-05 | Happy    | Select, slider, checkbox, switch and radio are drawn, change by keys and clicks, and go with submit | P0 |
 
 import (
@@ -197,6 +198,47 @@ func TestUIDialog(t *testing.T) {
 			if values[id] != value {
 				t.Errorf("%s = %q, want %q (all %v)", id, values[id], value, values)
 			}
+		}
+	})
+
+	t.Run("UD-06 a grid lines each column's cells up, as wide as the widest, a fixed width kept, a click reaching a cell", func(t *testing.T) {
+		m, uis := uiModel(t)
+		tree := `{"type":"panel","children":[
+		  {"type":"grid","columns":2,"gap":2,"children":[
+		    {"type":"label","text":"Name"},{"type":"input","id":"name"},
+		    {"type":"label","text":"Volume level"},{"type":"checkbox","id":"tick","label":"on"}]},
+		  {"type":"grid","widths":[10,0],"children":[{"type":"label","text":"A"},{"type":"label","text":"x"}]}]}`
+		args, _ := json.Marshal(map[string]any{"action": "create", "title": "Grid", "tree": json.RawMessage(tree)})
+		if output, isError := m.session.Agent.Tools.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args}); isError {
+			t.Fatal(output)
+		}
+		updated, _ := m.openUI(2)
+		m = updated.(model)
+		var rows []string
+		for _, line := range strings.Split(ansi.Strip(m.View().Content), "\n") {
+			for _, word := range []string{"Name", "Volume level", "A "} {
+				if at := strings.Index(line, word); at >= 0 {
+					cell, _, _ := strings.Cut(line[at:], "│")
+					rows = append(rows, strings.TrimRight(cell, " "))
+				}
+			}
+		}
+		frame, _ := m.uiFrame()
+		var tick uiHit
+		for _, hit := range frame.hits {
+			if hit.id == "tick" {
+				tick = hit
+			}
+		}
+		updated, _ = m.Update(tea.MouseClickMsg(tea.Mouse{X: tick.x0, Y: tick.y0, Button: tea.MouseLeft}))
+		ui, _ := uis.Get(2)
+		ticked, _ := findNode(ui.Shown(), "tick")
+
+		if len(rows) != 3 || !strings.HasPrefix(rows[0], "Name          ▏") || rows[1] != "Volume level  [ ] on" || !strings.HasPrefix(rows[2], "A         x") {
+			t.Errorf("rows = %q", rows)
+		}
+		if !ticked.Checked() {
+			t.Error("a click on the cell should tick it")
 		}
 	})
 }

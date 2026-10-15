@@ -909,6 +909,11 @@
 - What the user typed, what scripts changed and their `ui.state` are kept with the interface, in
   `sessions/<id>/uis.json`, written after each event and change: resuming a conversation runs
   its scripts again with their state, so interfaces come back as they were left.
+- A grid lays its children row by row in columns, each as wide as its widest cell: labels line
+  up beside their controls without the model guessing a width for each, and data reads as a
+  table. Its children stay a flat list, as every container's, so ids, focus and scripts treat a
+  cell as any node; small models' rows of cells (`"rows": [[...], [...]]`) are flattened into
+  it, short rows filled. gap parts the columns only; rows sit close, as a table's do.
 - Controls with a value the user picks, select, slider, checkbox, switch and radio, keep it as
   a string as an input does, in the interface's values: one place for what the user did, sent
   whole with submit, kept on resume and read by `ui.value`. A checkbox's is `true` or `false`, a
