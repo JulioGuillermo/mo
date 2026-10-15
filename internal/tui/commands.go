@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -19,6 +21,11 @@ type command struct {
 	name        string
 	argument    string
 	description string
+	// more, set on a folder offered as an argument, fills it in for more
+	// to be typed instead of running the command.
+	more bool
+	// mention is a file offered after @, to attach.
+	mention bool
 }
 
 var builtinCommands = []command{
@@ -43,7 +50,7 @@ var builtinCommands = []command{
 	{name: "vim", description: "vim keys on or off for this session; render.keys in /settings keeps it"},
 	{name: "jobs", argument: "[tell]", description: "background jobs; tell: let the model hear the ones that ended now"},
 	{name: "kill", argument: "<n>", description: "stop a background job"},
-	{name: "view", argument: "<file>", description: "show an image, SVG or Mermaid file"},
+	{name: "view", argument: "<file>", description: "show a file to you only: images, SVG and Mermaid here, text and code in a viewer"},
 	{name: "help", description: "commands and keys"},
 	{name: "quit", description: "exit mo"},
 }
@@ -77,11 +84,17 @@ func (m model) commands() []command {
 // "/", while the first word is being written; after /login or /logout and a
 // space, the providers it takes.
 func (m model) suggestions() []command {
+	if typed, ok := m.mention(); ok {
+		return m.mentionSuggestions(typed)
+	}
 	typed, isCommand := strings.CutPrefix(m.input.Value(), "/")
 	if !isCommand || strings.Contains(typed, "\n") {
 		return nil
 	}
 	if name, partial, spaced := strings.Cut(typed, " "); spaced {
+		if name == "view" {
+			return m.pathSuggestions(partial)
+		}
 		return m.providerSuggestions(name, partial)
 	}
 	var matches []command
@@ -123,6 +136,16 @@ func (m model) providerSuggestions(name, partial string) []command {
 // completeCommand writes the chosen command into the input and tells
 // whether it can run as it is.
 func (m *model) completeCommand(chosen command) bool {
+	if chosen.mention {
+		m.completeMention(chosen)
+		return false
+	}
+	if chosen.more {
+		m.input.SetValue("/" + chosen.name)
+		m.input.CursorEnd()
+		m.suggestion = 0
+		return false
+	}
 	if chosen.argument != "" {
 		m.input.SetValue("/" + chosen.name + " ")
 		return false
@@ -157,6 +180,9 @@ func (m model) suggestionLayout(matches []command) (string, []region) {
 			return m.submit()
 		}))
 		name := "/" + candidate.name
+		if candidate.mention {
+			name = "@" + candidate.name
+		}
 		if candidate.argument != "" {
 			name += " " + candidate.argument
 		}
@@ -191,4 +217,46 @@ func (m model) helpView() string {
 		out = append(out, "  "+keyStyle.Render(fmt.Sprintf("%-22s", entry[0]))+dimStyle.Render(entry[1]))
 	}
 	return strings.Join(out, "\n")
+}
+
+// maxPathSuggestions is how many files and folders tab offers at once.
+const maxPathSuggestions = 200
+
+// pathSuggestions are the files and folders after /view that start with
+// what was typed, folders first; hidden ones only when a dot is typed.
+func (m model) pathSuggestions(partial string) []command {
+	dir, prefix := filepath.Split(partial)
+	base := dir
+	if !filepath.IsAbs(base) {
+		base = filepath.Join(m.session.WorkDir, dir)
+	}
+	if strings.HasPrefix(dir, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			base = filepath.Join(home, dir[2:])
+		}
+	}
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return nil
+	}
+	var folders, files []command
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasPrefix(name, prefix) || (strings.HasPrefix(name, ".") && !strings.HasPrefix(prefix, ".")) {
+			continue
+		}
+		full := "view " + dir + name
+		isDir := entry.IsDir()
+		if entry.Type()&os.ModeSymlink != 0 {
+			if info, err := os.Stat(filepath.Join(base, name)); err == nil {
+				isDir = info.IsDir()
+			}
+		}
+		if isDir {
+			folders = append(folders, command{name: full + "/", description: "folder", more: true})
+			continue
+		}
+		files = append(files, command{name: full, description: "file"})
+	}
+	return append(folders, files...)[:min(len(folders)+len(files), maxPathSuggestions)]
 }

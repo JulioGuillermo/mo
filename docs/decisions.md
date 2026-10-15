@@ -908,3 +908,18 @@
 - What the user typed, what scripts changed and their `ui.state` are kept with the interface, in
   `sessions/<id>/uis.json`, written after each event and change: resuming a conversation runs
   its scripts again with their state, so interfaces come back as they were left.
+
+## /view
+
+- `/view` is for the user alone: nothing it shows reaches the model. Pictures, SVG and Mermaid are
+  drawn in the conversation as before; any other text file opens in the viewer jobs use, with
+  chroma's lexer for its name, line numbers, search and copy. Files over 8 MB, folders and
+  binary files are refused with a note.
+- Tab after `/view ` completes paths from the working directory (or `~/`), folders first, hidden
+  ones only once a dot is typed; a folder fills in without running, so tab goes down the tree.
+- Comments on a file live in mo, by path, until the message they are attached to is sent: the
+  file is never written. The model gets them after the message, each with its lines and the first
+  of them quoted, so it can find the place even if the file moved on.
+- `@` searches an index of the working directory's files, read again after 15 s, hidden folders
+  and those of dependencies and builds left out: names that start with what was typed come
+  first, then names and paths that hold it, then paths holding its letters in order.

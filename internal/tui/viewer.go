@@ -1,15 +1,21 @@
 package tui
 
 import (
+	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/alecthomas/chroma/v2/lexers"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/jg/mo/internal/render"
 	"github.com/jg/mo/internal/tools"
 )
 
@@ -17,6 +23,8 @@ const (
 	viewerRefresh = 300 * time.Millisecond
 	viewerShift   = 8
 	viewerHelp    = "↑↓ pgup pgdn home end scroll · ←→ long lines · / search · n N next · drag or y copy · b background · x kill · esc close"
+	fileHelp      = "↑↓ move · c comment the line or what you dragged over · d delete it · a attach to your message · / search · y copy · esc close"
+	viewMaxBytes  = 8 << 20
 )
 
 var (
@@ -46,6 +54,19 @@ type outputViewer struct {
 	pickTo       int
 	notice       string
 	refreshAfter int
+	// file, when set, is the file shown instead of a job's output, and
+	// colored its lines highlighted.
+	file     string
+	language string
+	colored  []string
+	// cursor is the line comments go on, selected set when lines were
+	// dragged over; commenting while one is typed, on those lines.
+	cursor      int
+	selected    bool
+	commenting  bool
+	commentFrom int
+	commentTo   int
+	commentText string
 }
 
 type viewerTickMsg int
@@ -70,9 +91,64 @@ func (m model) tickViewer() tea.Cmd {
 	return tea.Tick(viewerRefresh, func(time.Time) tea.Msg { return viewerTickMsg(number) })
 }
 
+// openFile shows a text file over the whole screen, highlighted as its
+// name says, for the user only: the model never sees it.
+func (m model) openFile(path string) (tea.Model, tea.Cmd) {
+	full := path
+	if !filepath.IsAbs(full) {
+		full = filepath.Join(m.session.WorkDir, path)
+	}
+	info, err := os.Stat(full)
+	switch {
+	case err != nil:
+		return m.emitError(err)
+	case info.IsDir():
+		return m.emit(m.printer.Note(path + " is a folder: tab after /view lists what is in it"))
+	case info.Size() > viewMaxBytes:
+		return m.emit(m.printer.Note(fmt.Sprintf("%s is %s, over the %s /view shows", path, humanBytes(info.Size()), humanBytes(viewMaxBytes))))
+	}
+	data, err := os.ReadFile(full)
+	if err != nil {
+		return m.emitError(err)
+	}
+	if bytes.IndexByte(data[:min(len(data), 8000)], 0) >= 0 {
+		return m.emit(m.printer.Note(path + " is not text"))
+	}
+	text := strings.TrimSuffix(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	v := &outputViewer{file: path, pickFrom: -1}
+	if text != "" {
+		v.lines = strings.Split(text, "\n")
+	}
+	if lexer := lexers.Match(filepath.Base(full)); lexer != nil {
+		v.language = lexer.Config().Name
+		colored := highlightLines(text, v.language, 1<<30, lipgloss.NoColor{}, m.printer == nil || m.printer.isDark())
+		if len(colored) == len(v.lines) {
+			v.colored = colored
+		}
+	}
+	if m.fileComments == nil {
+		m.fileComments = map[string][]fileComment{}
+	}
+	m.viewer = v
+	return m, nil
+}
+
+func humanBytes(size int64) string {
+	switch {
+	case size >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(size)/(1<<20))
+	case size >= 1<<10:
+		return fmt.Sprintf("%.1f KB", float64(size)/(1<<10))
+	}
+	return fmt.Sprintf("%d bytes", size)
+}
+
 // reloadViewer reads the job's output again, keeping the place unless the
-// view follows the end.
+// view follows the end; a file stays as it was opened.
 func (m model) reloadViewer() error {
+	if m.viewer.file != "" {
+		return nil
+	}
 	jobs := m.jobs()
 	if jobs == nil {
 		return fmt.Errorf("no jobs here")
@@ -203,9 +279,19 @@ func (m model) updateViewer(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(v.lines) == 0 {
 			return m, nil
 		}
+		if v.file != "" {
+			v.cursor = v.pickTo
+			v.selected = from != to
+			if !v.selected {
+				return m, nil
+			}
+		}
 		return m, m.copyViewer(strings.Join(v.lines[from:to+1], "\n"), fmt.Sprintf("copied lines %d-%d", from+1, to+1))
 	case tea.KeyPressMsg:
-		if v.typing {
+		switch {
+		case v.commenting:
+			return m.typeComment(msg)
+		case v.typing:
 			return m.typeQuery(msg)
 		}
 		return m.viewerKey(msg.String())
@@ -257,9 +343,29 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 		m.viewer = nil
 		return m, nil
 	case "up", "k":
+		if v.file != "" {
+			m.moveCursor(-1)
+			return m, nil
+		}
 		m.scrollViewer(-1)
 	case "down", "j":
+		if v.file != "" {
+			m.moveCursor(1)
+			return m, nil
+		}
 		m.scrollViewer(1)
+	case "c":
+		if v.file != "" {
+			m.startComment()
+		}
+	case "d":
+		if comment, _, ok := m.commentAt(v.cursor); ok && v.file != "" {
+			m.setComment(comment.from, comment.to, "")
+		}
+	case "a":
+		if v.file != "" {
+			return m.attachFile()
+		}
 	case "pgup", "shift+up":
 		m.scrollViewer(-rows)
 	case "pgdown", "shift+down", "space":
@@ -286,12 +392,18 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 	case "y":
 		return m, m.copyViewer(strings.Join(v.lines, "\n"), fmt.Sprintf("copied all %d lines", len(v.lines)))
 	case "b":
+		if v.file != "" {
+			return m, nil
+		}
 		if err := m.jobs().DetachJob(v.id); err != nil {
 			v.notice = err.Error()
 			return m, nil
 		}
 		v.notice = "goes on in the background; the model was let go on"
 	case "x":
+		if v.file != "" {
+			return m, nil
+		}
 		jobs, id := m.jobs(), v.id
 		v.notice = "killing…"
 		return m, func() tea.Msg {
@@ -316,6 +428,24 @@ func (m model) viewerView() string {
 	width := max(m.width, 20)
 	rows := m.viewerRows()
 	header := toolName.Render(fmt.Sprintf("Job %d", v.id)) + " " + dimStyle.Render(oneLine(v.status.Describe(), width-8))
+	help := viewerHelp
+	gutter := 0
+	if v.file != "" {
+		about := fmt.Sprintf("%d lines", len(v.lines))
+		if v.language != "" {
+			about += " · " + v.language
+		}
+		switch count := len(m.comments()); count {
+		case 0:
+		case 1:
+			about += " · 1 comment, a attaches it"
+		default:
+			about += fmt.Sprintf(" · %d comments, a attaches them", count)
+		}
+		header = toolName.Render(oneLine(v.file, width/2)) + " " + dimStyle.Render(about+" · only you see it")
+		help = fileHelp
+		gutter = len(fmt.Sprint(len(v.lines))) + 1
+	}
 	var out []string
 	out = append(out, header)
 	var re *regexp.Regexp
@@ -327,35 +457,58 @@ func (m model) viewerView() string {
 		current = v.matches[v.current]
 	}
 	from, to := min(v.pickFrom, v.pickTo), max(v.pickFrom, v.pickTo)
+	room := max(width-gutter, 1)
 	for i := v.top; i < v.top+rows; i++ {
 		if i >= len(v.lines) {
 			if i == 0 {
-				out = append(out, dimStyle.Render("(no output yet)"))
+				out = append(out, dimStyle.Render("(empty)"))
 			} else {
 				out = append(out, "")
 			}
 			continue
 		}
-		line := ansi.Strip(strings.ReplaceAll(v.lines[i], "\t", "    "))
-		line = ansi.Cut(line, v.left, v.left+width)
+		plain := ansi.Strip(strings.ReplaceAll(v.lines[i], "\t", "    "))
+		line := ansi.Cut(plain, v.left, v.left+room)
 		switch {
 		case v.picking && i >= from && i <= to:
 			line = viewerPicked.Render(line)
-		case re != nil:
+		case re != nil && re.MatchString(plain):
 			style := viewerMatch
 			if i == current {
 				style = viewerCurrent
 			}
 			line = re.ReplaceAllStringFunc(line, func(found string) string { return style.Render(found) })
+		case v.file != "" && i == v.cursor && !v.commenting:
+			line = cursorRow(line, room)
+		case v.commenting && i >= v.commentFrom && i <= v.commentTo:
+			line = cursorRow(line, room)
+		case v.colored != nil:
+			line = ansi.Cut(v.colored[i], v.left, v.left+room)
+		}
+		if gutter > 0 {
+			mark := " "
+			if _, _, commented := m.commentAt(i); commented {
+				mark = commentMark.Render("◆")
+			}
+			line = dimStyle.Render(fmt.Sprintf("%*d", gutter-1, i+1)) + mark + line
 		}
 		out = append(out, line)
 	}
-	footer := viewerHelp
+	footer := help
+	comment, _, onComment := m.commentAt(v.cursor)
 	switch {
+	case v.commenting:
+		where := fmt.Sprintf("line %d", v.commentFrom+1)
+		if v.commentTo > v.commentFrom {
+			where = fmt.Sprintf("lines %d-%d", v.commentFrom+1, v.commentTo+1)
+		}
+		footer = commentMark.Render("◆ "+where+": ") + v.commentText + "▏" + dimStyle.Render("  enter keep · esc cancel · empty deletes it")
+	case v.file != "" && onComment && !v.typing:
+		footer = commentFooter.Render("◆ "+comment.text) + dimStyle.Render(" · c edit · d delete")
 	case v.typing:
 		footer = keyStyle.Render("/") + v.typed + "▏" + dimStyle.Render("  enter search · esc cancel")
 	case v.notice != "":
-		footer = keyStyle.Render(v.notice) + dimStyle.Render(" · "+viewerHelp)
+		footer = keyStyle.Render(v.notice) + dimStyle.Render(" · "+help)
 	}
 	position := fmt.Sprintf(" %d-%d/%d", min(v.top+1, len(v.lines)), min(v.top+rows, len(v.lines)), len(v.lines))
 	if v.follow && v.status.State == tools.JobRunning {
@@ -363,4 +516,11 @@ func (m model) viewerView() string {
 	}
 	out = append(out, ansi.Truncate(dimStyle.Render(footer), width-len(position)-1, "…")+dimStyle.Render(position))
 	return strings.Join(out, "\n")
+}
+
+// drawnInline tells a file /view draws in the conversation: a picture, an
+// SVG, a Mermaid diagram.
+func drawnInline(path string) bool {
+	extension := strings.ToLower(filepath.Ext(path))
+	return render.IsImageFile(path) || extension == ".mmd" || extension == ".mermaid"
 }

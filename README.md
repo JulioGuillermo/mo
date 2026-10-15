@@ -438,7 +438,17 @@ one without deleting it, everywhere or only in a project. A server's stderr goes
 
 Answers with a ```` ```mermaid ```` or ```` ```svg ```` block, or a line that is only `![](local/file.png)`,
 are drawn in the terminal; so are images that `read` opens or an MCP tool returns, and `/view <file>`
-shows an image, SVG or Mermaid file.
+shows an image, SVG or Mermaid file. Any other text file `/view` opens over the whole screen,
+highlighted as its name says and numbered, to scroll, search with `/` and copy, as a job's output
+is watched; only you see it, the model never does. Tab after `/view ` offers the files and folders
+there, folders first; tab on a folder goes into it.
+
+In a file `/view` opened, ↑↓ move a cursor, and `c` comments its line, or the lines you dragged
+over; the file is not touched. `c` on a comment edits it, `d` deletes it. `a` closes the viewer and
+attaches the file to your message: as `[comments name]` with comments, which the model gets with
+the path, the lines and their first line quoted; as `[file name]` without. In the input, `@` and a
+few letters offer the files of the project whose name or path holds them, or their letters in
+order; tab or enter attaches the one picked.
 
 ```toml
 [render]

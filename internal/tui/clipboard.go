@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -229,13 +230,26 @@ var imageExtensions = map[string]bool{".png": true, ".jpg": true, ".jpeg": true,
 
 // withAttachments swaps the labels in a prompt for the paths they stand for.
 func (m *model) withAttachments(prompt string) string {
+	var notes []string
 	for label, path := range m.attachments {
+		if note, ok := m.commentNotes[label]; ok && strings.Contains(prompt, label) {
+			notes = append(notes, note)
+			for file := range m.fileComments {
+				if filepath.Join(m.session.WorkDir, file) == path || file == path {
+					delete(m.fileComments, file)
+				}
+			}
+		}
 		if strings.ContainsAny(path, " '\"\\") {
 			path = `"` + strings.ReplaceAll(path, `"`, `\"`) + `"`
 		}
 		prompt = strings.ReplaceAll(prompt, label, path)
 	}
-	m.attachments = nil
+	m.attachments, m.commentNotes = nil, nil
+	if len(notes) > 0 {
+		sort.Strings(notes)
+		prompt += "\n\n" + strings.Join(notes, "\n\n")
+	}
 	return prompt
 }
 

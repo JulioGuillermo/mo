@@ -127,6 +127,12 @@ type model struct {
 	viewer *outputViewer
 	// vim is where vim keys are, when they are on.
 	vim vimState
+	// fileComments are the user's comments on files shown with /view, by
+	// path; commentNotes what each attached comments label sends; files
+	// the index @ searches.
+	fileComments map[string][]fileComment
+	commentNotes map[string]string
+	files        *fileIndex
 	// runStarted is when the turn running began; worked how long the last
 	// one took, shown once it ends.
 	runStarted time.Time
@@ -195,6 +201,7 @@ func Run(session Session) error {
 		focused:  true,
 		history:  loadHistory(),
 		vim:      vimState{enabled: session.Config.Render.Keys == "vim"},
+		files:    &fileIndex{},
 	}
 	printer.setKind(m.toolKind)
 	m.configureJobs()
@@ -735,9 +742,12 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		return m, tea.Sequence(printText(m.printer.Note("looking for providers…")), loadSettings(m.session, providerSettings))
 	case "view":
 		if argument == "" {
-			return m, printText(m.printer.Note("usage: /view <image, svg or mermaid file>"))
+			return m, printText(m.printer.Note("usage: /view <file> · tab completes paths · images, SVG and Mermaid show here, other files in a viewer"))
 		}
-		return m, m.view(argument)
+		if drawnInline(argument) {
+			return m, m.view(argument)
+		}
+		return m.openFile(argument)
 	case "plugins":
 		return m, printText(m.printer.Note(pluginReport(m.session.Plugins)))
 	case "mcp":
@@ -863,6 +873,9 @@ func (m model) View() tea.View {
 	} else if m.viewer != nil {
 		view = tea.NewView(m.viewerView())
 		view.WindowTitle = fmt.Sprintf("mo · job %d", m.viewer.id)
+		if m.viewer.file != "" {
+			view.WindowTitle = "mo · " + filepath.Base(m.viewer.file)
+		}
 	} else {
 		screen, _ := m.screenLayout()
 		drawn := m.highlight(screen)
