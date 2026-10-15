@@ -184,3 +184,9 @@ func ShareJobs(dir, from, to string) error {
 	}
 	return nil
 }
+
+// UIFile is where the interfaces a conversation's model drew are kept,
+// with what the user and their scripts did in them.
+func UIFile(dir, id string) string {
+	return filepath.Join(dir, id, "uis.json")
+}

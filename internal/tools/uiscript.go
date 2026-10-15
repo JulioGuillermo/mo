@@ -1,0 +1,276 @@
+package tools
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"slices"
+	"strings"
+	"time"
+
+	lua "github.com/yuin/gopher-lua"
+
+	"github.com/jg/mo/internal/luabox"
+)
+
+const (
+	uiScriptLoadTimeout  = 2 * time.Second
+	uiScriptEventTimeout = 500 * time.Millisecond
+)
+
+// uiScript is an interface's Lua: a sandboxed state of its own, its ui
+// table, and the event it is handling.
+type uiScript struct {
+	state *lua.LState
+	table *lua.LTable
+	// While a handler runs: its interface, the manager, the event, and
+	// what it led to.
+	ui      *UI
+	uis     *UIs
+	event   UIEvent
+	outcome UIOutcome
+}
+
+// loadScript runs an interface's script in a new sandbox, its state as the
+// interface kept it.
+func loadScript(ui *UI) (*uiScript, error) {
+	state := lua.NewState(lua.Options{SkipOpenLibs: true})
+	luabox.Sandbox(state)
+	script := &uiScript{state: state, ui: ui}
+	script.table = state.NewTable()
+	for name, function := range map[string]lua.LGFunction{
+		"set": script.set, "get": script.get, "value": script.value,
+		"notify": script.tell(UINotify), "submit": script.tell(UISubmit), "close": script.tell(UIClose), "remove": script.tell(UIRemove),
+	} {
+		script.table.RawSetString(name, state.NewFunction(function))
+	}
+	kept := ui.State
+	if kept == nil {
+		kept = map[string]any{}
+	}
+	if table, ok := luabox.ToLua(state, kept).(*lua.LTable); ok {
+		script.table.RawSetString("state", table)
+	}
+	state.SetGlobal("ui", script.table)
+	ctx, cancel := context.WithTimeout(context.Background(), uiScriptLoadTimeout)
+	defer cancel()
+	state.SetContext(ctx)
+	defer state.RemoveContext()
+	if err := state.DoString(ui.Script); err != nil {
+		state.Close()
+		return nil, fmt.Errorf("script: %s", shortLuaError(err))
+	}
+	return script, nil
+}
+
+// runHandler calls a function of the interface's script for an event; the
+// lock is held. An error is kept to show and told to the model.
+func (u *UIs) runHandler(ui *UI, base UIEvent, handler string) UIOutcome {
+	script := ui.script
+	fail := func(message string) UIOutcome {
+		ui.Error = message
+		event := base
+		event.Action, event.Value = UIError, message
+		u.events = append(u.events, event)
+		return UIOutcome{Told: true}
+	}
+	if script == nil {
+		return fail("there is no script")
+	}
+	function, ok := script.state.GetGlobal(handler).(*lua.LFunction)
+	if !ok {
+		return fail(fmt.Sprintf("the script defines no function %q", handler))
+	}
+	script.ui, script.uis, script.event, script.outcome = ui, u, base, UIOutcome{}
+	event := script.state.NewTable()
+	event.RawSetString("id", lua.LString(base.Element))
+	event.RawSetString("type", lua.LString(base.Event))
+	event.RawSetString("value", lua.LString(base.Value))
+	ctx, cancel := context.WithTimeout(context.Background(), uiScriptEventTimeout)
+	defer cancel()
+	script.state.SetContext(ctx)
+	err := script.state.CallByParam(lua.P{Fn: function, NRet: 0, Protect: true}, event)
+	script.state.RemoveContext()
+	if kept, ok := script.table.RawGetString("state").(*lua.LTable); ok {
+		if value, convErr := luabox.ToGo(kept); convErr == nil {
+			if state, isMap := value.(map[string]any); isMap {
+				ui.State = state
+			}
+		}
+	}
+	if err != nil {
+		outcome := script.outcome
+		failed := fail(shortLuaError(err))
+		failed.Submitted, failed.Hidden, failed.Removed = outcome.Submitted, outcome.Hidden, outcome.Removed
+		return failed
+	}
+	ui.Error = ""
+	return script.outcome
+}
+
+func shortLuaError(err error) string {
+	text := err.Error()
+	if line, _, found := strings.Cut(text, "\nstack traceback:"); found {
+		text = line
+	}
+	return strings.TrimSpace(text)
+}
+
+// element is the id a function was given, refused when the tree has none.
+func (s *uiScript) element(state *lua.LState) (string, UINode) {
+	id := state.CheckString(1)
+	node, ok := findUINode(s.ui.Shown(), id)
+	if !ok {
+		state.RaiseError("no element %q", id)
+	}
+	return id, node
+}
+
+// set changes an element as ui.set(id, {text=..., visible=false}) asks.
+func (s *uiScript) set(state *lua.LState) int {
+	id, node := s.element(state)
+	value, err := luabox.ToGo(state.CheckTable(2))
+	props, ok := value.(map[string]any)
+	if err != nil || !ok {
+		state.RaiseError("ui.set(%q, props): props is a table of names, as {text = \"...\"}", id)
+	}
+	if typed, given := props["value"]; given {
+		if node.Type != UIInput {
+			state.RaiseError("%q is no input, it has no value", id)
+		}
+		if s.ui.Values == nil {
+			s.ui.Values = map[string]string{}
+		}
+		s.ui.Values[id] = fmt.Sprint(typed)
+		delete(props, "value")
+	}
+	if err := applyProps(&node, props); err != nil {
+		state.RaiseError("ui.set(%q): %s", id, err.Error())
+	}
+	if s.ui.Changes == nil {
+		s.ui.Changes = map[string]map[string]any{}
+	}
+	if s.ui.Changes[id] == nil {
+		s.ui.Changes[id] = map[string]any{}
+	}
+	for name, prop := range props {
+		s.ui.Changes[id][name] = prop
+	}
+	return 0
+}
+
+// get reads an element as it is shown.
+func (s *uiScript) get(state *lua.LState) int {
+	_, node := s.element(state)
+	visible := node.Shown()
+	state.Push(luabox.ToLua(state, map[string]any{
+		"type": node.Type, "text": node.Text, "label": node.Label, "value": node.Value, "placeholder": node.Placeholder,
+		"title": node.Title, "fg": node.FG, "bg": node.BG, "visible": visible, "disabled": node.Disabled, "bold": node.Bold,
+		"width": node.Width, "height": node.Height, "border": node.Border,
+	}))
+	return 1
+}
+
+// value is an input's value as typed.
+func (s *uiScript) value(state *lua.LState) int {
+	_, node := s.element(state)
+	state.Push(lua.LString(node.Value))
+	return 1
+}
+
+// tell is ui.notify, ui.submit or ui.close, with data for the model.
+func (s *uiScript) tell(action string) lua.LGFunction {
+	return func(state *lua.LState) int {
+		if s.uis == nil {
+			state.RaiseError("ui.%s works in an event's function", action)
+		}
+		data := ""
+		if state.GetTop() >= 1 && state.Get(1) != lua.LNil {
+			value, err := luabox.ToGo(state.Get(1))
+			if err != nil {
+				state.RaiseError("ui.%s: %s", action, err.Error())
+			}
+			encoded, _ := json.Marshal(value)
+			data = string(encoded)
+		}
+		outcome := s.uis.act(s.ui, s.event, action, data)
+		s.outcome.Told = s.outcome.Told || outcome.Told
+		s.outcome.Submitted = s.outcome.Submitted || outcome.Submitted
+		s.outcome.Hidden = s.outcome.Hidden || outcome.Hidden
+		s.outcome.Removed = s.outcome.Removed || outcome.Removed
+		return 0
+	}
+}
+
+// applyProps changes a node's fields from a script, checking each as the
+// tree is checked.
+func applyProps(n *UINode, props map[string]any) error {
+	for name, value := range props {
+		text, isText := value.(string)
+		flag, isFlag := value.(bool)
+		var number int
+		isNumber := true
+		switch v := value.(type) {
+		case int64:
+			number = int(v)
+		case float64:
+			number = int(v)
+		default:
+			isNumber = false
+		}
+		switch name {
+		case "text", "label", "placeholder", "title":
+			if !isText {
+				text = fmt.Sprint(value)
+			}
+			switch name {
+			case "text":
+				n.Text = text
+			case "label":
+				n.Label = text
+			case "placeholder":
+				n.Placeholder = text
+			default:
+				n.Title = text
+			}
+		case "fg", "bg":
+			if !isText || (text != "" && !hexColor.MatchString(text) && !slices.Contains(UIColors, text)) {
+				return fmt.Errorf("%s %v: use #rrggbb or one of %s", name, value, strings.Join(UIColors, ", "))
+			}
+			if name == "fg" {
+				n.FG = text
+			} else {
+				n.BG = text
+			}
+		case "border":
+			if !isText || !slices.Contains(uiBorders, text) {
+				return fmt.Errorf("border %v: use %s", value, strings.Join(uiBorders[1:], ", "))
+			}
+			n.Border = text
+		case "visible", "disabled", "bold":
+			if !isFlag {
+				return fmt.Errorf("%s is true or false", name)
+			}
+			switch name {
+			case "visible":
+				n.Visible = &flag
+			case "disabled":
+				n.Disabled = flag
+			default:
+				n.Bold = flag
+			}
+		case "width", "height":
+			if !isNumber || number < 0 {
+				return fmt.Errorf("%s is a number of cells", name)
+			}
+			if name == "width" {
+				n.Width = number
+			} else {
+				n.Height = number
+			}
+		default:
+			return fmt.Errorf("%q cannot be set: use text, label, value, placeholder, title, fg, bg, border, visible, disabled, bold, width or height", name)
+		}
+	}
+	return nil
+}

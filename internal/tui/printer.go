@@ -208,7 +208,47 @@ func (p *printer) glamour(text string) string {
 	if err != nil {
 		return text
 	}
-	return strings.Trim(rendered, "\n")
+	return fitLines(strings.Trim(rendered, "\n"), p.width)
+}
+
+// linePrefix is what starts a rendered line and goes on the lines its text
+// wraps to: indent and quote bars, kept, then a list marker, turned into
+// as many spaces.
+var linePrefix = regexp.MustCompile(`^(\s*(?:[│┃▌|]\s?)*\s*)((?:[-*•·+]|\d+[.)])\s+)?`)
+
+// fitLines wraps any line wider than width again, its continuation lines
+// starting as it does, so a quote's bar or a list's indent is never lost
+// to the terminal breaking the line on its own.
+func fitLines(text string, width int) string {
+	if width <= 0 {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	var out []string
+	for _, line := range lines {
+		if ansi.StringWidth(line) <= width {
+			out = append(out, line)
+			continue
+		}
+		found := linePrefix.FindStringSubmatch(ansi.Strip(line))
+		keep, marker := ansi.StringWidth(found[1]), ansi.StringWidth(found[2])
+		prefix := keep + marker
+		if prefix >= width-10 {
+			out = append(out, strings.Split(ansi.Hardwrap(line, width, true), "\n")...)
+			continue
+		}
+		rest := strings.TrimRight(ansi.TruncateLeft(line, prefix, ""), " ")
+		wrapped := strings.Split(ansi.Wrap(rest, width-prefix, " "), "\n")
+		bars := ansi.Cut(line, 0, keep)
+		for i, piece := range wrapped {
+			if i == 0 {
+				out = append(out, ansi.Cut(line, 0, prefix)+piece)
+				continue
+			}
+			out = append(out, bars+strings.Repeat(" ", marker)+piece)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // User prints a message of the user as a full-width band, every line of it.

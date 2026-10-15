@@ -1146,7 +1146,7 @@ func (m model) runPluginCommand(command string, run func(context.Context, string
 		if err != nil {
 			return err
 		}
-		bridge.print(bridge.printer.Answer(output))
+		bridge.draw(func() string { return bridge.printer.Answer(output) })
 		return nil
 	})
 }

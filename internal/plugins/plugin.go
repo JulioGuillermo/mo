@@ -16,15 +16,16 @@ import (
 	"time"
 
 	lua "github.com/yuin/gopher-lua"
+
+	"github.com/jg/mo/internal/luabox"
 )
 
 const (
-	loadTimeout     = 10 * time.Second
-	hookTimeout     = 5 * time.Second
-	runTimeout      = 2 * time.Minute
-	abandonGrace    = 3 * time.Second
-	maxNameLength   = 48
-	maxRepeatResult = 16 << 20
+	loadTimeout   = 10 * time.Second
+	hookTimeout   = 5 * time.Second
+	runTimeout    = 2 * time.Minute
+	abandonGrace  = 3 * time.Second
+	maxNameLength = 48
 )
 
 var reservedCommands = []string{"clear", "compact", "settings", "providers", "mcp", "plugins", "view", "help", "quit", "exit"}
@@ -97,44 +98,7 @@ func load(path, workDir, logDir string) *Plugin {
 // openLibraries opens only base, table, string and math: plugins reach the
 // system through the mo table.
 func (p *Plugin) openLibraries() {
-	for _, library := range []struct {
-		name string
-		open lua.LGFunction
-	}{
-		{lua.BaseLibName, lua.OpenBase},
-		{lua.TabLibName, lua.OpenTable},
-		{lua.StringLibName, lua.OpenString},
-		{lua.MathLibName, lua.OpenMath},
-	} {
-		p.state.Push(p.state.NewFunction(library.open))
-		p.state.Push(lua.LString(library.name))
-		p.state.Call(1, 0)
-	}
-	for _, unsafe := range []string{"dofile", "loadfile", "require", "module", "_printregs"} {
-		p.state.SetGlobal(unsafe, lua.LNil)
-	}
-	p.limitStringRepeat()
-}
-
-// limitStringRepeat replaces string.rep with one that refuses results over
-// maxRepeatResult bytes, which would otherwise exhaust memory in one call.
-func (p *Plugin) limitStringRepeat() {
-	stringTable, ok := p.state.GetGlobal("string").(*lua.LTable)
-	if !ok {
-		return
-	}
-	stringTable.RawSetString("rep", p.state.NewFunction(func(state *lua.LState) int {
-		text, count, separator := state.CheckString(1), state.CheckInt(2), state.OptString(3, "")
-		if count <= 0 {
-			state.Push(lua.LString(""))
-			return 1
-		}
-		if (len(text)+len(separator))*count > maxRepeatResult {
-			state.RaiseError("string.rep: result over %d MB", maxRepeatResult>>20)
-		}
-		state.Push(lua.LString(strings.Repeat(text+separator, count-1) + text))
-		return 1
-	}))
+	luabox.Sandbox(p.state)
 }
 
 // call runs work on the plugin's Lua state within timeout, waiting for its

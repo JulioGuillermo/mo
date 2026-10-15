@@ -450,23 +450,3 @@ func findNode(n tools.UINode, id string) (tools.UINode, bool) {
 	}
 	return tools.UINode{}, false
 }
-
-// inputValues are every input's value: typed, or as the tree has it.
-func inputValues(n tools.UINode, typed map[string]string) map[string]string {
-	values := map[string]string{}
-	var walk func(n tools.UINode)
-	walk = func(n tools.UINode) {
-		if n.Type == tools.UIInput {
-			if value, ok := typed[n.ID]; ok {
-				values[n.ID] = value
-			} else {
-				values[n.ID] = n.Value
-			}
-		}
-		for _, child := range n.Children {
-			walk(child)
-		}
-	}
-	walk(n)
-	return values
-}

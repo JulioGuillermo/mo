@@ -5,11 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
+
+	lua "github.com/yuin/gopher-lua"
+
+	"github.com/jg/mo/internal/sessions"
 )
 
 // UI node types.
@@ -22,11 +29,12 @@ const (
 )
 
 // UI event actions an element can name: send the event to the model, send
-// every input's value, or close the UI.
+// every input's value, close the dialog, or remove the UI and say so.
 const (
 	UINotify = "notify"
 	UISubmit = "submit"
 	UIClose  = "close"
+	UIRemove = "remove"
 )
 
 // UINode is one element of an interface the model draws: a panel or card
@@ -71,6 +79,7 @@ var UIColors = []string{"text", "dim", "accent", "error", "warning", "success", 
 
 var (
 	hexColor     = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+	luaName      = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	uiJustify    = []string{"", "start", "center", "end", "space-between", "space-around"}
 	uiAlign      = []string{"", "start", "center", "end", "stretch"}
 	uiBorders    = []string{"", "none", "rounded", "normal", "thick", "double"}
@@ -120,10 +129,8 @@ func validateUI(root UINode) error {
 			}
 		}
 		for name, handler := range map[string]string{"on_click": n.OnClick, "on_input": n.OnInput, "on_change": n.OnChange} {
-			switch handler {
-			case "", UINotify, UISubmit, UIClose:
-			default:
-				return fmt.Errorf("%s: %s %q: use notify, submit or close (script handlers are not there yet)", where, name, handler)
+			if handler != "" && !luaName.MatchString(handler) {
+				return fmt.Errorf("%s: %s %q: use notify, submit, close or the name of a function of the script", where, name, handler)
 			}
 		}
 		for i, child := range n.Children {
@@ -136,16 +143,51 @@ func validateUI(root UINode) error {
 	return check(root, "tree")
 }
 
-// UI is an interface the model made, in a conversation.
+// UI is an interface the model made, in a conversation, with what the user
+// typed and what its script changed.
 type UI struct {
-	ID           int
-	Title        string
-	Tree         UINode
-	Conversation string
+	ID     int    `json:"id"`
+	Title  string `json:"title"`
+	Tree   UINode `json:"tree"`
+	Script string `json:"script,omitempty"`
+	// Values are what the user typed, by input; Changes what the script
+	// set, by element; State the script's own table.
+	Values  map[string]string         `json:"values,omitempty"`
+	Changes map[string]map[string]any `json:"changes,omitempty"`
+	State   map[string]any            `json:"state,omitempty"`
+	// Error is the script's last error, shown under the interface.
+	Error string `json:"error,omitempty"`
 	// Version counts the model's updates, Seen whether the user opened it
 	// since the last.
-	Version int
-	Seen    bool
+	Version      int    `json:"version"`
+	Seen         bool   `json:"seen"`
+	Conversation string `json:"-"`
+	script       *uiScript
+}
+
+// Shown is the tree as it is now: the script's changes and what the user
+// typed put in.
+func (ui UI) Shown() UINode {
+	return shownNode(ui.Tree, ui.Changes, ui.Values)
+}
+
+func shownNode(n UINode, changes map[string]map[string]any, values map[string]string) UINode {
+	if n.ID != "" {
+		if props, ok := changes[n.ID]; ok {
+			_ = applyProps(&n, props)
+		}
+		if value, ok := values[n.ID]; ok && n.Type == UIInput {
+			n.Value = value
+		}
+	}
+	if len(n.Children) > 0 {
+		children := make([]UINode, len(n.Children))
+		for i, child := range n.Children {
+			children[i] = shownNode(child, changes, values)
+		}
+		n.Children = children
+	}
+	return n
 }
 
 // UIEvent is what the user did in an interface that the model is to hear.
@@ -157,8 +199,13 @@ type UIEvent struct {
 	Element string
 	Value   string
 	Values  map[string]string
-	conv    string
+	// Data is what a script passed to notify or submit, as JSON.
+	Data string
+	conv string
 }
+
+// UIError is the action of an event that says a script failed.
+const UIError = "error"
 
 // Note is how the model hears of an event.
 func (e UIEvent) Note() string {
@@ -167,8 +214,11 @@ func (e UIEvent) Note() string {
 	switch e.Action {
 	case UISubmit:
 		fmt.Fprintf(&b, "submitted with %s", e.Element)
-	case UIClose:
-		fmt.Fprintf(&b, "closed by the user with %s", e.Element)
+	case UIRemove:
+		fmt.Fprintf(&b, "removed by the user with %s", e.Element)
+	case UIError:
+		fmt.Fprintf(&b, "its script failed on %s %s: %s", e.Event, e.Element, e.Value)
+		return b.String()
 	default:
 		fmt.Fprintf(&b, "%s on %s", e.Event, e.Element)
 		if e.Value != "" {
@@ -187,21 +237,32 @@ func (e UIEvent) Note() string {
 		}
 		b.WriteString("; values: " + strings.Join(pairs, ", "))
 	}
+	if e.Data != "" {
+		b.WriteString("; data: " + e.Data)
+	}
 	return b.String()
 }
 
+// UIOutcome is what an event led to: the model told of it, the interface
+// submitted, its dialog closed, or the interface removed.
+type UIOutcome struct {
+	Told, Submitted, Hidden, Removed bool
+}
+
 // UIs holds the interfaces of the conversation in progress and what the
-// user did in them, for the model to hear at its next step.
+// user did in them, for the model to hear at its next step. With a root,
+// each conversation keeps its own beside its file.
 type UIs struct {
 	mu           sync.Mutex
+	root         string
 	conversation string
 	uis          []*UI
 	events       []UIEvent
 	onChange     func()
 }
 
-func NewUIs() *UIs {
-	return &UIs{}
+func NewUIs(root string) *UIs {
+	return &UIs{root: root}
 }
 
 // OnChange sets what is told when the model creates, updates or removes an
@@ -221,11 +282,61 @@ func (u *UIs) changed() {
 	}
 }
 
-// SetConversation names the conversation in progress.
+// SetConversation names the conversation in progress, and brings back the
+// interfaces it kept, scripts running again with their state.
 func (u *UIs) SetConversation(id string) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
+	if id == u.conversation {
+		return
+	}
 	u.conversation = id
+	if id == "" || u.root == "" || slices.ContainsFunc(u.uis, func(each *UI) bool { return each.Conversation == id }) {
+		return
+	}
+	data, err := os.ReadFile(sessions.UIFile(u.root, id))
+	if err != nil {
+		return
+	}
+	var kept []*UI
+	if json.Unmarshal(data, &kept) != nil {
+		return
+	}
+	for _, ui := range kept {
+		ui.Conversation = id
+		if ui.Script != "" {
+			if script, err := loadScript(ui); err == nil {
+				ui.script = script
+			} else {
+				ui.Error = err.Error()
+			}
+		}
+		u.uis = append(u.uis, ui)
+	}
+}
+
+// save writes the interfaces of the conversation in progress to its
+// folder; the lock is held.
+func (u *UIs) save() {
+	if u.root == "" || u.conversation == "" {
+		return
+	}
+	var kept []*UI
+	for _, each := range u.uis {
+		if each.Conversation == u.conversation {
+			kept = append(kept, each)
+		}
+	}
+	path := sessions.UIFile(u.root, u.conversation)
+	if len(kept) == 0 {
+		os.Remove(path)
+		return
+	}
+	data, err := json.Marshal(kept)
+	if err != nil || os.MkdirAll(filepath.Dir(path), 0o700) != nil {
+		return
+	}
+	_ = os.WriteFile(path, data, 0o600)
 }
 
 // List returns the interfaces of the conversation in progress, the oldest
@@ -236,10 +347,25 @@ func (u *UIs) List() []UI {
 	var list []UI
 	for _, each := range u.uis {
 		if each.Conversation == u.conversation {
-			list = append(list, *each)
+			list = append(list, each.copied())
 		}
 	}
 	return list
+}
+
+// copied is an interface with maps of its own, safe to read while the
+// script or the user changes the one kept.
+func (ui *UI) copied() UI {
+	out := *ui
+	out.Values = maps.Clone(ui.Values)
+	out.State = maps.Clone(ui.State)
+	if ui.Changes != nil {
+		out.Changes = map[string]map[string]any{}
+		for id, props := range ui.Changes {
+			out.Changes[id] = maps.Clone(props)
+		}
+	}
+	return out
 }
 
 // Get returns an interface of the conversation in progress.
@@ -247,7 +373,7 @@ func (u *UIs) Get(id int) (UI, bool) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	if found := u.find(id); found != nil {
-		return *found, true
+		return found.copied(), true
 	}
 	return UI{}, false
 }
@@ -265,12 +391,25 @@ func (u *UIs) find(id int) *UI {
 func (u *UIs) MarkSeen(id int) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	if found := u.find(id); found != nil {
+	if found := u.find(id); found != nil && !found.Seen {
 		found.Seen = true
+		u.save()
 	}
 }
 
-func (u *UIs) create(title string, tree UINode) (int, error) {
+// SetValue keeps what the user typed in an input.
+func (u *UIs) SetValue(id int, element, value string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if found := u.find(id); found != nil {
+		if found.Values == nil {
+			found.Values = map[string]string{}
+		}
+		found.Values[element] = value
+	}
+}
+
+func (u *UIs) create(title, script string, tree UINode) (int, error) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	if u.conversation == "" {
@@ -282,26 +421,82 @@ func (u *UIs) create(title string, tree UINode) (int, error) {
 			next = max(next, each.ID+1)
 		}
 	}
-	u.uis = append(u.uis, &UI{ID: next, Title: title, Tree: tree, Conversation: u.conversation, Version: 1})
+	ui := &UI{ID: next, Title: title, Tree: tree, Script: script, Conversation: u.conversation, Version: 1}
+	if err := ui.startScript(); err != nil {
+		return 0, err
+	}
+	u.uis = append(u.uis, ui)
+	u.save()
 	return next, nil
 }
 
-func (u *UIs) update(id int, title string, tree *UINode) error {
+func (u *UIs) update(id int, title string, tree *UINode, script *string) error {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	found := u.find(id)
 	if found == nil {
 		return fmt.Errorf("no UI %d; create one first", id)
 	}
+	next := *found
 	if title != "" {
-		found.Title = title
+		next.Title = title
 	}
 	if tree != nil {
-		found.Tree = *tree
+		next.Tree = *tree
+		next.Changes = nil
 	}
-	found.Version++
-	found.Seen = false
+	if script != nil {
+		next.Script = *script
+	}
+	if tree != nil || script != nil {
+		if err := next.startScript(); err != nil {
+			return err
+		}
+	}
+	next.Version++
+	next.Seen = false
+	next.Error = ""
+	*found = next
+	u.save()
 	return nil
+}
+
+// startScript runs the script anew, its state kept, after checking every
+// handler the tree names is one of its functions.
+func (ui *UI) startScript() error {
+	var names []string
+	collectHandlers(ui.Tree, &names)
+	if ui.Script == "" {
+		if len(names) > 0 {
+			return fmt.Errorf("%s names a function, and there is no script", names[0])
+		}
+		ui.script = nil
+		return nil
+	}
+	script, err := loadScript(ui)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		if _, ok := script.state.GetGlobal(name).(*lua.LFunction); !ok {
+			return fmt.Errorf("the script defines no function %q", name)
+		}
+	}
+	ui.script = script
+	return nil
+}
+
+func collectHandlers(n UINode, names *[]string) {
+	for _, handler := range []string{n.OnClick, n.OnInput, n.OnChange} {
+		switch handler {
+		case "", UINotify, UISubmit, UIClose, UIRemove:
+		default:
+			*names = append(*names, handler)
+		}
+	}
+	for _, child := range n.Children {
+		collectHandlers(child, names)
+	}
 }
 
 // Remove takes an interface away, as the model or the user asks.
@@ -312,7 +507,63 @@ func (u *UIs) Remove(id int) error {
 		return fmt.Errorf("no UI %d", id)
 	}
 	u.uis = slices.DeleteFunc(u.uis, func(each *UI) bool { return each.Conversation == u.conversation && each.ID == id })
+	u.save()
 	return nil
+}
+
+// Fire does what an element names for an event: tell the model, send it
+// every value, close the interface, or call the script's function, which
+// may do any of those. A button that names nothing tells the model.
+func (u *UIs) Fire(id int, element, event string) UIOutcome {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	ui := u.find(id)
+	if ui == nil {
+		return UIOutcome{}
+	}
+	node, ok := findUINode(ui.Shown(), element)
+	if !ok {
+		return UIOutcome{}
+	}
+	handler := map[string]string{"click": node.OnClick, "input": node.OnInput, "change": node.OnChange}[event]
+	if handler == "" && event == "click" {
+		handler = UINotify
+	}
+	value := node.Value
+	base := UIEvent{UI: ui.ID, Title: ui.Title, Event: event, Element: element, Value: value, conv: u.conversation}
+	var outcome UIOutcome
+	switch handler {
+	case "":
+		return outcome
+	case UINotify, UISubmit, UIClose, UIRemove:
+		outcome = u.act(ui, base, handler, "")
+	default:
+		outcome = u.runHandler(ui, base, handler)
+	}
+	if outcome.Removed {
+		u.uis = slices.DeleteFunc(u.uis, func(each *UI) bool { return each == ui })
+	}
+	u.save()
+	return outcome
+}
+
+// act queues what an action tells the model; the lock is held.
+func (u *UIs) act(ui *UI, base UIEvent, action, data string) UIOutcome {
+	event := base
+	event.Action, event.Data = action, data
+	switch action {
+	case UISubmit:
+		event.Values = inputValuesOf(ui.Shown())
+		u.events = append(u.events, event)
+		return UIOutcome{Told: true, Submitted: true}
+	case UIClose:
+		return UIOutcome{Hidden: true}
+	case UIRemove:
+		u.events = append(u.events, event)
+		return UIOutcome{Told: true, Removed: true}
+	}
+	u.events = append(u.events, event)
+	return UIOutcome{Told: true}
 }
 
 // Event queues what the user did for the model.
@@ -351,24 +602,54 @@ func (u *UIs) HasEvents() bool {
 	return slices.ContainsFunc(u.events, func(event UIEvent) bool { return event.conv == u.conversation })
 }
 
+func findUINode(n UINode, id string) (UINode, bool) {
+	if n.ID == id {
+		return n, true
+	}
+	for _, child := range n.Children {
+		if found, ok := findUINode(child, id); ok {
+			return found, true
+		}
+	}
+	return UINode{}, false
+}
+
+func inputValuesOf(n UINode) map[string]string {
+	values := map[string]string{}
+	var walk func(n UINode)
+	walk = func(n UINode) {
+		if n.Type == UIInput {
+			values[n.ID] = n.Value
+		}
+		for _, child := range n.Children {
+			walk(child)
+		}
+	}
+	walk(n)
+	return values
+}
+
 var uiHelp = []helpTopic{
-	{"create", "title, tree: show an interface in the user's side panel, which opens it as a dialog; returns its id. What the user does in it comes to you as a note."},
-	{"update", "id, and tree or title: replace it; inputs keep what the user typed."},
+	{"create", "title, tree, script: show an interface in the user's side panel, which opens it as a dialog; returns its id. What the user does in it comes to you as a note."},
+	{"update", "id, and tree, title or script: replace them; inputs keep what the user typed, the script its state."},
 	{"remove", "id: take it away."},
 	{"nodes", "panel: children in a row or column (direction), justify start|center|end|space-between|space-around, align start|center|end|stretch, gap. " +
 		"card: a panel with a border and a title. label: text. button: label, disabled. input: value, placeholder, width. " +
 		"Every node: id, bg, fg (#rrggbb or text, dim, accent, error, warning, success, surface, background), padding and margin (1, 2 or 4 numbers, as in CSS), " +
 		"border (rounded, normal, thick, double, none), bold, visible, width, height, grow (a share of the room left in a row)."},
-	{"events", "on_click (button), on_input (each key in an input), on_change (an input when left or on enter): notify sends you the event; submit sends you every input's value; close takes the interface away and tells you. A button without on_click notifies."},
+	{"events", "on_click (button), on_input (each key in an input), on_change (an input when left or on enter): notify sends you the event; submit sends you every input's value; close only closes the dialog, the interface staying listed; remove takes the interface away and tells you; any other name calls that function of the script. A button without on_click notifies."},
+	{"script", "Lua (base, table, string, math), run on the user's side without you: function f(event) gets event.id, event.type (click, input, change) and event.value. " +
+		"ui.set(id, {text=, label=, value=, placeholder=, title=, fg=, bg=, visible=, disabled=, bold=, width=, height=, border=}) changes an element; ui.get(id) reads it; ui.value(id) an input's value; " +
+		"ui.state is a table kept between events; ui.notify(data) and ui.submit(data) tell you, with data; ui.close() closes the dialog; ui.remove() takes the interface away and tells you. Validate in on_input and submit from a button's function once valid."},
 }
 
 func uiTool() Tool {
 	return Tool{
 		Name:        "ui",
-		Description: "Show the user an interface of panels, cards, labels, buttons and inputs, in their side panel; what they do in it comes back to you. help explains the nodes.",
+		Description: "Show the user an interface of panels, cards, labels, buttons and inputs, in their side panel; what they do in it comes back to you. A Lua script can handle events on their side. help explains the nodes, events and script.",
 		Schema: json.RawMessage(`{"type":"object","properties":{
 "action":{"type":"string","enum":["create","update","remove","help"]},"id":{"type":"integer"},"title":{"type":"string"},
-"tree":{"type":"object"},"topic":{"type":"string"}},"required":["action"]}`),
+"tree":{"type":"object"},"script":{"type":"string"},"topic":{"type":"string"}},"required":["action"]}`),
 		Run:       runUI,
 		LooseArgs: false,
 		Summary: func(args json.RawMessage) string {
@@ -383,6 +664,7 @@ func runUI(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 		ID     int     `json:"id"`
 		Title  string  `json:"title"`
 		Tree   *UINode `json:"tree"`
+		Script *string `json:"script"`
 		Topic  string  `json:"topic"`
 	}
 	if err := decodeArgs(raw, &args); err != nil {
@@ -404,14 +686,18 @@ func runUI(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 		if args.Tree == nil {
 			return "", errors.New("create needs a tree")
 		}
-		id, err := env.UIs.create(orDefaultString(args.Title, "Interface"), *args.Tree)
+		script := ""
+		if args.Script != nil {
+			script = *args.Script
+		}
+		id, err := env.UIs.create(orDefaultString(args.Title, "Interface"), script, *args.Tree)
 		if err != nil {
 			return "", err
 		}
 		env.UIs.changed()
 		return fmt.Sprintf("UI %d created; it is listed in the user's side panel, and what they do in it comes to you as a note", id), nil
 	case "update":
-		if err := env.UIs.update(args.ID, args.Title, args.Tree); err != nil {
+		if err := env.UIs.update(args.ID, args.Title, args.Tree, args.Script); err != nil {
 			return "", err
 		}
 		env.UIs.changed()

@@ -287,7 +287,9 @@ func (m model) useSession(session Session) (tea.Model, tea.Cmd) {
 		m.vim = vimState{enabled: enabled}
 	}
 	m.usage = m.session.Agent.LastUsage
-	return m, m.applyScreen(m.printer.isDark())
+	// The side panel's setting may have changed the conversation's width.
+	fit := m.fitWidth()
+	return m, tea.Batch(fit, m.applyScreen(m.printer.isDark()))
 }
 
 func isAgentMsg(msg tea.Msg) bool {

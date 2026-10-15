@@ -282,9 +282,18 @@ cards with a border and a title, labels, buttons and inputs, each with `bg`, `fg
 in the side panel, new until you open it; a click opens it as a dialog over the screen, and a
 click outside hides it again. In it, tab moves, enter presses, and what you type fills the input
 in focus. `on_click`, `on_input` and `on_change` take `notify` (the model hears the event),
-`submit` (it hears every input's value) or `close` (the interface goes, and it hears so); a
-button without one notifies. The model hears at its next step, or in a turn of its own when idle.
-A right click in the panel opens or removes one. They last until mo exits.
+`submit` (it hears every input's value), `close` (the dialog closes, the interface stays listed)
+or `remove` (the interface goes, and it hears so); a
+button without one notifies, and any other name calls that function of the interface's `script`:
+Lua run on your side, without the model, in the same sandbox as plugins (base, table, string,
+math), each event given half a second. `ui.set(id, {text=, fg=, bg=, visible=, disabled=, ...})`
+changes an element, `ui.get` and `ui.value` read, `ui.state` keeps a table between events, and
+`ui.notify(data)` and `ui.submit(data)` tell the model, `ui.close()` closes the dialog and
+`ui.remove()` takes the interface away, telling it: so a form validates as you
+type and submits only once valid. A script's error shows under the interface and is told to the
+model. The model hears at its next step, or in a turn of its own when idle. A right click in the
+panel opens or removes one. Interfaces are kept in the conversation's folder, with what was typed
+and the scripts' state, and come back with it on resume.
 
 `ask` lets the model ask you questions, with options or free text. What the calls of one reply
 need from you, approvals and questions, is asked at once in a dialog above the input: tabs show

@@ -21,10 +21,9 @@ const (
 // uiChangedMsg says the model created, updated or removed an interface.
 type uiChangedMsg struct{}
 
-// uiLive is what the user did in an interface: what they typed, where the
-// focus is, how far it is scrolled.
+// uiLive is where the focus is in an interface and how far it is
+// scrolled; what was typed is kept with the interface.
 type uiLive struct {
-	values map[string]string
 	focus  string
 	scroll int
 }
@@ -43,7 +42,7 @@ func (m *model) live(id int) *uiLive {
 	}
 	state, ok := m.uiLives[id]
 	if !ok {
-		state = &uiLive{values: map[string]string{}}
+		state = &uiLive{}
 		m.uiLives[id] = state
 	}
 	return state
@@ -61,7 +60,7 @@ func (m model) openUI(id int) (tea.Model, tea.Cmd) {
 	}
 	uis.MarkSeen(id)
 	state := m.live(id)
-	if ids := focusable(ui.Tree); len(ids) > 0 && !slices.Contains(ids, state.focus) {
+	if ids := focusable(ui.Shown()); len(ids) > 0 && !slices.Contains(ids, state.focus) {
 		state.focus = ids[0]
 	}
 	m.uiOpen = id
@@ -87,11 +86,15 @@ func (m model) uiFrame() (uiFrame, bool) {
 	}
 	state := m.live(m.uiOpen)
 	width := max(min(m.width-6, uiDialogMaxWidth), 20)
-	body := uiRenderer{values: state.values, focus: state.focus}.render(ui.Tree, width-4, "", false)
+	body := uiRenderer{focus: state.focus}.render(ui.Shown(), width-4, "", false)
 	room := max(m.height-6, 3)
 	state.scroll = min(max(state.scroll, 0), max(body.height()-room, 0))
 	shown := body.lines[state.scroll:min(state.scroll+room, body.height())]
-	content := strings.Join(shown, "\n") + "\n\n" + dimStyle.Render(ansi.Truncate(uiDialogHelp, width-4, "…"))
+	content := strings.Join(shown, "\n") + "\n"
+	if ui.Error != "" {
+		content += "\n" + errorStyle.Render(ansi.Truncate("script: "+ui.Error, width-4, "…"))
+	}
+	content += "\n" + dimStyle.Render(ansi.Truncate(uiDialogHelp, width-4, "…"))
 	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(popupBorder).Padding(0, 1).
 		Render(toolName.Render(fmt.Sprintf("UI %d · %s", ui.ID, ui.Title)) + "\n" + content)
 	lines := strings.Split(box, "\n")
@@ -142,14 +145,14 @@ func (m model) updateUI(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		for _, hit := range frame.hits {
 			if msg.X >= hit.x0 && msg.X < hit.x1 && msg.Y >= hit.y0 && msg.Y < hit.y1 {
-				node, _ := findNode(ui.Tree, hit.id)
+				node, _ := findNode(ui.Shown(), hit.id)
 				if node.Disabled {
 					return m, nil
 				}
 				previous := state.focus
-				state.focus = hit.id
 				if node.Type == tools.UIButton {
-					return m.uiEvent(ui, node, "click", node.OnClick)
+					state.focus = hit.id
+					return m.uiFire(ui.ID, hit.id, "click")
 				}
 				return m.leaveInput(ui, previous, hit.id)
 			}
@@ -169,7 +172,8 @@ func (m model) updateUI(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) uiKey(ui tools.UI, state *uiLive, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	ids := focusable(ui.Tree)
+	shown := ui.Shown()
+	ids := focusable(shown)
 	at := slices.Index(ids, state.focus)
 	move := func(by int) (tea.Model, tea.Cmd) {
 		if len(ids) == 0 {
@@ -178,7 +182,7 @@ func (m model) uiKey(ui tools.UI, state *uiLive, msg tea.KeyPressMsg) (tea.Model
 		next := ids[(max(at, 0)+by+len(ids))%len(ids)]
 		return m.leaveInput(ui, state.focus, next)
 	}
-	node, _ := findNode(ui.Tree, state.focus)
+	node, _ := findNode(shown, state.focus)
 	switch msg.String() {
 	case "esc", "ctrl+c":
 		m.uiOpen = 0
@@ -196,11 +200,11 @@ func (m model) uiKey(ui tools.UI, state *uiLive, msg tea.KeyPressMsg) (tea.Model
 	case "enter":
 		switch node.Type {
 		case tools.UIButton:
-			return m.uiEvent(ui, node, "click", node.OnClick)
+			return m.uiFire(ui.ID, node.ID, "click")
 		case tools.UIInput:
-			updated, cmd := m.uiEvent(ui, node, "change", node.OnChange)
+			updated, cmd := m.uiFire(ui.ID, node.ID, "change")
 			if next := updated.(model); next.uiOpen == ui.ID {
-				after, more := next.focusNext(ui)
+				after, more := next.focusNext(ui.ID)
 				return after, tea.Batch(cmd, more)
 			}
 			return updated, cmd
@@ -210,10 +214,7 @@ func (m model) uiKey(ui tools.UI, state *uiLive, msg tea.KeyPressMsg) (tea.Model
 	if node.Type != tools.UIInput {
 		return m, nil
 	}
-	value, typed := state.values[node.ID]
-	if !typed {
-		value = node.Value
-	}
+	value := node.Value
 	switch msg.String() {
 	case "backspace":
 		if runes := []rune(value); len(runes) > 0 {
@@ -227,14 +228,18 @@ func (m model) uiKey(ui tools.UI, state *uiLive, msg tea.KeyPressMsg) (tea.Model
 		}
 		value += msg.Text
 	}
-	state.values[node.ID] = value
-	return m.uiEvent(ui, node, "input", node.OnInput)
+	m.uis().SetValue(ui.ID, node.ID, value)
+	return m.uiFire(ui.ID, node.ID, "input")
 }
 
 // focusNext moves the focus one place on, as tab does.
-func (m model) focusNext(ui tools.UI) (tea.Model, tea.Cmd) {
-	state := m.live(ui.ID)
-	ids := focusable(ui.Tree)
+func (m model) focusNext(id int) (tea.Model, tea.Cmd) {
+	ui, ok := m.uis().Get(id)
+	if !ok {
+		return m, nil
+	}
+	state := m.live(id)
+	ids := focusable(ui.Shown())
 	if at := slices.Index(ids, state.focus); at >= 0 && len(ids) > 1 {
 		state.focus = ids[(at+1)%len(ids)]
 	}
@@ -248,36 +253,24 @@ func (m model) leaveInput(ui tools.UI, from, to string) (tea.Model, tea.Cmd) {
 	if from == to || from == "" {
 		return m, nil
 	}
-	if node, ok := findNode(ui.Tree, from); ok && node.Type == tools.UIInput && node.OnChange != "" {
-		return m.uiEvent(ui, node, "change", node.OnChange)
+	if node, ok := findNode(ui.Shown(), from); ok && node.Type == tools.UIInput && node.OnChange != "" {
+		return m.uiFire(ui.ID, from, "change")
 	}
 	return m, nil
 }
 
-// uiEvent does what an element's handler says: tell the model, send it
-// every value, or close the interface. A button without one tells it.
-func (m model) uiEvent(ui tools.UI, node tools.UINode, event, handler string) (tea.Model, tea.Cmd) {
-	if handler == "" && event == "click" {
-		handler = tools.UINotify
-	}
-	uis := m.uis()
-	state := m.live(ui.ID)
-	value := state.values[node.ID]
-	switch handler {
-	case tools.UINotify:
-		uis.Event(tools.UIEvent{UI: ui.ID, Action: tools.UINotify, Event: event, Element: node.ID, Value: value})
-	case tools.UISubmit:
-		uis.Event(tools.UIEvent{UI: ui.ID, Action: tools.UISubmit, Event: event, Element: node.ID, Values: inputValues(ui.Tree, state.values)})
+// uiFire lets the interface do what an element names for an event, and
+// follows: a submitted or closed one hides, a removed one goes, and an
+// idle model gets a turn to hear what it was told.
+func (m model) uiFire(id int, element, event string) (tea.Model, tea.Cmd) {
+	outcome := m.uis().Fire(id, element, event)
+	if outcome.Submitted || outcome.Hidden || outcome.Removed {
 		m.uiOpen = 0
-	case tools.UIClose:
-		_ = uis.Remove(ui.ID)
-		uis.Event(tools.UIEvent{UI: ui.ID, Title: ui.Title, Action: tools.UIClose, Event: event, Element: node.ID})
-		delete(m.uiLives, ui.ID)
-		m.uiOpen = 0
-	default:
-		return m, nil
 	}
-	if m.running {
+	if outcome.Removed {
+		delete(m.uiLives, id)
+	}
+	if !outcome.Told || m.running {
 		return m, nil
 	}
 	return m.reactToJobs()

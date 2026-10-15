@@ -896,8 +896,15 @@
 - A tree of five nodes, panel, card, label, button and input, all taking the same style fields,
   laid out by a small flex of our own over lipgloss: no flexbox library fitted without its own
   model. Sizes are in cells, so bars of a chart are panels of a width and a colour.
-- Events name what to do: notify, submit or close; the model hears them as notes, as it hears of
-  ended jobs, and an idle model gets a turn of its own. Nothing blocks a tool call while the user
-  thinks. Validation is meant for Lua handlers, to come; until then a handler naming a function
-  is refused with that said.
-- Interfaces live in memory for the run of mo; they are not rebuilt on resume yet.
+- Events name what to do: notify, submit, close (the dialog only) or remove (the interface, told
+  to the model), or a function of the interface's script; the
+  model hears them as notes, as it hears of ended jobs, and an idle model gets a turn of its own.
+  Nothing blocks a tool call while the user thinks.
+- Scripts are Lua in the plugins' sandbox (`internal/luabox`, shared): base, table, string and
+  math only, `string.rep` capped, half a second an event, two to load. They change elements through
+  `ui.set`, which checks every field as the tree is checked, and tell the model only when they
+  call notify, submit or close: validation as the user types costs no turn. Every handler a tree
+  names must be a function of its script, checked when it is created.
+- What the user typed, what scripts changed and their `ui.state` are kept with the interface, in
+  `sessions/<id>/uis.json`, written after each event and change: resuming a conversation runs
+  its scripts again with their state, so interfaces come back as they were left.
