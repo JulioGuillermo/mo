@@ -364,7 +364,8 @@ Every conversation is saved after each turn in `~/.local/share/mo/sessions/`, re
 - `/rewind`, or esc twice with an empty input, lists your prompts: the one you pick comes back into
   the input to edit and send, and the conversation goes on from before it, in a fork. The
   conversation as it was stays in `/resume`.
-- `/fork` goes on in a copy; `/clear` starts a new conversation. Neither loses the old one.
+- `/fork` goes on in a copy; `/new` starts a new conversation on a clear screen. Neither loses
+  the old one.
 - `/delete` deletes the conversation in progress, with the output of its commands, after asking. In
   `/resume`, ctrl+x, delete or a click on ✕ deletes one, after asking too. `/clean <date or age>`
   deletes those of this folder last used before it: `/clean 2026-08-01`, `/clean 2 months`,
@@ -520,5 +521,5 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | click on the branch | the files changed, each with its kind |
 | right click | a small menu by the pointer, over the screen (↑↓ or j k, enter or a click, esc or a click outside closes it): the mode: all modes to pick · a task: change its state or delete it · a job in the panel, or a bash call still running: watch its output live, its last lines, send it to the background, kill it |
 | wheel over the side panel | scroll its tasks and jobs |
-| `/clear` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact` `/settings` `/providers` `/mcp` `/plugins` `/view <file>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
+| `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact` `/settings` `/providers` `/mcp` `/plugins` `/view <file>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
 | `/<name> text` | a plugin command |

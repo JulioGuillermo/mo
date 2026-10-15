@@ -36,7 +36,7 @@ func (a *Agent) dropOldest(hooks Hooks) {
 		return
 	}
 	if dropped == 0 {
-		hooks.OnNotice("the turn in progress alone fills the context; /compact or /clear can help")
+		hooks.OnNotice("the turn in progress alone fills the context; /compact or /new can help")
 		return
 	}
 	hooks.OnNotice(fmt.Sprintf("dropped the %d oldest messages: %s → %s tokens", dropped, approxTokens(before), approxTokens(a.ContextUsed())))

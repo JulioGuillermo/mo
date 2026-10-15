@@ -29,7 +29,7 @@ type command struct {
 }
 
 var builtinCommands = []command{
-	{name: "clear", description: "start a new conversation; the last one stays saved"},
+	{name: "new", description: "start a new conversation on a clear screen; the last one stays in /resume"},
 	{name: "resume", description: "go back to a saved conversation of this folder"},
 	{name: "rewind", description: "go back to one of your prompts to edit it, in a fork (esc esc)"},
 	{name: "fork", description: "go on in a copy of the conversation"},

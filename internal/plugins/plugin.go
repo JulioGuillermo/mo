@@ -28,7 +28,7 @@ const (
 	maxNameLength = 48
 )
 
-var reservedCommands = []string{"clear", "compact", "settings", "providers", "mcp", "plugins", "view", "help", "quit", "exit"}
+var reservedCommands = []string{"new", "clear", "compact", "settings", "providers", "mcp", "plugins", "view", "help", "quit", "exit"}
 
 var (
 	errPluginStuck = errors.New("stopped responding and was turned off")

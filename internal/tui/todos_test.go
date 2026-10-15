@@ -3,7 +3,7 @@ package tui
 // Test Traceability Table
 // | ID    | Category | Description                                                          | Priority |
 // | TP-01 | Happy    | A todo call puts the list above the input; it goes once all is done  | P0       |
-// | TP-02 | Happy    | Resume and rewind bring back the list as it was then; /clear drops it | P1      |
+// | TP-02 | Happy    | Resume and rewind bring back the list as it was then; /new drops it | P1      |
 // | TP-03 | Edge     | A long list counts the finished tasks and shows what is left         | P2       |
 
 import (
@@ -39,7 +39,7 @@ func TestTodoPanel(t *testing.T) {
 		}
 	})
 
-	t.Run("TP-02 resume and rewind bring back the list as it was then; /clear drops it", func(t *testing.T) {
+	t.Run("TP-02 resume and rewind bring back the list as it was then; /new drops it", func(t *testing.T) {
 		m := savedModel(t)
 		history := []llm.Message{
 			{Role: llm.RoleUser, Text: "build it"},
@@ -52,7 +52,7 @@ func TestTodoPanel(t *testing.T) {
 		resumed := len(m.todos)
 		m.session.Agent.History = history
 		rewound, _ := m.rewind(m.session.Agent.Prompts()[1])
-		cleared, _ := rewound.(model).runCommand("/clear")
+		cleared, _ := rewound.(model).runCommand("/new")
 
 		if resumed != 2 || len(rewound.(model).todos) != 1 || rewound.(model).todos[0].Status != "in_progress" || cleared.(model).todos != nil {
 			t.Errorf("resumed = %d rewound = %+v", resumed, rewound.(model).todos)

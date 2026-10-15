@@ -6,7 +6,7 @@ package tui
 // | TL-02 | Happy    | ctrl+o opens tool calls too; a click opens only the one under it     | P1       |
 // | CV-01 | Happy    | A turn's end saves the conversation; resume brings it back drawn whole | P0     |
 // | CV-02 | Happy    | Rewind goes on in a fork before the prompt, which waits in the input  | P0       |
-// | CV-03 | Happy    | Fork saves a copy naming the original; /clear starts a new one       | P1       |
+// | CV-03 | Happy    | Fork saves a copy naming the original; /new starts a new one on a clear screen | P1     |
 // | CV-04 | Happy    | esc twice with an empty input opens the prompts to go back to        | P1       |
 // | CV-05 | Happy    | Continuing loads the latest conversation of the folder at once       | P1       |
 // | CV-06 | Happy    | /delete asks, then deletes the conversation and its output, and starts anew | P0 |
@@ -152,7 +152,7 @@ func TestConversations(t *testing.T) {
 		}
 	})
 
-	t.Run("CV-03 fork saves a copy naming the original; /clear starts a new one", func(t *testing.T) {
+	t.Run("CV-03 fork saves a copy naming the original; /new starts a new one on a clear screen", func(t *testing.T) {
 		m := savedModel(t)
 		m.session.Agent.History = chat
 		m = run(t, m, m.saveConversation())
@@ -161,7 +161,12 @@ func TestConversations(t *testing.T) {
 		forked, cmd := m.fork()
 		m = run(t, forked.(model), cmd)
 		infos, _ := sessions.List(config.SessionDir(), config.ProjectKey(m.session.WorkDir))
-		cleared, _ := m.runCommand("/clear")
+		m.replay(chat)
+		cleared, _ := m.runCommand("/new")
+		alias, _ := m.runCommand("/clear")
+		if strings.Contains(ansi.Strip(shown(cleared.(model))), "list the files") || alias.(model).thread.id != "" {
+			t.Errorf("the screen should start clear, and /clear still work:\n%s", shown(cleared.(model)))
+		}
 
 		if len(infos) != 2 || m.thread.parent != original || m.thread.id == original || len(cleared.(model).session.Agent.History) != 0 || cleared.(model).thread.id != "" {
 			t.Errorf("infos = %d thread = %+v", len(infos), m.thread)

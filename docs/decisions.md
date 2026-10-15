@@ -42,7 +42,7 @@
   the tool it stands for, so it is no way around a confirmation.
 - `tools.load = "declare"`: the tools found are declared from the next request on, as before, for
   providers that handle the wrapper badly. What is declared is read from the `tool_search` calls
-  in the history, not kept apart, so resume, rewind, fork and `/clear` declare what that
+  in the history, not kept apart, so resume, rewind, fork and `/new` declare what that
   conversation found. After a compaction the search calls are gone and so are the declarations.
 - A call to a tool that exists but is not declared still runs, with the usual approvals.
 - `always_loaded` is `read`, `edit`, `write`, `bash`, `ask` and `memory` by default: the core of

@@ -84,7 +84,7 @@ type titledMsg struct {
 	title string
 	err   error
 	// first is the conversation's first prompt when it was asked, so a
-	// title that comes after /clear or /resume is not given to another.
+	// title that comes after /new or /resume is not given to another.
 	first string
 }
 

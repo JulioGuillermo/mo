@@ -257,6 +257,11 @@ func (m *model) newConversation() {
 	m.thread = conversation{}
 	m.trackThread()
 	m.todos = nil
+	// The screen starts clear too: what was said stays in /resume.
+	m.blocks = nil
+	m.scrolled = false
+	m.vim.line = 0
+	m.uiOpen = 0
 }
 
 func oneLine(text string, length int) string {

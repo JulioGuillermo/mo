@@ -682,7 +682,7 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 	switch name {
 	case "quit", "exit":
 		return m, tea.Quit
-	case "clear":
+	case "new", "clear":
 		m.newConversation()
 		return m, printText(m.printer.Note("new conversation · the last one stays in /resume"))
 	case "resume":

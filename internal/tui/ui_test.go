@@ -263,7 +263,7 @@ func TestWhileRunning(t *testing.T) {
 		m := conversationModel()
 		m.running, m.cancel = true, func() {}
 
-		cleared := typed(m, "/clear")
+		cleared := typed(m, "/new")
 		sidebar := typed(m, "/sidebar")
 		fresh := Session{Agent: &agent.Agent{}, Provider: "fresh", Config: config.Defaults()}
 		fresh.Config.Render.Keys = "vim"
@@ -329,7 +329,7 @@ func TestWorkedTime(t *testing.T) {
 		working := ansi.Strip(m.bottom())
 		finished, _ := m.finishRun(nil)
 		idle := ansi.Strip(finished.(model).bottom())
-		cleared, _ := finished.(model).runCommand("/clear")
+		cleared, _ := finished.(model).runCommand("/new")
 
 		if !strings.Contains(working, "1m 15s") || !strings.Contains(working, "esc to stop") {
 			t.Errorf("working:\n%s", working)
@@ -338,7 +338,7 @@ func TestWorkedTime(t *testing.T) {
 			t.Errorf("idle:\n%s", idle)
 		}
 		if strings.Contains(ansi.Strip(cleared.(model).bottom()), "worked") {
-			t.Error("/clear should drop it")
+			t.Error("/new should drop it")
 		}
 		for d, want := range map[time.Duration]string{5 * time.Second: "5s", 61 * time.Second: "1m 01s", 2*time.Hour + 3*time.Minute: "2h 03m"} {
 			if got := formatElapsed(d); got != want {
