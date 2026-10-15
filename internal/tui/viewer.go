@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
 
 	tea "charm.land/bubbletea/v2"
@@ -119,7 +120,15 @@ func (m model) openFile(path string) (tea.Model, tea.Cmd) {
 	if text != "" {
 		v.lines = strings.Split(text, "\n")
 	}
-	if lexer := lexers.Match(filepath.Base(full)); lexer != nil {
+	lexer := lexers.Match(filepath.Base(full))
+	if lexer == nil {
+		lexer = shebangLexer(text)
+	}
+	if lexer == nil {
+		// Nothing in the name or the #! line: the content says, if anything.
+		lexer = lexers.Analyse(text)
+	}
+	if lexer != nil {
 		v.language = lexer.Config().Name
 		colored := highlightLines(text, v.language, 1<<30, lipgloss.NoColor{}, m.printer == nil || m.printer.isDark())
 		if len(colored) == len(v.lines) {
@@ -523,4 +532,33 @@ func (m model) viewerView() string {
 func drawnInline(path string) bool {
 	extension := strings.ToLower(filepath.Ext(path))
 	return render.IsImageFile(path) || extension == ".mmd" || extension == ".mermaid"
+}
+
+// shebangLexer is the lexer of a script's #! line: its interpreter, or the
+// one env runs, without its version, as python for python3.
+func shebangLexer(text string) chroma.Lexer {
+	first, _, _ := strings.Cut(text, "\n")
+	line, ok := strings.CutPrefix(strings.TrimSpace(first), "#!")
+	if !ok {
+		return nil
+	}
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return nil
+	}
+	interpreter := filepath.Base(fields[0])
+	if interpreter == "env" {
+		for _, field := range fields[1:] {
+			if !strings.HasPrefix(field, "-") {
+				interpreter = filepath.Base(field)
+				break
+			}
+		}
+	}
+	for _, name := range []string{interpreter, strings.TrimRight(interpreter, "0123456789.")} {
+		if lexer := lexers.Get(name); lexer != nil {
+			return lexer
+		}
+	}
+	return nil
 }

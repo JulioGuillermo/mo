@@ -4,6 +4,7 @@ package tui
 // | ID    | Category | Description                                                              | Priority |
 // | VF-01 | Happy    | tab after /view offers folders then files; a folder fills in, a file runs | P0      |
 // | VF-02 | Happy    | /view on code opens it highlighted, numbered, for the user only          | P0       |
+// | VF-04 | Happy    | A file without an extension is highlighted as its #! line says             | P1       |
 // | VF-03 | Edge     | A folder, a binary file or a picture are not opened as text             | P1       |
 
 import (
@@ -83,6 +84,22 @@ func TestViewFile(t *testing.T) {
 		}
 		if !drawnInline("chart.svg") || !drawnInline("flow.mmd") || !drawnInline("pic.PNG") || drawnInline("main.go") {
 			t.Error("pictures, SVG and Mermaid are drawn in the conversation")
+		}
+	})
+
+	t.Run("VF-04 a file without an extension is highlighted as its #! line says", func(t *testing.T) {
+		m := viewModel(t)
+		_ = os.WriteFile(filepath.Join(m.session.WorkDir, "deploy"), []byte("#!/bin/bash\nset -e\necho \"deploying $1\"\n"), 0o755)
+		_ = os.WriteFile(filepath.Join(m.session.WorkDir, "tool"), []byte("#!/usr/bin/env python3\nprint('hi')\n"), 0o755)
+
+		bash, _ := m.runCommand("/view deploy")
+		python, _ := m.runCommand("/view tool")
+
+		if viewer := bash.(model).viewer; viewer == nil || viewer.language != "Bash" || viewer.colored == nil {
+			t.Errorf("bash viewer = %+v", viewer)
+		}
+		if viewer := python.(model).viewer; viewer == nil || !strings.HasPrefix(viewer.language, "Python") {
+			t.Errorf("python language = %q", python.(model).viewer.language)
 		}
 	})
 }
