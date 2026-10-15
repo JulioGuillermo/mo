@@ -924,3 +924,15 @@
 - `@` searches an index of the working directory's files, read again after 15 s, hidden folders
   and those of dependencies and builds left out: names that start with what was typed come
   first, then names and paths that hold it, then paths holding its letters in order.
+
+## Effort
+
+- Most providers do not say which efforts a model takes, and finding out would cost a request.
+  So: llama-server's chat template is read from /props (free, mo reads /props already); the
+  families whose levels are known have them in a table; any other is offered every level, with a
+  note that the provider does not say.
+- A request an effort is refused for (400 naming the effort, reasoning or thinking) is sent once
+  more without it, and the model is remembered as taking none for the run: no turn is lost to an
+  effort a server does not know.
+- On llama-server `none` turns thinking off through `chat_template_kwargs.enable_thinking`, which
+  Qwen3 and the like read; a level goes there too, as `reasoning_effort`, for gpt-oss.

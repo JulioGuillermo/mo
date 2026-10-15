@@ -143,6 +143,9 @@ func (m model) statusSegments(show statusParts) []segment {
 			}, menu: func(m model) (tea.Model, tea.Cmd) { return m.modeMenu() }})
 	}
 	modelName := lipgloss.NewStyle().Foreground(colors.model).Bold(true).Render(shortModelName(m.session.Model))
+	if effort := m.currentEffort(); effort != "" {
+		modelName += paint(colors.label, " · ") + paint(colors.provider, effort)
+	}
 	pickModel := func(m model) (tea.Model, tea.Cmd) { return m.runCommand("/model") }
 	openProviders := func(m model) (tea.Model, tea.Cmd) { return m.runCommand("/providers") }
 	provider := ""

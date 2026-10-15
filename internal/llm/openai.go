@@ -23,6 +23,8 @@ type OpenAI struct {
 	// PromptProgress asks for how far the server is in reading the prompt.
 	// Only for llama-server: other servers may refuse the field.
 	PromptProgress bool
+	// refused are the models the server took no effort for.
+	refused refusedEfforts
 }
 
 type openAIMessage struct {
@@ -66,8 +68,11 @@ type openAIRequest struct {
 	// ReturnProgress is llama-server's: stream prompt_progress chunks
 	// while the prompt is read.
 	ReturnProgress bool `json:"return_progress,omitempty"`
-	Stream         bool `json:"stream"`
-	StreamOptions  struct {
+	// ChatTemplateKwargs reach llama-server's chat template: the effort
+	// gpt-oss takes there, or enable_thinking off for none.
+	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
+	Stream             bool           `json:"stream"`
+	StreamOptions      struct {
 		IncludeUsage bool `json:"include_usage"`
 	} `json:"stream_options"`
 }
@@ -107,6 +112,12 @@ func (p *OpenAI) Stream(ctx context.Context, req Request, onEvent func(Event)) (
 		return Response{}, err
 	}
 	resp, err := postJSON(ctx, clientOrDefault(p.Client), p.url("/chat/completions"), headers, p.buildRequest(req))
+	if err != nil && req.Effort != "" && refusesEffort(err) {
+		// The server takes no effort for this model: once more without it,
+		// and none sent from now on.
+		p.refused.refuse(req.Model)
+		resp, err = postJSON(ctx, clientOrDefault(p.Client), p.url("/chat/completions"), headers, p.buildRequest(req))
+	}
 	if err != nil {
 		return Response{}, err
 	}
@@ -225,7 +236,18 @@ func deltaIndex(delta openAIToolCall, callCount int) int {
 }
 
 func (p *OpenAI) buildRequest(req Request) openAIRequest {
-	out := openAIRequest{Model: req.Model, MaxTokens: req.MaxTokens, ReasoningEffort: req.Effort, ReturnProgress: p.PromptProgress, Stream: true}
+	effort := req.Effort
+	if p.refused.refused(req.Model) {
+		effort = ""
+	}
+	out := openAIRequest{Model: req.Model, MaxTokens: req.MaxTokens, ReasoningEffort: effort, ReturnProgress: p.PromptProgress, Stream: true}
+	if p.PromptProgress && effort != "" {
+		if effort == "none" {
+			out.ChatTemplateKwargs, out.ReasoningEffort = map[string]any{"enable_thinking": false}, ""
+		} else {
+			out.ChatTemplateKwargs = map[string]any{"reasoning_effort": effort}
+		}
+	}
 	out.StreamOptions.IncludeUsage = true
 	if req.System != "" {
 		out.Messages = append(out.Messages, openAIMessage{Role: "system", Content: req.System})

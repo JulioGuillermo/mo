@@ -64,6 +64,14 @@ Two protocols cover almost everything (three more serve the subscription logins:
 
 With no provider set, mo tries llama-server, ollama and lmstudio in that order.
 With no model set on an openai-type provider, it uses the first model the server lists.
+
+`/effort` sets how hard the model thinks, saved as `/model` saves a model; `/effort` alone opens
+a menu, and tab after `/effort ` offers `default` (the model's own, nothing sent) and the levels
+the model takes. The status line shows the one set, beside the model. Which levels: llama-server
+says through its chat template (gpt-oss's low to high, or `none` for a model whose thinking only
+turns off, sent as `enable_thinking: false`); Anthropic, Codex, Gemini and OpenAI's reasoning
+models are known; for any other every level is offered, saying the provider does not tell. A
+server that refuses the effort gets the request again without it, and none from then on.
 `antigravity` and `claude-code` start the system prompt as Antigravity's and Claude Code's own
 requests do, then say the model runs inside mo; `preamble = false` under the provider, or its form
 in `/providers`, sends mo's prompt alone (Claude accounts' tokens may be refused without it).

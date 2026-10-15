@@ -37,6 +37,7 @@ var builtinCommands = []command{
 	{name: "clean", argument: "<date or age>", description: "delete this folder's conversations last used before: /clean 2026-08-01, /clean 2 months"},
 	{name: "continue", description: "let the model go on after you stopped it"},
 	{name: "model", description: "pick a model of the provider in use, from the list it gives"},
+	{name: "effort", argument: "[level]", description: "how hard the model thinks: default for its own, or a level it takes"},
 	{name: "login", argument: "[provider]", description: "sign in to a provider that uses OAuth, the one in use by default"},
 	{name: "logout", argument: "[provider]", description: "forget a provider's sign-in"},
 	{name: "title", description: "name the conversation: /title <name>, or /title auto for the model to"},
@@ -92,8 +93,11 @@ func (m model) suggestions() []command {
 		return nil
 	}
 	if name, partial, spaced := strings.Cut(typed, " "); spaced {
-		if name == "view" {
+		switch name {
+		case "view":
 			return m.pathSuggestions(partial)
+		case "effort":
+			return m.effortSuggestions(partial)
 		}
 		return m.providerSuggestions(name, partial)
 	}

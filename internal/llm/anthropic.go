@@ -23,6 +23,8 @@ type Anthropic struct {
 	// NoPreamble, with Subscription, sends mo's system prompt alone,
 	// without Claude Code's opening line and the line after it.
 	NoPreamble bool
+	// refused are the models the API took no effort for.
+	refused refusedEfforts
 }
 
 const (
@@ -124,11 +126,21 @@ func (p *Anthropic) Stream(ctx context.Context, req Request, onEvent func(Event)
 		return Response{}, err
 	}
 	url := strings.TrimRight(p.BaseURL, "/") + "/v1/messages"
-	body := buildAnthropicRequest(req)
-	if p.Subscription && !p.NoPreamble {
-		body.System = append([]anthropicBlock{{Type: "text", Text: claudeCodeSystem}, {Type: "text", Text: claudeCodeBridge}}, body.System...)
+	build := func() anthropicRequest {
+		if p.refused.refused(req.Model) {
+			req.Effort = ""
+		}
+		body := buildAnthropicRequest(req)
+		if p.Subscription && !p.NoPreamble {
+			body.System = append([]anthropicBlock{{Type: "text", Text: claudeCodeSystem}, {Type: "text", Text: claudeCodeBridge}}, body.System...)
+		}
+		return body
 	}
-	resp, err := postJSON(ctx, clientOrDefault(p.Client), url, headers, body)
+	resp, err := postJSON(ctx, clientOrDefault(p.Client), url, headers, build())
+	if err != nil && req.Effort != "" && refusesEffort(err) {
+		p.refused.refuse(req.Model)
+		resp, err = postJSON(ctx, clientOrDefault(p.Client), url, headers, build())
+	}
 	if err != nil {
 		return Response{}, err
 	}

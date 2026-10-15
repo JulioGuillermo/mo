@@ -127,6 +127,8 @@ type model struct {
 	viewer *outputViewer
 	// vim is where vim keys are, when they are on.
 	vim vimState
+	// efforts are what the model in use takes, read from its provider.
+	efforts effortInfo
 	// fileComments are the user's comments on files shown with /view, by
 	// path; commentNotes what each attached comments label sends; files
 	// the index @ searches.
@@ -277,7 +279,7 @@ func (m model) Init() tea.Cmd {
 	if m.session.Continue {
 		start = tea.Sequence(start, listConversations(m.session.WorkDir, true))
 	}
-	return tea.Batch(start, tea.RequestBackgroundColor, textarea.Blink, m.readRepo())
+	return tea.Batch(start, tea.RequestBackgroundColor, textarea.Blink, m.readRepo(), loadEfforts(m.session))
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -288,6 +290,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.finishSettings(msg)
 	case deletedMsg:
 		return m.conversationsDeleted(msg)
+	case effortsMsg:
+		m.efforts = effortInfo(msg)
+		return m, nil
 	case modelsMsg:
 		return m.showModels(msg)
 	}
@@ -687,6 +692,8 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		return m, listConversations(m.session.WorkDir, false)
 	case "fork":
 		return m.fork()
+	case "effort":
+		return m.effortCommand(argument)
 	case "delete":
 		return m.deleteCurrent()
 	case "clean":
