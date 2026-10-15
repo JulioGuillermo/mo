@@ -27,10 +27,18 @@ const (
 	uiCursor     = "▏"
 )
 
-// uiHit is where a button or an input is drawn, to click it.
+// uiHit is where a control is drawn, to click it; part tells which of
+// its pieces: a radio's option counted from 1, or a select's arrow.
 type uiHit struct {
 	x0, y0, x1, y1 int
 	id             string
+	part           int
+}
+
+// moved is a hit drawn dx right and dy down.
+func (h uiHit) moved(dx, dy int) uiHit {
+	h.x0, h.x1, h.y0, h.y1 = h.x0+dx, h.x1+dx, h.y0+dy, h.y1+dy
+	return h
 }
 
 // uiBox is a node drawn: its lines, all as wide as width, and its hits.
@@ -116,7 +124,7 @@ func surround(box uiBox, top, right, bottom, left int, bg string) uiBox {
 	}
 	hits := make([]uiHit, len(box.hits))
 	for i, hit := range box.hits {
-		hits[i] = uiHit{hit.x0 + left, hit.y0 + top, hit.x1 + left, hit.y1 + top, hit.id}
+		hits[i] = hit.moved(left, top)
 	}
 	return uiBox{lines: lines, width: width, hits: hits}
 }
@@ -153,7 +161,7 @@ func framed(box uiBox, border lipgloss.Border, title, fg, bg string) uiBox {
 	lines = append(lines, edge.Render(border.BottomLeft+strings.Repeat(border.Bottom, inner)+border.BottomRight))
 	hits := make([]uiHit, len(box.hits))
 	for i, hit := range box.hits {
-		hits[i] = uiHit{hit.x0 + 1, hit.y0 + 1, hit.x1 + 1, hit.y1 + 1, hit.id}
+		hits[i] = hit.moved(1, 1)
 	}
 	return uiBox{lines: lines, width: inner + 2, hits: hits}
 }
@@ -230,7 +238,7 @@ func (r uiRenderer) content(n tools.UINode, width int, bg string, fill bool) uiB
 		}
 		line := uiStyle(fg, face, true).Render(text)
 		w := ansi.StringWidth(text)
-		return uiBox{lines: []string{line}, width: w, hits: []uiHit{{0, 0, w, 1, n.ID}}}
+		return uiBox{lines: []string{line}, width: w, hits: []uiHit{{x1: w, y1: 1, id: n.ID}}}
 	case tools.UIInput:
 		w := min(uiInputWidth, width)
 		if fill {
@@ -255,7 +263,15 @@ func (r uiRenderer) content(n tools.UINode, width int, bg string, fill bool) uiB
 			text = uiStyle(orDefault(n.FG, "text"), face, false).Render(ansi.Truncate(value, w, "…"))
 		}
 		line := text + blank(w-ansi.StringWidth(text), face)
-		return uiBox{lines: []string{line}, width: w, hits: []uiHit{{0, 0, w, 1, n.ID}}}
+		return uiBox{lines: []string{line}, width: w, hits: []uiHit{{x1: w, y1: 1, id: n.ID}}}
+	case tools.UISelect:
+		return r.selectBox(n, width, bg)
+	case tools.UISlider:
+		return r.slider(n, width, bg, fill)
+	case tools.UICheckbox, tools.UISwitch:
+		return r.checkbox(n, width, bg)
+	case tools.UIRadio:
+		return r.radio(n, width, bg)
 	}
 	if n.Direction == "row" {
 		return r.row(n, width, bg, fill)
@@ -297,7 +313,7 @@ func (r uiRenderer) column(n tools.UINode, width int, bg string, fill bool) uiBo
 		placed := surround(box, 0, widest-box.width-left, 0, left, bg)
 		top := len(out.lines)
 		for _, hit := range placed.hits {
-			out.hits = append(out.hits, uiHit{hit.x0, hit.y0 + top, hit.x1, hit.y1 + top, hit.id})
+			out.hits = append(out.hits, hit.moved(0, top))
 		}
 		out.lines = append(out.lines, placed.lines...)
 	}
@@ -405,7 +421,7 @@ func (r uiRenderer) row(n tools.UINode, width int, bg string, fill bool) uiBox {
 			at = offsets[i] + box.width
 			if y == 0 {
 				for _, hit := range box.hits {
-					out.hits = append(out.hits, uiHit{hit.x0 + offsets[i], hit.y0 + top, hit.x1 + offsets[i], hit.y1 + top, hit.id})
+					out.hits = append(out.hits, hit.moved(offsets[i], top))
 				}
 			}
 		}
@@ -429,7 +445,7 @@ func focusable(n tools.UINode) []string {
 		return nil
 	}
 	var ids []string
-	if (n.Type == tools.UIButton || n.Type == tools.UIInput) && !n.Disabled {
+	if n.Focusable() && !n.Disabled {
 		ids = append(ids, n.ID)
 	}
 	for _, child := range n.Children {

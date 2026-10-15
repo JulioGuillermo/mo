@@ -15,7 +15,7 @@ import (
 
 const (
 	uiDialogMaxWidth = 100
-	uiDialogHelp     = "tab move · enter press · esc or a click outside hides it"
+	uiDialogHelp     = "tab move · enter press · ←→ change · esc hides it"
 )
 
 // uiChangedMsg says the model created, updated or removed an interface.
@@ -107,7 +107,7 @@ func (m model) uiFrame() (uiFrame, bool) {
 			continue
 		}
 		// border, padding and the title line come before the body.
-		hits = append(hits, uiHit{hit.x0 + x + 2, top + y + 2, hit.x1 + x + 2, top + y + 3, hit.id})
+		hits = append(hits, hit.moved(x+2, y+2-state.scroll))
 	}
 	return uiFrame{lines: lines, x: x, y: y, hits: hits}, true
 }
@@ -150,11 +150,20 @@ func (m model) updateUI(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				previous := state.focus
-				if node.Type == tools.UIButton {
+				switch node.Type {
+				case tools.UIButton:
 					state.focus = hit.id
 					return m.uiFire(ui.ID, hit.id, "click")
+				case tools.UIInput:
+					return m.leaveInput(ui, previous, hit.id)
 				}
-				return m.leaveInput(ui, previous, hit.id)
+				value := clickedValue(node, hit, msg.X)
+				left, cmd := m.leaveInput(ui, previous, hit.id)
+				if after := left.(model); after.uiOpen == ui.ID {
+					changed, more := after.uiChange(ui.ID, node, value)
+					return changed, tea.Batch(cmd, more)
+				}
+				return left, cmd
 			}
 		}
 		return m, nil
@@ -201,6 +210,10 @@ func (m model) uiKey(ui tools.UI, state *uiLive, msg tea.KeyPressMsg) (tea.Model
 		switch node.Type {
 		case tools.UIButton:
 			return m.uiFire(ui.ID, node.ID, "click")
+		case tools.UICheckbox, tools.UISwitch:
+			return m.uiChange(ui.ID, node, node.Toggled())
+		case tools.UISelect, tools.UIRadio:
+			return m.uiChange(ui.ID, node, node.Moved(1))
 		case tools.UIInput:
 			updated, cmd := m.uiFire(ui.ID, node.ID, "change")
 			if next := updated.(model); next.uiOpen == ui.ID {
@@ -208,6 +221,24 @@ func (m model) uiKey(ui tools.UI, state *uiLive, msg tea.KeyPressMsg) (tea.Model
 				return after, tea.Batch(cmd, more)
 			}
 			return updated, cmd
+		}
+		return m, nil
+	}
+	if node.HasValue() && node.Type != tools.UIInput {
+		switch msg.String() {
+		case "left":
+			return m.uiChange(ui.ID, node, node.Moved(-1))
+		case "right":
+			return m.uiChange(ui.ID, node, node.Moved(1))
+		case "home":
+			return m.uiChange(ui.ID, node, node.AtFraction(0))
+		case "end":
+			return m.uiChange(ui.ID, node, node.AtFraction(1))
+		case "space":
+			if node.Type == tools.UICheckbox || node.Type == tools.UISwitch {
+				return m.uiChange(ui.ID, node, node.Toggled())
+			}
+			return m.uiChange(ui.ID, node, node.Moved(1))
 		}
 		return m, nil
 	}
@@ -230,6 +261,42 @@ func (m model) uiKey(ui tools.UI, state *uiLive, msg tea.KeyPressMsg) (tea.Model
 	}
 	m.uis().SetValue(ui.ID, node.ID, value)
 	return m.uiFire(ui.ID, node.ID, "input")
+}
+
+// uiChange keeps a control's new value and tells its on_change, when the
+// value is new; a select, radio or slider at its end stays as it was.
+func (m model) uiChange(id int, node tools.UINode, value string) (tea.Model, tea.Cmd) {
+	if node.Type == tools.UISlider || node.Type == tools.UISelect || node.Type == tools.UIRadio {
+		if value == "" {
+			return m, nil
+		}
+	}
+	if value == node.Current() {
+		return m, nil
+	}
+	m.uis().SetValue(id, node.ID, value)
+	return m.uiFire(id, node.ID, "change")
+}
+
+// clickedValue is the value a click on a control gives it: the option
+// clicked, the arrow's way, where on a slider, or a tick flipped.
+func clickedValue(node tools.UINode, hit uiHit, x int) string {
+	switch node.Type {
+	case tools.UIRadio:
+		if hit.part >= 1 && hit.part <= len(node.Options) {
+			return node.Options[hit.part-1]
+		}
+	case tools.UISelect:
+		if hit.part == uiSelectEarlier {
+			return node.Moved(-1)
+		}
+		return node.Moved(1)
+	case tools.UISlider:
+		return node.AtFraction(float64(x-hit.x0) / float64(max(hit.x1-hit.x0-1, 1)))
+	case tools.UICheckbox, tools.UISwitch:
+		return node.Toggled()
+	}
+	return node.Current()
 }
 
 // focusNext moves the focus one place on, as tab does.

@@ -26,7 +26,16 @@ const (
 	UILabel  = "label"
 	UIButton = "button"
 	UIInput  = "input"
+	// Controls holding a value the user picks.
+	UISelect   = "select"
+	UISlider   = "slider"
+	UICheckbox = "checkbox"
+	UISwitch   = "switch"
+	UIRadio    = "radio"
 )
+
+// UITypes are every node type.
+var UITypes = []string{UIPanel, UICard, UILabel, UIButton, UIInput, UISelect, UISlider, UICheckbox, UISwitch, UIRadio}
 
 // UI event actions an element can name: send the event to the model, send
 // every input's value, close the dialog, or remove the UI and say so.
@@ -39,7 +48,8 @@ const (
 
 // UINode is one element of an interface the model draws: a panel or card
 // laying out its children in a row or a column, a label, a button, an
-// input. Every one takes colours, margin and padding.
+// input, a select, a slider, a checkbox, a switch or a radio. Every one
+// takes colours, margin and padding.
 type UINode struct {
 	Type        string   `json:"type"`
 	ID          string   `json:"id,omitempty"`
@@ -47,6 +57,10 @@ type UINode struct {
 	Label       string   `json:"label,omitempty"`
 	Value       string   `json:"value,omitempty"`
 	Placeholder string   `json:"placeholder,omitempty"`
+	Options     []string `json:"options,omitempty"`
+	Min         float64  `json:"min,omitempty"`
+	Max         float64  `json:"max,omitempty"`
+	Step        float64  `json:"step,omitempty"`
 	Title       string   `json:"title,omitempty"`
 	Direction   string   `json:"direction,omitempty"`
 	Justify     string   `json:"justify,omitempty"`
@@ -93,13 +107,14 @@ func validateUI(root UINode) error {
 	var check func(n UINode, path string) error
 	check = func(n UINode, path string) error {
 		where := path + " (" + n.Type + ")"
-		switch n.Type {
-		case UIPanel, UICard, UILabel, UIButton, UIInput:
-		default:
-			return fmt.Errorf("%s: type %q: use panel, card, label, button or input", path, n.Type)
+		if !slices.Contains(UITypes, n.Type) {
+			return fmt.Errorf("%s: type %q: use %s, e.g. %s", path, n.Type, strings.Join(UITypes, ", "), uiTreeExample)
 		}
-		if (n.Type == UIButton || n.Type == UIInput) && n.ID == "" {
+		if n.Focusable() && n.ID == "" {
 			return fmt.Errorf("%s needs an id", where)
+		}
+		if err := checkValue(n, where); err != nil {
+			return err
 		}
 		if n.ID != "" {
 			if ids[n.ID] {
@@ -176,7 +191,7 @@ func shownNode(n UINode, changes map[string]map[string]any, values map[string]st
 		if props, ok := changes[n.ID]; ok {
 			_ = applyProps(&n, props)
 		}
-		if value, ok := values[n.ID]; ok && n.Type == UIInput {
+		if value, ok := values[n.ID]; ok && n.HasValue() {
 			n.Value = value
 		}
 	}
@@ -529,7 +544,7 @@ func (u *UIs) Fire(id int, element, event string) UIOutcome {
 	if handler == "" && event == "click" {
 		handler = UINotify
 	}
-	value := node.Value
+	value := node.Current()
 	base := UIEvent{UI: ui.ID, Title: ui.Title, Event: event, Element: element, Value: value, conv: u.conversation}
 	var outcome UIOutcome
 	switch handler {
@@ -618,8 +633,8 @@ func inputValuesOf(n UINode) map[string]string {
 	values := map[string]string{}
 	var walk func(n UINode)
 	walk = func(n UINode) {
-		if n.Type == UIInput {
-			values[n.ID] = n.Value
+		if n.HasValue() {
+			values[n.ID] = n.Current()
 		}
 		for _, child := range n.Children {
 			walk(child)
@@ -630,26 +645,56 @@ func inputValuesOf(n UINode) map[string]string {
 }
 
 var uiHelp = []helpTopic{
-	{"create", "title, tree, script: show an interface in the user's side panel, which opens it as a dialog; returns its id. What the user does in it comes to you as a note."},
-	{"update", "id, and tree, title or script: replace them; inputs keep what the user typed, the script its state."},
-	{"remove", "id: take it away."},
-	{"nodes", "panel: children in a row or column (direction), justify start|center|end|space-between|space-around, align start|center|end|stretch, gap. " +
-		"card: a panel with a border and a title. label: text. button: label, disabled. input: value, placeholder, width. " +
-		"Every node: id, bg, fg (#rrggbb or text, dim, accent, error, warning, success, surface, background), padding and margin (1, 2 or 4 numbers, as in CSS), " +
-		"border (rounded, normal, thick, double, none), bold, visible, width, height, grow (a share of the room left in a row)."},
-	{"events", "on_click (button), on_input (each key in an input), on_change (an input when left or on enter): notify sends you the event; submit sends you every input's value; close only closes the dialog, the interface staying listed; remove takes the interface away and tells you; any other name calls that function of the script. A button without on_click notifies."},
-	{"script", "Lua (base, table, string, math), run on the user's side without you: function f(event) gets event.id, event.type (click, input, change) and event.value. " +
-		"ui.set(id, {text=, label=, value=, placeholder=, title=, fg=, bg=, visible=, disabled=, bold=, width=, height=, border=}) changes an element; ui.get(id) reads it; ui.value(id) an input's value; " +
-		"ui.state is a table kept between events; ui.notify(data) and ui.submit(data) tell you, with data; ui.close() closes the dialog; ui.remove() takes the interface away and tells you. Validate in on_input and submit from a button's function once valid."},
+	{"create", "title, tree, script (optional): shows the interface and returns its id. What the user does in it comes to you as notes."},
+	{"update", "id, and any of title, tree, script: replaces them. What the user set and the script's state stay."},
+	{"remove", "id: removes the interface."},
+	{"nodes", `Every node is {"type": ..., more fields}; panel and card hold nodes in "children". Buttons and controls need an id.
+panel     children, direction row|column, gap, justify start|center|end|space-between|space-around, align start|center|end|stretch
+card      a panel with a border and a title
+label     text
+button    label, on_click, disabled
+input     value, placeholder, on_input, on_change
+select    options ["a","b"], value, label, on_change
+slider    min, max, step (0, 100, 1 unless set), value, label, on_change
+checkbox  label, value "true"|"false", on_change
+switch    as checkbox, drawn as a switch
+radio     options, value, label, direction row|column, on_change
+any node  id, fg, bg (#rrggbb or text|dim|accent|error|warning|success|surface|background), bold, visible, border rounded|normal|thick|double|none,
+          padding, margin (1, 2 or 4 numbers, as in CSS), width, height, grow (share of the room left in a row)`},
+	{"events", `on_click (button), on_input (each key in an input), on_change (an input when left or on enter; any other control at each change) take:
+notify   tell you of this event
+submit   tell you every control's value, and close the dialog
+close    close the dialog; the interface stays
+remove   remove the interface, telling you
+<name>   call that function of the script
+A button without on_click notifies.`},
+	{"script", `Lua (base, table, string, math), run on the user's side; telling you is up to it. A function gets e.id, e.type (click|input|change), e.value.
+ui.set(id, {text=..., ...})  change a node: text, label, value, options, min, max, step, placeholder, title, fg, bg, border, bold, visible, disabled, width, height
+ui.get(id)                   a node's fields, and checked
+ui.value(id)                 a control's value; a checkbox's is "true" or "false"
+ui.state                     a table kept between events
+ui.notify(data)              tell you, with data; ui.submit(data) also sends every value
+ui.close()                   close the dialog; ui.remove() removes the interface
+Validate in on_input, and submit from a button's function once valid.`},
+	{"example", `{"action":"create","title":"Login","tree":` + uiTreeExample + `}
+with a script:
+{"action":"create","title":"Name","script":"function check(e) ui.set(\"ok\", {disabled = e.value == \"\"}) end","tree":{"type":"panel","children":[{"type":"input","id":"name","on_input":"check"},{"type":"button","id":"ok","label":"Send","disabled":true,"on_click":"submit"}]}}
+controls:
+{"action":"create","title":"Prefs","tree":{"type":"panel","children":[{"type":"select","id":"size","label":"Size","options":["S","M","L"],"value":"M"},{"type":"slider","id":"volume","label":"Volume","min":0,"max":10,"value":"4"},{"type":"checkbox","id":"terms","label":"I agree"},{"type":"switch","id":"dark","label":"Dark mode","value":"true"},{"type":"radio","id":"plan","options":["free","pro"],"direction":"row"},{"type":"button","id":"go","label":"Save","on_click":"submit"}]}}`},
 }
 
 func uiTool() Tool {
 	return Tool{
-		Name:        "ui",
-		Description: "Show the user an interface of panels, cards, labels, buttons and inputs, in their side panel; what they do in it comes back to you. A Lua script can handle events on their side. help explains the nodes, events and script.",
+		Name: "ui",
+		Description: "Show the user an interface in a dialog: labels, buttons, inputs, selects, sliders, checkboxes, switches and radios, laid out in panels and cards. " +
+			`What they do comes back to you as notes. Unsure how? Call {"action":"help"}. A tree: ` + uiTreeExample,
 		Schema: json.RawMessage(`{"type":"object","properties":{
-"action":{"type":"string","enum":["create","update","remove","help"]},"id":{"type":"integer"},"title":{"type":"string"},
-"tree":{"type":"object"},"script":{"type":"string"},"topic":{"type":"string"}},"required":["action"]}`),
+"action":{"type":"string","enum":["create","update","remove","help"]},
+"id":{"type":"integer","description":"for update and remove"},
+"title":{"type":"string"},
+"tree":{"type":"object","description":"the root node, {\"type\":...,\"children\":[...]}; help topic nodes"},
+"script":{"type":"string","description":"Lua functions the events name; help topic script"},
+"topic":{"type":"string","description":"for help: nodes, events, script, example, create, update or remove; none for all"}},"required":["action"]}`),
 		Run:       runUI,
 		LooseArgs: false,
 		Summary: func(args json.RawMessage) string {
@@ -660,44 +705,48 @@ func uiTool() Tool {
 
 func runUI(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	var args struct {
-		Action string  `json:"action"`
-		ID     int     `json:"id"`
-		Title  string  `json:"title"`
-		Tree   *UINode `json:"tree"`
-		Script *string `json:"script"`
-		Topic  string  `json:"topic"`
+		Action string          `json:"action"`
+		ID     int             `json:"id"`
+		Title  string          `json:"title"`
+		Tree   json.RawMessage `json:"tree"`
+		Script *string         `json:"script"`
+		Topic  string          `json:"topic"`
 	}
 	if err := decodeArgs(raw, &args); err != nil {
 		return "", err
 	}
 	if args.Action == "help" {
-		return help(uiHelp, args.Topic)
+		return helpOn(uiHelp, args.Topic)
 	}
 	if env.UIs == nil {
 		return "", errors.New("interfaces are not available here")
 	}
-	if args.Tree != nil {
-		if err := validateUI(*args.Tree); err != nil {
+	tree, err := parseUITree(args.Tree)
+	if err != nil {
+		return "", err
+	}
+	if tree != nil {
+		if err := validateUI(*tree); err != nil {
 			return "", err
 		}
 	}
 	switch args.Action {
 	case "create":
-		if args.Tree == nil {
-			return "", errors.New("create needs a tree")
+		if tree == nil {
+			return "", fmt.Errorf("create needs a tree, e.g. %s", uiTreeExample)
 		}
 		script := ""
 		if args.Script != nil {
 			script = *args.Script
 		}
-		id, err := env.UIs.create(orDefaultString(args.Title, "Interface"), script, *args.Tree)
+		id, err := env.UIs.create(orDefaultString(args.Title, "Interface"), script, *tree)
 		if err != nil {
 			return "", err
 		}
 		env.UIs.changed()
 		return fmt.Sprintf("UI %d created; it is listed in the user's side panel, and what they do in it comes to you as a note", id), nil
 	case "update":
-		if err := env.UIs.update(args.ID, args.Title, args.Tree, args.Script); err != nil {
+		if err := env.UIs.update(args.ID, args.Title, tree, args.Script); err != nil {
 			return "", err
 		}
 		env.UIs.changed()
@@ -709,7 +758,7 @@ func runUI(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 		env.UIs.changed()
 		return fmt.Sprintf("UI %d removed", args.ID), nil
 	}
-	return "", fmt.Errorf("action %q: use create, update, remove or help", args.Action)
+	return "", fmt.Errorf(`action %q: use create, update, remove or help; {"action":"help"} explains them`, args.Action)
 }
 
 func orDefaultString(value, fallback string) string {

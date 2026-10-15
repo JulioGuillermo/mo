@@ -909,6 +909,22 @@
 - What the user typed, what scripts changed and their `ui.state` are kept with the interface, in
   `sessions/<id>/uis.json`, written after each event and change: resuming a conversation runs
   its scripts again with their state, so interfaces come back as they were left.
+- Controls with a value the user picks, select, slider, checkbox, switch and radio, keep it as
+  a string as an input does, in the interface's values: one place for what the user did, sent
+  whole with submit, kept on resume and read by `ui.value`. A checkbox's is `true` or `false`, a
+  slider's a number on its step. A select cycles in place (`◂ M ▸`) rather than opening a list:
+  a list over the dialog would be a dialog in a dialog for a choice of a few. Each tells its
+  on_change at every change, since unlike typing each change is a choice; clicks know which
+  option or arrow was hit through a part of the hit, and a slider takes the place clicked.
+- Small models get the tree wrong in the same few ways, so a tree is mended before it is checked
+  wherever what was meant is plain: sent as a JSON string, as a list of nodes, a node under its
+  type's name (`{"card": {...}}`), common other names for fields and types (`items`, `onClick`,
+  `content`; `row`, `column` or `col`, as a type or a direction; `text`, `btn`, `dropdown`, `toggle`,
+  `range`, `radio_group`; `choices`, `checked`, `selected`, `minimum`), a control's words in
+  `text`, options as objects or as children, values as booleans or numbers, and a missing type the other fields tell (children: panel, or card with a title; placeholder or value: input; on_click or
+  label: button; text: label). What cannot be mended is told with a whole example tree, as are
+  unknown fields; the description shows that example and says to call help first, whose
+  `example` topic has a whole create call with and without a script.
 
 ## /view
 

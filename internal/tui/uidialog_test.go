@@ -6,6 +6,7 @@ package tui
 // | UD-02 | Happy    | Typing fills the focused input; submit sends every value to the model    | P0       |
 // | UD-03 | Happy    | A click outside or close hides the dialog; remove takes it away and tells the model | P1 |
 // | UD-04 | Happy    | A script reacts to typing in the dialog; its error shows under the interface | P0   |
+// | UD-05 | Happy    | Select, slider, checkbox, switch and radio are drawn, change by keys and clicks, and go with submit | P0 |
 
 import (
 	"context"
@@ -134,6 +135,68 @@ func TestUIDialog(t *testing.T) {
 		}
 		if !strings.Contains(broken, "script:") || !strings.Contains(broken, "it broke") || !uis.HasEvents() {
 			t.Errorf("the error should show and be told:\n%s", broken)
+		}
+	})
+
+	t.Run("UD-05 select, slider, checkbox, switch and radio are drawn, change by keys and clicks, and go with submit", func(t *testing.T) {
+		m, uis := uiModel(t)
+		tree := `{"type":"panel","children":[
+		  {"type":"select","id":"size","label":"Size","options":["S","M","L"],"value":"M","on_change":"notify"},
+		  {"type":"slider","id":"vol","label":"Vol","min":0,"max":10,"value":"4"},
+		  {"type":"checkbox","id":"terms","label":"I agree"},
+		  {"type":"switch","id":"dark","label":"Dark"},
+		  {"type":"radio","id":"plan","options":["free","pro"],"direction":"row"},
+		  {"type":"button","id":"go","label":"Save","on_click":"submit"}]}`
+		args, _ := json.Marshal(map[string]any{"action": "create", "title": "Prefs", "tree": json.RawMessage(tree)})
+		if output, isError := m.session.Agent.Tools.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args}); isError {
+			t.Fatal(output)
+		}
+		updated, _ := m.openUI(2)
+		m = updated.(model)
+		drawn := ansi.Strip(m.View().Content)
+		press := func(keys ...tea.KeyPressMsg) {
+			for _, key := range keys {
+				updated, _ := m.Update(key)
+				m = updated.(model)
+			}
+		}
+		right, tab, space := tea.KeyPressMsg{Code: tea.KeyRight}, tea.KeyPressMsg{Code: tea.KeyTab}, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
+		press(right)
+		told := uis.TakeEvents()
+		press(tab, right, right, tab, space, tab, space)
+		frame, _ := m.uiFrame()
+		var pro, track uiHit
+		for _, hit := range frame.hits {
+			switch {
+			case hit.id == "plan" && hit.part == 2:
+				pro = hit
+			case hit.id == "vol":
+				track = hit
+			}
+		}
+		updated, _ = m.Update(tea.MouseClickMsg(tea.Mouse{X: pro.x0, Y: pro.y0, Button: tea.MouseLeft}))
+		updated, _ = updated.(model).Update(tea.MouseClickMsg(tea.Mouse{X: track.x1 - 1, Y: track.y0, Button: tea.MouseLeft}))
+		m = updated.(model)
+		ui, _ := uis.Get(2)
+		values := map[string]string{}
+		for _, id := range []string{"size", "vol", "terms", "dark", "plan"} {
+			node, _ := findNode(ui.Shown(), id)
+			values[id] = node.Current()
+		}
+
+		for _, want := range []string{"Size ◂ M ▸", "Vol ━━━━━━━━", "[ ] I agree", " ○  Dark", "( ) free  ( ) pro"} {
+			if !strings.Contains(drawn, want) {
+				t.Errorf("%q not drawn:\n%s", want, drawn)
+			}
+		}
+		if len(told) != 1 || told[0].Note() != `UI 2 "Prefs": change on size, value "L"` {
+			t.Errorf("the select's on_change should tell: %+v", told)
+		}
+		want := map[string]string{"size": "L", "vol": "10", "terms": "true", "dark": "true", "plan": "pro"}
+		for id, value := range want {
+			if values[id] != value {
+				t.Errorf("%s = %q, want %q (all %v)", id, values[id], value, values)
+			}
 		}
 	})
 }

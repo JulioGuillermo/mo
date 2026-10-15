@@ -8,6 +8,11 @@ package tools
 // | UI-04 | Happy    | A script validates as the user types and submits once valid, keeping its state | P0 |
 // | UI-05 | Error    | A missing function is refused; a failing or endless one is shown and told | P0     |
 // | UI-06 | Happy    | Interfaces are saved with the conversation and come back on resume, scripts and all | P0 |
+// | UI-07 | Edge     | A tree as small models send it is mended; what cannot be is told with an example | P0 |
+// | UI-08 | Happy    | help lists every topic with an example, and one topic alone              | P1       |
+// | UI-09 | Happy    | Controls start at their defaults, move within their options and range, and go with submit | P0 |
+// | UI-10 | Error    | A control's bad options, range or value are refused; a script sets one only to a valid value | P0 |
+// | UI-11 | Edge     | Controls as small models send them are mended: other names, options as objects or children, bools and numbers | P1 |
 
 import (
 	"context"
@@ -52,7 +57,7 @@ func TestUITool(t *testing.T) {
 	t.Run("UI-02 a bad tree is refused naming where: type, ids, colours, handlers", func(t *testing.T) {
 		registry, _ := uiRegistry(t)
 		for want, bad := range map[string]map[string]any{
-			`type "box"`:  {"type": "box"},
+			`type "knob"`: {"type": "knob"},
 			"needs an id": {"type": "panel", "children": []any{map[string]any{"type": "button"}}},
 			"used twice":  {"type": "panel", "children": []any{map[string]any{"type": "input", "id": "a"}, map[string]any{"type": "button", "id": "a"}}},
 			`bg "pink"`:   {"type": "label", "bg": "pink"},
@@ -169,6 +174,150 @@ end`
 		}
 		if ui2.State["checks"] != int64(2) || ui2.Error != "" {
 			t.Errorf("the script should go on from its state: %+v", ui2.State)
+		}
+	})
+
+	t.Run("UI-07 a tree as small models send it is mended; what cannot be is told with an example", func(t *testing.T) {
+		for name, tree := range map[string]any{
+			"as a string":      `{"type":"card","children":[{"type":"button","id":"ok","text":"OK"}]}`,
+			"a list":           []any{map[string]any{"type": "button", "id": "ok", "label": "OK"}},
+			"under its type":   map[string]any{"card": map[string]any{"children": []any{map[string]any{"button": map[string]any{"id": "ok", "label": "OK"}}}}},
+			"no types":         map[string]any{"title": "T", "items": []any{map[string]any{"text": "hi"}, map[string]any{"id": "ok", "onClick": "submit", "label": "OK"}}},
+			"other type names": map[string]any{"type": "column", "children": []any{map[string]any{"type": "text", "content": "hi"}, map[string]any{"type": "btn", "id": "ok", "text": "OK"}}},
+		} {
+			registry, uis := uiRegistry(t)
+			output, isError := registry.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args(t, map[string]any{"action": "create", "tree": tree})})
+			ui, _ := uis.Get(1)
+			button, found := findUINode(ui.Tree, "ok")
+			if isError || !found || button.Type != UIButton || button.Label != "OK" {
+				t.Errorf("%s: output = %q button = %+v", name, output, button)
+			}
+		}
+		registry, uis := uiRegistry(t)
+		_, _ = registry.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args(t, map[string]any{"action": "create", "tree": map[string]any{
+			"type": "row", "children": []any{map[string]any{"type": "col"}, map[string]any{"type": "panel", "direction": "col"}},
+		}})})
+		ui, _ := uis.Get(1)
+		if ui.Tree.Direction != "row" || len(ui.Tree.Children) != 2 || ui.Tree.Children[0].Direction != "column" || ui.Tree.Children[1].Direction != "column" {
+			t.Errorf("row and col should be panels with their direction, as type or direction: %+v", ui.Tree)
+		}
+		for want, bad := range map[string]any{
+			`no "type"`:              map[string]any{"type": "panel", "children": []any{map[string]any{"id": "x"}}},
+			`unknown field "colour"`: map[string]any{"type": "label", "colour": "red"},
+		} {
+			registry, _ := uiRegistry(t)
+			output, isError := registry.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args(t, map[string]any{"action": "create", "tree": bad})})
+			if !isError || !strings.Contains(output, want) || !strings.Contains(output, `"type":"card"`) && !strings.Contains(output, "a node takes") {
+				t.Errorf("%s: output = %q", want, output)
+			}
+		}
+	})
+
+	t.Run("UI-08 help lists every topic with an example, and one topic alone", func(t *testing.T) {
+		registry, _ := uiRegistry(t)
+		all, _ := registry.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args(t, map[string]any{"action": "help"})})
+		example, isError := registry.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args(t, map[string]any{"action": "help", "topic": "example"})})
+		if !strings.Contains(all, "\n\nnodes:\nEvery node") || !strings.Contains(all, "\nexample:\n{") || strings.Contains(all, "view:") || isError || !strings.HasPrefix(example, `{"action":"create"`) {
+			t.Errorf("all = %q example = %q", all, example)
+		}
+	})
+
+	controls := map[string]any{"type": "panel", "children": []any{
+		map[string]any{"type": "select", "id": "size", "options": []any{"S", "M", "L"}},
+		map[string]any{"type": "slider", "id": "vol", "min": 0, "max": 1, "step": 0.25, "value": "0.5"},
+		map[string]any{"type": "checkbox", "id": "terms"},
+		map[string]any{"type": "switch", "id": "dark", "value": "true"},
+		map[string]any{"type": "radio", "id": "plan", "options": []any{"free", "pro"}},
+		map[string]any{"type": "button", "id": "go", "on_click": "submit"},
+	}}
+
+	t.Run("UI-09 controls start at their defaults, move within their options and range, and go with submit", func(t *testing.T) {
+		registry, uis := uiRegistry(t)
+		if output, isError := registry.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args(t, map[string]any{"action": "create", "tree": controls})}); isError {
+			t.Fatal(output)
+		}
+		ui, _ := uis.Get(1)
+		node := func(id string) UINode { found, _ := findUINode(ui.Shown(), id); return found }
+		size, vol, plan := node("size"), node("vol"), node("plan")
+		moves := []string{size.Moved(-1), size.Moved(1), vol.Moved(1), vol.Moved(-3), vol.AtFraction(0.6), plan.Moved(-1), plan.Moved(5), node("terms").Toggled()}
+		uis.SetValue(1, "plan", "pro")
+		uis.Fire(1, "go", "click")
+		events := uis.TakeEvents()
+
+		if want := []string{"L", "M", "0.75", "0", "0.5", "pro", "free", "true"}; strings.Join(moves, " ") != strings.Join(want, " ") {
+			t.Errorf("moves = %v, want %v", moves, want)
+		}
+		if len(events) != 1 || events[0].Note() != `UI 1 "Interface": submitted with go; values: dark="true", plan="pro", size="S", terms="false", vol="0.5"` {
+			t.Errorf("events = %+v", events)
+		}
+	})
+
+	t.Run("UI-10 a control's bad options, range or value are refused; a script sets one only to a valid value", func(t *testing.T) {
+		registry, uis := uiRegistry(t)
+		for want, bad := range map[string]map[string]any{
+			"needs options":         {"type": "select", "id": "s"},
+			"none of its options":   {"type": "radio", "id": "r", "options": []any{"a"}, "value": "b"},
+			"not above min":         {"type": "slider", "id": "v", "min": 5, "max": 2},
+			"not a number":          {"type": "slider", "id": "v", "value": "loud"},
+			"use true or false":     {"type": "switch", "id": "w", "value": "maybe"},
+			"checkbox) needs an id": {"type": "checkbox"},
+		} {
+			output, isError := registry.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args(t, map[string]any{"action": "create", "tree": bad})})
+			if !isError || !strings.Contains(output, want) {
+				t.Errorf("%s: output = %q", want, output)
+			}
+		}
+		script := `function bad() ui.set("size", {value = "XL"}) end
+function good() ui.set("size", {value = "L", options = {"M", "L"}}) ui.set("vol", {value = 0.25}) ui.notify({size = ui.value("size"), checked = ui.get("dark").checked}) end`
+		tree := map[string]any{"type": "panel", "children": []any{
+			controls["children"].([]any)[0], controls["children"].([]any)[1], controls["children"].([]any)[3],
+			map[string]any{"type": "button", "id": "b", "on_click": "bad"}, map[string]any{"type": "button", "id": "g", "on_click": "good"},
+		}}
+		if output, isError := registry.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args(t, map[string]any{"action": "create", "tree": tree, "script": script})}); isError {
+			t.Fatal(output)
+		}
+		uis.Fire(1, "b", "click")
+		failed, _ := uis.Get(1)
+		uis.Fire(1, "g", "click")
+		ui, _ := uis.Get(1)
+		size, _ := findUINode(ui.Shown(), "size")
+		vol, _ := findUINode(ui.Shown(), "vol")
+		events := uis.TakeEvents()
+
+		if !strings.Contains(failed.Error, "none of its options") || size.Current() != "L" || len(size.Options) != 2 || vol.Current() != "0.25" {
+			t.Errorf("error = %q size = %+v vol = %q", failed.Error, size, vol.Current())
+		}
+		if len(events) != 2 || !strings.HasSuffix(events[1].Note(), `data: {"checked":true,"size":"L"}`) {
+			t.Errorf("events = %+v", events)
+		}
+	})
+
+	t.Run("UI-11 controls as small models send them are mended: other names, options as objects or children, bools and numbers", func(t *testing.T) {
+		registry, uis := uiRegistry(t)
+		tree := map[string]any{"type": "form", "items": []any{
+			map[string]any{"type": "dropdown", "id": "size", "choices": []any{map[string]any{"label": "Small", "value": "s"}, map[string]any{"label": "Big", "value": "b"}}, "selected": "b"},
+			map[string]any{"type": "radio_group", "id": "plan", "children": []any{map[string]any{"text": "free"}, "pro"}},
+			map[string]any{"type": "range", "id": "vol", "minimum": 1, "maximum": 5, "value": 3},
+			map[string]any{"type": "toggle", "id": "dark", "text": "Dark", "checked": true},
+			map[string]any{"id": "terms", "type": "check", "label": "OK", "value": false},
+			map[string]any{"id": "guess", "options": []any{"a", "b"}},
+			map[string]any{"id": "tick", "label": "Tick", "checked": true},
+		}}
+		output, isError := registry.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args(t, map[string]any{"action": "create", "tree": tree})})
+		ui, _ := uis.Get(1)
+		got := map[string]string{}
+		for _, id := range []string{"size", "plan", "vol", "dark", "terms", "guess", "tick"} {
+			node, _ := findUINode(ui.Shown(), id)
+			got[id] = node.Type + "=" + node.Current() + "/" + strings.Join(node.Options, ",") + "/" + node.Label
+		}
+		want := map[string]string{"size": "select=b/s,b/", "plan": "radio=/free,pro/", "vol": "slider=3//", "dark": "switch=true//Dark", "terms": "checkbox=false//OK", "guess": "select=a/a,b/", "tick": "checkbox=true//Tick"}
+		if isError {
+			t.Fatal(output)
+		}
+		for id, value := range want {
+			if got[id] != value {
+				t.Errorf("%s = %q, want %q", id, got[id], value)
+			}
 		}
 	})
 }

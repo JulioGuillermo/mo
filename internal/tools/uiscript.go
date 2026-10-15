@@ -135,13 +135,18 @@ func (s *uiScript) set(state *lua.LState) int {
 		state.RaiseError("ui.set(%q, props): props is a table of names, as {text = \"...\"}", id)
 	}
 	if typed, given := props["value"]; given {
-		if node.Type != UIInput {
-			state.RaiseError("%q is no input, it has no value", id)
+		if !node.HasValue() {
+			state.RaiseError("%q has no value: inputs, selects, sliders, checkboxes, switches and radios do", id)
+		}
+		text := valueText(typed)
+		node.Value = text
+		if err := checkValue(node, id); err != nil {
+			state.RaiseError("ui.set: %s", err.Error())
 		}
 		if s.ui.Values == nil {
 			s.ui.Values = map[string]string{}
 		}
-		s.ui.Values[id] = fmt.Sprint(typed)
+		s.ui.Values[id] = text
 		delete(props, "value")
 	}
 	if err := applyProps(&node, props); err != nil {
@@ -166,15 +171,16 @@ func (s *uiScript) get(state *lua.LState) int {
 	state.Push(luabox.ToLua(state, map[string]any{
 		"type": node.Type, "text": node.Text, "label": node.Label, "value": node.Value, "placeholder": node.Placeholder,
 		"title": node.Title, "fg": node.FG, "bg": node.BG, "visible": visible, "disabled": node.Disabled, "bold": node.Bold,
-		"width": node.Width, "height": node.Height, "border": node.Border,
+		"width": node.Width, "height": node.Height, "border": node.Border, "options": node.Options,
+		"min": node.Min, "max": node.Max, "step": node.Step, "checked": node.Checked(),
 	}))
 	return 1
 }
 
-// value is an input's value as typed.
+// value is a control's value as the user left it.
 func (s *uiScript) value(state *lua.LState) int {
 	_, node := s.element(state)
-	state.Push(lua.LString(node.Value))
+	state.Push(lua.LString(node.Current()))
 	return 1
 }
 
@@ -259,6 +265,28 @@ func applyProps(n *UINode, props map[string]any) error {
 			default:
 				n.Bold = flag
 			}
+		case "options":
+			list, isList := value.([]any)
+			if !isList {
+				return fmt.Errorf("options is a list of strings")
+			}
+			n.Options = nil
+			for _, option := range list {
+				n.Options = append(n.Options, valueText(option))
+			}
+		case "min", "max", "step":
+			amount, isAmount := asFloat(value)
+			if !isAmount {
+				return fmt.Errorf("%s is a number", name)
+			}
+			switch name {
+			case "min":
+				n.Min = amount
+			case "max":
+				n.Max = amount
+			default:
+				n.Step = amount
+			}
 		case "width", "height":
 			if !isNumber || number < 0 {
 				return fmt.Errorf("%s is a number of cells", name)
@@ -269,8 +297,35 @@ func applyProps(n *UINode, props map[string]any) error {
 				n.Height = number
 			}
 		default:
-			return fmt.Errorf("%q cannot be set: use text, label, value, placeholder, title, fg, bg, border, visible, disabled, bold, width or height", name)
+			return fmt.Errorf("%q cannot be set: use text, label, value, placeholder, title, options, min, max, step, fg, bg, border, visible, disabled, bold, width or height", name)
 		}
 	}
 	return nil
+}
+
+// valueText is a value as a control keeps it: true or false, a number
+// without needless decimals, or the text.
+func valueText(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case bool:
+		return fmt.Sprint(v)
+	}
+	if amount, ok := asFloat(value); ok {
+		return FormatNumber(amount)
+	}
+	return fmt.Sprint(value)
+}
+
+func asFloat(value any) (float64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return v, true
+	case int64:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	}
+	return 0, false
 }

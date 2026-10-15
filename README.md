@@ -286,7 +286,12 @@ side panel colours running jobs the same way.
 `ui` lets the model draw an interface for you: panels laying out their children in a row or a
 column (`justify` start, center, end, space-between, space-around; `align`; `gap`; `grow`),
 cards with a border and a title, labels, buttons and inputs, each with `bg`, `fg`, `padding`,
-`margin`, `width`, `height`, `visible` and, for buttons, `disabled`. It is listed under **UIs**
+`margin`, `width`, `height`, `visible` and, for buttons, `disabled`; and controls holding a value
+you pick: `select` (`◂ M ▸`, its `options` one at a time), `slider` (`min`, `max`, `step`),
+`checkbox` (`[x]`), `switch` and `radio` (its options in a column, or a row with `direction`),
+each with a `label`. ←→ change them, space ticks a checkbox or switch, and a click picks an
+option, an arrow of a select or a place on a slider; their `on_change` is told at each change,
+and their values go with `submit` as the inputs' do. It is listed under **UIs**
 in the side panel, new until you open it; a click opens it as a dialog over the screen, and a
 click outside hides it again. In it, tab moves, enter presses, and what you type fills the input
 in focus. `on_click`, `on_input` and `on_change` take `notify` (the model hears the event),
@@ -301,7 +306,9 @@ changes an element, `ui.get` and `ui.value` read, `ui.state` keeps a table betwe
 type and submits only once valid. A script's error shows under the interface and is told to the
 model. The model hears at its next step, or in a turn of its own when idle. A right click in the
 panel opens or removes one. Interfaces are kept in the conversation's folder, with what was typed
-and the scripts' state, and come back with it on resume.
+and the scripts' state, and come back with it on resume. `{"action":"help"}` explains it all to the model with
+an example, and a tree a small model gets slightly wrong (no `type`, other names for fields, sent
+as a string) is mended when what it meant is plain.
 
 `ask` lets the model ask you questions, with options or free text. What the calls of one reply
 need from you, approvals and questions, is asked at once in a dialog above the input: tabs show
