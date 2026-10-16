@@ -87,15 +87,17 @@ type openHubs struct {
 
 func (h *openHubs) replace(next *mcphub.Hub) {
 	h.mu.Lock()
-	previous := h.current
-	if h.closed {
-		previous = next
-	} else {
+	previous, closed := h.current, h.closed
+	if !closed {
 		h.current = next
 	}
 	h.mu.Unlock()
-	if previous != nil {
-		previous.Close()
+	switch {
+	case closed:
+		next.Close()
+	case previous != nil && previous != next:
+		// What next shares with previous stays open for next.
+		previous.CloseExcept(next)
 	}
 }
 
@@ -199,14 +201,16 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 			return buildSession(context.Background(), workDir, fresh, sessionChoice{yes: choice.yes}, loaded)
 		}
 		next := loaded
-		next.mcp = mcphub.Connect(context.Background(), fresh.ActiveMCP(), config.LogDir())
+		// Only the servers that changed connect again; the others keep
+		// their connection, shared until one of the two hubs goes.
+		next.mcp = mcphub.Reconnect(context.Background(), hub, fresh.ActiveMCP(), config.LogDir())
 		session, err := buildSession(context.Background(), workDir, fresh, sessionChoice{yes: choice.yes}, next)
 		if err != nil {
-			next.mcp.Close()
+			next.mcp.CloseExcept(hub)
 			return tui.Session{}, err
 		}
 		session.Activate = func() { loaded.hubs.replace(next.mcp) }
-		session.Discard = next.mcp.Close
+		session.Discard = func() { next.mcp.CloseExcept(hub) }
 		return session, nil
 	}
 	return tui.Session{

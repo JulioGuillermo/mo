@@ -88,6 +88,9 @@ func (m model) commands() []command {
 // "/", while the first word is being written; after /login or /logout and a
 // space, the providers it takes.
 func (m model) suggestions() []command {
+	if m.suggestionsClosed && m.suggestionsClosedOn == m.input.Value() {
+		return nil
+	}
 	if typed, ok := m.mention(); ok {
 		return m.mentionSuggestions(typed)
 	}

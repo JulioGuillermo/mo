@@ -15,6 +15,8 @@ package mcphub
 // | MH-11 | Happy    | Test lists a URL server's tools                                    | P1       |
 // | MH-12 | Happy    | Test starts a command server and stops it after                    | P1       |
 // | MH-13 | Error    | Test tells why a server does not answer                            | P1       |
+// | MH-14 | Happy    | Reconnect keeps unchanged servers' connections and connects the new | P0       |
+// | MH-15 | Security | CloseExcept leaves what the other hub shares and stops the rest    | P0       |
 
 import (
 	"context"
@@ -256,6 +258,48 @@ func TestTest(t *testing.T) {
 
 		if err == nil {
 			t.Error("no error from a server that exits")
+		}
+	})
+}
+
+func TestReconnect(t *testing.T) {
+	web := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return demoServer(t) }, nil))
+	defer web.Close()
+	helper := config.MCPServer{Command: os.Args[0], Env: map[string]string{"MO_TEST_MCP_SERVER": "1"}}
+	demo := config.MCPServer{URL: web.URL}
+
+	t.Run("MH-14 Reconnect keeps unchanged servers' connections and connects the new", func(t *testing.T) {
+		first := Connect(context.Background(), map[string]config.MCPServer{"demo": demo}, t.TempDir())
+		defer first.Close()
+
+		second := Reconnect(context.Background(), first, map[string]config.MCPServer{"demo": demo, "helper": helper}, t.TempDir())
+		defer second.CloseExcept(first)
+
+		if second.servers[0].session != first.servers[0].session {
+			t.Error("demo connected again")
+		}
+		if status := second.Status(); len(status) != 2 || status[1].Err != nil || status[1].Tools != 1 {
+			t.Errorf("status = %+v", status)
+		}
+	})
+
+	t.Run("MH-15 CloseExcept leaves what the other hub shares and stops the rest", func(t *testing.T) {
+		first := Connect(context.Background(), map[string]config.MCPServer{"demo": demo, "helper": helper}, t.TempDir())
+		second := Reconnect(context.Background(), first, map[string]config.MCPServer{"demo": demo}, t.TempDir())
+		defer second.Close()
+		process := first.servers[1].command.Process.Pid
+
+		first.CloseExcept(second)
+
+		if _, err := second.servers[0].session.ListTools(context.Background(), nil); err != nil {
+			t.Errorf("shared session closed: %v", err)
+		}
+		deadline := time.Now().Add(3 * time.Second)
+		for syscall.Kill(process, 0) == nil && time.Now().Before(deadline) {
+			time.Sleep(50 * time.Millisecond)
+		}
+		if syscall.Kill(process, 0) == nil {
+			t.Error("helper still running")
 		}
 	})
 }

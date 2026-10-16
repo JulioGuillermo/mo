@@ -462,7 +462,10 @@ trust = true               # run its tools without asking
 
 Their tools are named `mcp__<server>__<tool>` and ask before running unless the server has
 `trust = true`. In `search` tool mode they stay out of the context until the model looks for them.
-`/mcp` shows which servers answered and edits them; **Test connection** in a server's editor
+`/mcp` lists the servers with how each is doing (`● N tools · mode`, `○ off`, `✗ why`) and edits them.
+There a server's **On** and **Tool mode** are fields too, saved to `tools.mcp_disabled` and
+`tools.mcp_modes` (and to the project's file when it sets those): only that server connects or
+stops, the others keep their connection. **Test connection** in a server's editor
 connects to it as it is filled in, saved or not, and says how many tools it offers or why it failed
 (a command server is started and stopped again). `/settings › Tools › MCP servers off` stops
 one without deleting it, everywhere or only in a project. A server's stderr goes to `~/.local/share/mo/logs/mcp-<name>.log`.
@@ -540,7 +543,7 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 |---|---|
 | enter | send |
 | shift+enter, ctrl+j, alt+enter | new line, in the input and in the boxes of forms |
-| esc, ctrl+c | stop the current run |
+| esc, ctrl+c | stop the current run; esc with suggestions open (commands, paths, @) closes them first and leaves the run going |
 | ctrl+b | send the command that blocks the model to the background |
 | `/vim`, or `keys = "vim"` under `[render]` | vim keys: esc to normal mode, i a A I o to write; ctrl+h/j/k/l move between the conversation, the input and the side panel; in the conversation j k gg G ctrl+d ctrl+u move a cursor, l and h open and fold what it is on, v selects lines and y copies them; in the panel j k pick a task or job and l opens its menu; in the input h l w b 0 $ x D dd edit, v selects, u and ctrl+r undo and redo; y yy dd x D copy to the clipboard and p P paste from it; `:` starts a command; in settings lists l goes in and h back. The mode shows before the status line |
 | ctrl+c (idle) | clear input, then quit |

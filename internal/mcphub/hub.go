@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"sync"
@@ -34,11 +35,12 @@ type Hub struct {
 }
 
 type server struct {
-	name    string
-	trust   bool
-	session *mcp.ClientSession
-	command *exec.Cmd
-	tools   []namedTool
+	name     string
+	trust    bool
+	settings config.MCPServer
+	session  *mcp.ClientSession
+	command  *exec.Cmd
+	tools    []namedTool
 
 	mu  sync.Mutex
 	err error
@@ -62,7 +64,39 @@ func Connect(ctx context.Context, servers map[string]config.MCPServer, logDir st
 	hub := &Hub{}
 	var wg sync.WaitGroup
 	for _, name := range slices.Sorted(maps.Keys(servers)) {
-		entry := &server{name: name, trust: servers[name].Trust}
+		entry := &server{name: name, trust: servers[name].Trust, settings: servers[name]}
+		hub.servers = append(hub.servers, entry)
+		wg.Go(func() {
+			entry.connect(ctx, servers[name], logDir)
+		})
+	}
+	wg.Wait()
+	hub.nameTools()
+	return hub
+}
+
+// Reconnect is a hub for servers that keeps previous's connections to the
+// servers whose settings are the same and that answered, and connects the
+// rest: turning one server on or off leaves the others as they are. The
+// two hubs share those connections until one is closed with CloseExcept.
+func Reconnect(ctx context.Context, previous *Hub, servers map[string]config.MCPServer, logDir string) *Hub {
+	kept := map[string]*server{}
+	if previous != nil {
+		for _, entry := range previous.servers {
+			if settings, ok := servers[entry.name]; ok && entry.session != nil && entry.failure() == nil && reflect.DeepEqual(settings, entry.settings) {
+				kept[entry.name] = entry
+			}
+		}
+	}
+	hub := &Hub{}
+	var wg sync.WaitGroup
+	for _, name := range slices.Sorted(maps.Keys(servers)) {
+		if old, ok := kept[name]; ok {
+			hub.servers = append(hub.servers, &server{name: name, trust: servers[name].Trust, settings: servers[name],
+				session: old.session, command: old.command, tools: slices.Clone(old.tools)})
+			continue
+		}
+		entry := &server{name: name, trust: servers[name].Trust, settings: servers[name]}
 		hub.servers = append(hub.servers, entry)
 		wg.Go(func() {
 			entry.connect(ctx, servers[name], logDir)
@@ -189,8 +223,25 @@ func (s *server) fail(err error) {
 // Close ends every session at once, then stops whatever their servers
 // started.
 func (h *Hub) Close() {
+	h.CloseExcept(nil)
+}
+
+// CloseExcept closes the connections that kept, a hub Reconnect made from
+// this one or the other way round, does not share.
+func (h *Hub) CloseExcept(kept *Hub) {
+	shared := map[*mcp.ClientSession]bool{}
+	if kept != nil {
+		for _, entry := range kept.servers {
+			if entry.session != nil {
+				shared[entry.session] = true
+			}
+		}
+	}
 	var wg sync.WaitGroup
 	for _, entry := range h.servers {
+		if entry.session != nil && shared[entry.session] {
+			continue
+		}
 		wg.Go(func() {
 			if entry.session != nil {
 				entry.session.Close()

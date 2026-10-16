@@ -159,14 +159,18 @@ type model struct {
 	clicked          bool
 	settingsInFlight bool
 
-	suggestion   int
-	blocks       []block
-	redraws      int
-	attachments  map[string]string
-	pastedImages int
-	showDetails  bool
-	thread       conversation
-	lastEsc      time.Time
+	suggestion int
+	// suggestionsClosedOn is what the input held when esc closed its
+	// suggestions: they stay closed until it changes.
+	suggestionsClosedOn string
+	suggestionsClosed   bool
+	blocks              []block
+	redraws             int
+	attachments         map[string]string
+	pastedImages        int
+	showDetails         bool
+	thread              conversation
+	lastEsc             time.Time
 	// focused is whether the terminal has the focus, as it reports it; mo
 	// starts as if it had.
 	focused bool
@@ -510,6 +514,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.input, cmd = m.input.Update(msg)
 	if m.input.Value() != before {
 		m.suggestion = 0
+		m.suggestionsClosed = false
 	}
 	return m, cmd
 }
@@ -654,6 +659,9 @@ func (m model) handleSuggestionKey(key string, matches []command) (bool, tea.Mod
 		m.suggestion = (m.suggestion + len(matches) - 1) % len(matches)
 	case "down":
 		m.suggestion = (m.suggestion + 1) % len(matches)
+	case "esc":
+		// Closes the list only: a model at work goes on.
+		m.suggestionsClosedOn, m.suggestionsClosed = m.input.Value(), true
 	case "tab":
 		m.completeCommand(selected)
 	case "enter":
@@ -1284,7 +1292,7 @@ func mcpReport(statuses []mcphub.Status, cfg config.Config) string {
 	var lines []string
 	for _, name := range slices.Sorted(maps.Keys(cfg.MCP)) {
 		if slices.Contains(cfg.Tools.MCPDisabled, name) {
-			lines = append(lines, fmt.Sprintf("○ %s: off · /settings › Tools turns it on", name))
+			lines = append(lines, fmt.Sprintf("○ %s: off · /mcp › %s › On turns it on", name, name))
 		}
 	}
 	if len(statuses)+len(lines) == 0 {

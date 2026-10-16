@@ -1,10 +1,8 @@
 package tui
 
 import (
-	"charm.land/lipgloss/v2"
 	"context"
 	"fmt"
-	"github.com/jg/mo/internal/mcphub"
 	"maps"
 	"regexp"
 	"slices"
@@ -12,8 +10,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/jg/mo/internal/config"
+	"github.com/jg/mo/internal/mcphub"
+	"github.com/jg/mo/internal/tools"
 )
 
 const (
@@ -40,6 +41,13 @@ type mcpDraft struct {
 	remove       bool
 	savedEnv     map[string]string
 	savedHeaders map[string]string
+	// switches shows whether the server is on and its tools' mode as
+	// fields, as /mcp opens it; the settings menu has them under Tools.
+	switches bool
+	on       bool
+	mode     string
+	// defaultMode is the tool mode the server follows when it has none.
+	defaultMode string
 }
 
 func newMCPDraft(name string, server config.MCPServer) *mcpDraft {
@@ -71,6 +79,19 @@ func (d *mcpDraft) entries(taken map[string]config.MCPServer) []entry {
 	if d.isNew {
 		entries = append(entries, entry{"Name", func() string { return valueOr(d.name, "required") }, func() huh.Field {
 			return huh.NewInput().Title("Name").Description("its tools are called mcp__name__tool").Validate(validNewName(taken)).Value(&d.name)
+		}})
+	}
+	if d.switches {
+		entries = append(entries, entry{"On", func() string { return onOff(d.on) }, func() huh.Field {
+			return huh.NewConfirm().Title("On").Description("off: not started, its tools are gone; set in tools.mcp_disabled").Affirmative("On").Negative("Off").Value(&d.on)
+		}}, entry{"Tool mode", func() string { return orDefault(d.mode, d.defaultMode+" (default)") }, func() huh.Field {
+			return huh.NewSelect[string]().Title("Tool mode").Description("how its tools reach the model; set in tools.mcp_modes").Options(
+				huh.NewOption("as the default: "+d.defaultMode, ""),
+				huh.NewOption("full: declared with its description", string(tools.ModeFull)),
+				huh.NewOption("compact: declared without descriptions", string(tools.ModeCompact)),
+				huh.NewOption("search: found when looked for", string(tools.ModeSearch)),
+				huh.NewOption("group: one entry for the server, all its tools when looked for", string(tools.ModeGroup)),
+			).Value(&d.mode)
 		}})
 	}
 	entries = append(entries, entry{"Type", func() string { return kindLabels[d.kind] }, func() huh.Field {
@@ -122,6 +143,8 @@ func (d *mcpDraft) applyTo(layer config.Config) (config.Config, error) {
 	name := strings.TrimSpace(d.name)
 	if d.remove {
 		layer.MCP = withoutEntry(layer.MCP, name)
+		layer.Tools.MCPDisabled = switchedOn(layer.Tools.MCPDisabled, name, true)
+		layer.Tools.MCPModes = withoutEntry(layer.Tools.MCPModes, name)
 		return layer, nil
 	}
 	server := config.MCPServer{
@@ -143,7 +166,59 @@ func (d *mcpDraft) applyTo(layer config.Config) (config.Config, error) {
 	}
 	server.Env, server.Headers = env, headers
 	layer.MCP = withEntry(layer.MCP, name, server)
+	if d.switches {
+		layer = d.switchesTo(layer, false)
+	}
 	return layer, nil
+}
+
+// switchesTo writes whether the server is on and its mode into a layer;
+// onlySet leaves alone what the layer does not set, as a project's file,
+// whose list of servers off, once set, replaces the user's.
+func (d *mcpDraft) switchesTo(layer config.Config, onlySet bool) config.Config {
+	name := strings.TrimSpace(d.name)
+	if !onlySet || layer.Tools.MCPDisabled != nil {
+		layer.Tools.MCPDisabled = switchedOn(layer.Tools.MCPDisabled, name, d.on || d.remove)
+		if onlySet && layer.Tools.MCPDisabled == nil {
+			layer.Tools.MCPDisabled = []string{}
+		}
+	}
+	if _, set := layer.Tools.MCPModes[name]; !onlySet || set {
+		if d.mode == "" || d.remove {
+			layer.Tools.MCPModes = withoutEntry(layer.Tools.MCPModes, name)
+		} else {
+			layer.Tools.MCPModes = withEntry(layer.Tools.MCPModes, name, tools.Mode(d.mode))
+		}
+	}
+	return layer
+}
+
+// projectSwitches is the project's file with the server's switches, when
+// the project sets them and so would hide a change to the user file.
+func (d *mcpDraft) projectSwitches(msg settingsLoadedMsg) *config.Config {
+	if !d.switches || msg.projectErr != nil || !msg.project.Trusted {
+		return nil
+	}
+	before := msg.project.Layer
+	after := d.switchesTo(before, true)
+	if slices.Equal(after.Tools.MCPDisabled, before.Tools.MCPDisabled) && maps.Equal(after.Tools.MCPModes, before.Tools.MCPModes) {
+		return nil
+	}
+	return &after
+}
+
+// switchedOn is the list of servers off with name taken out when on, or
+// put in.
+func switchedOn(off []string, name string, on bool) []string {
+	off = slices.DeleteFunc(slices.Clone(off), func(each string) bool { return each == name })
+	if !on {
+		off = append(off, name)
+		slices.Sort(off)
+	}
+	if len(off) == 0 {
+		return nil
+	}
+	return off
 }
 
 // pickMCPServer lists the servers to edit, then opens the chosen one, the
@@ -152,8 +227,12 @@ func (m model) pickMCPServer(msg settingsLoadedMsg, menu *settingsMenu) (tea.Mod
 	servers := msg.layer.MCP
 	picked := newServerChoice
 	var options []huh.Option[string]
+	width := 0
+	for name := range servers {
+		width = max(width, len(name))
+	}
 	for _, name := range slices.Sorted(maps.Keys(servers)) {
-		options = append(options, huh.NewOption(name, name))
+		options = append(options, huh.NewOption(fmt.Sprintf("%-*s   %s", width, name, m.mcpState(name)), name))
 	}
 	options = append(options, huh.NewOption("+ add a server", newServerChoice))
 	form := newForm(huh.NewGroup(
@@ -176,6 +255,13 @@ var kindLabels = map[string]string{kindCommand: "command", kindURL: "URL"}
 // at once.
 func (m model) editMCPServer(msg settingsLoadedMsg, name string, menu *settingsMenu) (tea.Model, tea.Cmd) {
 	draft := newMCPDraft(name, msg.layer.MCP[name])
+	if menu == nil {
+		live := m.session.Config.Tools
+		draft.switches = true
+		draft.on = !slices.Contains(live.MCPDisabled, name)
+		draft.mode = string(live.MCPModes[name])
+		draft.defaultMode = orDefault(string(live.Mode), string(tools.ModeFull))
+	}
 	title := "MCP server " + name
 	if draft.isNew {
 		title = "New MCP server"
@@ -198,7 +284,7 @@ func (m model) editMCPServer(msg settingsLoadedMsg, name string, menu *settingsM
 				return m.showEditor(e, "Name")
 			}
 		}
-		return m.saveEdit(e, msg, menu, what, draft.forKind().applyTo)
+		return m.saveServer(e, msg, menu, what, draft.forKind())
 	}
 	e.actions = []editorAction{{label: mcpTestLabel, run: func(m model) (tea.Model, tea.Cmd) { return m.testMCP(e, draft) }}}
 	if !draft.isNew {
@@ -206,10 +292,24 @@ func (m model) editMCPServer(msg settingsLoadedMsg, name string, menu *settingsM
 		e.remove = func(m model) (tea.Model, tea.Cmd) {
 			gone := *draft
 			gone.remove = true
-			return m.saveEdit(e, msg, menu, what, gone.applyTo)
+			return m.saveServer(e, msg, menu, what, &gone)
 		}
 	}
 	return m.showEditor(e, "")
+}
+
+// saveServer saves the server; from /mcp, also into the project's file
+// when that sets whether it is on or its mode.
+func (m model) saveServer(e *editor, msg settingsLoadedMsg, menu *settingsMenu, what string, draft *mcpDraft) (tea.Model, tea.Cmd) {
+	project := draft.projectSwitches(msg)
+	if menu != nil || project == nil {
+		return m.saveEdit(e, msg, menu, what, draft.applyTo)
+	}
+	if _, err := draft.applyTo(msg.layer); err != nil {
+		e.notice = errorStyle.Render("not saved: " + err.Error())
+		return m.showEditor(e, editorSave)
+	}
+	return m.saveOrWait(&settingsScreen{layer: msg.layer, apply: draft.applyTo, project: project})
 }
 
 func lines(text string) []string {
@@ -325,4 +425,27 @@ func testedTools(names []string) string {
 		text += ", …"
 	}
 	return text
+}
+
+// mcpState is how a server is doing in this session: off, its tools and
+// their mode, or why it failed.
+func (m model) mcpState(name string) string {
+	live := m.session.Config.Tools
+	if slices.Contains(live.MCPDisabled, name) {
+		return dimStyle.Render("○ off")
+	}
+	for _, status := range m.session.MCP {
+		if status.Name != name {
+			continue
+		}
+		if status.Err != nil {
+			return errorStyle.Render("✗ " + oneLine(status.Err.Error(), 50))
+		}
+		mode := string(live.MCPModes[name])
+		if mode != "" {
+			mode = " · " + mode
+		}
+		return dimStyle.Render(fmt.Sprintf("● %d tools%s", status.Tools, mode))
+	}
+	return dimStyle.Render("· not started yet")
 }

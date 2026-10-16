@@ -1138,3 +1138,20 @@
 - The lists of names to turn off (MCP servers, tools) are two lines taller than their names: with
   one, the section's crumb over the field took a line and the last name was hidden, so two servers
   showed one and three showed two.
+
+## Turning MCP servers on and off from /mcp
+
+- A server opened from `/mcp` shows On and Tool mode beside its fields, so it is switched and its
+  tools' mode set where it is edited. They are saved, not only for the session, to the user file;
+  a trusted project that sets `tools.mcp_disabled`, or that server's mode, gets the change too, as
+  otherwise it would hide it. From the settings menu the editor leaves them out: Tools has them,
+  and two drafts of the same list would overwrite each other.
+- Saving connects only what changed: `mcphub.Reconnect` keeps the connections of servers whose
+  settings are the same and that answered, shared by the old and the new hub; `CloseExcept` closes
+  only what the other does not share, both when the new session takes over and when it is thrown
+  away.
+
+## Esc and the suggestions
+
+- Esc with the suggestions open closes them and does nothing else, so closing the list while the
+  model works does not stop it; the next esc does. They stay closed until the input changes.
