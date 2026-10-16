@@ -77,7 +77,7 @@ func (p *printer) setImages(mode render.Mode) {
 func (p *printer) renderer() render.Renderer {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return render.Renderer{Mode: p.images, Width: p.width}
+	return render.Renderer{Mode: p.images, Width: p.width, Dark: p.dark}
 }
 
 // Answer prints an answer of the model: markdown, with its mermaid and svg

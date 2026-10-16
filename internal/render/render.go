@@ -13,6 +13,8 @@ const maxWidthShare = 0.8
 type Renderer struct {
 	Mode  Mode
 	Width int
+	// Dark tells the background is dark, for the colours of diagrams.
+	Dark bool
 }
 
 // Image draws an image in the renderer's mode. With images off it names
@@ -64,7 +66,7 @@ func (r Renderer) Mermaid(source string) string {
 	if err != nil || strings.TrimSpace(drawn) == "" {
 		return "```mermaid\n" + strings.TrimSpace(source) + "\n```"
 	}
-	return strings.TrimRight(drawn, "\n")
+	return colorDiagram(drawn, r.Dark)
 }
 
 func (r Renderer) maxCols() int {

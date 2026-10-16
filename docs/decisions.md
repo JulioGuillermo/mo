@@ -335,6 +335,13 @@
   mermaid-cli installed and kitty graphics, the diagram is drawn as an image, with labels as SVG
   text since resvg draws no HTML labels. Half blocks are too coarse for a diagram. What neither
   draws stays its source.
+- Diagrams drawn with box characters are coloured afterwards, as their pictures are: the boxes
+  are found as rectangles of box characters, each that holds no other gets the next of a few
+  edge colours and a shade of it inside, those holding others (subgraphs) a quiet grey; lines
+  are dim and labels light. mermaid-ascii writes a label over its line, so a piece of line between
+  two words of one is shown as the space it was. Marks such as o{ or || are line ends only when
+  they stand apart, never letters of a label. Colouring the text it drew keeps mermaid-ascii as
+  it is, and works the same for flowcharts, sequence and ER diagrams.
 - Images in tool results are written to a file and marked `[image <what>: <path>]`, so the model
   knows where they are, and can show them again with `![](path)`, and the UI draws them. The files
   go to a private directory made for the run (0700) and removed at exit; a shared, predictable
