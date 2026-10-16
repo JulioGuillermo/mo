@@ -1120,3 +1120,10 @@
   top and bottom dots outline the bar, its middle ones fill it a column at a time. Circles and
   squares come whole too, as the half ones look different from font to font. The settings show
   each at 65%, in the bar's own colours, since some fill with the mark they leave empty.
+
+## Pasting into settings
+
+- ctrl+v and ctrl+shift+v in a settings field read the clipboard once, in mo, the field's own
+  reading on ctrl+v left out; a paste of the same text the terminal sends within a second, as one
+  that pastes on those keys besides reporting them, is dropped. A terminal that pastes nothing on
+  them still gets mo's paste, and one that only pastes still pastes once.

@@ -81,6 +81,42 @@ type settingsScreen struct {
 	// opened from, which stays in view.
 	floating bool
 	under    string
+	// pasted is what was last pasted, and when, so the same paste coming
+	// twice, from the keys and from the terminal, goes in once.
+	pasted   string
+	pastedAt time.Time
+}
+
+// settingsPasteMsg is the clipboard ctrl+v read for a settings field.
+type settingsPasteMsg string
+
+// pasteTwiceWithin is how close two pastes of the same text are taken for
+// one, as a terminal that pastes on ctrl+v sends it besides the key.
+const pasteTwiceWithin = time.Second
+
+// settingsPaste reads the clipboard for ctrl+v in a settings field.
+func settingsPaste() tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), clipboardTimeout)
+		defer cancel()
+		text, err := readClipboardText(ctx)
+		if err != nil {
+			return nil
+		}
+		return settingsPasteMsg(text)
+	}
+}
+
+// pasteOnce gives the form a paste unless the same just went in.
+func (m model) pasteOnce(text string) (tea.Model, tea.Cmd) {
+	screen := m.settings
+	if text == "" || (text == screen.pasted && time.Since(screen.pastedAt) < pasteTwiceWithin) {
+		return m, nil
+	}
+	screen.pasted, screen.pastedAt = text, time.Now()
+	updated, cmd := screen.form.Update(tea.PasteMsg{Content: text})
+	screen.form = updated.(*huh.Form)
+	return m, cmd
 }
 
 func (screen *settingsScreen) helpLine() string {
@@ -188,6 +224,18 @@ func (m model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return screen.back(m)
 		}
 		return m, printText(m.printer.Note("settings unchanged"))
+	}
+	// ctrl+v pastes once: read here, the field's own reading left out, and
+	// the terminal's paste of the same text, when it sends one, dropped.
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		if key := msg.String(); key == "ctrl+v" || key == "ctrl+shift+v" {
+			return m, settingsPaste()
+		}
+	case settingsPasteMsg:
+		return m.pasteOnce(string(msg))
+	case tea.PasteMsg:
+		return m.pasteOnce(msg.Content)
 	}
 	updated, cmd := m.settings.form.Update(msg)
 	m.settings.form = updated.(*huh.Form)
