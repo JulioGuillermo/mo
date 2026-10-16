@@ -14,8 +14,10 @@ package tui
 // | SP-10 | Happy    | The Skills section lists what was found, and says how to add skills when none    | P1       |
 // | SP-11 | Happy    | Tool modes lists each tool and MCP server; a mode set there is saved by name     | P0       |
 // | SP-12 | Happy    | A project sets one server's mode, group, alone; the rest follow Global           | P0       |
+// | SP-21 | Edge     | The list of MCP servers to turn off shows every server, under its crumb          | P1       |
 
 import (
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -246,6 +248,29 @@ func TestProjectSettings(t *testing.T) {
 		user, _ := config.ReadUserLayer()
 		if !slices.Equal(project.Layer.Tools.MCPDisabled, []string{"docs"}) || user.Tools.MCPDisabled != nil {
 			t.Errorf("project %v user %v", project.Layer.Tools.MCPDisabled, user.Tools.MCPDisabled)
+		}
+	})
+
+	t.Run("SP-21 the list of MCP servers to turn off shows every server, under its crumb", func(t *testing.T) {
+		for _, count := range []int{2, 3, 8} {
+			var file strings.Builder
+			for i := range count {
+				fmt.Fprintf(&file, "[mcp.server-%d]\nurl = \"https://example.com/%d\"\n", i, i)
+			}
+			m, menu, _ := projectMenuModel(t, file.String(), "")
+			switched, _ := m.switchScope(menu)
+			section := projectSections()[1]
+			items := overridable(section, section.items(switched.(model), menu))
+			index := slices.IndexFunc(items, func(item settingItem) bool { return item.title == "MCP servers off" })
+
+			opened, _ := switched.(model).editItem(menu, section, items[index])
+
+			view := ansi.Strip(opened.(model).settings.form.View())
+			for i := range count {
+				if !strings.Contains(view, fmt.Sprintf("server-%d", i)) {
+					t.Errorf("%d servers: server-%d not shown:\n%s", count, i, view)
+				}
+			}
 		}
 	})
 

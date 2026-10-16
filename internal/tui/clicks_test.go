@@ -27,6 +27,12 @@ import (
 // clickOn clicks the first place on screen showing text, as a user would.
 func clickOn(t *testing.T, m model, text string) model {
 	t.Helper()
+	return clickOnFor(t, m, text, 3)
+}
+
+// clickOnFor clicks text and delivers what follows for as many rounds.
+func clickOnFor(t *testing.T, m model, text string, rounds int) model {
+	t.Helper()
 	view := m.View().Content
 	if m.settings != nil {
 		view = m.settings.form.View()
@@ -35,9 +41,9 @@ func clickOn(t *testing.T, m model, text string) model {
 		if x := strings.Index(line, text); x >= 0 {
 			at := tea.Mouse{X: ansi.StringWidth(line[:x]) + 1, Y: y, Button: tea.MouseLeft}
 			pressed, cmd := m.Update(tea.MouseClickMsg(at))
-			m = deliver(pressed.(model), cmd, 3)
+			m = deliver(pressed.(model), cmd, rounds)
 			updated, cmd := m.Update(tea.MouseReleaseMsg(at))
-			return deliver(updated.(model), cmd, 3)
+			return deliver(updated.(model), cmd, rounds)
 		}
 	}
 	t.Fatalf("%q is not on screen:\n%s", text, ansi.Strip(view))

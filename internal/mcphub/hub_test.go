@@ -12,13 +12,19 @@ package mcphub
 // | MH-08 | Security | Tools whose names collide after cleaning each keep their own name  | P0       |
 // | MH-09 | Security | Close also stops the processes a stdio server started              | P0       |
 // | MH-10 | Edge     | ${NAME} reads the environment and any other $ stays as written     | P2       |
+// | MH-11 | Happy    | Test lists a URL server's tools                                    | P1       |
+// | MH-12 | Happy    | Test starts a command server and stops it after                    | P1       |
+// | MH-13 | Error    | Test tells why a server does not answer                            | P1       |
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -218,6 +224,38 @@ func TestProcesses(t *testing.T) {
 
 		if values["auth"] != "Bearer secret" || values["raw"] != "pa$$word $HOME" {
 			t.Errorf("values = %v", values)
+		}
+	})
+}
+
+func TestTest(t *testing.T) {
+	t.Run("MH-11 Test lists a URL server's tools", func(t *testing.T) {
+		handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return demoServer(t) }, nil)
+		web := httptest.NewServer(handler)
+		defer web.Close()
+
+		names, err := Test(context.Background(), "demo", config.MCPServer{URL: web.URL}, t.TempDir())
+
+		if err != nil || !slices.Equal(names, []string{"fail", "greet"}) {
+			t.Errorf("names = %v, err = %v", names, err)
+		}
+	})
+
+	t.Run("MH-12 Test starts a command server and stops it after", func(t *testing.T) {
+		settings := config.MCPServer{Command: os.Args[0], Env: map[string]string{"MO_TEST_MCP_SERVER": "1"}}
+
+		names, err := Test(context.Background(), "helper", settings, t.TempDir())
+
+		if err != nil || !slices.Equal(names, []string{"ping"}) {
+			t.Errorf("names = %v, err = %v", names, err)
+		}
+	})
+
+	t.Run("MH-13 Test tells why a server does not answer", func(t *testing.T) {
+		_, err := Test(context.Background(), "gone", config.MCPServer{Command: "false"}, t.TempDir())
+
+		if err == nil {
+			t.Error("no error from a server that exits")
 		}
 	})
 }

@@ -1127,3 +1127,14 @@
   reading on ctrl+v left out; a paste of the same text the terminal sends within a second, as one
   that pastes on those keys besides reporting them, is dropped. A terminal that pastes nothing on
   them still gets mo's paste, and one that only pastes still pastes once.
+
+## Testing an MCP server
+
+- Test connection in a server's editor builds the server from what the editor holds, through the
+  same checks and `${NAME}` expansion as saving, and connects to it apart from the session's
+  servers: it lists the tools, closes the session and stops the process group a command started.
+  It runs in the background; the result shows in the editor, or the next time it opens if the user
+  has moved to a field meanwhile. Nothing is saved, so a server can be tried before it is.
+- The lists of names to turn off (MCP servers, tools) are two lines taller than their names: with
+  one, the section's crumb over the field took a line and the last name was hidden, so two servers
+  showed one and three showed two.

@@ -1,7 +1,10 @@
 package tui
 
 import (
+	"charm.land/lipgloss/v2"
+	"context"
 	"fmt"
+	"github.com/jg/mo/internal/mcphub"
 	"maps"
 	"regexp"
 	"slices"
@@ -197,6 +200,7 @@ func (m model) editMCPServer(msg settingsLoadedMsg, name string, menu *settingsM
 		}
 		return m.saveEdit(e, msg, menu, what, draft.forKind().applyTo)
 	}
+	e.actions = []editorAction{{label: mcpTestLabel, run: func(m model) (tea.Model, tea.Cmd) { return m.testMCP(e, draft) }}}
 	if !draft.isNew {
 		e.removeLabel = "Delete this server"
 		e.remove = func(m model) (tea.Model, tea.Cmd) {
@@ -261,4 +265,64 @@ var environmentReference = regexp.MustCompile(`^(Bearer )?\$\{[A-Za-z_][A-Za-z0-
 
 func onlyReadsEnvironment(value string) bool {
 	return environmentReference.MatchString(value)
+}
+
+const (
+	mcpTestLabel  = "Test connection"
+	mcpTestChoice = editorActionPrefix + "0"
+)
+
+// mcpTestedMsg is how a test of a server's connection went, for its editor.
+type mcpTestedMsg struct {
+	editor *editor
+	tools  []string
+	err    error
+}
+
+// testMCP connects to the server as the editor has it, saved or not, and
+// says in it how that went.
+func (m model) testMCP(e *editor, draft *mcpDraft) (tea.Model, tea.Cmd) {
+	name := orDefault(strings.TrimSpace(draft.name), "test")
+	tried := *draft.forKind()
+	tried.name = name
+	layer, err := tried.applyTo(config.Config{})
+	if err != nil {
+		e.notice = errorStyle.Render("✗ " + err.Error())
+		return m.showEditor(e, mcpTestChoice)
+	}
+	server := layer.MCP[name]
+	e.notice = dimStyle.Render("testing the connection…")
+	shown, cmd := m.showEditor(e, mcpTestChoice)
+	return shown, tea.Batch(cmd, func() tea.Msg {
+		tools, err := mcphub.Test(context.Background(), name, server, config.LogDir())
+		return mcpTestedMsg{editor: e, tools: tools, err: err}
+	})
+}
+
+// mcpTested says in the server's editor how its test went, at once when it
+// is open, else when it is opened again.
+func (m model) mcpTested(msg mcpTestedMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		msg.editor.notice = errorStyle.Render("✗ " + oneLine(msg.err.Error(), 200))
+	} else {
+		msg.editor.notice = lipgloss.NewStyle().Foreground(lipgloss.Color("#9ece6a")).Render(
+			fmt.Sprintf("✓ connected · %d tools", len(msg.tools))) + dimStyle.Render(testedTools(msg.tools))
+	}
+	if m.settings != nil && m.settings.editor == msg.editor {
+		return m.showEditor(msg.editor, mcpTestChoice)
+	}
+	return m, nil
+}
+
+// testedTools are the first tools a server offers, to recognise it by.
+func testedTools(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	shown := names[:min(len(names), 6)]
+	text := ": " + strings.Join(shown, ", ")
+	if len(names) > len(shown) {
+		text += ", …"
+	}
+	return text
 }

@@ -580,7 +580,9 @@ func appearanceItems(model, *settingsMenu) []settingItem {
 				huh.NewOption("plain: text joined by │, for any font", statusPlain),
 			).Value(&d.statusStyle)
 		}},
-		{"Context bar", func(d *settingsDraft) string { return barSample(barStyleNamed(d.bar)) + "  " + orDefault(d.bar, barStyles[0].name) }, func(d *settingsDraft) huh.Field {
+		{"Context bar", func(d *settingsDraft) string {
+			return barSample(barStyleNamed(d.bar)) + "  " + orDefault(d.bar, barStyles[0].name)
+		}, func(d *settingsDraft) huh.Field {
 			var options []huh.Option[string]
 			for _, style := range barStyles {
 				options = append(options, huh.NewOption(fmt.Sprintf("%s  %-12s %s", barSample(style), style.name, style.about), style.name))

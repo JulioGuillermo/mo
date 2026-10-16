@@ -221,3 +221,25 @@ func (s *server) stopProcesses() {
 	}
 	syscall.Kill(group, syscall.SIGKILL)
 }
+
+// Test connects to one server as settings say, lists its tools and lets
+// it go, stopping what it started: to tell whether it works before it is
+// saved.
+func Test(ctx context.Context, name string, settings config.MCPServer, logDir string) ([]string, error) {
+	entry := &server{name: name}
+	entry.connect(ctx, settings, logDir)
+	defer func() {
+		if entry.session != nil {
+			entry.session.Close()
+		}
+		entry.stopProcesses()
+	}()
+	if entry.err != nil {
+		return nil, entry.err
+	}
+	var names []string
+	for _, tool := range entry.tools {
+		names = append(names, tool.tool.Name)
+	}
+	return names, nil
+}

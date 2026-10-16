@@ -7,6 +7,7 @@ package tui
 // | ED-03 | Error    | Saving without what is required says why and keeps what was typed    | P1       |
 // | ED-04 | Happy    | Esc in a field puts its value back; delete asks, then removes         | P1       |
 // | ED-05 | Happy    | A provider is filled in field by field the same way                  | P1       |
+// | ED-06 | Error    | Test connection says why a server it cannot reach fails, unsaved     | P1       |
 
 import (
 	"strings"
@@ -124,4 +125,23 @@ func TestEditor(t *testing.T) {
 			t.Errorf("providers = %+v", menu.layer.Providers)
 		}
 	})
+}
+
+func TestEditorExtras(t *testing.T) {
+	t.Run("ED-06 test connection says why a server it cannot reach fails, unsaved", func(t *testing.T) {
+		m, menu := newServerEditor(t, config.Config{})
+		m = clickOn(t, m, "Name")
+		m = enter(t, typeIn(t, m, "broken"))
+		m = clickOn(t, m, "Command   ")
+		m = enter(t, typeIn(t, m, "false"))
+
+		// The test runs once the editor shows it is testing.
+		m = clickOnFor(t, m, mcpTestLabel, 6)
+		shown := screen(m)
+
+		if _, saved := menu.layer.MCP["broken"]; saved || !strings.Contains(shown, "✗") {
+			t.Errorf("saved = %v screen:\n%s", saved, shown)
+		}
+	})
+
 }

@@ -294,6 +294,8 @@ func (m model) Init() tea.Cmd {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case mcpTestedMsg:
+		return m.mcpTested(msg)
 	case svgReadyMsg:
 		// A picture was drawn: the screen shows it as it is drawn again,
 		// and a kitty one goes to the terminal, whatever is open.

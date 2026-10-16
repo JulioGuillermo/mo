@@ -462,7 +462,9 @@ trust = true               # run its tools without asking
 
 Their tools are named `mcp__<server>__<tool>` and ask before running unless the server has
 `trust = true`. In `search` tool mode they stay out of the context until the model looks for them.
-`/mcp` shows which servers answered and edits them. `/settings › Tools › MCP servers off` stops
+`/mcp` shows which servers answered and edits them; **Test connection** in a server's editor
+connects to it as it is filled in, saved or not, and says how many tools it offers or why it failed
+(a command server is started and stopped again). `/settings › Tools › MCP servers off` stops
 one without deleting it, everywhere or only in a project. A server's stderr goes to `~/.local/share/mo/logs/mcp-<name>.log`.
 `[web]` and `[mcp]` are read from the user file only, never from a project's `.mo/settings.toml`.
 

@@ -101,7 +101,7 @@ func (m model) showEditor(e *editor, last string) (tea.Model, tea.Cmd) {
 		return m.showEditor(e, "")
 	}
 	form := newForm(huh.NewGroup(list)).WithShowHelp(false)
-	return m.showSettings(&settingsScreen{form: form, next: next, back: e.back, help: menuHelp})
+	return m.showSettings(&settingsScreen{form: form, next: next, back: e.back, help: menuHelp, editor: e})
 }
 
 // editEntry opens one field; enter keeps what was typed, esc puts the old

@@ -26,7 +26,7 @@ const (
 	settingsDetectTimeout = 3 * time.Second
 	modelListTimeout      = 2 * time.Second
 	settingsMinHeight     = 3
-	maxToolChoiceHeight   = 14
+	maxToolChoiceHeight   = 20
 	autoProvider          = ""
 	settingsHelp          = "enter next · shift+tab previous field · ←→ yes/no · shift+enter new line in a box · esc back"
 )
@@ -85,6 +85,8 @@ type settingsScreen struct {
 	// twice, from the keys and from the terminal, goes in once.
 	pasted   string
 	pastedAt time.Time
+	// editor is the editor this screen shows, when it shows one.
+	editor *editor
 }
 
 // settingsPasteMsg is the clipboard ctrl+v read for a settings field.
@@ -364,8 +366,11 @@ func toolNames(session Session) []string {
 	return names
 }
 
+// toolChoice is a list to tick names in, tall enough for all of them under
+// its title and a line of description, scrolled past maxToolChoiceHeight:
+// a line shorter, the crumb over it hides the last name.
 func toolChoice(title string, names []string, value *[]string) *huh.MultiSelect[string] {
-	height := min(len(names)+1, maxToolChoiceHeight)
+	height := min(len(names)+2, maxToolChoiceHeight)
 	return huh.NewMultiSelect[string]().Title(title).Options(huh.NewOptions(names...)...).Height(height).Value(value)
 }
 
