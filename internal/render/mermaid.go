@@ -41,7 +41,27 @@ func mermaidSVG(source string) ([]byte, bool) {
 	return svg, err == nil
 }
 
-// mermaidText draws a flowchart or sequence diagram with box characters.
+// textConfig draws boxes tight around their text: room on screen is
+// scarce in a terminal.
+func textConfig() *diagram.Config {
+	config := diagram.DefaultConfig()
+	config.BoxBorderPadding = 0
+	return config
+}
+
+// mermaidText draws a flowchart, sequence, ER or class diagram with box
+// characters; a class diagram as a flowchart of class boxes.
 func mermaidText(source string) (string, error) {
-	return mermaidascii.RenderDiagram(source, diagram.DefaultConfig())
+	if isClassDiagram(source) {
+		flowchart, err := classFlowchart(source)
+		if err != nil {
+			return "", err
+		}
+		drawn, err := mermaidascii.RenderDiagram(flowchart, textConfig())
+		if err != nil {
+			return "", err
+		}
+		return tidyClassBoxes(drawn), nil
+	}
+	return mermaidascii.RenderDiagram(readableFlowchart(source), textConfig())
 }

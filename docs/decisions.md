@@ -337,11 +337,25 @@
   draws stays its source.
 - Diagrams drawn with box characters are coloured afterwards, as their pictures are: the boxes
   are found as rectangles of box characters, each that holds no other gets the next of a few
-  edge colours and a shade of it inside, those holding others (subgraphs) a quiet grey; lines
-  are dim and labels light. mermaid-ascii writes a label over its line, so a piece of line between
+  edge colours and its text a light tint of it, those holding others (subgraphs) a quiet grey;
+  lines are dim and labels light. Boxes have no background and no room between their text and
+  edge: on a terminal, rows are scarce and the colours are enough, and a box takes three rows
+  instead of five. mermaid-ascii writes a label over its line, so a piece of line between
   two words of one is shown as the space it was. Marks such as o{ or || are line ends only when
   they stand apart, never letters of a label. Colouring the text it drew keeps mermaid-ascii as
-  it is, and works the same for flowcharts, sequence and ER diagrams.
+  it is, and works the same for flowcharts, sequence, ER and class diagrams.
+- Class diagrams, which mermaid-ascii does not read, are turned into a flowchart it lays out: a
+  class is a node of its annotations, name, attributes and methods, parted by marker lines that are
+  drawn afterwards as rules across its box, with the blank lines mermaid-ascii puts between a
+  label's lines taken out where only vertical lines cross them, and the members on the left. An
+  empty part keeps a line, an empty class is its name alone. A relation is an edge pointing as its
+  kind does: inheritance thick, realization and dependency dotted, association plain, composition
+  and aggregation a line marked ◆ or ◇; cardinalities and its words make the label. Notes, styles
+  and clicks are left out.
+- Flowchart links mermaid-ascii does not read are written as ones it does before drawing: words in
+  a link (`-- text -->`, `== text ==>`, `-. text .->`) go in its |label|, longer links are the
+  plain ones, `-.-` a plain line, both-way dotted or thick links plain both-way ones, and `~~~`,
+  a link only for layout, two lone nodes. Read as it was, such a link ended up inside a node.
 - Images in tool results are written to a file and marked `[image <what>: <path>]`, so the model
   knows where they are, and can show them again with `![](path)`, and the UI draws them. The files
   go to a private directory made for the run (0700) and removed at exit; a shared, predictable

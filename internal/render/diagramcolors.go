@@ -22,14 +22,14 @@ func (c rgb) mix(base rgb, share float64) rgb {
 }
 
 func (c rgb) fg() string { return fmt.Sprintf("38;2;%d;%d;%d", c.r, c.g, c.b) }
-func (c rgb) bg() string { return fmt.Sprintf("48;2;%d;%d;%d", c.r, c.g, c.b) }
 
 // diagramPalette are the colours a diagram is drawn in: a box's edge in
-// turn, a shade of it inside, and the lines, labels, text and groups.
+// turn, its text that colour drawn toward text's, and the lines, labels
+// and groups.
 type diagramPalette struct {
-	edges                        []rgb
-	base, line, label, text, box rgb
-	fill                         float64
+	edges                  []rgb
+	line, label, text, box rgb
+	tint                   float64
 }
 
 func paletteFor(dark bool) diagramPalette {
@@ -37,15 +37,15 @@ func paletteFor(dark bool) diagramPalette {
 		return diagramPalette{
 			edges: []rgb{hexColor("#4a9fe0"), hexColor("#e8833a"), hexColor("#d6409f"), hexColor("#a6c94a"),
 				hexColor("#9d7cd8"), hexColor("#2ab5a0"), hexColor("#e0af68")},
-			base: hexColor("#1a1b26"), line: hexColor("#4b5578"), label: hexColor("#a9b1d6"),
-			text: hexColor("#d5daf0"), box: hexColor("#565f89"), fill: 0.12,
+			line: hexColor("#4b5578"), label: hexColor("#a9b1d6"),
+			text: hexColor("#d5daf0"), box: hexColor("#565f89"), tint: 0.45,
 		}
 	}
 	return diagramPalette{
 		edges: []rgb{hexColor("#2e7de9"), hexColor("#c2570a"), hexColor("#c0267f"), hexColor("#5d7a1c"),
 			hexColor("#7847bd"), hexColor("#118c74"), hexColor("#8c6c00")},
-		base: hexColor("#ffffff"), line: hexColor("#8990b3"), label: hexColor("#4c5272"),
-		text: hexColor("#343b58"), box: hexColor("#a1a6c5"), fill: 0.08,
+		line: hexColor("#8990b3"), label: hexColor("#4c5272"),
+		text: hexColor("#343b58"), box: hexColor("#a1a6c5"), tint: 0.6,
 	}
 }
 
@@ -112,9 +112,9 @@ func findBoxes(grid [][]rune) []diagramBox {
 }
 
 // colorDiagram paints a diagram drawn with box characters as a picture of
-// one would be: each box's edge a colour of its own over a shade of it,
-// the boxes that hold others quieter, the lines dim and their labels
-// light.
+// one would be: each box's edge and text a colour of its own, the boxes
+// that hold others quieter, the lines dim and their labels light. Boxes
+// get no background: on a terminal the colours are enough.
 func colorDiagram(drawn string, dark bool) string {
 	palette := paletteFor(dark)
 	lines := strings.Split(strings.TrimRight(drawn, "\n"), "\n")
@@ -151,11 +151,14 @@ func colorDiagram(drawn string, dark bool) string {
 				continue
 			}
 			edge := palette.edges[i%len(palette.edges)]
-			fill := edge.mix(palette.base, palette.fill).bg()
-			if box.border(row, column) {
+			if box.border(row, column) || character == '─' {
+				// A rule across a box, as a class's, is of its edge.
 				return edge.fg()
 			}
-			return palette.text.fg() + ";" + fill
+			if character == ' ' {
+				return ""
+			}
+			return edge.mix(palette.text, palette.tint).fg()
 		}
 		for _, box := range groups {
 			if box.covers(row, column) && box.border(row, column) {
@@ -203,7 +206,7 @@ func colorDiagram(drawn string, dark bool) string {
 // be a line's end, as an ER diagram's o{ or ||, or a letter of a label.
 const (
 	lineRunes = "─│┌┐└┘├┤┬┴┼┄┈┆┊╌╎═║►◄▲▼"
-	lineEnds  = "<>^v|o{}*x"
+	lineEnds  = "<>^v|o{}"
 )
 
 // markLines tells which cells are of lines: every line rune, and the marks

@@ -484,9 +484,9 @@ images = "auto"   # auto | kitty | blocks | off
 
 `auto` uses kitty graphics in kitty and ghostty (also inside tmux with `set -g allow-passthrough on`),
 coloured half blocks in other truecolor terminals, and text otherwise. SVG is drawn by resvg built
-into mo; Mermaid flowcharts, sequence and ER diagrams are drawn with box characters, each box in
-a colour of its own over a shade of it, or as an image when `mmdc` (mermaid-cli) is installed,
-which also draws the other kinds, as class diagrams.
+into mo; Mermaid flowcharts, sequence, ER and class diagrams are drawn with box characters, each
+box tight around its text, its edge and text in a colour of its own, or as an image when `mmdc`
+(mermaid-cli) is installed, which also draws the other kinds.
 
 ## Plugins
 

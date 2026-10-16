@@ -2,7 +2,7 @@ package render
 
 // Test Traceability Table
 // | ID    | Category | Description                                                              | Priority |
-// | DC-01 | Happy    | Each box of a diagram gets a colour of its own, a shade of it inside, in turn | P1  |
+// | DC-01 | Happy    | Each box of a diagram gets a colour of its own, its text a tint of it, no background | P1  |
 // | DC-02 | Happy    | A box holding others is drawn quieter; lines dim, labels light, their spaces kept | P1 |
 // | DC-03 | Edge     | A label's letters are never taken for line ends; an ER diagram's marks are | P1      |
 // | DC-04 | Happy    | Light backgrounds get colours of their own; the text drawn is unchanged  | P2       |
@@ -45,15 +45,18 @@ func colourAt(drawn, text string) string {
 func TestDiagramColors(t *testing.T) {
 	dark := paletteFor(true)
 
-	t.Run("DC-01 each box of a diagram gets a colour of its own, a shade of it inside, in turn", func(t *testing.T) {
+	t.Run("DC-01 each box of a diagram gets a colour of its own, its text a tint of it, no background", func(t *testing.T) {
 		drawn := Renderer{Mode: ModeOff, Width: 120, Dark: true}.Mermaid("graph LR\n  A[Alpha] --> B[Beta]\n  B --> C[Gamma]")
 		first, second := colourAt(drawn, "┌"), colourAt(drawn, "Beta")
 
 		if first != dark.edges[0].fg() {
 			t.Errorf("the first box's edge = %q", first)
 		}
-		if want := dark.text.fg() + ";" + dark.edges[1].mix(dark.base, dark.fill).bg(); second != want {
-			t.Errorf("the second box's inside = %q, want %q", second, want)
+		if want := dark.edges[1].mix(dark.text, dark.tint).fg(); second != want {
+			t.Errorf("the second box's text = %q, want %q", second, want)
+		}
+		if strings.Contains(drawn, "48;2;") {
+			t.Error("boxes should have no background")
 		}
 		if strings.Contains(drawn, "```") || ansi.Strip(drawn) == drawn {
 			t.Errorf("drawn = %q", drawn)
