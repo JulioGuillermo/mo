@@ -296,13 +296,36 @@ var whileRunning = map[string]bool{
 	"sidebar": true, "vim": true, "jobs": true, "kill": true, "view": true, "quit": true, "exit": true, "title": true, "model": true, "effort": true, "login": true, "logout": true,
 }
 
-// queue keeps a message written while the model works for its next step,
-// and shows it now.
+// queue keeps a message written while the model works for its next step.
+// It waits over the status line, where it is in view whatever the model
+// is writing, and goes into the conversation where the model reads it.
 func (m model) queue(prompt string) (tea.Model, tea.Cmd) {
 	m.session.Agent.Queue(m.withAttachments(prompt))
+	m.queued = append(m.queued, prompt)
 	m.scrolled = false
-	return m, tea.Batch(drawText(func() string { return m.printer.User(prompt) }),
-		printText(m.printer.Note("queued · the model reads it at its next step")))
+	return m, nil
+}
+
+// queuedRead puts the queued messages the model now reads into the
+// conversation, after what it did before reading them.
+func (m model) queuedRead(count int) (tea.Model, tea.Cmd) {
+	count = min(count, len(m.queued))
+	read := m.queued[:count]
+	m.queued = slices.Clone(m.queued[count:])
+	var cmds []tea.Cmd
+	for _, prompt := range read {
+		cmds = append(cmds, drawText(func() string { return m.printer.User(prompt) }))
+	}
+	return m, tea.Sequence(cmds...)
+}
+
+// queuedView is the messages waiting for the model, a line each.
+func (m model) queuedView() string {
+	var lines []string
+	for _, prompt := range m.queued {
+		lines = append(lines, dimStyle.Render("  ⧗ queued › ")+oneLine(prompt, max(m.width-16, 20)))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // saveOrWait writes the settings now; while the model works the session

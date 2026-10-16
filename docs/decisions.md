@@ -1175,3 +1175,13 @@
   kept only as many as `context` asks, `show: files` stops a file at its first match, the lines
   shown stop at 20000 matches (after the last one's context) and a count goes to the end. A FIFO
   is still told by a stat before opening it, which would wait for a writer.
+
+## Queued messages
+
+- A message sent while the model works used to go into the conversation at once, above the reply
+  being written: a reply or a command's output taller than the screen hid it, and it stayed before
+  the reply it came during. It now waits over the status line, a line each, and goes into the
+  conversation when the agent hands it to the model (`Hooks.OnQueued`), after what the model did
+  before reading it.
+- Settings saved during a turn build a new agent; what was queued moves to it with the
+  conversation, where before it was lost.

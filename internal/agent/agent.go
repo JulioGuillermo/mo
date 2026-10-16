@@ -116,8 +116,11 @@ type Hooks struct {
 	// empty text says it is back to the reply.
 	OnActivity func(text string)
 	OnNotice   func(text string)
-	OnLoopCut  func(repeated string)
-	Approve    func(ctx context.Context, request ApprovalRequest) Decision
+	// OnQueued says the model now reads that many of the messages queued
+	// while it worked, the oldest first.
+	OnQueued  func(count int)
+	OnLoopCut func(repeated string)
+	Approve   func(ctx context.Context, request ApprovalRequest) Decision
 	// Interact asks the user everything the calls of a reply need at once;
 	// it takes the place of Approve.
 	Interact func(ctx context.Context, interaction Interaction) Reply

@@ -550,7 +550,7 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 
 | Key | Action |
 |---|---|
-| enter | send |
+| enter | send; while the model works, queue it: it waits over the status line (`⧗ queued › …`) and goes into the conversation when the model reads it, at its next step; esc gives it back in the input |
 | shift+enter, ctrl+j, alt+enter | new line, in the input and in the boxes of forms |
 | esc, ctrl+c | stop the current run; esc with suggestions open (commands, paths, @) closes them first and leaves the run going |
 | ctrl+b | send the command that blocks the model to the background |

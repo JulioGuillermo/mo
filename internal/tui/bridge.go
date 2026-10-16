@@ -19,6 +19,9 @@ type usageMsg llm.Usage
 type activityMsg string
 type runDoneMsg struct{ err error }
 
+// queuedReadMsg says the model now reads that many queued messages.
+type queuedReadMsg int
+
 // bridge turns agent callbacks, which run on the agent goroutine, into
 // program messages and scrollback lines.
 type bridge struct {
@@ -81,6 +84,9 @@ func (b *bridge) hooks() agent.Hooks {
 		},
 		OnNotice: func(text string) {
 			b.print(b.printer.Note(text))
+		},
+		OnQueued: func(count int) {
+			b.send(queuedReadMsg(count))
 		},
 		OnLoopCut: func(repeated string) {
 			b.program.Send(streamEndMsg{})

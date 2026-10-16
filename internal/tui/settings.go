@@ -301,10 +301,14 @@ func saveSettings(screen *settingsScreen, current Session, wait bool) tea.Cmd {
 }
 
 // takeOver puts a fresh session in place of the current one: its MCP
-// servers, the conversation and the permission mode picked meanwhile.
+// servers, the conversation, the messages queued and the permission mode
+// picked meanwhile.
 func takeOver(fresh, current Session) {
 	fresh.activate()
 	fresh.Agent.TakeConversation(current.Agent)
+	for _, text := range current.Agent.TakeQueued() {
+		fresh.Agent.Queue(text)
+	}
 	keepMode(fresh, current)
 }
 

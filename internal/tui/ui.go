@@ -160,6 +160,9 @@ type model struct {
 	settingsInFlight bool
 
 	suggestion int
+	// queued are the messages written while the model works, as typed,
+	// until it reads them.
+	queued []string
 	// suggestionsClosedOn is what the input held when esc closed its
 	// suggestions: they stay closed until it changes.
 	suggestionsClosedOn string
@@ -477,6 +480,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case activityMsg:
 		m.activity = string(msg)
 		return m, nil
+	case queuedReadMsg:
+		return m.queuedRead(int(msg))
 	case usageMsg:
 		m.usage = llm.Usage(msg)
 		m.metrics = liveMetrics{}
@@ -892,6 +897,7 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 			}
 			m.input.SetValue(strings.Join(queued, "\n"))
 			m.input.CursorEnd()
+			m.queued = nil
 			lines = append(lines, m.printer.Note("what you queued is back in the input"))
 		}
 	}
@@ -1006,6 +1012,9 @@ func (m model) upperLayout() (string, []region) {
 	}
 	if panel := m.todoPanel(); panel != "" {
 		add(panel, nil)
+	}
+	if waiting := m.queuedView(); waiting != "" {
+		add(waiting, nil)
 	}
 	switch {
 	case m.dialog != nil:

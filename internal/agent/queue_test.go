@@ -4,6 +4,7 @@ package agent
 // | ID    | Category | Description                                                          | Priority |
 // | QU-01 | Happy    | A message queued while the agent works reaches the model at its next step | P0  |
 // | QU-02 | Happy    | Queued after the last step, it starts a turn of its own              | P1       |
+// | QU-03 | Happy    | OnQueued says how many queued messages the model now reads           | P1       |
 
 import (
 	"context"
@@ -41,6 +42,20 @@ func TestQueue(t *testing.T) {
 		sent := provider.requests[0].Messages
 		if err != nil || sent[len(sent)-1].Text != "one more thing" || agent.History[len(agent.History)-1].Text != "sure" {
 			t.Errorf("err = %v sent = %+v", err, sent)
+		}
+	})
+
+	t.Run("QU-03 OnQueued says how many queued messages the model now reads", func(t *testing.T) {
+		provider := &scriptedProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Text: "sure"}}}
+		agent := newAgent(t, provider)
+		agent.Queue("one")
+		agent.Queue("two")
+		var told []int
+
+		_ = agent.RunQueued(context.Background(), Hooks{OnQueued: func(count int) { told = append(told, count) }})
+
+		if len(told) != 1 || told[0] != 2 {
+			t.Errorf("told = %v", told)
 		}
 	})
 }

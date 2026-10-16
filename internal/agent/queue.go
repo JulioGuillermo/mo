@@ -47,9 +47,13 @@ func (a *Agent) HasQueued() bool {
 // deliverQueued puts the waiting messages in the conversation as the
 // user's, with what they attach, before the model's next step.
 func (a *Agent) deliverQueued(hooks Hooks) {
-	for _, text := range a.TakeQueued() {
+	texts := a.TakeQueued()
+	for _, text := range texts {
 		a.History = append(a.History, a.promptMessage(text, hooks))
 		a.currentRequest = text
+	}
+	if len(texts) > 0 && hooks.OnQueued != nil {
+		hooks.OnQueued(len(texts))
 	}
 }
 
