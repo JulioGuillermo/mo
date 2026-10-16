@@ -18,7 +18,6 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textarea"
-	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
@@ -195,8 +194,9 @@ type model struct {
 	// written.
 	modeSaves   int
 	jobsTicking bool
-	viewport    viewport.Model
-	scrolled    bool
+	// top is the first line of the conversation in view, once scrolled.
+	top      int
+	scrolled bool
 }
 
 const agentShutdownWait = 3 * time.Second
@@ -210,17 +210,16 @@ func Run(session Session) error {
 	printer.workDir = session.WorkDir
 	bridge := &bridge{printer: printer, exited: make(chan struct{})}
 	m := model{
-		session:  session,
-		bridge:   bridge,
-		printer:  printer,
-		input:    newInput(),
-		viewport: viewport.New(),
-		spinner:  spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(workingStyle)),
-		focused:  true,
-		history:  loadHistory(),
-		vim:      vimState{enabled: session.Config.Render.Keys == "vim"},
-		files:    &fileIndex{},
-		svgs:     &svgFrames{kitty: printer.images == render.ModeKitty, ready: func() { bridge.send(svgReadyMsg{}) }},
+		session: session,
+		bridge:  bridge,
+		printer: printer,
+		input:   newInput(),
+		spinner: spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(workingStyle)),
+		focused: true,
+		history: loadHistory(),
+		vim:     vimState{enabled: session.Config.Render.Keys == "vim"},
+		files:   &fileIndex{},
+		svgs:    &svgFrames{kitty: printer.images == render.ModeKitty, ready: func() { bridge.send(svgReadyMsg{}) }},
 	}
 	printer.setKind(m.toolKind)
 	m.configureJobs()
@@ -1087,13 +1086,15 @@ func (m model) conversationHeight() int {
 	return max(m.height-lipgloss.Height(m.bottom())-1, 1)
 }
 
-// conversation is the transcript and the reply being written, in a viewport
+// conversation is the transcript and the reply being written, in a pane
 // of the given height that follows the end unless the user scrolled up.
-func (m model) conversation(height int) viewport.Model {
-	conversation := m.viewport
-	conversation.SetWidth(m.mainWidth())
-	conversation.SetHeight(max(height, 1))
-	conversation.SetContent(m.markConversation(m.conversationContent()))
+func (m model) conversation(height int) conversationPane {
+	lines := m.conversationLines()
+	conversation := conversationPane{width: m.mainWidth(), height: max(height, 1), total: lines.total}
+	conversation.window = func(from, to int) []string {
+		return m.markLines(lines.window(from, to), from)
+	}
+	conversation.SetYOffset(m.top)
 	if !m.scrolled {
 		conversation.GotoBottom()
 	}
@@ -1118,13 +1119,14 @@ func (m model) emit(text string) (tea.Model, tea.Cmd) {
 var kittyUploads = regexp.MustCompile(`\x1bPtmux;(?:[^\x1b]|\x1b\x1b)*\x1b\\|\x1b_G[^\x1b]*\x1b\\`)
 
 func (m *model) scroll(up bool, lines int) {
-	m.viewport = m.conversation(m.conversationHeight())
+	conversation := m.conversation(m.conversationHeight())
 	if up {
-		m.viewport.ScrollUp(lines)
+		conversation.ScrollUp(lines)
 	} else {
-		m.viewport.ScrollDown(lines)
+		conversation.ScrollDown(lines)
 	}
-	m.scrolled = !m.viewport.AtBottom()
+	m.top = conversation.YOffset()
+	m.scrolled = !conversation.AtBottom()
 }
 
 func (m model) pageSize(key string) int {

@@ -1185,3 +1185,14 @@
   before reading it.
 - Settings saved during a turn build a new agent; what was queued moves to it with the
   conversation, where before it was lost.
+
+## Drawing a long conversation
+
+- The conversation was a bubbles viewport given the whole transcript at every frame: it split it
+  into lines and measured the width of every one, so each keystroke and each piece of a reply
+  cost time in proportion to the conversation, about 25 ms at 10000 lines.
+- It is now a pane of mo's own: each frame it counts the lines of every block, which is a byte
+  search, and puts together, marks for vim and measures only the lines in view. The same frame
+  takes about 1 ms at 10000 lines and 4 ms at 100000. Clicks find their block by a binary search
+  over where the blocks start, not by a map of every line; the whole text is still joined, but only
+  on demand, to copy a selection or for vim's copy.

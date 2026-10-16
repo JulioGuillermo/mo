@@ -256,9 +256,8 @@ func (m model) runningCommandAt(y int) (int, bool) {
 		return 0, false
 	}
 	conversation := m.conversation(m.conversationHeight())
-	_, foldable := m.transcript()
-	i, found := foldable[y+conversation.YOffset()]
-	if !found || m.blocks[i].tool == nil {
+	i, found := m.conversationLines().blockAt(y + conversation.YOffset())
+	if !found || !m.blocks[i].foldable || m.blocks[i].tool == nil {
 		return 0, false
 	}
 	run := m.blocks[i].tool
@@ -273,9 +272,8 @@ func (m model) runningCommandAt(y int) (int, bool) {
 
 func (m *model) clickDetails(y int) bool {
 	conversation := m.conversation(m.conversationHeight())
-	_, foldable := m.transcript()
-	i, found := foldable[y+conversation.YOffset()]
-	if !found {
+	i, found := m.conversationLines().blockAt(y + conversation.YOffset())
+	if !found || !m.blocks[i].foldable {
 		return false
 	}
 	m.blocks = slices.Clone(m.blocks)

@@ -139,12 +139,12 @@ func (m model) copyCode(source string) (tea.Model, tea.Cmd) {
 
 // drawingAt is the diagram drawn at row y of the conversation.
 func (m model) drawingAt(y int) (drawing, bool) {
-	lines := strings.Split(ansi.Strip(m.conversationContent()), "\n")
 	row := y + m.conversationOffset()
-	if row < 0 || row >= len(lines) {
+	lines := m.conversationLines().window(row, row+1)
+	if row < 0 || len(lines) == 0 {
 		return drawing{}, false
 	}
-	return m.printer.drawingWith(lines[row])
+	return m.printer.drawingWith(ansi.Strip(lines[0]))
 }
 
 // rightClick opens the menu of what is under the pointer, if it has one.

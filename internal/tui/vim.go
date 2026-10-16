@@ -532,15 +532,14 @@ func (m *model) moveLine(by int) {
 	case m.vim.line >= conversation.YOffset()+height:
 		conversation.SetYOffset(m.vim.line - height + 1)
 	}
-	m.viewport = conversation
+	m.top = conversation.YOffset()
 	m.scrolled = !conversation.AtBottom()
 }
 
 // foldAt opens or folds the block the line belongs to.
 func (m *model) foldAt(line int, open bool) {
-	_, foldable := m.transcript()
-	i, found := foldable[line]
-	if !found || m.blocks[i].open == open {
+	i, found := m.conversationLines().blockAt(line)
+	if !found || !m.blocks[i].foldable || m.blocks[i].open == open {
 		return
 	}
 	m.blocks = slices.Clone(m.blocks)
@@ -572,24 +571,23 @@ func (m model) conversationContent() string {
 	return strings.TrimRight(transcript+m.liveText(), "\n")
 }
 
-// markConversation shows the cursor line, or the lines selected, when the
-// conversation has the keys.
-func (m model) markConversation(content string) string {
+// markLines shows the cursor line, or the lines selected, when the
+// conversation has the keys, in lines of it from line first.
+func (m model) markLines(lines []string, first int) []string {
 	if !m.vimOn() || m.vim.pane != paneConversation || m.vim.mode == vimInsert {
-		return content
+		return lines
 	}
-	lines := strings.Split(content, "\n")
-	from, to := m.vim.line, m.vim.line
+	from, to := m.vim.line-first, m.vim.line-first
 	style := vimCursorLine
 	if m.vim.mode == vimVisual {
-		from, to, style = min(m.vim.anchor, m.vim.line), max(m.vim.anchor, m.vim.line), vimPicked
+		from, to, style = min(m.vim.anchor, m.vim.line)-first, max(m.vim.anchor, m.vim.line)-first, vimPicked
 	}
 	width := m.mainWidth()
 	for i := max(from, 0); i <= to && i < len(lines); i++ {
 		plain := ansi.Strip(lines[i])
 		lines[i] = style.Render(plain + strings.Repeat(" ", max(width-ansi.StringWidth(plain), 0)))
 	}
-	return strings.Join(lines, "\n")
+	return lines
 }
 
 // sidebarItems are the first rows of the tasks and jobs of the side panel,
