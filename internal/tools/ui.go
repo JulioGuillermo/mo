@@ -34,10 +34,12 @@ const (
 	UICheckbox = "checkbox"
 	UISwitch   = "switch"
 	UIRadio    = "radio"
+	// UISVG draws an SVG, drawn again whenever it changes.
+	UISVG = "svg"
 )
 
 // UITypes are every node type.
-var UITypes = []string{UIPanel, UICard, UIGrid, UILabel, UIButton, UIInput, UISelect, UISlider, UICheckbox, UISwitch, UIRadio}
+var UITypes = []string{UIPanel, UICard, UIGrid, UILabel, UIButton, UIInput, UISelect, UISlider, UICheckbox, UISwitch, UIRadio, UISVG}
 
 // UI event actions an element can name: send the event to the model, send
 // every input's value, close the dialog, or remove the UI and say so.
@@ -60,6 +62,7 @@ type UINode struct {
 	Value       string   `json:"value,omitempty"`
 	Placeholder string   `json:"placeholder,omitempty"`
 	Options     []string `json:"options,omitempty"`
+	SVG         string   `json:"svg,omitempty"`
 	Min         float64  `json:"min,omitempty"`
 	Max         float64  `json:"max,omitempty"`
 	Step        float64  `json:"step,omitempty"`
@@ -658,7 +661,8 @@ var uiHelp = []helpTopic{
 	{"create", "title, tree, script (optional): shows the interface and returns its id. What the user does in it reaches you as [mo] notes."},
 	{"update", "id, and any of title, tree, script: replaces them. What the user set and the script's state stay."},
 	{"remove", "id: removes the interface."},
-	{"nodes", `Every node is {"type": ..., more fields}; panel, card and grid hold nodes in "children". Buttons and controls need an id.
+	{"nodes", `Every node is {"type": ..., more fields}; panel, card and grid hold nodes in "children".
+A node the user acts on, a button, an input or another control, needs an id; so does any node a script changes.
 Topic <type> explains one, with an example.
 panel     children, direction row|column, gap, justify start|center|end|space-between|space-around, align start|center|end|stretch
 card      a panel with a border and a title
@@ -673,6 +677,7 @@ slider    min, max, step (0, 100, 1 unless set), value, label, on_change
 checkbox  label, value "true"|"false", on_change
 switch    as checkbox, drawn as a switch
 radio     options, value, label, direction row|column, on_change
+svg       svg (its markup), width, height in cells (40, 12); with an id, ui.set(id, {svg = ...}) draws it anew
 any node  id, fg, bg (#rrggbb or text|dim|accent|error|warning|success|surface|background), bold, visible, border rounded|normal|thick|double|none,
           padding, margin (1, 2 or 4 numbers, as in CSS), width, height, grow (share of the room left in a row)`},
 	{"events", `on_click (button), on_input (each key in an input), on_change (an input when left or on enter; any other control at each change) take:
@@ -684,7 +689,7 @@ remove   remove the interface, telling you
 A button without on_click notifies.`},
 	{"script", `Lua (base, table, string, math), run on the user's side. A function gets e.id, e.type (click|input|change), e.value.
 ui.set shows its change at once: updating the interface needs no notify. Let it tell you only what you must act on, usually once, with submit.
-ui.set(id, {text=..., ...})  change a node: text, label, value, options, min, max, step, placeholder, title, fg, bg, border, bold, visible, disabled, width, height
+ui.set(id, {text=..., ...})  change a node: text, label, value, options, min, max, step, svg, placeholder, title, fg, bg, border, bold, visible, disabled, width, height
 ui.get(id)                   a node's fields, and checked
 ui.value(id)                 a control's value; a checkbox's is "true" or "false"
 ui.state                     a table kept between events
@@ -693,7 +698,7 @@ ui.close()                   close the dialog; ui.remove() removes the interface
 Validate in on_input, and submit from a button's function once valid.`},
 	{"example", `{"action":"create","title":"Login","tree":` + uiTreeExample + `}
 with a script:
-{"action":"create","title":"Name","script":"function check(e) ui.set(\"ok\", {disabled = e.value == \"\"}) end","tree":{"type":"panel","children":[{"type":"input","id":"name","on_input":"check"},{"type":"button","id":"ok","label":"Send","disabled":true,"on_click":"submit"}]}}
+{"action":"create","title":"Name","script":"function check(e) ui.set('ok', {disabled = e.value == ''}) end","tree":{"type":"panel","children":[{"type":"input","id":"name","on_input":"check"},{"type":"button","id":"ok","label":"Send","disabled":true,"on_click":"submit"}]}}
 controls, labels lined up in a grid:
 {"action":"create","title":"Prefs","tree":{"type":"card","title":"Prefs","children":[{"type":"grid","columns":2,"gap":2,"children":[{"type":"label","text":"Size"},{"type":"select","id":"size","options":["S","M","L"],"value":"M"},{"type":"label","text":"Volume"},{"type":"slider","id":"volume","min":0,"max":10,"value":"4"},{"type":"label","text":"Dark mode"},{"type":"switch","id":"dark","value":"true"},{"type":"label","text":"Plan"},{"type":"radio","id":"plan","options":["free","pro"],"direction":"row"}]},{"type":"checkbox","id":"terms","label":"I agree"},{"type":"button","id":"go","label":"Save","on_click":"submit"}]}}`},
 }
@@ -716,6 +721,10 @@ var uiNodeHelp = map[string]string{
 		`e.g. {"type":"slider","id":"volume","label":"Volume","max":10,"value":"4"}`,
 	UICheckbox: `[x] and its label; value "true" or "false"; on_change at each tick. e.g. {"type":"checkbox","id":"terms","label":"I agree"}`,
 	UISwitch:   `as checkbox, drawn as a switch. e.g. {"type":"switch","id":"dark","label":"Dark mode","value":"true"}`,
+	UISVG: "a picture of an SVG in width × height cells (40, 12 unless set), its proportions kept, drawn in half blocks, two dots to a cell: keep shapes large and text few and big. " +
+		"Give it a viewBox, and ' for its attributes, so it needs no escaping in JSON. " +
+		"A script draws it anew with ui.set(id, {svg = ...}), built with string.format: a chart a slider moves, a gauge, an icon. " +
+		`e.g. {"type":"svg","id":"chart","width":30,"height":8,"svg":"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40'><rect width='60' height='40' fill='#7aa2f7'/></svg>"}`,
 	UIRadio: "one of its options, all shown, in a column or a row with direction row. options, value (none unless set), label; on_change at each pick. " +
 		`e.g. {"type":"radio","id":"plan","options":["free","pro"],"direction":"row"}`,
 }
@@ -736,8 +745,8 @@ func uiTool() Tool {
 	return Tool{
 		Name: "ui",
 		Description: "Build an interface the user works with on their own, in a dialog: a form, a settings panel, a picker, a small tool. " +
-			"Its Lua script reacts on their side without you; you hear only what it notifies or submits. For one question, use ask. " +
-			"Node types: panel, card, grid, label, button, input, select, slider, checkbox, switch, radio. " +
+			"Its Lua script reacts on their side without you; you hear only what the interface notifies or submits. For one question, use ask. " +
+			"Node types: " + strings.Join(UITypes, ", ") + ". " +
 			`{"action":"help"} explains how. A tree: ` + uiTreeExample,
 		Schema: json.RawMessage(`{"type":"object","properties":{
 "action":{"type":"string","enum":["create","update","remove","help"]},
@@ -794,7 +803,7 @@ func runUI(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 			return "", err
 		}
 		env.UIs.changed()
-		return fmt.Sprintf("UI %d created; it is listed in the user's side panel, and what they do in it comes to you as a note", id), nil
+		return fmt.Sprintf("UI %d created; it is listed in the user's side panel, and what they do in it reaches you as [mo] notes", id), nil
 	case "update":
 		if err := env.UIs.update(args.ID, args.Title, tree, args.Script); err != nil {
 			return "", err

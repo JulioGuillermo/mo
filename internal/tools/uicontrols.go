@@ -1,10 +1,12 @@
 package tools
 
 import (
+	"encoding/xml"
 	"fmt"
 	"math"
 	"slices"
 	"strconv"
+	"strings"
 )
 
 // HasValue tells a node the user sets a value of: an input, a select, a
@@ -124,6 +126,13 @@ func FormatNumber(value float64) string {
 // checkValue says what is wrong with a control's options, range or value.
 func checkValue(n UINode, where string) error {
 	switch n.Type {
+	case UISVG:
+		if strings.TrimSpace(n.SVG) == "" {
+			return fmt.Errorf(`%s needs its svg, e.g. "svg":"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'>...</svg>"`, where)
+		}
+		if err := xml.Unmarshal([]byte(n.SVG), new(struct{})); err != nil {
+			return fmt.Errorf("%s: its svg is not well-formed XML: %v", where, err)
+		}
 	case UISelect, UIRadio:
 		if len(n.Options) == 0 {
 			return fmt.Errorf(`%s needs options, e.g. "options":["small","medium","large"]`, where)

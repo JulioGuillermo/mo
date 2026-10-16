@@ -10,6 +10,8 @@ package tui
 // | UD-07 | Happy    | An opened ui call shows its tree under guides, as mended, and its script highlighted; folded, a hint says so | P1 |
 // | UD-08 | Happy    | A click on a select's value lists its options over the interface; one taken is set; a long list scrolls | P1 |
 // | UD-09 | Happy    | The dialog's title and keys sit in its edges, the card's title once; × closes it; what is inside is centred | P1 |
+// | UD-10 | Happy    | An svg node is drawn in half blocks; ui.set from a slider draws it anew; one that cannot be drawn says why | P1 |
+// | UD-11 | Edge     | Frames are drawn away from the screen; changes made while one is drawn are skipped but the last | P1 |
 // | UD-05 | Happy    | Select, slider, checkbox, switch and radio are drawn, change by keys and clicks, and go with submit | P0 |
 
 import (
@@ -18,6 +20,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -390,6 +393,84 @@ func TestUIFrame(t *testing.T) {
 		updated, _ := m.Update(tea.MouseClickMsg{X: close.x0, Y: close.y0, Button: tea.MouseLeft})
 		if updated.(model).uiOpen != 0 {
 			t.Error("a click on × should close the dialog")
+		}
+	})
+}
+
+func TestUISVG(t *testing.T) {
+	bar := func(width int) string {
+		return fmt.Sprintf(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 20'><rect width='%d' height='20' fill='#ff0000'/></svg>`, width)
+	}
+
+	t.Run("UD-10 an svg node is drawn in half blocks; ui.set from a slider draws it anew; one that cannot be drawn says why", func(t *testing.T) {
+		m, uis := uiModel(t)
+		script := "function moved(e) ui.set('bar', {svg = \"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 20'><rect width='\" .. e.value .. \"' height='20' fill='#ff0000'/></svg>\"}) end"
+		tree := `{"type":"panel","children":[{"type":"svg","id":"bar","width":20,"height":2,"svg":"` + strings.ReplaceAll(bar(10), "'", "\\u0027") + `"},{"type":"slider","id":"v","max":100,"value":"10","on_change":"moved"}]}`
+		args, _ := json.Marshal(map[string]any{"action": "create", "title": "Bar", "tree": json.RawMessage(tree), "script": script})
+		if output, isError := m.session.Agent.Tools.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args}); isError {
+			t.Fatal(output)
+		}
+		red := func() int {
+			frame, _ := m.uiFrame()
+			return strings.Count(strings.Join(frame.lines, "\n"), "38;2;255;0;0")
+		}
+		updated, _ := m.openUI(2)
+		m = updated.(model)
+		m.svgs = &svgFrames{}
+		short := red()
+		uis.SetValue(2, "v", "90")
+		uis.Fire(2, "v", "change")
+		long := red()
+
+		if short == 0 || long <= short*3 {
+			t.Errorf("the bar should be drawn and grow with the slider: %d then %d red cells", short, long)
+		}
+		_, isError := m.session.Agent.Tools.Run(context.Background(), llm.ToolCall{Name: "ui", Args: []byte(`{"action":"create","tree":{"type":"svg","id":"x","svg":"<svg><rect></svg>"}}`)})
+		if !isError {
+			t.Error("svg that is not well-formed should be refused")
+		}
+	})
+
+	t.Run("UD-11 frames are drawn away from the screen; changes made while one is drawn are skipped but the last", func(t *testing.T) {
+		readies := make(chan struct{}, 10)
+		// The first frame waits, once drawn, until the changes after it came.
+		gate := make(chan struct{})
+		frames := &svgFrames{ready: func() {
+			readies <- struct{}{}
+			<-gate
+		}}
+		first, _ := frames.lines("1/bar", bar(10), 20, 2)
+		for _, width := range []int{20, 30, 40, 50} {
+			frames.lines("1/bar", bar(width), 20, 2)
+		}
+		close(gate)
+		count := 0
+		deadline := time.After(3 * time.Second)
+	wait:
+		for {
+			select {
+			case <-readies:
+				count++
+				frames.mu.Lock()
+				busy := frames.frames["1/bar"].busy
+				frames.mu.Unlock()
+				if !busy {
+					break wait
+				}
+			case <-deadline:
+				t.Fatal("the frames were never drawn")
+			}
+		}
+		last, _ := frames.lines("1/bar", bar(50), 20, 2)
+
+		if first != nil {
+			t.Error("before any frame is done, nothing is shown yet")
+		}
+		frames.mu.Lock()
+		shown := frames.frames["1/bar"].shown
+		frames.mu.Unlock()
+		if count > 2 || last == nil || !strings.HasSuffix(shown, bar(50)) {
+			t.Errorf("the frames between should be skipped, the last shown: %d drawn, last %v", count, last != nil)
 		}
 	})
 }

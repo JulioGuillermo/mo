@@ -116,10 +116,10 @@ type model struct {
 	titling *titling
 	// promptRead is how far the server is in reading the prompt, when it
 	// says so.
-	promptRead  llm.PromptProgress
+	promptRead llm.PromptProgress
 	// metrics counts the reply being written's context and speeds until the
 	// exact ones come.
-	metrics liveMetrics
+	metrics     liveMetrics
 	runningTool *llm.ToolCall
 	streamDone  string
 	reasoning   string
@@ -151,8 +151,10 @@ type model struct {
 	popup *popup
 	// uiOpen is the interface shown as a dialog, 0 for none; uiLives what
 	// the user did in each.
-	uiOpen           int
-	uiLives          map[int]*uiLive
+	uiOpen  int
+	uiLives map[int]*uiLive
+	// svgs draws the svg nodes of interfaces, away from the screen.
+	svgs             *svgFrames
 	clickedAt        point
 	clicked          bool
 	settingsInFlight bool
@@ -211,6 +213,7 @@ func Run(session Session) error {
 		history:  loadHistory(),
 		vim:      vimState{enabled: session.Config.Render.Keys == "vim"},
 		files:    &fileIndex{},
+		svgs:     &svgFrames{ready: func() { bridge.send(svgReadyMsg{}) }},
 	}
 	printer.setKind(m.toolKind)
 	m.configureJobs()
@@ -402,6 +405,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			return m.emitError(msg.err)
 		}
+		return m, nil
+	case svgReadyMsg:
+		// A picture was drawn: the screen shows it as it is drawn again.
 		return m, nil
 	case edgeScrollMsg:
 		return m.edgeScroll()

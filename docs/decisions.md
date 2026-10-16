@@ -992,6 +992,13 @@
   table. Its children stay a flat list, as every container's, so ids, focus and scripts treat a
   cell as any node; small models' rows of cells (`"rows": [[...], [...]]`) are flattened into
   it, short rows filled. gap parts the columns only; rows sit close, as a table's do.
+- An svg node draws its markup in half blocks, so it is text like the rest of the dialog, which is
+  drawn as a layer over the screen, and works in any terminal. A script changes it with ui.set,
+  as any field, so a chart or gauge follows a slider without the model. Its frames are drawn away
+  from the screen's drawing, which shows the last one done meanwhile: a change while one is drawn
+  waits, and the changes between are skipped, only the last drawn; each frame done tells the
+  screen. A frame is drawn at four times the cells' pixels and averaged down, so thin lines and
+  small text keep their shape, and kept until the svg or the size changes.
 - Controls with a value the user picks, select, slider, checkbox, switch and radio, keep it as
   a string as an input does, in the interface's values: one place for what the user did, sent
   whole with submit, kept on resume and read by `ui.value`. A checkbox's is `true` or `false`, a

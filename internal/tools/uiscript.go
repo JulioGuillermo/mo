@@ -171,7 +171,7 @@ func (s *uiScript) get(state *lua.LState) int {
 	state.Push(luabox.ToLua(state, map[string]any{
 		"type": node.Type, "text": node.Text, "label": node.Label, "value": node.Value, "placeholder": node.Placeholder,
 		"title": node.Title, "fg": node.FG, "bg": node.BG, "visible": visible, "disabled": node.Disabled, "bold": node.Bold,
-		"width": node.Width, "height": node.Height, "border": node.Border, "options": node.Options,
+		"width": node.Width, "height": node.Height, "border": node.Border, "options": node.Options, "svg": node.SVG,
 		"min": node.Min, "max": node.Max, "step": node.Step, "checked": node.Checked(),
 	}))
 	return 1
@@ -225,11 +225,16 @@ func applyProps(n *UINode, props map[string]any) error {
 			isNumber = false
 		}
 		switch name {
-		case "text", "label", "placeholder", "title":
+		case "text", "label", "placeholder", "title", "svg":
 			if !isText {
 				text = fmt.Sprint(value)
 			}
 			switch name {
+			case "svg":
+				if n.Type != UISVG {
+					return fmt.Errorf("only an svg node has svg")
+				}
+				n.SVG = text
 			case "text":
 				n.Text = text
 			case "label":
@@ -297,7 +302,7 @@ func applyProps(n *UINode, props map[string]any) error {
 				n.Height = number
 			}
 		default:
-			return fmt.Errorf("%q cannot be set: use text, label, value, placeholder, title, options, min, max, step, fg, bg, border, visible, disabled, bold, width or height", name)
+			return fmt.Errorf("%q cannot be set: use text, label, value, placeholder, title, options, min, max, step, svg, fg, bg, border, visible, disabled, bold, width or height", name)
 		}
 	}
 	return nil

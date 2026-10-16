@@ -86,7 +86,7 @@ func (m model) uiFrame() (uiFrame, bool) {
 	state := m.live(m.uiOpen)
 	most := max(min(m.width-6, uiDialogMaxWidth), 20)
 	tree := ui.Shown()
-	body := uiRenderer{focus: state.focus}.render(tree, most-4, "", false)
+	body := uiRenderer{focus: state.focus, svgs: m.svgs, ui: ui.ID}.render(tree, most-4, "", false)
 	room := max(m.height-4, 3)
 	state.scroll = min(max(state.scroll, 0), max(body.height()-room, 0))
 	shown := body.lines[state.scroll:min(state.scroll+room, body.height())]

@@ -55,6 +55,9 @@ func (b uiBox) height() int { return len(b.lines) }
 type uiRenderer struct {
 	values map[string]string
 	focus  string
+	// svgs draws the interface's svg nodes, ui being its number.
+	svgs *svgFrames
+	ui   int
 }
 
 func uiColor(name string) color.Color {
@@ -276,6 +279,8 @@ func (r uiRenderer) content(n tools.UINode, width int, bg string, fill bool) uiB
 		return r.checkbox(n, width, bg)
 	case tools.UIRadio:
 		return r.radio(n, width, bg)
+	case tools.UISVG:
+		return r.svg(n, width, bg)
 	}
 	if n.Type == tools.UIGrid {
 		return r.grid(n, width, bg, fill)

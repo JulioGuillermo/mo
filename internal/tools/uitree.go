@@ -11,7 +11,7 @@ import (
 
 // uiNodeKeys are the fields a node takes, as UINode names them.
 var uiNodeKeys = []string{
-	"type", "id", "text", "label", "value", "placeholder", "options", "min", "max", "step", "title", "direction", "columns", "widths", "justify", "align", "gap", "grow",
+	"type", "id", "text", "label", "value", "placeholder", "options", "min", "max", "step", "svg", "title", "direction", "columns", "widths", "justify", "align", "gap", "grow",
 	"width", "height", "padding", "margin", "bg", "fg", "border", "bold", "visible", "disabled", "on_click", "on_input",
 	"on_change", "children",
 }
@@ -24,6 +24,7 @@ var uiKeyAliases = map[string]string{
 	"onclick": "on_click", "onClick": "on_click", "click": "on_click", "action": "on_click",
 	"oninput": "on_input", "onInput": "on_input", "onchange": "on_change", "onChange": "on_change",
 	"items": "children", "elements": "children", "nodes": "children", "content_items": "children",
+	"markup": "svg", "source": "svg", "image": "svg", "drawing": "svg",
 	"choices": "options", "values": "options", "checked": "value", "selected": "value", "default": "value",
 	"cols": "columns", "column_count": "columns", "column_widths": "widths", "cells": "children",
 	"minimum": "min", "maximum": "max", "increment": "step",
@@ -35,6 +36,7 @@ var uiKeyAliases = map[string]string{
 var uiTypeAliases = map[string]string{
 	"row": UIPanel, "column": UIPanel, "col": UIPanel, "box": UIPanel, "container": UIPanel, "div": UIPanel,
 	"stack": UIPanel, "vbox": UIPanel, "hbox": UIPanel, "form": UIPanel, "view": UIPanel, "group": UIPanel,
+	"image": UISVG, "picture": UISVG, "chart": UISVG, "canvas": UISVG,
 	"table": UIGrid, "form_grid": UIGrid,
 	"section": UICard, "frame": UICard, "window": UICard, "dialog": UICard,
 	"text": UILabel, "span": UILabel, "p": UILabel, "heading": UILabel, "title": UILabel, "h1": UILabel, "h2": UILabel,
@@ -170,6 +172,16 @@ func mendUINode(value any, path string) (map[string]any, error) {
 	}
 	if direction, ok := mended["direction"].(string); ok && uiDirectionOf(direction) != "" {
 		mended["direction"] = uiDirectionOf(direction)
+	}
+	// An svg's markup sent as its text or under another name.
+	if mended["type"] == UISVG && mended["svg"] == nil {
+		for _, name := range []string{"text", "markup", "source", "content", "value"} {
+			if markup, ok := mended[name].(string); ok && strings.Contains(markup, "<svg") {
+				mended["svg"] = markup
+				delete(mended, name)
+				break
+			}
+		}
 	}
 	// A select's or radio's options sent as children or as objects.
 	if kind := mended["type"]; kind == UISelect || kind == UIRadio {

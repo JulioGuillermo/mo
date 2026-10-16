@@ -44,3 +44,26 @@ func halfBlockCell(top, bottom color.RGBA) string {
 	}
 	return "\x1b[0m "
 }
+
+// svgCellScale is how many pixels a cell's width is drawn at before the
+// half blocks average it down, so thin lines and small text keep their
+// shape.
+const svgCellScale = 4
+
+// SVGCells draws an SVG in half blocks filling cols × rows cells, its
+// proportions kept and centred; what it leaves clear shows the background.
+func SVGCells(svg []byte, cols, rows int) ([]string, error) {
+	if cols <= 0 || rows <= 0 {
+		return nil, nil
+	}
+	width, height := cols*svgCellScale, rows*2*svgCellScale
+	img, err := rasterizeSVG(svg, width, height)
+	if err != nil {
+		return nil, err
+	}
+	canvas := image.NewRGBA(image.Rect(0, 0, width, height))
+	bounds := img.Bounds()
+	offset := image.Pt((width-bounds.Dx())/2, (height-bounds.Dy())/2)
+	draw.Draw(canvas, bounds.Sub(bounds.Min).Add(offset), img, bounds.Min, draw.Over)
+	return strings.Split(halfBlocks(canvas, Box{Cols: cols, Rows: rows}), "\n"), nil
+}
