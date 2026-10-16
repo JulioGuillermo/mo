@@ -18,6 +18,9 @@ package team
 // | TM-14 | Happy    | A subagent waits for those it started in the background and hears them before it reports | P0 |
 // | TM-15 | Error    | Unknown ids, nothing to wait for and empty names are handled             | P2       |
 // | TM-16 | Happy    | Stopped while waited for, the report says it stopped, not that it works   | P0       |
+// | TM-17 | Happy    | A subagent tells the main agent, which hears it once and is woken          | P0       |
+// | TM-18 | Happy    | A subagent tells its parent subagent, which reads it at its next step      | P0       |
+// | TM-19 | Happy    | Told by one of its own, a parent that ended, or was stopped, goes on to read it | P0  |
 
 import (
 	"context"
@@ -92,6 +95,32 @@ func (f *fakeModel) Stream(ctx context.Context, req llm.Request, _ func(llm.Even
 		return call(`{"task":"slow","name":"deep"}`)
 	case task == "slowparent":
 		return reply("slowparent got: " + last.Text)
+	case task == "teller" && last.Role == llm.RoleUser:
+		return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+			{ID: "t", Name: tools.TellParentName, Args: json.RawMessage(`{"message":"found it early"}`)},
+		}}}, nil
+	case task == "teller":
+		return reply("teller done")
+	case task == "relay" && strings.Contains(last.Text, "tells you"):
+		return reply("relay heard: " + last.Text)
+	case task == "relay" && last.Role == llm.RoleUser:
+		return call(`{"task":"teller","name":"teller"}`)
+	case task == "relay":
+		return reply("relay did not hear")
+	case task == "p2" && strings.Contains(last.Text, "tells you"):
+		return reply("p2 woke: " + last.Text)
+	case task == "p2" && last.Role == llm.RoleUser:
+		return call(`{"task":"c2","name":"c2"}`)
+	case task == "p2":
+		return reply("p2 done")
+	case task == "c2" && last.Text == "please tell":
+		return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+			{ID: "t2", Name: tools.TellParentName, Args: json.RawMessage(`{"message":"news for you"}`)},
+		}}}, nil
+	case task == "c2" && last.Role == llm.RoleTool:
+		return reply("c2 told")
+	case task == "c2":
+		return reply("c2 done")
 	case task == "ask":
 		if last.Role == llm.RoleUser {
 			return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
@@ -109,8 +138,8 @@ func newTeam(t *testing.T, settings Settings) (*Team, *fakeModel) {
 	team := New()
 	t.Cleanup(team.Close)
 	workDir := t.TempDir()
-	team.Configure(settings, func(info Info, below tools.Subagents) (*agent.Agent, error) {
-		registry := tools.NewRegistry(tools.Env{WorkDir: workDir, Agents: below}, tools.Options{MaxOutput: 10000})
+	team.Configure(settings, func(info Info, below tools.Subagents, parent tools.Parent) (*agent.Agent, error) {
+		registry := tools.NewRegistry(tools.Env{WorkDir: workDir, Agents: below, Parent: parent}, tools.Options{MaxOutput: 10000})
 		return &agent.Agent{Provider: model, Tools: registry, MaxSteps: 10}, nil
 	})
 	return team, model
@@ -375,6 +404,54 @@ func TestTeam(t *testing.T) {
 
 		if err == nil || !strings.Contains(report, "· stopped") || strings.Contains(report, "running") {
 			t.Errorf("err %v report:\n%s", err, report)
+		}
+	})
+
+	t.Run("TM-17 a subagent tells the main agent, which hears it once and is woken", func(t *testing.T) {
+		team, _ := newTeam(t, wide)
+		woken := 0
+		team.Follow(nil, nil, func() { woken++ })
+
+		_, _ = team.Main().Run(ctx, []tools.SubTask{{Task: "teller", Name: "teller"}}, false)
+		has := team.Main().HasEnded()
+		notes := team.Main().TakeEnded()
+
+		if !has || len(notes) != 1 || !strings.Contains(notes[0], "teller (agent 1, level 1) tells you: found it early") || woken != 1 || team.Main().HasEnded() {
+			t.Errorf("has %v woken %d notes %q", has, woken, notes)
+		}
+	})
+
+	t.Run("TM-18 a subagent tells its parent subagent, which reads it at its next step", func(t *testing.T) {
+		team, _ := newTeam(t, wide)
+
+		report, err := team.Main().Run(ctx, []tools.SubTask{{Task: "relay", Name: "relay"}}, false)
+
+		if err != nil || !strings.Contains(report, "relay heard:") || !strings.Contains(report, "found it early") || team.Main().HasEnded() {
+			t.Errorf("err %v report:\n%s", err, report)
+		}
+	})
+
+	t.Run("TM-19 told by one of its own, a parent that ended, or was stopped, goes on to read it", func(t *testing.T) {
+		for _, stopped := range []bool{false, true} {
+			team, _ := newTeam(t, wide)
+			_, _ = team.Main().Run(ctx, []tools.SubTask{{Task: "p2", Name: "p2"}}, false)
+			if stopped {
+				records := team.Records()
+				records[0].State = string(Stopped)
+				team.Restore(records)
+			}
+
+			said, err := team.Send(2, "please tell")
+			waitState(t, team, 2, Done)
+			deadline := time.Now().Add(5 * time.Second)
+			for !strings.Contains(lastText(team.History(1)), "p2 woke") && time.Now().Before(deadline) {
+				time.Sleep(5 * time.Millisecond)
+			}
+			waitState(t, team, 1, Done)
+
+			if err != nil || said != "it goes on" || !strings.Contains(lastText(team.History(1)), "news for you") || team.Main().HasEnded() {
+				t.Errorf("stopped %v: err %v said %q parent ended with %q", stopped, err, said, lastText(team.History(1)))
+			}
 		}
 	})
 }

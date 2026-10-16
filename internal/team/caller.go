@@ -253,6 +253,8 @@ func (c caller) Stop(id int) (string, error) {
 func (c caller) TakeEnded() []string {
 	t := c.team
 	t.mu.Lock()
+	told := t.told[c.id]
+	delete(t.told, c.id)
 	var ended []*member
 	for _, m := range t.members {
 		if m.Parent == c.id && m.untold && m.State.Ended() {
@@ -261,7 +263,7 @@ func (c caller) TakeEnded() []string {
 		}
 	}
 	t.mu.Unlock()
-	var notes []string
+	notes := told
 	for _, m := range ended {
 		notes = append(notes, "subagent started in the background ended:\n"+t.report(m))
 	}
@@ -272,6 +274,9 @@ func (c caller) HasEnded() bool {
 	t := c.team
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if len(t.told[c.id]) > 0 {
+		return true
+	}
 	for _, m := range t.members {
 		if m.Parent == c.id && m.untold && m.State.Ended() {
 			return true

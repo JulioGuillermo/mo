@@ -75,8 +75,9 @@ func (i Info) Label() string {
 }
 
 // Builder makes the agent of a subagent, with an empty conversation; agents
-// are those it may start in turn, nil when it is at the deepest level.
-type Builder func(info Info, agents tools.Subagents) (*agent.Agent, error)
+// are those it may start in turn, nil when it is at the deepest level, and
+// parent the agent that started it, to tell.
+type Builder func(info Info, agents tools.Subagents, parent tools.Parent) (*agent.Agent, error)
 
 // Team holds the subagents of a conversation.
 type Team struct {
@@ -94,6 +95,9 @@ type Team struct {
 	wake   chan struct{}
 	// started counts those started in the user's turn.
 	started int
+	// told are the notes subagents left for their parent, by its id, until
+	// it reads them.
+	told map[int][]string
 
 	root    context.Context
 	stopAll context.CancelFunc
@@ -300,7 +304,7 @@ func (t *Team) Restore(records []sessions.AgentRecord) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.stopAllLocked()
-	t.members = nil
+	t.members, t.told = nil, nil
 	for _, record := range records {
 		state := State(record.State)
 		if !state.Ended() {
@@ -427,14 +431,17 @@ func steps(history []llm.Message) int {
 }
 
 // start runs a subagent on a message, in the background of the call that
-// started it: ctx stops it, and so does stopping it or everything.
+// started it: ctx stops it, and so does stopping it or everything. Without
+// a message it goes on from the notes left for it.
 func (t *Team) start(ctx context.Context, m *member, message string, background bool) {
 	runCtx, cancel := context.WithCancel(ctx)
 	stopWithAll := context.AfterFunc(t.root, cancel)
 	t.mu.Lock()
 	m.State, m.Err, m.cancel, m.background, m.untold = Queued, "", cancel, background, false
 	// What it was asked shows and is saved before its agent takes it in.
-	m.history = append(slices.Clone(m.history), llm.Message{Role: llm.RoleUser, Text: message})
+	if message != "" {
+		m.history = append(slices.Clone(m.history), llm.Message{Role: llm.RoleUser, Text: message})
+	}
 	m.done = make(chan struct{})
 	done := m.done
 	hooks := t.memberHooks(m)
@@ -447,7 +454,11 @@ func (t *Team) start(ctx context.Context, m *member, message string, background 
 		err := t.acquire(runCtx)
 		if err == nil {
 			t.setState(m, Running)
-			err = m.agent.Run(runCtx, message, hooks)
+			if message != "" {
+				err = m.agent.Run(runCtx, message, hooks)
+			} else {
+				err = m.agent.RunEndedJobs(runCtx, hooks)
+			}
 			for err == nil {
 				// Before it reports: what it was sent during its last step,
 				// and the subagents it left working in the background.
@@ -615,7 +626,7 @@ func (t *Team) makeAgent(info Info) (*agent.Agent, error) {
 	if info.Depth < t.settings.Depth {
 		below = caller{team: t, id: info.ID}
 	}
-	made, err := t.build(info, below)
+	made, err := t.build(info, below, parentLink{team: t, id: info.ID})
 	if err != nil {
 		return nil, err
 	}
@@ -650,6 +661,50 @@ func (t *Team) settle(members []*member, within time.Duration) {
 			return
 		}
 	}
+}
+
+// parentLink is a subagent's way to tell the agent that started it.
+type parentLink struct {
+	team *Team
+	id   int
+}
+
+// Tell leaves the parent a note for its next step; the main agent, idle,
+// is woken to read it, as when a subagent it started in the background
+// ends.
+func (p parentLink) Tell(message string) (string, error) {
+	t := p.team
+	t.mu.Lock()
+	m := t.find(p.id)
+	if m == nil {
+		t.mu.Unlock()
+		return "", fmt.Errorf("you are no longer listed")
+	}
+	if t.told == nil {
+		t.told = map[int][]string{}
+	}
+	t.told[m.Parent] = append(t.told[m.Parent], fmt.Sprintf("subagent %s tells you: %s", m.Label(), message))
+	parent, onEnd := t.find(m.Parent), t.onEnd
+	t.changed()
+	if parent != nil && parent.State.Ended() {
+		// Done, failed or stopped, it goes on to read it: what a subagent
+		// tells is meant to matter. No one waits for what it does then.
+		if err := t.ensureAgent(parent); err != nil {
+			t.mu.Unlock()
+			return "", err
+		}
+		t.mu.Unlock()
+		t.start(t.root, parent, "", false)
+		return fmt.Sprintf("told %s, which was not working: it goes on to read it", parent.Name), nil
+	}
+	t.mu.Unlock()
+	if parent == nil {
+		if onEnd != nil {
+			onEnd()
+		}
+		return "told the main agent: it reads it at its next step", nil
+	}
+	return fmt.Sprintf("told %s: it reads it at its next step", parent.Name), nil
 }
 
 // backgroundOf are the subagents id started in the background that still

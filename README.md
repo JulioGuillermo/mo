@@ -382,6 +382,11 @@ parent reads only that report, so long searches or test runs stay out of its con
 - `log id` shows everything one did, with the view fields; `send id message` tells one more while it
   works, or lets it go on from where it was once it ended or was stopped; `wait`, `status`, `stop`.
   An agent sees its own subagents and theirs, never another branch's.
+- A subagent tells its parent something before its report with `tell_parent`, meant only for what
+  matters to it or what you ask it to pass on. A parent that works reads it at its next step; the
+  main agent, idle, starts a turn to read it, and a subagent that ended, failed or was stopped goes
+  on to read it, and tells its own parent in turn only if it matters to it.
+  `{"action":"help"}` explains the agent tool's actions.
 - A subagent at `depth` has no `agent` tool. Waiting for its own subagents, one gives up its place
   among the `max_parallel` working, so a tree never waits on itself.
 - What a subagent asks, an approval or a question, comes to you in the usual dialog, saying which one

@@ -38,14 +38,23 @@ type Subagents interface {
 	HasEnded() bool
 }
 
+var agentHelp = []helpTopic{
+	{"run", "the default. task and name, or tasks [{task,name}] that work at once; waits for their reports. background (or wait false): their ids at once, and you hear each report when it ends. " +
+		"A subagent reads what it is sent and waits for those it started in the background before it reports."},
+	{"send", "id, message: queued while it works; once it ended or stopped, it goes on with all it did. background as for run."},
+	{"wait", "ids, or id; none: those you started in the background. Their reports."},
+	{"log", "id: all it did, its messages, calls and results."},
+	{"status", "your subagents and theirs, with state and steps. You reach only those."},
+	{"stop", "id: stops it and those under it."},
+}
+
 func agentTool() Tool {
 	return Tool{
 		Name: AgentName,
-		Description: "Hand tasks to subagents, each with its own conversation and your tools; you get only their report. " +
-			"action run (default): task and name, or tasks [{task,name}] run at once; background returns their ids at once. " +
-			"send id message: tell one more, or let it go on. wait ids, log id (all it did; view fields apply), status, stop id.",
+		Description: "Hand tasks to subagents: agents of their own with your tools and an empty conversation; you get only their report. " +
+			`{"action":"help"} explains each action.`,
 		Schema: json.RawMessage(`{"type":"object","properties":{
-"action":{"type":"string","enum":["run","send","wait","log","status","stop"]},
+"action":{"type":"string","enum":["run","send","wait","log","status","stop","help"]},"topic":{"type":"string"},
 "task":{"type":"string"},"name":{"type":"string"},
 "tasks":{"type":"array","items":{"type":"object","properties":{"task":{"type":"string"},"name":{"type":"string"}},"required":["task"]}},
 "background":{"type":"boolean"},"wait":{"type":"boolean"},"id":{"type":"integer"},"ids":{"type":"array","items":{"type":"integer"}},"message":{"type":"string"}}}`),
@@ -94,6 +103,7 @@ func runAgent(ctx context.Context, env Env, raw json.RawMessage) (string, error)
 		ID         int       `json:"id"`
 		IDs        []int     `json:"ids"`
 		Message    string    `json:"message"`
+		Topic      string    `json:"topic"`
 	}
 	if err := decodeArgs(raw, &args); err != nil {
 		return "", err
@@ -101,6 +111,9 @@ func runAgent(ctx context.Context, env Env, raw json.RawMessage) (string, error)
 	// wait: false is said for background as often.
 	if args.Wait != nil && !*args.Wait {
 		args.Background = true
+	}
+	if args.Action == "help" {
+		return help(agentHelp, args.Topic)
 	}
 	agents := env.Agents
 	if agents == nil {
@@ -154,5 +167,40 @@ func runAgent(ctx context.Context, env Env, raw json.RawMessage) (string, error)
 		}
 		return agents.Stop(args.ID)
 	}
-	return "", fmt.Errorf("action %q: use run, send, wait, log, status or stop", args.Action)
+	return "", fmt.Errorf("action %q: use run, send, wait, log, status, stop or help", args.Action)
+}
+
+// TellParentName is the tool a subagent tells the agent that started it
+// with.
+const TellParentName = "tell_parent"
+
+// Parent is the agent that started a subagent, as the subagent reaches it.
+type Parent interface {
+	// Tell gives it a note it reads at its next step, and says who that is.
+	Tell(message string) (string, error)
+}
+
+func tellParentTool() Tool {
+	return Tool{
+		Name: TellParentName,
+		Description: "Tell the agent that started you something it needs before your report: only what matters to it, as a finding that changes " +
+			"its plan, or what the user asked you to pass on. Your last reply reaches it anyway when it waits for you.",
+		Schema: json.RawMessage(`{"type":"object","properties":{"message":{"type":"string"}},"required":["message"]}`),
+		Run: func(_ context.Context, env Env, raw json.RawMessage) (string, error) {
+			var args struct {
+				Message string `json:"message"`
+			}
+			if err := decodeArgs(raw, &args); err != nil {
+				return "", err
+			}
+			if strings.TrimSpace(args.Message) == "" {
+				return "", fmt.Errorf("tell_parent needs a message")
+			}
+			if env.Parent == nil {
+				return "", fmt.Errorf("you were not started by another agent")
+			}
+			return env.Parent.Tell(args.Message)
+		},
+		Summary: func(args json.RawMessage) string { return argField(args, "message") },
+	}
 }

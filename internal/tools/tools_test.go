@@ -48,8 +48,13 @@ import (
 
 func newEnv(t *testing.T) Env {
 	t.Helper()
-	return Env{WorkDir: t.TempDir(), Titles: NewTitles(), UIs: NewUIs(""), Agents: idleAgents{}}
+	return Env{WorkDir: t.TempDir(), Titles: NewTitles(), UIs: NewUIs(""), Agents: idleAgents{}, Parent: deafParent{}}
 }
+
+// deafParent takes notes and does nothing with them.
+type deafParent struct{}
+
+func (deafParent) Tell(string) (string, error) { return "told", nil }
 
 // idleAgents are subagents that never start, so the agent tool is there.
 type idleAgents struct{}

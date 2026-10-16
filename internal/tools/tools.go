@@ -65,6 +65,9 @@ type Env struct {
 	// Agents are the subagents this agent may start; without them there
 	// is no agent tool.
 	Agents Subagents
+	// Parent is the agent that started this one, a subagent; without it
+	// there is no tell_parent tool.
+	Parent Parent
 }
 
 // Resolve turns a path from the model into an absolute one, relative paths
@@ -115,7 +118,7 @@ func NewRegistry(env Env, options Options) *Registry {
 	env.ReadMaxSize = options.ReadMaxSize
 	registry := &Registry{env: env, options: options}
 	for _, tool := range append(builtinsWith(options.Searcher), options.Extra...) {
-		if slices.Contains(options.Disabled, tool.Name) || (tool.Name == titleToolName && env.Titles == nil) || (tool.Name == "ui" && env.UIs == nil) || (tool.Name == AgentName && env.Agents == nil) {
+		if slices.Contains(options.Disabled, tool.Name) || (tool.Name == titleToolName && env.Titles == nil) || (tool.Name == "ui" && env.UIs == nil) || (tool.Name == AgentName && env.Agents == nil) || (tool.Name == TellParentName && env.Parent == nil) {
 			continue
 		}
 		if description, ok := options.Descriptions[tool.Name]; ok {
@@ -163,7 +166,7 @@ func builtins() []Tool {
 func builtinsWith(searcher web.Searcher) []Tool {
 	return []Tool{
 		bashTool(), readTool(), writeTool(), editTool(), lsTool(), mkdirTool(), rmTool(), grepTool(),
-		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), gitTool(), titleTool(), uiTool(), agentTool(),
+		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), gitTool(), titleTool(), uiTool(), agentTool(), tellParentTool(),
 	}
 }
 

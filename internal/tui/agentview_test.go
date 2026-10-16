@@ -58,8 +58,8 @@ func teamModel(t *testing.T) (model, *holdingModel) {
 	subagents := team.New()
 	t.Cleanup(subagents.Close)
 	workDir := t.TempDir()
-	subagents.Configure(team.Settings{Depth: 2, MaxParallel: 3, MaxAgents: 20}, func(info team.Info, below tools.Subagents) (*agent.Agent, error) {
-		return &agent.Agent{Provider: provider, Tools: tools.NewRegistry(tools.Env{WorkDir: workDir, Agents: below}, tools.Options{}), Model: "fake-model", Window: 1000}, nil
+	subagents.Configure(team.Settings{Depth: 2, MaxParallel: 3, MaxAgents: 20}, func(info team.Info, below tools.Subagents, parent tools.Parent) (*agent.Agent, error) {
+		return &agent.Agent{Provider: provider, Tools: tools.NewRegistry(tools.Env{WorkDir: workDir, Agents: below, Parent: parent}, tools.Options{}), Model: "fake-model", Window: 1000}, nil
 	})
 	m.session.Team = subagents
 	return m, provider

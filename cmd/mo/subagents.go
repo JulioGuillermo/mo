@@ -25,9 +25,9 @@ func subagentBuilder(ctx context.Context, cfg config.Config, main chosenProvider
 			return nil, err
 		}
 	}
-	return func(info team.Info, below tools.Subagents) (*agent.Agent, error) {
+	return func(info team.Info, below tools.Subagents, parent tools.Parent) (*agent.Agent, error) {
 		own := env
-		own.Agents, own.Titles, own.UIs, own.Jobs = below, nil, nil, nil
+		own.Agents, own.Parent, own.Titles, own.UIs, own.Jobs = below, parent, nil, nil, nil
 		registry := tools.NewRegistry(own, options)
 		subagent := newAgent(cfg, chosen, registry, system+"\n\n"+team.Prompt(info, below != nil), confirm, policy)
 		subagent.MaxSteps = cfg.Agents.MaxSteps

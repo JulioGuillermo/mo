@@ -1234,3 +1234,13 @@
   front; ctrl+x closes, also while a question is open, which then stays in the main view.
 - Talking to a subagent from its view starts it without a waiter and without telling its parent:
   it is the user's talk with it, which its parent reads in its log if it wants.
+- The agent tool follows the others with actions: a short description that points to
+  `{"action":"help"}`, a line per action there, the view left to the system prompt. With
+  `tools.mode = "compact"` the description does not reach the model at all, so help is where it
+  learns the actions.
+- What the user does with a subagent from its view reaches its parent only if the subagent says
+  so, with `tell_parent`, which only subagents have: the user did not want the parent woken for
+  every word, and the subagent knows what matters. A note waits for its parent's next step; the
+  main agent, idle, is woken for it, as for a background subagent that ended, and so is a parent
+  subagent that ended, failed or was stopped, stopped by the user too: what a subagent tells is meant
+  to matter. Nobody waits for that run; it goes up the tree only as far as each level tells its own.
