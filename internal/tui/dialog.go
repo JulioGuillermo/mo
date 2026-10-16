@@ -518,13 +518,14 @@ func buttonLabel(label string, chosen bool, colors dialogColors) string {
 	return style.Render("  ") + key.Render(label[:1]) + style.Render(label[1:]+"  ")
 }
 
-// commandRows is how many lines of a command the dialog shows before it
-// scrolls: about half the screen, less what surrounds it.
+// commandRows is how many lines of a call's command and its parts the
+// dialog shows before they scroll: the screen less the title, buttons and
+// keys around them, the input and the status line under it.
 func (m model) commandRows() int {
 	if m.height <= 0 {
 		return 12
 	}
-	return min(max(m.height/2-8, 4), 40)
+	return min(max(m.height-16, 6), 80)
 }
 
 // commandLines is the command of a call highlighted and wrapped to width.

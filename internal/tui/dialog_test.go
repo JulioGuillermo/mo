@@ -175,7 +175,7 @@ func TestCommandView(t *testing.T) {
 		m = keys(t, m, keyTab)
 		wrapped := ansi.Strip(m.dialogView())
 
-		if strings.Contains(top, "rm -rf build") || !strings.Contains(top, "lines 1–7 of ") || !strings.Contains(bottom, "rm -rf build") {
+		if strings.Contains(top, "rm -rf build") || !strings.Contains(top, "lines 1–") || !strings.Contains(bottom, "rm -rf build") {
 			t.Errorf("top:\n%s\nbottom:\n%s", top, bottom)
 		}
 		if strings.Contains(wrapped, "…") || strings.Count(wrapped, "xxxxxxxxxx") < 4 {
@@ -235,6 +235,11 @@ func TestCommandView(t *testing.T) {
 		}
 		m, _ := asking(agent.Interaction{Approvals: []agent.ApprovalRequest{{Call: llm.ToolCall{Name: "bash"}, Summary: strings.Join(parts, "; "), Ruled: true}}})
 		m.width, m.height = 80, 30
+		few, _ := asking(agent.Interaction{Approvals: []agent.ApprovalRequest{{Call: llm.ToolCall{Name: "bash"}, Summary: "cd src && ls -la | grep x && git push origin main; echo done > out.txt", Ruled: true}}})
+		few.width, few.height = 80, 30
+		if shown := ansi.Strip(few.dialogView()); !strings.Contains(shown, "✎ echo done > out.txt") || strings.Contains(shown, "lines 1–") {
+			t.Errorf("a command of a few parts should show them all, unscrolled:\n%s", shown)
+		}
 		top := ansi.Strip(m.dialogView())
 		m = keys(t, m, tea.KeyPressMsg{Code: tea.KeyEnd})
 		bottom := ansi.Strip(m.dialogView())
