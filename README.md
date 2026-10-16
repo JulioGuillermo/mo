@@ -535,7 +535,7 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | ctrl+v | paste a copied image or files as attachments |
 | backspace, delete next to `[image #1]` | take the attachment out whole; the chips over the input drop one with a click |
 | pgup, pgdown, shift+up/down, mouse wheel | scroll the conversation |
-| drag | select text and copy it; the shared indent is taken off |
+| drag | select text and copy it; the shared indent is taken off. Held at the top or bottom of the conversation, it scrolls on and keeps selecting |
 | click | buttons, options and tabs of a dialog, a suggested command, the mode (next), the provider (its settings), the model (a list to pick from), a job (its last lines), a settings option |
 | click on the branch | the files changed, each with its kind |
 | right click | a small menu by the pointer, over the screen (↑↓ or j k, enter or a click, esc or a click outside closes it): the mode: all modes to pick · a task: change its state or delete it · a job in the panel, or a bash call still running: watch its output live, its last lines, send it to the background, kill it |

@@ -18,9 +18,12 @@ import (
 var flashTime = 2 * time.Second
 
 const (
-	copyTimeout   = 2 * time.Second
-	everyColumn   = 1 << 30
-	selectionMark = "selected"
+	copyTimeout = 2 * time.Second
+	// edgeScrollEvery is how often a drag held at the conversation's top
+	// or bottom scrolls it a line on.
+	edgeScrollEvery = 50 * time.Millisecond
+	everyColumn     = 1 << 30
+	selectionMark   = "selected"
 )
 
 // point is a cell of the screen.
@@ -28,13 +31,26 @@ type point struct{ x, y int }
 
 // selection is text being picked with the mouse, from where the button went
 // down to where it is, within the column it started in: the conversation or
-// the side panel.
+// the side panel. One started in the conversation counts its rows in the
+// conversation's lines, not the screen's, so it holds while the
+// conversation scrolls under it.
 type selection struct {
 	from, to       point
 	left, right    int
 	dragged        bool
 	clickOnRelease bool
+	inConversation bool
+	// at is where the mouse last was on the screen; edge is the way a drag
+	// held at the conversation's top or bottom scrolls it, while scrolling
+	// tells a tick is on its way.
+	at        point
+	edge      int
+	scrolling bool
 }
+
+// edgeScrollMsg scrolls the conversation on while a drag is held at its
+// edge.
+type edgeScrollMsg struct{}
 
 type flashDoneMsg int
 
@@ -49,8 +65,21 @@ func (m model) press(x, y int) (tea.Model, tea.Cmd) {
 			right = m.mainWidth()
 		}
 	}
-	m.selected = &selection{from: point{x, y}, to: point{x, y}, left: left, right: right}
+	picked := &selection{from: point{x, y}, to: point{x, y}, left: left, right: right, at: point{x, y}}
+	if y < m.conversationHeight() && left == 0 {
+		offset := m.conversationOffset()
+		picked.inConversation = true
+		picked.from.y, picked.to.y = y+offset, y+offset
+	}
+	m.selected = picked
 	return m, nil
+}
+
+// conversationOffset is how many of the conversation's lines are
+// scrolled past, above the screen.
+func (m model) conversationOffset() int {
+	conversation := m.conversation(m.conversationHeight())
+	return conversation.YOffset()
 }
 
 func (m model) drag(x, y int) (tea.Model, tea.Cmd) {
@@ -58,10 +87,53 @@ func (m model) drag(x, y int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	moved := *m.selected
-	moved.to = point{min(max(x, moved.left), moved.right-1), max(y, 0)}
+	moved.at = point{x, y}
+	x = min(max(x, moved.left), moved.right-1)
+	var cmd tea.Cmd
+	if moved.inConversation {
+		height := m.conversationHeight()
+		moved.edge = 0
+		switch {
+		case y <= 0:
+			moved.edge = -1
+		case y >= height-1:
+			moved.edge = 1
+		}
+		if moved.edge != 0 && !moved.scrolling {
+			moved.scrolling = true
+			cmd = edgeScrollTick()
+		}
+		moved.to = point{x, min(max(y, 0), height-1) + m.conversationOffset()}
+	} else {
+		moved.to = point{x, max(y, 0)}
+	}
 	moved.dragged = moved.dragged || moved.to != moved.from
 	m.selected = &moved
-	return m, nil
+	return m, cmd
+}
+
+func edgeScrollTick() tea.Cmd {
+	return tea.Tick(edgeScrollEvery, func(time.Time) tea.Msg { return edgeScrollMsg{} })
+}
+
+// edgeScroll scrolls the conversation a line the way a drag held at its
+// edge points, and the selection with it, while the button is down.
+func (m model) edgeScroll() (tea.Model, tea.Cmd) {
+	if m.selected == nil || !m.selected.inConversation || m.selected.edge == 0 {
+		if m.selected != nil {
+			stopped := *m.selected
+			stopped.scrolling = false
+			m.selected = &stopped
+		}
+		return m, nil
+	}
+	moved := *m.selected
+	m.scroll(moved.edge < 0, 1)
+	height := m.conversationHeight()
+	moved.to.y = min(max(moved.at.y, 0), height-1) + m.conversationOffset()
+	moved.dragged = moved.dragged || moved.to != moved.from
+	m.selected = &moved
+	return m, edgeScrollTick()
 }
 
 // release copies what was dragged over, or clicks where nothing was.
@@ -109,8 +181,15 @@ func (m model) highlight(screen string) string {
 	}
 	shade := lipgloss.NewStyle().Reverse(true)
 	lines := strings.Split(screen, "\n")
+	offset, height := 0, len(lines)
+	if m.selected.inConversation {
+		offset, height = m.conversationOffset(), m.conversationHeight()
+	}
 	for y, line := range lines {
-		left, right, covered := m.selected.span(y)
+		if y >= height {
+			break
+		}
+		left, right, covered := m.selected.span(y + offset)
 		if !covered {
 			continue
 		}
@@ -127,6 +206,10 @@ func (m model) highlight(screen string) string {
 // trailing blanks and the block without the indent all its rows share.
 func (m model) selectedText(picked selection) string {
 	screen, _ := m.screenLayout()
+	if picked.inConversation {
+		// The whole conversation: the selection may reach past the screen.
+		screen = m.conversationContent()
+	}
 	var rows []string
 	firstStart := -1
 	for y, line := range strings.Split(ansi.Strip(screen), "\n") {

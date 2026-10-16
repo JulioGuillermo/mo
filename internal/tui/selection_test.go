@@ -5,6 +5,8 @@ package tui
 // | SL-01 | Happy    | Dragging copies the text dragged over, indent shared by its rows taken off | P0 |
 // | SL-02 | Happy    | A selection stays in the column it started in, out of the side panel | P1       |
 // | SL-03 | Happy    | While dragging the text shows selected; a click without a drag clicks | P1      |
+// | SL-04 | Happy    | A drag held at the conversation's top scrolls it, and copies past the screen | P1 |
+// | SL-05 | Happy    | A drag held at its bottom scrolls down; leaving the edge or letting go stops it | P1 |
 
 import (
 	"fmt"
@@ -87,6 +89,68 @@ func TestSelection(t *testing.T) {
 		}
 		if clicked.(model).flash != "" || strings.Contains(sent(cmd), "func") {
 			t.Error("a click copied text")
+		}
+	})
+
+	longModel := func(t *testing.T) model {
+		t.Helper()
+		m := selectingModel(t)
+		var lines []string
+		for i := 1; i <= 120; i++ {
+			lines = append(lines, fmt.Sprintf("line %03d", i))
+		}
+		updated, _ := m.Update(printMsg(m.printer.Note(strings.Join(lines, "\n"))))
+		return updated.(model)
+	}
+	hold := func(m model, ticks int) model {
+		for range ticks {
+			updated, _ := m.Update(edgeScrollMsg{})
+			m = updated.(model)
+		}
+		return m
+	}
+
+	t.Run("SL-04 a drag held at the conversation's top scrolls it, and copies past the screen", func(t *testing.T) {
+		m := longModel(t)
+		from := cellOf(t, m, "line 120")
+		from.x += len("line 120") - 1
+		top := strings.Split(ansi.Strip(m.View().Content), "\n")[0]
+		pressed, _ := m.Update(tea.MouseClickMsg{X: from.x, Y: from.y, Button: tea.MouseLeft})
+		moved, tick := pressed.(model).Update(tea.MouseMotionMsg{X: from.x, Y: 0, Button: tea.MouseLeft})
+		m = hold(moved.(model), 10)
+		scrolledTop := strings.Split(ansi.Strip(m.View().Content), "\n")[0]
+		released, cmd := m.Update(tea.MouseReleaseMsg{X: from.x, Y: 0, Button: tea.MouseLeft})
+		copied := sent(cmd)
+
+		if tick == nil || scrolledTop == top || !released.(model).scrolled {
+			t.Fatalf("it should scroll: top %q then %q", top, scrolledTop)
+		}
+		lines := strings.Split(copied, "\n")
+		// copied ends with the flash's tick, as sent joins every message.
+		if !strings.Contains(copied, "line 119\nline 120") || len(lines) < m.conversationHeight()+5 || !strings.Contains(copied, strings.TrimSpace(top)+"\n") {
+			t.Errorf("copied %d lines: %.80q … %.40q (h %d)", len(lines), copied, copied[max(len(copied)-40, 0):], m.conversationHeight())
+		}
+	})
+
+	t.Run("SL-05 a drag held at its bottom scrolls down; leaving the edge or letting go stops it", func(t *testing.T) {
+		m := longModel(t)
+		m.scroll(true, 40)
+		from := cellOf(t, m, strings.TrimSpace(strings.Split(ansi.Strip(m.View().Content), "\n")[2]))
+		before := m.conversationOffset()
+		pressed, _ := m.Update(tea.MouseClickMsg{X: from.x, Y: from.y, Button: tea.MouseLeft})
+		moved, _ := pressed.(model).Update(tea.MouseMotionMsg{X: from.x, Y: m.conversationHeight() + 2, Button: tea.MouseLeft})
+		m = hold(moved.(model), 5)
+		down := m.conversationOffset()
+		left, _ := m.Update(tea.MouseMotionMsg{X: from.x, Y: 3, Button: tea.MouseLeft})
+		stopped := hold(left.(model), 5)
+		released, _ := stopped.Update(tea.MouseReleaseMsg{X: from.x, Y: 3, Button: tea.MouseLeft})
+		_, after := released.(model).Update(edgeScrollMsg{})
+
+		if down != before+5 {
+			t.Errorf("offset %d then %d, want 5 lines down", before, down)
+		}
+		if stopped.conversationOffset() != down || after != nil {
+			t.Errorf("it should stop: offset %d, a tick after release %v", stopped.conversationOffset(), after != nil)
 		}
 	})
 }

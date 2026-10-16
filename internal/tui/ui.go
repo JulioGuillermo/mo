@@ -389,6 +389,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.drag(msg.X, msg.Y)
 	case tea.MouseReleaseMsg:
 		return m.release(msg.X, msg.Y)
+	case edgeScrollMsg:
+		return m.edgeScroll()
 	case flashDoneMsg:
 		if int(msg) == m.flashes {
 			m.flash = ""
