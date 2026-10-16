@@ -381,6 +381,11 @@ func atLeast(least int) func(string) error {
 	}
 }
 
+func validSize(text string) error {
+	_, err := config.ParseSize(text)
+	return err
+}
+
 func validCount(text string) error {
 	_, err := parseCount(text)
 	return err

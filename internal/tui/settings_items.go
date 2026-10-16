@@ -198,6 +198,10 @@ func toolItems(m model, menu *settingsMenu) []settingItem {
 		{"Max tool output (bytes)", func(d *settingsDraft) string { return d.maxOutput }, func(d *settingsDraft) huh.Field {
 			return huh.NewInput().Title("Max tool output (bytes)").Validate(validCount).Value(&d.maxOutput)
 		}},
+		{"Max file size read whole", func(d *settingsDraft) string { return d.readMaxSize }, func(d *settingsDraft) huh.Field {
+			return huh.NewInput().Title("Max file size read whole").Description("e.g. 10MB; a larger file is read only in parts, by offset, limit or match; 0 for no limit").
+				Validate(validSize).Value(&d.readMaxSize)
+		}},
 		{"Tool calls run", func(d *settingsDraft) string { return d.calls }, func(d *settingsDraft) huh.Field {
 			return huh.NewSelect[string]().Title("Tool calls run").
 				Description("the calls of a reply run one after another, in order, either way").Options(

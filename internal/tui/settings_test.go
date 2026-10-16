@@ -96,6 +96,7 @@ func TestSettingsDraft(t *testing.T) {
 			"context window":  func(d *settingsDraft) { d.window = "big" },
 			"max tool output": func(d *settingsDraft) { d.maxOutput = "-1" },
 			"compact at":      func(d *settingsDraft) { d.compactAt = "1.5" },
+			"max read size":   func(d *settingsDraft) { d.readMaxSize = "huge" },
 		} {
 			draft := defaultDraft()
 			set(draft)

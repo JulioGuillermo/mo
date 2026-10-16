@@ -27,6 +27,7 @@ type settingsDraft struct {
 	disabled      []string
 	mcpDisabled   []string
 	maxOutput     string
+	readMaxSize   string
 	outputs       string
 	calls         string
 	outputTurns   string
@@ -118,6 +119,7 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		disabled:      slices.Clone(cfg.Tools.Disabled),
 		mcpDisabled:   slices.Clone(cfg.Tools.MCPDisabled),
 		maxOutput:     strconv.Itoa(cfg.Tools.MaxOutput),
+		readMaxSize:   cfg.Tools.ReadMaxSize,
 		outputs:       cfg.Tools.Outputs,
 		calls:         cfg.Tools.Calls,
 		outputTurns:   strconv.Itoa(cfg.Tools.OutputTurns),
@@ -241,6 +243,10 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 		Modes:    d.modesOf(skillModes),
 	}
 	layer.Tools.MaxOutput = unlessDefault(maxOutput, defaults.Tools.MaxOutput)
+	if _, err := config.ParseSize(d.readMaxSize); err != nil {
+		return layer, fmt.Errorf("max read size: %w", err)
+	}
+	layer.Tools.ReadMaxSize = unlessDefault(strings.TrimSpace(d.readMaxSize), defaults.Tools.ReadMaxSize)
 	outputTurns, err := strconv.Atoi(strings.TrimSpace(orDefault(d.outputTurns, "0")))
 	if err != nil || outputTurns < 0 {
 		return layer, fmt.Errorf("command output turns: use 0 or a number of turns")

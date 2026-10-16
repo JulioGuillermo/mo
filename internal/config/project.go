@@ -183,7 +183,7 @@ func EffectiveModel(cfg Config) string {
 // screen, by their names in the file.
 var ProjectKeys = []string{
 	"provider", "model", "max_tokens", "effort", "system_prompt",
-	"tools.mode", "tools.load", "tools.always_loaded", "tools.confirm", "tools.disabled", "tools.mcp_disabled", "tools.max_output",
+	"tools.mode", "tools.load", "tools.always_loaded", "tools.confirm", "tools.disabled", "tools.mcp_disabled", "tools.max_output", "tools.read_max_size",
 	"skills.mode", "skills.disabled", "instructions.enabled", "instructions.files",
 	"context.window", "context.compact_at", "context.compact_prompt", "context.strategy", "context.keep_reasoning",
 	"loop.enabled", "loop.replies", "loop.repeats", "loop.stream_repeats", "loop.warnings",
@@ -194,7 +194,7 @@ func projectField(cfg *Config, key string) reflect.Value {
 	fields := map[string]any{
 		"provider": &cfg.Provider, "model": &cfg.Model, "max_tokens": &cfg.MaxTokens, "effort": &cfg.Effort, "system_prompt": &cfg.SystemPrompt,
 		"tools.mode": &cfg.Tools.Mode, "tools.load": &cfg.Tools.Load, "tools.always_loaded": &cfg.Tools.AlwaysLoaded,
-		"tools.confirm": &cfg.Tools.Confirm, "tools.disabled": &cfg.Tools.Disabled, "tools.max_output": &cfg.Tools.MaxOutput,
+		"tools.confirm": &cfg.Tools.Confirm, "tools.disabled": &cfg.Tools.Disabled, "tools.max_output": &cfg.Tools.MaxOutput, "tools.read_max_size": &cfg.Tools.ReadMaxSize,
 		"tools.mcp_disabled": &cfg.Tools.MCPDisabled, "skills.mode": &cfg.Skills.Mode, "skills.disabled": &cfg.Skills.Disabled,
 		"instructions.enabled": &cfg.Instructions.Enabled, "instructions.files": &cfg.Instructions.Files,
 		"context.window": &cfg.Context.Window, "context.compact_at": &cfg.Context.CompactAt,

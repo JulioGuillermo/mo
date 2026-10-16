@@ -59,6 +59,9 @@ type Env struct {
 	// MaxOutput is how much of a tool's output reaches the model, as the
 	// registry cuts it; 0 for no limit.
 	MaxOutput int
+	// ReadMaxSize is the largest file read takes whole, in bytes; a larger
+	// one only in parts. 0 for no limit.
+	ReadMaxSize int64
 }
 
 // Resolve turns a path from the model into an absolute one, relative paths
@@ -82,6 +85,7 @@ type Options struct {
 	AlwaysLoaded []string
 	Disabled     []string
 	MaxOutput    int
+	ReadMaxSize  int64
 	Descriptions map[string]string
 	Searcher     web.Searcher
 	Extra        []Tool
@@ -105,6 +109,7 @@ type Registry struct {
 
 func NewRegistry(env Env, options Options) *Registry {
 	env.MaxOutput = options.MaxOutput
+	env.ReadMaxSize = options.ReadMaxSize
 	registry := &Registry{env: env, options: options}
 	for _, tool := range append(builtinsWith(options.Searcher), options.Extra...) {
 		if slices.Contains(options.Disabled, tool.Name) || (tool.Name == titleToolName && env.Titles == nil) || (tool.Name == "ui" && env.UIs == nil) {

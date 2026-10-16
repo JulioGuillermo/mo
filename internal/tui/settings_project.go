@@ -54,6 +54,7 @@ var projectFields = map[string]projectField{
 	"File names":                           {"instructions.files", func(d *settingsDraft) any { return &d.instructionsFiles }},
 	"Skills off":                           {"skills.disabled", func(d *settingsDraft) any { return &d.skillsDisabled }},
 	"Max tool output (bytes)":              {"tools.max_output", func(d *settingsDraft) any { return &d.maxOutput }},
+	"Max file size read whole":             {"tools.read_max_size", func(d *settingsDraft) any { return &d.readMaxSize }},
 	"Context window (tokens)":              {"context.window", func(d *settingsDraft) any { return &d.window }},
 	"Make room at":                         {"context.compact_at", func(d *settingsDraft) any { return &d.compactAt }},
 	"To make room":                         {"context.strategy", func(d *settingsDraft) any { return &d.strategy }},

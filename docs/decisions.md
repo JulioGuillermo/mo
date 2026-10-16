@@ -1155,3 +1155,23 @@
 
 - Esc with the suggestions open closes them and does nothing else, so closing the list while the
   model works does not stop it; the next esc does. They stay closed until the input changes.
+
+## Reading binary and very big files
+
+- `read` decides from a stat and the first 8 KB, before reading anything else: before, it read the
+  whole file and only then looked, so a log of gigabytes was held in memory to show 2000 lines.
+- Binary: a NUL byte, or more than a tenth of the sample control characters (tab, new lines, form
+  feed and ESC, for coloured logs, are text) or invalid UTF-8. The error names the kind
+  `http.DetectContentType` sees. A UTF-16 file, by its byte order mark, is decoded instead.
+- Size: over `tools.read_max_size` (`"10MB"`, sizes as 10MB, 512KB, 1.5GB or bytes, `"0"` no limit),
+  a read without view fields is refused, saying the size and how to read a part. With them, the file
+  goes line by line through the same picker `View.Apply` uses, so the output is the same as for a
+  small file: a negative offset reads it twice, first to count; a line holds at most 1 MB besides
+  what is shown, which is as far as a match looks into a longer one. Esc stops a long read.
+- Images skip all of it: they are seen from their header, whatever their size.
+- `grep` used to skip, without a word, every file over 2 MB, and read the rest whole. It now tells
+  binary files by the same first 8 KB as `read` and goes through the others a line at a time with
+  the same reader, so a log of 30 GB is searched without being held: the lines before a match are
+  kept only as many as `context` asks, `show: files` stops a file at its first match, the lines
+  shown stop at 20000 matches (after the last one's context) and a count goes to the end. A FIFO
+  is still told by a stat before opening it, which would wait for a writer.

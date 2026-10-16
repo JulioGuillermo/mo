@@ -133,6 +133,8 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	if err != nil {
 		return tui.Session{}, err
 	}
+	// Checked when the config was read.
+	readMaxSize, _ := config.ParseSize(cfg.Tools.ReadMaxSize)
 	env := toolEnv(workDir, cfg.Memory.Dir)
 	env.Jobs = loaded.jobs
 	env.Titles = loaded.titles
@@ -155,6 +157,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		AlwaysLoaded: cfg.Tools.AlwaysLoaded,
 		Disabled:     cfg.Tools.Disabled,
 		MaxOutput:    cfg.Tools.MaxOutput,
+		ReadMaxSize:  readMaxSize,
 		Descriptions: cfg.Tools.Descriptions,
 	})
 	policy, err := permissions.New(permissions.Mode(cfg.Permissions.Mode), cfg.Permissions.Allow, cfg.Permissions.Deny)

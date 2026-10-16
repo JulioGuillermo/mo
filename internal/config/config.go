@@ -52,6 +52,10 @@ type Tools struct {
 	// turned off everywhere or in one project.
 	MCPDisabled []string `toml:"mcp_disabled,omitempty"`
 	MaxOutput   int      `toml:"max_output,omitzero"`
+	// ReadMaxSize is the largest file read takes whole, as "10MB"; a
+	// larger one is read only in parts, by offset, limit or match. "0"
+	// for no limit.
+	ReadMaxSize string `toml:"read_max_size,omitempty"`
 	// Outputs is where the whole output of commands is kept, to read
 	// later: disk, memory until mo exits, or none; OutputTurns for how many
 	// of the user's turns, 0 for as long as the conversation.
@@ -305,6 +309,7 @@ func Defaults() Config {
 			AlwaysLoaded: []string{"read", "edit", "write", "bash", "ask", "memory"},
 			Confirm:      []string{"bash", "rm", "fetch"},
 			MaxOutput:    10000,
+			ReadMaxSize:  "10MB",
 			Outputs:      "disk",
 			Calls:        "streamed",
 		},
@@ -389,6 +394,9 @@ func validate(cfg Config) error {
 	}
 	if cfg.Render.Status != "powerline" && cfg.Render.Status != "plain" {
 		return fmt.Errorf("render.status %q: use powerline or plain", cfg.Render.Status)
+	}
+	if _, err := ParseSize(cfg.Tools.ReadMaxSize); err != nil {
+		return fmt.Errorf("tools.read_max_size: %w", err)
 	}
 	if cfg.Tools.Calls != "streamed" && cfg.Tools.Calls != "reply" {
 		return fmt.Errorf("tools.calls %q: use streamed or reply", cfg.Tools.Calls)
@@ -611,6 +619,7 @@ func mergeHarmless(base, layer Config) Config {
 		base.Instructions.Files = layer.Instructions.Files
 	}
 	base.Tools.MaxOutput = override(base.Tools.MaxOutput, layer.Tools.MaxOutput)
+	base.Tools.ReadMaxSize = override(base.Tools.ReadMaxSize, layer.Tools.ReadMaxSize)
 	base.Tools.Outputs = override(base.Tools.Outputs, layer.Tools.Outputs)
 	base.Tools.Calls = override(base.Tools.Calls, layer.Tools.Calls)
 	base.Tools.OutputTurns = override(base.Tools.OutputTurns, layer.Tools.OutputTurns)

@@ -1,11 +1,11 @@
 package tools
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -13,10 +13,7 @@ import (
 	"strings"
 )
 
-const (
-	grepMaxMatches   = 20000
-	grepMaxFileBytes = 2 << 20
-)
+const grepMaxMatches = 20000
 
 var grepSkippedDirs = map[string]bool{"node_modules": true, "vendor": true, "target": true, "dist": true, "__pycache__": true}
 
@@ -95,7 +92,11 @@ func runGrep(ctx context.Context, env Env, raw json.RawMessage) (string, error) 
 				return nil
 			}
 		}
-		matches += grepFile(path, displayPath(env.WorkDir, path), options, &out, grepMaxMatches-matches)
+		found, err := grepFile(ctx, path, displayPath(env.WorkDir, path), options, &out, grepMaxMatches-matches)
+		if err != nil {
+			return err
+		}
+		matches += found
 		if matches >= grepMaxMatches {
 			fmt.Fprintf(&out, "[stopped at %d matches]\n", grepMaxMatches)
 			return filepath.SkipAll
@@ -117,64 +118,111 @@ func isSkippedDir(name string) bool {
 
 // grepFile writes what matches in one file as options say, up to budget
 // matches, and returns how many it counted: a file counts once when only
-// names are asked for. Large and binary files are skipped.
-func grepFile(path, shownPath string, options grepOptions, out *strings.Builder, budget int) int {
-	info, err := os.Stat(path)
-	if err != nil || !info.Mode().IsRegular() || info.Size() > grepMaxFileBytes {
-		return 0
+// names are asked for. It reads the file a line at a time, so a file of
+// any size is searched without being held, and stops as soon as it has
+// what was asked; binary files, told by their start, are skipped.
+func grepFile(ctx context.Context, path, shownPath string, options grepOptions, out *strings.Builder, budget int) (int, error) {
+	// Stat first: opening a FIFO would wait for a writer.
+	if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+		return 0, nil
 	}
-	data, err := os.ReadFile(path)
-	if err != nil || looksBinary(data) {
-		return 0
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, nil
 	}
-	var lines []string
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	scanner.Buffer(make([]byte, 64*1024), grepMaxFileBytes)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
+	defer file.Close()
+	head := make([]byte, readSniff)
+	n, _ := io.ReadFull(file, head)
+	head = head[:n]
+	if _, binary := sniffBinary(head); binary {
+		return 0, nil
 	}
-	var matched []int
-	for i, line := range lines {
-		if options.re.MatchString(line) {
-			matched = append(matched, i)
-		}
+	search := &grepSearch{options: options, out: out, path: shownPath, budget: budget, shownUpTo: -1}
+	err = eachLine(ctx, io.MultiReader(bytes.NewReader(head), file), 0, search.line)
+	if search.matches > 0 && options.output == "count" {
+		fmt.Fprintf(out, "%s: %d\n", shownPath, search.matches)
+		return 1, err
 	}
+	if search.matches > 0 && options.output == "files" {
+		return 1, err
+	}
+	return search.matches, err
+}
+
+// grepSearch is the search of one file as its lines go by: the lines
+// before the next match kept for its context, and the lines after the
+// last one still to show.
+type grepSearch struct {
+	options   grepOptions
+	out       *strings.Builder
+	path      string
+	budget    int
+	matches   int
+	before    []grepLine
+	after     int
+	shownUpTo int
+}
+
+type grepLine struct {
+	number int
+	text   string
+}
+
+func (s *grepSearch) line(number int, text string, _ int) bool {
+	options := s.options
+	// Only the lines shown are limited; a count goes to the end.
+	matched := (options.output != "lines" || s.matches < s.budget) && options.re.MatchString(text)
 	switch {
-	case len(matched) == 0:
-		return 0
-	case options.output == "files":
-		fmt.Fprintln(out, shownPath)
-		return 1
-	case options.output == "count":
-		fmt.Fprintf(out, "%s: %d\n", shownPath, len(matched))
-		return 1
-	}
-	matched = matched[:min(len(matched), budget)]
-	fmt.Fprintln(out, shownPath)
-	isMatch := map[int]bool{}
-	for _, i := range matched {
-		isMatch[i] = true
-	}
-	shownUpTo := -1
-	for _, i := range matched {
-		from, to := max(i-options.context, shownUpTo+1), min(i+options.context, len(lines)-1)
-		if shownUpTo >= 0 && from > shownUpTo+1 {
-			out.WriteString("--\n")
+	case matched && options.output == "files":
+		s.matches = 1
+		fmt.Fprintln(s.out, s.path)
+		return false
+	case matched && options.output == "count":
+		s.matches++
+		return true
+	case matched:
+		if s.matches == 0 {
+			fmt.Fprintln(s.out, s.path)
 		}
-		for j := from; j <= to; j++ {
-			separator := "-"
-			if isMatch[j] {
-				separator = ":"
+		from := number
+		for _, kept := range s.before {
+			if kept.number > s.shownUpTo {
+				from = kept.number
+				break
 			}
-			line := lines[j]
-			if options.context == 0 {
-				line = strings.TrimSpace(line)
-			}
-			fmt.Fprintf(out, "%d%s %s\n", j+1, separator, line)
 		}
-		shownUpTo = max(shownUpTo, to)
+		if s.shownUpTo >= 0 && from > s.shownUpTo+1 {
+			s.out.WriteString("--\n")
+		}
+		for _, kept := range s.before {
+			if kept.number > s.shownUpTo {
+				s.write(kept.number, "-", kept.text)
+			}
+		}
+		s.write(number, ":", text)
+		s.matches++
+		s.after = options.context
+	case s.after > 0:
+		s.write(number, "-", text)
+		s.after--
+	case s.matches >= s.budget && options.output == "lines":
+		return false
 	}
-	return len(matched)
+	if options.context > 0 {
+		if len(s.before) == options.context {
+			s.before = s.before[1:]
+		}
+		s.before = append(s.before, grepLine{number, text})
+	}
+	return true
+}
+
+func (s *grepSearch) write(number int, separator, text string) {
+	if s.options.context == 0 {
+		text = strings.TrimSpace(text)
+	}
+	fmt.Fprintf(s.out, "%d%s %s\n", number+1, separator, text)
+	s.shownUpTo = number
 }
 
 func displayPath(workDir, path string) string {

@@ -168,6 +168,7 @@ confirm = ["bash", "rm", "fetch"]   # ask before these; [] never asks. A list of
 disabled = []              # e.g. ["mkdir", "ls"] to save context
 mcp_disabled = []          # MCP servers set up but not started, e.g. ["docs"]
 max_output = 10000         # bytes of tool output sent to the model
+read_max_size = "10MB"     # larger files are read only in parts (offset, limit, match); "0" for no limit
 outputs = "disk"           # whole command output kept: disk, memory or none
 output_turns = 0           # for how many of your turns; 0 for the whole conversation
 calls = "streamed"         # streamed: each call runs as soon as it is written; reply: all once the reply ends
@@ -257,8 +258,16 @@ the lines matching a regexp, and `numbered` for line numbers. What is left out i
 `offset` or `col` that shows it. Other output, as an MCP tool's, is cut to `max_output`, keeping the
 head and the tail. `bash`, `git` and `memory` take an `action`, and `help` explains each.
 
+`read` looks at the first 8 KB of a file before reading the rest. Binary data (a NUL byte, or over a
+tenth control characters or broken UTF-8) is refused saying what it looks like (PDF, zip…) and
+pointing to `file`, `xxd` or `strings`; UTF-16 text is read as text, and images are seen as always.
+A file over `tools.read_max_size` (10 MB) is refused whole, with its size; asked for a part with
+`offset`, `limit` or `match`, it is read a line at a time without holding it, so the last lines of a
+log of gigabytes take a second or two.
+
 `grep` gives matches under their file, or with `show` only the files or a count, and `context`
-lines around them. `edit` takes several replacements at once in `edits`, all or none.
+lines around them. It reads each file a line at a time, whatever its size, skips binary ones by
+their first 8 KB, stops a file at its first match when only names are asked, and esc stops it. `edit` takes several replacements at once in `edits`, all or none.
 
 `fetch` reads a URL as markdown (the article of an HTML page, indented JSON, plain text).
 `web_search` uses DuckDuckGo by default, with no key; see `[web]` below for the others.
