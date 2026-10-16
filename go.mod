@@ -85,3 +85,5 @@ require (
 	golang.org/x/time v0.15.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
+
+replace github.com/AlexanderGrooff/mermaid-ascii => ./third_party/mermaid-ascii

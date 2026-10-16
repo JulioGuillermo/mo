@@ -140,7 +140,11 @@ func (m model) edgeScroll() (tea.Model, tea.Cmd) {
 func (m model) release(x, y int) (tea.Model, tea.Cmd) {
 	picked := m.selected
 	m.selected = nil
-	if picked == nil || !picked.dragged {
+	if picked == nil {
+		// The press went elsewhere, as to a menu that took it.
+		return m, nil
+	}
+	if !picked.dragged {
 		return m.click(x, y)
 	}
 	text := m.selectedText(*picked)

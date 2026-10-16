@@ -1,6 +1,10 @@
 package tui
 
 import (
+	"image"
+	"image/png"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -28,6 +32,70 @@ func TestFitLines(t *testing.T) {
 		}
 		if fitLines("short", 30) != "short" {
 			t.Error("a line that fits stays as it is")
+		}
+	})
+}
+
+func TestImageCaption(t *testing.T) {
+	t.Run("an image an answer shows has its name and path under it; one without a name, its path; a missing one, no caption", func(t *testing.T) {
+		dir := t.TempDir()
+		picture := image.NewRGBA(image.Rect(0, 0, 4, 4))
+		file, _ := os.Create(filepath.Join(dir, "shot.png"))
+		_ = png.Encode(file, picture)
+		file.Close()
+		p := newPrinter()
+		p.workDir = dir
+
+		named := ansi.Strip(p.Answer("Here:\n\n![Login screen](shot.png)\n"))
+		bare := ansi.Strip(p.Answer("![](shot.png)"))
+		missing := ansi.Strip(p.Answer("![Gone](missing.png)"))
+
+		lines := strings.Split(strings.TrimRight(named, "\n"), "\n")
+		if last := strings.TrimSpace(lines[len(lines)-1]); last != "Login screen · shot.png" || !strings.Contains(named, "[image 4x4]") {
+			t.Errorf("named:\n%s", named)
+		}
+		bareLines := strings.Split(strings.TrimRight(bare, "\n"), "\n")
+		if strings.TrimSpace(bareLines[len(bareLines)-1]) != "shot.png" {
+			t.Errorf("bare:\n%s", bare)
+		}
+		if strings.Contains(missing, "Gone ·") {
+			t.Errorf("a missing image should have no caption:\n%s", missing)
+		}
+	})
+}
+
+func TestSpacing(t *testing.T) {
+	t.Run("a drawing stands apart from the text around it by one blank line, the line under it with it", func(t *testing.T) {
+		p := newPrinter()
+		p.setWidth(40)
+		wide := "```mermaid\ngraph LR\n  Alpha[Alpha box] --> Beta[Beta box] --> Gamma[Gamma box] --> Delta[Delta box]\n```"
+		lines := strings.Split(ansi.Strip(p.Answer("Before.\n"+wide+"\nAfter.")), "\n")
+		var kinds []string
+		for _, line := range lines {
+			switch trimmed := strings.TrimSpace(line); {
+			case trimmed == "":
+				kinds = append(kinds, "blank")
+			case strings.HasPrefix(trimmed, "Before") || strings.HasPrefix(trimmed, "After"):
+				kinds = append(kinds, "text")
+			case strings.Contains(trimmed, "out of view"):
+				kinds = append(kinds, "hint")
+			default:
+				kinds = append(kinds, "drawing")
+			}
+		}
+		if got := strings.Join(kinds, " "); got != "blank text blank drawing drawing drawing hint blank text" {
+			t.Errorf("kinds = %s\n%s", got, strings.Join(lines, "\n"))
+		}
+	})
+
+	t.Run("mo's notes are marked and stand apart from what came before", func(t *testing.T) {
+		m := sidebarModel(t, 100)
+		updated, _ := m.Update(printMsg(m.printer.Answer("The model says this.")))
+		updated, _ = updated.(model).Update(printMsg(m.printer.Note("resumed: a talk · 3 prompts\nsecond line")))
+		content := ansi.Strip(updated.(model).conversationContent())
+
+		if !strings.Contains(content, "says this.") || !strings.Contains(content, "\n\n◇ resumed: a talk · 3 prompts\n  second line") {
+			t.Errorf("content:\n%s", content)
 		}
 	})
 }

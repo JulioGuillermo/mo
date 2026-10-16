@@ -5,7 +5,7 @@ package render
 // | DC-01 | Happy    | Each box of a diagram gets a colour of its own, its text a tint of it, no background | P1  |
 // | DC-02 | Happy    | A box holding others is drawn quieter; lines dim, labels light, their spaces kept | P1 |
 // | DC-03 | Edge     | A label's letters are never taken for line ends; an ER diagram's marks are | P1      |
-// | DC-04 | Happy    | Light backgrounds get colours of their own; the text drawn is unchanged  | P2       |
+// | DC-04 | Happy    | Light backgrounds get colours of their own; the text drawn is unchanged but for arrowheads | P2 |
 
 import (
 	"strings"
@@ -71,8 +71,8 @@ func TestDiagramColors(t *testing.T) {
 		if colourAt(drawn, "The group") != dark.label.fg() || !strings.Contains(plain, "real traffic") || colourAt(drawn, "real traffic") != dark.label.fg() {
 			t.Errorf("labels:\n%s", plain)
 		}
-		if colourAt(drawn, "►") != dark.line.fg() {
-			t.Errorf("the arrow = %q", colourAt(drawn, "►"))
+		if colourAt(drawn, "→") != dark.line.fg() || strings.Contains(ansi.Strip(drawn), "►") {
+			t.Errorf("the arrow = %q, its head one that meets its line", colourAt(drawn, "→"))
 		}
 		group := findBoxes(gridOf(plain))
 		if len(group) != 3 {
@@ -100,7 +100,8 @@ func TestDiagramColors(t *testing.T) {
 		if colourAt(light, "┌") != paletteFor(false).edges[0].fg() {
 			t.Errorf("light edge = %q", colourAt(light, "┌"))
 		}
-		if ansi.Strip(light) != strings.TrimRight(plain, "\n") {
+		heads := strings.NewReplacer("▼", "↓", "▲", "↑", "◄", "←", "►", "→")
+		if ansi.Strip(light) != heads.Replace(strings.TrimRight(plain, "\n")) {
 			t.Errorf("text changed:\n%s\n---\n%s", ansi.Strip(light), plain)
 		}
 	})

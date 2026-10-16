@@ -146,6 +146,16 @@ func (m *model) scheduleRedraw() tea.Cmd {
 	return tea.Tick(redrawDelay, func(time.Time) tea.Msg { return redrawMsg(number) })
 }
 
+// redrawDrawings draws again the blocks with a wide diagram, moved across.
+func (m *model) redrawDrawings() {
+	m.blocks = slices.Clone(m.blocks)
+	for i, b := range m.blocks {
+		if b.draw != nil && strings.Contains(b.text, "ctrl+←→ moves across") {
+			m.blocks[i].text = b.draw(b.open)
+		}
+	}
+}
+
 func (m *model) redraw() {
 	m.blocks = slices.Clone(m.blocks)
 	for i, b := range m.blocks {

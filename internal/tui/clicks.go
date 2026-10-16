@@ -1,8 +1,11 @@
 package tui
 
 import (
+	"fmt"
 	"regexp"
+	"slices"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
@@ -56,9 +59,92 @@ func (m model) click(x, y int) (tea.Model, tea.Cmd) {
 		}
 	}
 	if y < m.conversationHeight() && x < m.mainWidth() && m.dialog == nil {
+		if drawn, ok := m.drawingAt(y); ok && !drawn.code && drawn.widest > m.printer.width {
+			return m.openDrawing(drawn)
+		}
 		m.clickDetails(y)
 	}
 	return m, nil
+}
+
+// drawingMenu is what a right click on a diagram offers: its code in place
+// of its drawing or back, seeing it whole, copying its code.
+func (m model) drawingMenu(drawn drawing) (tea.Model, tea.Cmd) {
+	if drawn.picture != "" {
+		return m.pictureMenu(drawn)
+	}
+	toggle := huh.NewOption("show its code", "code")
+	if drawn.code {
+		toggle = huh.NewOption("show the drawing", "code")
+	}
+	all := huh.NewOption("show all as code", "all")
+	if drawn.code {
+		all = huh.NewOption("draw all", "all")
+	}
+	options := []huh.Option[string]{toggle, all, huh.NewOption("see it whole", "whole"), huh.NewOption("copy its code", "copy")}
+	return m.showChoices("Diagram", "", options, func(m model, choice string) (tea.Model, tea.Cmd) {
+		switch choice {
+		case "code":
+			m.printer.toggleCode(drawn.source)
+			m.redraw()
+			return m, nil
+		case "all":
+			m.printer.setAllCode(!drawn.code)
+			m.redraw()
+			return m, nil
+		case "whole":
+			return m.openDrawing(drawn)
+		}
+		return m.copyCode(drawn.source)
+	})
+}
+
+// pictureMenu is what a right click on an image drawn from code offers:
+// its code in its place, or the picture again, and copying its code.
+func (m model) pictureMenu(drawn drawing) (tea.Model, tea.Cmd) {
+	toggle := huh.NewOption("show its code", "code")
+	if drawn.code {
+		toggle = huh.NewOption("show the picture", "code")
+	}
+	options := []huh.Option[string]{toggle, huh.NewOption("copy its code", "copy")}
+	return m.showChoices("Picture", "", options, func(m model, choice string) (tea.Model, tea.Cmd) {
+		if choice == "copy" {
+			return m.copyCode(drawn.source)
+		}
+		from, to := drawn.picture, drawn.codeText
+		if drawn.code {
+			from, to = to, from
+		}
+		m.printer.toggleCode(drawn.source)
+		m.blocks = slices.Clone(m.blocks)
+		for i := len(m.blocks) - 1; i >= 0; i-- {
+			if strings.Contains(m.blocks[i].text, from) {
+				m.blocks[i].text = strings.Replace(m.blocks[i].text, from, to, 1)
+				break
+			}
+		}
+		return m, nil
+	})
+}
+
+// copyCode copies a drawing's code and says so.
+func (m model) copyCode(source string) (tea.Model, tea.Cmd) {
+	source = strings.TrimSpace(source)
+	m.flashes++
+	m.flash = fmt.Sprintf("copied its code, %d lines", strings.Count(source, "\n")+1)
+	number := m.flashes
+	return m, tea.Batch(tea.SetClipboard(source), copyToSystem(source),
+		tea.Tick(flashTime, func(time.Time) tea.Msg { return flashDoneMsg(number) }))
+}
+
+// drawingAt is the diagram drawn at row y of the conversation.
+func (m model) drawingAt(y int) (drawing, bool) {
+	lines := strings.Split(ansi.Strip(m.conversationContent()), "\n")
+	row := y + m.conversationOffset()
+	if row < 0 || row >= len(lines) {
+		return drawing{}, false
+	}
+	return m.printer.drawingWith(lines[row])
 }
 
 // rightClick opens the menu of what is under the pointer, if it has one.
@@ -76,6 +162,9 @@ func (m model) rightClick(x, y int) (tea.Model, tea.Cmd) {
 	if y < m.conversationHeight() && x < m.mainWidth() {
 		if id, running := m.runningCommandAt(y); running {
 			return m.jobMenu(id)
+		}
+		if drawn, ok := m.drawingAt(y); ok {
+			return m.drawingMenu(drawn)
 		}
 	}
 	return m, nil

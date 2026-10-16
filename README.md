@@ -465,7 +465,8 @@ one without deleting it, everywhere or only in a project. A server's stderr goes
 ## Images and diagrams
 
 Answers with a ```` ```mermaid ```` or ```` ```svg ```` block, or a line that is only `![](local/file.png)`,
-are drawn in the terminal; so are images that `read` opens or an MCP tool returns, and `/view <file>`
+are drawn in the terminal, an image line with its name and path under it (`name · path`); so are
+images that `read` opens or an MCP tool returns, and `/view <file>`
 shows an image, SVG or Mermaid file. Any other text file `/view` opens over the whole screen,
 highlighted as its name says and numbered, to scroll, search with `/` and copy, as a job's output
 is watched; only you see it, the model never does. Tab after `/view ` offers the files and folders
@@ -487,7 +488,15 @@ images = "auto"   # auto | kitty | blocks | off
 coloured half blocks in other truecolor terminals, and text otherwise. SVG is drawn by resvg built
 into mo; Mermaid flowcharts, sequence, ER and class diagrams are drawn with box characters, each
 box tight around its text, its edge and text in a colour of its own, or as an image when `mmdc`
-(mermaid-cli) is installed, which also draws the other kinds.
+(mermaid-cli) is installed, which also draws the other kinds. A diagram wider than the conversation says so under it; ctrl+← and
+ctrl+→, with nothing typed, move every such diagram across, each to its own edge; a click
+opens it over the whole screen, panned by dragging, the arrows, hjkl or the wheel (shift for
+across), `s` showing its code. A right click on any diagram shows its code in its place or
+the drawing again, all of them so, opens it whole, or copies its code; `/diagrams` switches
+all of them. A right click on an SVG, or on a diagram mermaid-cli drew as an image, shows its
+code in its place or the picture again, or copies its code. ctrl+↑↓ scroll the conversation; with nothing typed and without vim keys, ctrl+h j
+k l are ctrl+← ↓ ↑ →. Node shapes mermaid-ascii does not draw (stadiums, subroutines, cylinders,
+circles, hexagons, parallelograms) are drawn as boxes.
 
 ## Plugins
 

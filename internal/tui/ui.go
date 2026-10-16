@@ -22,6 +22,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/gitops"
@@ -536,7 +537,31 @@ func (m model) plainKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return next, cmd
 		}
 	}
-	switch msg.String() {
+	pressed := msg.String()
+	// With nothing typed and without vim keys, ctrl+h/j/k/l are the
+	// arrows ctrl+ takes, as they edit nothing in an empty input.
+	if m.input.Value() == "" && !m.vimOn() {
+		if arrow, ok := map[string]string{"ctrl+h": "ctrl+left", "ctrl+j": "ctrl+down", "ctrl+k": "ctrl+up", "ctrl+l": "ctrl+right"}[pressed]; ok {
+			pressed = arrow
+		}
+	}
+	switch pressed {
+	case "ctrl+up", "ctrl+down":
+		m.scroll(pressed == "ctrl+up", 1)
+		return m, nil
+	case "ctrl+left", "ctrl+right":
+		// With nothing typed they move the wide diagrams across; while
+		// typing, by words, as alt+←→ always does.
+		if m.input.Value() == "" && m.printer.hasDrawings() {
+			by := drawingStep
+			if pressed == "ctrl+left" {
+				by = -drawingStep
+			}
+			if m.printer.panDrawings(by) {
+				m.redrawDrawings()
+			}
+			return m, nil
+		}
 	case "ctrl+v":
 		return m, pasteClipboard()
 	case "backspace", "delete":
@@ -760,6 +785,13 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 	case "providers":
 		m.settingsInFlight = true
 		return m, tea.Sequence(printText(m.printer.Note("looking for providers…")), loadSettings(m.session, providerSettings))
+	case "diagrams":
+		code := m.printer.toggleAllCode()
+		m.redraw()
+		if code {
+			return m, printText(m.printer.Note("diagrams shown as their code · /diagrams draws them again"))
+		}
+		return m, printText(m.printer.Note("diagrams drawn"))
 	case "view":
 		if argument == "" {
 			return m, printText(m.printer.Note("usage: /view <file> · tab completes paths · images, SVG and Mermaid show here, other files in a viewer"))
@@ -1040,6 +1072,10 @@ func (m model) conversation(height int) viewport.Model {
 // emit adds printed output to the transcript. Kitty image uploads go to the
 // terminal once, and only their placeholders stay in the transcript.
 func (m model) emit(text string) (tea.Model, tea.Cmd) {
+	// mo's own notes stand apart from what came before, as answers do.
+	if strings.HasPrefix(ansi.Strip(text), noteMark) {
+		text = "\n" + text
+	}
 	uploads := strings.Join(kittyUploads.FindAllString(text, -1), "")
 	m.blocks = append(m.blocks, block{text: kittyUploads.ReplaceAllString(text, "")})
 	if uploads == "" {

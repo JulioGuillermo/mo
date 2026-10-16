@@ -27,6 +27,24 @@ var flowLinks = []struct {
 	{regexp.MustCompile(`={3,}>`), "==>"},
 }
 
+// flowShapes are node shapes of mermaid's flowcharts mermaid-ascii does
+// not read, as the box, round box or decision it does: a stadium, a
+// subroutine, a cylinder, circles, a hexagon, parallelograms and
+// trapezoids, an asymmetric shape.
+var flowShapes = []struct {
+	pattern *regexp.Regexp
+	with    string
+}{
+	{regexp.MustCompile(`(\w)\(\(\((.*?)\)\)\)`), "$1($2)"},
+	{regexp.MustCompile(`(\w)\(\((.*?)\)\)`), "$1($2)"},
+	{regexp.MustCompile(`(\w)\(\[(.*?)\]\)`), "$1($2)"},
+	{regexp.MustCompile(`(\w)\[\[(.*?)\]\]`), "$1[$2]"},
+	{regexp.MustCompile(`(\w)\[\((.*?)\)\]`), "$1[$2]"},
+	{regexp.MustCompile(`(\w)\{\{(.*?)\}\}`), "$1{$2}"},
+	{regexp.MustCompile(`(\w)\[[/\\](.*?)[/\\]\]`), "$1[$2]"},
+	{regexp.MustCompile(`(\w)>([^\]>|]*)\]`), "$1[$2]"},
+}
+
 // invisibleLink is ~~~, a link only for layout.
 var invisibleLink = regexp.MustCompile(`^(\s*)(\S.*?)\s*~{3,}\s*(\S.*?)\s*$`)
 
@@ -53,6 +71,9 @@ func readableFlowchart(source string) string {
 		}
 		for _, link := range flowLinks {
 			line = link.pattern.ReplaceAllString(line, link.with)
+		}
+		for _, shape := range flowShapes {
+			line = shape.pattern.ReplaceAllString(line, shape.with)
 		}
 		lines[i] = line
 	}

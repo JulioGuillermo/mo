@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 
@@ -60,6 +61,10 @@ type printer struct {
 	markdown *glamour.TermRenderer
 	images   render.Mode
 	workDir  string
+	// drawings are the diagrams drawn wider than the conversation, to
+	// open whole when clicked, by their text.
+	drawings     []drawing
+	drawingIndex map[string]int
 	// kind tells what a tool call does, for the colour of its mark.
 	kind func(call llm.ToolCall) toolKind
 }
@@ -81,30 +86,269 @@ func (p *printer) renderer() render.Renderer {
 }
 
 // Answer prints an answer of the model: markdown, with its mermaid and svg
-// blocks and its images of local files drawn, after a blank line.
+// blocks and its images of local files drawn, after a blank line; a
+// drawing, with its line under it, is set apart from the text around it
+// by a blank line, the text itself as it is.
 func (p *printer) Answer(text string) string {
-	parts := []string{""}
+	var out strings.Builder
+	previous := render.SegmentKind(-1)
 	for _, segment := range render.Split(text) {
-		parts = append(parts, p.segment(segment))
+		drawn := trimBlankLines(p.segment(segment))
+		if drawn == "" {
+			continue
+		}
+		out.WriteString("\n")
+		if previous >= 0 && (previous != render.SegmentText || segment.Kind != render.SegmentText) {
+			out.WriteString("\n")
+		}
+		out.WriteString(drawn)
+		previous = segment.Kind
 	}
-	return strings.Join(parts, "\n")
+	return out.String()
+}
+
+// trimBlankLines takes off the blank lines a part starts or ends with.
+func trimBlankLines(text string) string {
+	lines := strings.Split(text, "\n")
+	blank := func(line string) bool { return strings.TrimSpace(ansi.Strip(line)) == "" }
+	for len(lines) > 0 && blank(lines[0]) {
+		lines = lines[1:]
+	}
+	for len(lines) > 0 && blank(lines[len(lines)-1]) {
+		lines = lines[:len(lines)-1]
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (p *printer) segment(segment render.Segment) string {
 	renderer := p.rendererAt(answerIndent)
 	switch segment.Kind {
 	case render.SegmentMermaid:
-		return indentLines(renderer.Mermaid(segment.Content), answerIndent)
+		return p.diagram(segment.Content, indentLines(renderer.Mermaid(segment.Content), answerIndent))
 	case render.SegmentSVG:
 		drawn, err := renderer.SVG([]byte(segment.Content))
 		if err != nil {
 			return p.Markdown("```svg\n"+segment.Content+"```") + "\n" + p.Error(err)
 		}
-		return indentLines(drawn, answerIndent)
+		return p.picture("svg", segment.Content, indentLines(drawn, answerIndent))
 	case render.SegmentImageFile:
-		return p.File(segment.Content)
+		drawn, err := p.drawFile(segment.Content, answerIndent)
+		if err != nil {
+			return p.Error(err)
+		}
+		return drawn + "\n" + p.caption(segment.Name, segment.Content, answerIndent)
 	}
 	return p.Markdown(segment.Content)
+}
+
+// drawing is a diagram an answer drew with characters: its source, its
+// lines coloured and plain as drawn, how far it is moved across when wider
+// than the conversation, whether its code shows instead, and its lines as
+// shown so, with the line under it.
+type drawing struct {
+	source       string
+	lines, plain []string
+	widest, left int
+	code         bool
+	shown        []string
+	// picture is set for one drawn as an image, an SVG or a diagram
+	// mermaid-cli drew: its text as the conversation keeps it, uploads
+	// left out, and its code as shown in its place. An image cannot be
+	// drawn again, so the one shown is swapped for the other.
+	picture  string
+	codeText string
+}
+
+// drawingStep is how many columns ctrl+←→ moves the wide diagrams.
+const drawingStep = 8
+
+// diagram keeps a diagram drawn with characters, to show its code or open
+// it whole: drawn, or as code when the user asked; one wider than the
+// conversation moved across as far as ctrl+←→ left it, saying so in a
+// line under it. One drawn as an image is as it was drawn.
+func (p *printer) diagram(source, drawn string) string {
+	if strings.Contains(drawn, "\x1b_G") || strings.Contains(drawn, "\x1bPtmux;") {
+		return p.picture("mermaid", source, drawn)
+	}
+	if strings.HasPrefix(strings.TrimSpace(ansi.Strip(drawn)), "```") {
+		return drawn
+	}
+	lines := strings.Split(drawn, "\n")
+	widest := 0
+	plain := make([]string, len(lines))
+	for i, line := range lines {
+		plain[i] = strings.TrimRight(ansi.Strip(line), " ")
+		widest = max(widest, ansi.StringWidth(plain[i]))
+	}
+	p.mu.Lock()
+	if p.drawingIndex == nil {
+		p.drawingIndex = map[string]int{}
+	}
+	at, ok := p.drawingIndex[source]
+	if !ok {
+		at = len(p.drawings)
+		p.drawingIndex[source] = at
+		p.drawings = append(p.drawings, drawing{source: source})
+	}
+	d := &p.drawings[at]
+	d.lines, d.plain, d.widest = lines, plain, widest
+	code := d.code
+	p.mu.Unlock()
+	if code {
+		text := p.Markdown("```mermaid\n" + strings.TrimSpace(source) + "\n```")
+		var shown []string
+		for _, line := range strings.Split(text, "\n") {
+			shown = append(shown, strings.TrimRight(ansi.Strip(line), " "))
+		}
+		p.mu.Lock()
+		p.drawings[at].shown = shown
+		p.mu.Unlock()
+		return text
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	d = &p.drawings[at]
+	if widest <= p.width {
+		d.left, d.shown = 0, plain
+		return drawn
+	}
+	d.left = min(d.left, widest-p.width)
+	shown := make([]string, len(lines))
+	d.shown = nil
+	for i, line := range lines {
+		shown[i] = ansi.Cut(line, 0, answerIndent) + ansi.Cut(line, answerIndent+d.left, everyColumn)
+		d.shown = append(d.shown, strings.TrimRight(ansi.Strip(shown[i]), " "))
+	}
+	hidden := fmt.Sprintf("%d columns out of view", widest-p.width)
+	if d.left > 0 {
+		hidden = fmt.Sprintf("◂ %d · %d ▸ columns out of view", d.left, widest-p.width-d.left)
+	}
+	hint := strings.Repeat(" ", answerIndent) + hidden + " · ctrl+←→ moves across · a click shows it whole"
+	d.shown = append(d.shown, hint)
+	return strings.Join(shown, "\n") + "\n" + dimStyle.Render(hint)
+}
+
+// picture keeps an image an answer drew from code, an SVG or a diagram, to
+// show its code in its place: drawn, or as code when the user asked.
+func (p *printer) picture(language, source, drawn string) string {
+	codeText := trimBlankLines(p.Markdown("```" + language + "\n" + strings.TrimSpace(source) + "\n```"))
+	shownText := trimBlankLines(kittyUploads.ReplaceAllString(drawn, ""))
+	var shown []string
+	for _, text := range []string{shownText, codeText} {
+		for _, line := range strings.Split(text, "\n") {
+			shown = append(shown, strings.TrimRight(ansi.Strip(line), " "))
+		}
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.drawingIndex == nil {
+		p.drawingIndex = map[string]int{}
+	}
+	at, ok := p.drawingIndex[source]
+	if !ok {
+		at = len(p.drawings)
+		p.drawingIndex[source] = at
+		p.drawings = append(p.drawings, drawing{source: source})
+	}
+	d := &p.drawings[at]
+	d.picture, d.codeText, d.shown = shownText, codeText, shown
+	if d.code {
+		return codeText
+	}
+	return drawn
+}
+
+// toggleAllCode shows every diagram as its code, or, when all already
+// are, drawn again; it tells whether they show as code now.
+func (p *printer) toggleAllCode() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	code := slices.ContainsFunc(p.drawings, func(d drawing) bool { return !d.code && d.picture == "" })
+	p.drawings = setCode(p.drawings, code)
+	return code
+}
+
+// setAllCode shows every diagram as its code, or drawn.
+func (p *printer) setAllCode(code bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.drawings = setCode(p.drawings, code)
+}
+
+// setCode sets how the diagrams drawn with characters show; images are
+// swapped one at a time, from their menu.
+func setCode(drawings []drawing, code bool) []drawing {
+	for i := range drawings {
+		if drawings[i].picture == "" {
+			drawings[i].code = code
+		}
+	}
+	return drawings
+}
+
+// toggleCode shows a diagram's code in place of its drawing, or back.
+func (p *printer) toggleCode(source string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if at, ok := p.drawingIndex[source]; ok {
+		p.drawings[at].code = !p.drawings[at].code
+	}
+}
+
+// panDrawings moves every wide diagram across by columns, each within its
+// own width, and tells whether any moved.
+func (p *printer) panDrawings(by int) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	moved := false
+	for i := range p.drawings {
+		d := &p.drawings[i]
+		if d.code {
+			continue
+		}
+		left := min(max(d.left+by, 0), max(d.widest-p.width, 0))
+		moved = moved || left != d.left
+		d.left = left
+	}
+	return moved
+}
+
+// hasDrawings tells whether a diagram is wider than the conversation.
+func (p *printer) hasDrawings() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.ContainsFunc(p.drawings, func(d drawing) bool { return !d.code && d.widest > p.width })
+}
+
+// drawingWith is the diagram one of whose lines, as shown, or the line
+// under it is line.
+func (p *printer) drawingWith(line string) (drawing, bool) {
+	line = strings.TrimRight(line, " ")
+	if strings.TrimSpace(line) == "" {
+		return drawing{}, false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for i := len(p.drawings) - 1; i >= 0; i-- {
+		if slices.Contains(p.drawings[i].shown, line) {
+			return p.drawings[i], true
+		}
+	}
+	return drawing{}, false
+}
+
+// caption is the line under an image an answer showed: its name, then
+// where it is, dim, cut to the width.
+func (p *printer) caption(name, path string, indent int) string {
+	p.mu.Lock()
+	width := p.width
+	p.mu.Unlock()
+	room := max(width-indent-2, 10)
+	text := dimStyle.Render(path)
+	if name != "" {
+		text = lipgloss.NewStyle().Foreground(lipgloss.Color("#a9b1d6")).Render(name) + dimStyle.Render(" · "+path)
+	}
+	return strings.Repeat(" ", indent) + ansi.Truncate(text, room, "…")
 }
 
 // File draws an image, SVG or Mermaid file, or says why it cannot.
@@ -114,14 +358,24 @@ func (p *printer) File(path string) string {
 
 // fileAt draws a file indented as the text around it, in the width left.
 func (p *printer) fileAt(path string, indent int) string {
+	drawn, err := p.drawFile(path, indent)
+	if err != nil {
+		return p.Error(err)
+	}
+	return drawn
+}
+
+// drawFile draws a file indented as the text around it, a path relative
+// to the working directory.
+func (p *printer) drawFile(path string, indent int) (string, error) {
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(p.workDir, path)
 	}
 	drawn, err := p.rendererAt(indent).File(path)
 	if err != nil {
-		return p.Error(err)
+		return "", err
 	}
-	return indentLines(drawn, indent)
+	return indentLines(drawn, indent), nil
 }
 
 // rendererAt draws in the width left beside an indent.
@@ -610,8 +864,22 @@ func hangingWrap(text string, width int) string {
 	return strings.Join(out, "\n")
 }
 
+// noteMark starts every line mo itself writes in the conversation, so it
+// reads apart from the model's.
+const noteMark = "◇ "
+
+// Note is a line of mo's own, marked; the lines after the first line up
+// under its text.
 func (p *printer) Note(text string) string {
-	return dimStyle.Render(text)
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if i == 0 {
+			lines[i] = noteMark + line
+		} else {
+			lines[i] = strings.Repeat(" ", len([]rune(noteMark))) + line
+		}
+	}
+	return dimStyle.Render(strings.Join(lines, "\n"))
 }
 
 func (p *printer) clip(line string) string {

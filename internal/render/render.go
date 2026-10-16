@@ -62,7 +62,7 @@ func (r Renderer) Mermaid(source string) string {
 			}
 		}
 	}
-	drawn, err := mermaidText(source)
+	drawn, err := mermaidText(source, r.Width)
 	if err != nil || strings.TrimSpace(drawn) == "" {
 		return "```mermaid\n" + strings.TrimSpace(source) + "\n```"
 	}

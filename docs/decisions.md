@@ -351,6 +351,39 @@
   two words of one is shown as the space it was. Marks such as o{ or || are line ends only when
   they stand apart, never letters of a label. Colouring the text it drew keeps mermaid-ascii as
   it is, and works the same for flowcharts, sequence, ER and class diagrams.
+- A diagram is drawn as narrow as mermaid-ascii can fit it, its boxes moved closer. One still
+  wider than the conversation is kept whole and says so under it; a click on any of its lines
+  opens it in the viewer over the whole screen, as drawn, its colours kept, panned by dragging,
+  the arrows, hjkl or the wheel, and stopped at its right edge. The click finds it by the line's
+  text, which the conversation keeps whole, only cut when shown.
+- In the conversation, ctrl+←→ moves the wide diagrams across, each keeping how far it moved and
+  stopping at its own edge, so a narrower one does not run on while a wider one does, and both
+  come back from where each was. Only with nothing typed: while typing they move by words, as
+  alt+←→ always does; ctrl+alt+←→ is the desktop's on many systems. The line under says what
+  is out of view on each side. Every diagram drawn is kept by its source, so a right click on it
+  can show its code in its place and back, open it whole or copy its code; `s` in the viewer
+  shows the code too.
+- ctrl+↑↓ scroll the conversation a line. ctrl+h j k l stand for ctrl+← ↓ ↑ → only with nothing
+  typed and without vim keys: in the input they delete, make a new line and cut the line, which
+  an empty input has no use for; vim keys take them for the panes. A release only clicks where
+  its press went down in the conversation, so an option taken from a menu with the mouse never
+  clicks what is under it.
+- A drawing in an answer, a diagram, an SVG or an image, stands apart from the text around it by
+  one blank line; the line under it, its hint or caption, goes with it. mo's own notes start with
+  ◇, their lines after the first lined up under it, and stand apart from what came before as
+  answers and tool calls do, so they never read as the model's. Arrowheads are drawn as ↓ ↑ ← →,
+  which meet their line, in place of the triangles mermaid-ascii ends lines with, which float
+  apart from it in most fonts.
+- An SVG, or a diagram mermaid-cli drew, is an image sent to the terminal once, which cannot be
+  drawn again: its menu shows its code by swapping the text the conversation keeps for the
+  image with the code, and back. Diagrams drawn with characters are drawn again instead.
+- mermaid-ascii is kept in `third_party/mermaid-ascii`, through a `replace`, with one patch
+  (its PATCHES.md): where placing each node by its first parent would send an arrow back up,
+  as when paths join, a node goes one level past its deepest parent. Only then: in small
+  diagrams whose arrows all go forward, its own placement reads better, as its routing of
+  arrows that skip levels shares their corridors.
+- Node shapes mermaid-ascii does not read are written as the box, round box or decision it does
+  before drawing, as links are, so their brackets, slashes and quotes do not show in the text.
 - Class diagrams, which mermaid-ascii does not read, are turned into a flowchart it lays out: a
   class is a node of its annotations, name, attributes and methods, parted by marker lines that are
   drawn afterwards as rules across its box, with the blank lines mermaid-ascii puts between a

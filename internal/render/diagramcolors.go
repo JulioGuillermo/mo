@@ -193,6 +193,9 @@ func colorDiagram(drawn string, dark bool) string {
 			if labelSpace(line, column, lineMarks[row]) {
 				character = ' '
 			}
+			if head, ok := arrowHeads[character]; ok {
+				character = head
+			}
 			out.WriteRune(character)
 		}
 		if current != "" {
@@ -242,6 +245,10 @@ func markLines(grid [][]rune) [][]bool {
 	}
 	return marks
 }
+
+// arrowHeads are arrows that meet their line, for the triangles
+// mermaid-ascii ends lines with, which float apart from it in most fonts.
+var arrowHeads = map[rune]rune{'▼': '↓', '▲': '↑', '◄': '←', '►': '→'}
 
 // labelSpace tells a line drawn between two words of a label, where the
 // label had a space: mermaid-ascii writes labels over their line.

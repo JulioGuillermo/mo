@@ -25,6 +25,7 @@ const (
 	viewerShift   = 8
 	viewerHelp    = "↑↓ pgup pgdn home end scroll · ←→ long lines · / search · n N next · drag or y copy · b background · x kill · esc close"
 	fileHelp      = "↑↓ move · c comment the line or what you dragged over · d delete it · a attach to your message · / search · y copy · esc close"
+	drawingHelp   = "drag, ↑↓ ←→ hjkl or the wheel pan · s code or drawing · / search · y copy · esc close"
 	viewMaxBytes  = 8 << 20
 )
 
@@ -60,6 +61,15 @@ type outputViewer struct {
 	file     string
 	language string
 	colored  []string
+	// drawing, when set, names a diagram shown whole, as it was drawn;
+	// dragging pans it, from where the drag started and the view then.
+	drawing  string
+	source   string
+	asCode   bool
+	drawn    [2][]string
+	panning  bool
+	panFrom  point
+	panStart point
 	// cursor is the line comments go on, selected set when lines were
 	// dragged over; commenting while one is typed, on those lines.
 	cursor      int
@@ -90,6 +100,43 @@ func (m model) tickViewer() tea.Cmd {
 	m.viewer.refreshAfter++
 	number := m.viewer.refreshAfter
 	return tea.Tick(viewerRefresh, func(time.Time) tea.Msg { return viewerTickMsg(number) })
+}
+
+// openDrawing shows a diagram whole over the screen, to scroll across what
+// the conversation cuts.
+func (m model) openDrawing(drawn drawing) (tea.Model, tea.Cmd) {
+	lines, plain := drawn.lines, drawn.plain
+	// The answer's indent goes: here the diagram starts at the left.
+	indent := len(plain[0])
+	for _, line := range plain {
+		if strings.TrimSpace(line) != "" {
+			indent = min(indent, len(line)-len(strings.TrimLeft(line, " ")))
+		}
+	}
+	v := &outputViewer{drawing: "Diagram", source: strings.TrimSpace(drawn.source), pickFrom: -1}
+	for i := range lines {
+		v.lines = append(v.lines, ansi.Cut(plain[i], indent, everyColumn))
+		v.colored = append(v.colored, ansi.Cut(lines[i], indent, everyColumn))
+	}
+	v.drawn = [2][]string{v.lines, v.colored}
+	if drawn.code {
+		v.toggleCode()
+	}
+	m.viewer = v
+	return m, nil
+}
+
+// toggleCode shows a diagram's code in place of its drawing, or back.
+func (v *outputViewer) toggleCode() {
+	v.asCode = !v.asCode
+	v.top, v.left, v.query, v.matches = 0, 0, "", nil
+	if v.asCode {
+		v.lines, v.colored = strings.Split(v.source, "\n"), nil
+		v.drawing = "Diagram code"
+		return
+	}
+	v.lines, v.colored = v.drawn[0], v.drawn[1]
+	v.drawing = "Diagram"
 }
 
 // openFile shows a text file over the whole screen, highlighted as its
@@ -155,7 +202,7 @@ func humanBytes(size int64) string {
 // reloadViewer reads the job's output again, keeping the place unless the
 // view follows the end; a file stays as it was opened.
 func (m model) reloadViewer() error {
-	if m.viewer.file != "" {
+	if m.viewer.file != "" || m.viewer.drawing != "" {
 		return nil
 	}
 	jobs := m.jobs()
@@ -219,6 +266,21 @@ func (m model) scrollViewer(by int) {
 	v.follow = v.top == bottom
 }
 
+// panViewer moves the view across by columns; a diagram stops at its
+// right edge, the longest line in view.
+func (m model) panViewer(by int) {
+	v := m.viewer
+	v.left = max(v.left+by, 0)
+	if v.drawing == "" {
+		return
+	}
+	widest := 0
+	for _, line := range v.lines {
+		widest = max(widest, ansi.StringWidth(line))
+	}
+	v.left = min(v.left, max(widest-max(m.width, 20), 0))
+}
+
 // showMatch puts the current match in view.
 func (m model) showMatch() {
 	v := m.viewer
@@ -256,19 +318,36 @@ func (m model) updateViewer(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, redraw
 	case tea.MouseWheelMsg:
-		if msg.Button == tea.MouseWheelUp {
+		sideways := msg.Button == tea.MouseWheelLeft || msg.Button == tea.MouseWheelRight || msg.Mod.Contains(tea.ModShift)
+		switch {
+		case sideways && (msg.Button == tea.MouseWheelLeft || msg.Button == tea.MouseWheelUp):
+			m.panViewer(-viewerShift)
+		case sideways:
+			m.panViewer(viewerShift)
+		case msg.Button == tea.MouseWheelUp:
 			m.scrollViewer(-3)
-		} else {
+		default:
 			m.scrollViewer(3)
 		}
 		return m, nil
 	case tea.MouseClickMsg:
+		if v.drawing != "" && msg.Button == tea.MouseLeft {
+			v.panning, v.panFrom, v.panStart = true, point{msg.X, msg.Y}, point{v.left, v.top}
+			return m, nil
+		}
 		if msg.Button == tea.MouseLeft && msg.Y >= 1 && msg.Y <= m.viewerRows() {
 			line := min(v.top+msg.Y-1, max(len(v.lines)-1, 0))
 			v.picking, v.pickFrom, v.pickTo = true, line, line
 		}
 		return m, nil
 	case tea.MouseMotionMsg:
+		if v.panning {
+			v.left = v.panStart.x
+			m.panViewer(v.panFrom.x - msg.X)
+			v.top = v.panStart.y
+			m.scrollViewer(v.panFrom.y - msg.Y)
+			return m, nil
+		}
 		if v.picking {
 			v.pickTo = min(max(v.top+msg.Y-1, 0), max(len(v.lines)-1, 0))
 			switch {
@@ -280,6 +359,10 @@ func (m model) updateViewer(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.MouseReleaseMsg:
+		if v.panning {
+			v.panning = false
+			return m, nil
+		}
 		if !v.picking {
 			return m, nil
 		}
@@ -384,9 +467,9 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 	case "end", "G":
 		m.scrollViewer(len(v.lines))
 	case "left", "h":
-		v.left = max(v.left-viewerShift, 0)
+		m.panViewer(-viewerShift)
 	case "right", "l":
-		v.left += viewerShift
+		m.panViewer(viewerShift)
 	case "/":
 		v.typing, v.typed = true, v.query
 	case "n", "N":
@@ -398,10 +481,14 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 			v.current = (v.current + step) % len(v.matches)
 			m.showMatch()
 		}
+	case "s":
+		if v.drawing != "" {
+			v.toggleCode()
+		}
 	case "y":
 		return m, m.copyViewer(strings.Join(v.lines, "\n"), fmt.Sprintf("copied all %d lines", len(v.lines)))
 	case "b":
-		if v.file != "" {
+		if v.file != "" || v.drawing != "" {
 			return m, nil
 		}
 		if err := m.jobs().DetachJob(v.id); err != nil {
@@ -410,7 +497,7 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 		}
 		v.notice = "goes on in the background; the model was let go on"
 	case "x":
-		if v.file != "" {
+		if v.file != "" || v.drawing != "" {
 			return m, nil
 		}
 		jobs, id := m.jobs(), v.id
@@ -455,6 +542,14 @@ func (m model) viewerView() string {
 		help = fileHelp
 		// The comment mark, the line's number, a space.
 		gutter = 1 + len(fmt.Sprint(len(v.lines))) + 1
+	}
+	if v.drawing != "" {
+		widest := 0
+		for _, line := range v.lines {
+			widest = max(widest, ansi.StringWidth(line))
+		}
+		header = toolName.Render(v.drawing) + " " + dimStyle.Render(fmt.Sprintf("%d lines · %d columns", len(v.lines), widest))
+		help = drawingHelp
 	}
 	var out []string
 	out = append(out, header)

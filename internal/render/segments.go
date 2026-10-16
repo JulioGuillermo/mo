@@ -17,11 +17,13 @@ const (
 type Segment struct {
 	Kind    SegmentKind
 	Content string
+	// Name is what an image line calls its image, between the brackets.
+	Name string
 }
 
 var (
 	fenceLine = regexp.MustCompile("^\\s*(`{3,}|~{3,})\\s*([^`\\s]*)")
-	imageLine = regexp.MustCompile(`^\s*!\[[^\]]*\]\(([^)\s]+)\)\s*$`)
+	imageLine = regexp.MustCompile(`^\s*!\[([^\]]*)\]\(([^)\s]+)\)\s*$`)
 )
 
 // Split cuts markdown into the parts drawn differently: mermaid and svg code
@@ -67,9 +69,9 @@ func Split(markdown string) []Segment {
 			codeFence = match[1]
 			text.WriteString(line)
 		default:
-			if image := imageLine.FindStringSubmatch(trimmed); image != nil && isLocalPath(image[1]) {
+			if image := imageLine.FindStringSubmatch(trimmed); image != nil && isLocalPath(image[2]) {
 				flushText()
-				segments = append(segments, Segment{Kind: SegmentImageFile, Content: image[1]})
+				segments = append(segments, Segment{Kind: SegmentImageFile, Content: image[2], Name: strings.TrimSpace(image[1])})
 				continue
 			}
 			text.WriteString(line)

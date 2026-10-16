@@ -6,6 +6,7 @@ package render
 // | CD-02 | Happy    | Relations point as their kind says, with cardinalities and labels; ◆ and ◇ mark parts | P1 |
 // | CD-03 | Edge     | An empty class is its name alone; an empty part keeps a line; no blank lines between members | P2 |
 // | CD-04 | Happy    | Flowchart links mermaid-ascii does not read are written as ones it does   | P1       |
+// | CD-05 | Happy    | Node shapes mermaid-ascii does not read are drawn as boxes, their text clean | P1   |
 
 import (
 	"strings"
@@ -104,6 +105,68 @@ func TestClassDiagrams(t *testing.T) {
 		drawn, _ := mermaidText("graph LR\n  A -. copy .-> B")
 		if strings.Contains(drawn, "-.") || !strings.Contains(drawn, "copy") {
 			t.Errorf("drawn:\n%s", drawn)
+		}
+	})
+
+	t.Run("CD-05 node shapes mermaid-ascii does not read are drawn as boxes, their text clean", func(t *testing.T) {
+		for source, want := range map[string]string{
+			"A([Stadium]) --> B":      "A(Stadium) --> B",
+			"A[[Subroutine]] --> B":   "A[Subroutine] --> B",
+			"A[(Database)] --> B":     "A[Database] --> B",
+			"A((Circle)) --> B":       "A(Circle) --> B",
+			"A(((Double))) --> B":     "A(Double) --> B",
+			"A{{Hexagon}} --> B":      "A{Hexagon} --> B",
+			`E1[/"unknown tool"/]`:    `E1["unknown tool"]`,
+			`A[\Back\] --> B[/Lean\]`: `A[Back] --> B[Lean]`,
+			"A>Flag] --> B":           "A[Flag] --> B",
+			"A[plain] --> B{decide}":  "A[plain] --> B{decide}",
+		} {
+			if got := readableFlowchart("graph TD\n  " + source); got != "graph TD\n  "+want {
+				t.Errorf("%s: got %q, want %q", source, got, "graph TD\n  "+want)
+			}
+		}
+		drawn, _ := mermaidText("flowchart TD\n  A([Llamada del modelo]) --> E1[/\"unknown tool\"/]")
+		if strings.ContainsAny(drawn, "[/\"") || !strings.Contains(drawn, "Llamada del modelo") || !strings.Contains(drawn, "unknown tool") {
+			t.Errorf("drawn:\n%s", drawn)
+		}
+	})
+}
+
+func TestJoinedPaths(t *testing.T) {
+	t.Run("JP-01 a node that paths join sits below all its parents, no arrow climbing back to it", func(t *testing.T) {
+		source := `flowchart TD
+    G[Cut the output] --> M{¿Hubo error?}
+    D{¿Tool con view?} -- sí --> I[Run with the view]
+    D -- no --> G
+    I --> J{¿ViewSelf?}
+    J -- no --> K[Apply the view]
+    J -- sí --> L[Applied already]
+    K --> M
+    L --> M
+    M -- sí --> N[Add the error]
+    M -- no --> O([Return])
+    N --> O`
+		drawn, err := mermaidText(source)
+		row := func(text string) int {
+			for i, line := range strings.Split(drawn, "\n") {
+				if strings.Contains(line, text) {
+					return i
+				}
+			}
+			t.Fatalf("%q not drawn:\n%s", text, drawn)
+			return -1
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		joined := row("¿Hubo error?")
+		for _, parent := range []string{"Cut the output", "Apply the view", "Applied already"} {
+			if row(parent) >= joined {
+				t.Errorf("%q should be above the node it joins:\n%s", parent, drawn)
+			}
+		}
+		if row("Return") <= row("Add the error") {
+			t.Errorf("Return should be last:\n%s", drawn)
 		}
 	})
 }
