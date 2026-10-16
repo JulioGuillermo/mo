@@ -8,16 +8,21 @@ package tui
 // | WD-05 | Happy    | A right click on a diagram offers its code: shown in its place and back, copied; s does so whole | P1 |
 // | WD-06 | Edge     | A menu option clicked opens nothing under it; ctrl+↑↓ and, with nothing typed, ctrl+hjkl scroll and pan; /diagrams switches all | P1 |
 // | WD-07 | Happy    | A right click on an SVG shows its code in its place and the picture back, or copies it | P1 |
+// | WD-08 | Happy    | With kitty images, an SVG written or a .svg file shown swaps its picture for its code and back | P1 |
 // | WD-04 | Happy    | ctrl+←→ moves every wide diagram in the chat across, each to its own edge; typing, it moves by words | P1 |
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/jg/mo/internal/render"
 )
 
 const wideDiagram = "```mermaid\ngraph LR\n  A[Agent loop] --> B[Tool registry] --> C[Permissions policy] --> D[Bash runner] --> E[Job store] --> F[Terminal UI] --> G[Last box here]\n```"
@@ -319,6 +324,51 @@ func TestWideDrawings(t *testing.T) {
 		}
 		if !strings.Contains(copied, "<svg xmlns") {
 			t.Errorf("copied = %q", copied)
+		}
+	})
+
+	t.Run("WD-08 with kitty images, an SVG written or a .svg file shown swaps its picture for its code and back", func(t *testing.T) {
+		svg := `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="red"/></svg>`
+		for name, answer := range map[string]string{
+			"written": "Here:\n\n```svg\n" + svg + "\n```\n\nDone.",
+			"a file":  "Here:\n\n![logo](logo.svg)\n\nDone.",
+		} {
+			m := sidebarModel(t, 100)
+			m.printer.workDir = t.TempDir()
+			if err := os.WriteFile(filepath.Join(m.printer.workDir, "logo.svg"), []byte(svg), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			m.printer.setImages(render.ModeKitty)
+			updated, _ := m.Update(drawMsg(func() string { return m.printer.Answer(answer) }))
+			m = updated.(model)
+			swap := func() {
+				y := -1
+				for i, line := range strings.Split(ansi.Strip(m.View().Content), "\n") {
+					if strings.ContainsRune(line, '\U0010eeee') || strings.Contains(line, "<rect") {
+						y = i
+						break
+					}
+				}
+				updated, _ := m.Update(tea.MouseClickMsg{X: 5, Y: y, Button: tea.MouseRight})
+				m = updated.(model)
+				if m.popup == nil || m.popup.title != "Picture" {
+					t.Fatalf("%s: no picture menu at row %d", name, y)
+				}
+				chosen, _ := m.choosePopup(0)
+				m = chosen.(model)
+			}
+
+			swap()
+			code := ansi.Strip(m.conversationContent())
+			swap()
+			back := ansi.Strip(m.conversationContent())
+
+			if !strings.Contains(code, "<rect") || strings.ContainsRune(code, '\U0010eeee') {
+				t.Errorf("%s: its code should replace the picture:\n%s", name, code)
+			}
+			if strings.Contains(back, "<rect") || !strings.ContainsRune(back, '\U0010eeee') {
+				t.Errorf("%s: the picture should come back", name)
+			}
 		}
 	})
 }

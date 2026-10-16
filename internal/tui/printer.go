@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"image/color"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -124,7 +125,7 @@ func (p *printer) segment(segment render.Segment) string {
 	renderer := p.rendererAt(answerIndent)
 	switch segment.Kind {
 	case render.SegmentMermaid:
-		return p.diagram(segment.Content, indentLines(renderer.Mermaid(segment.Content), answerIndent))
+		return p.diagram(segment.Content, indentLines(renderer.Mermaid(segment.Content), answerIndent), answerIndent)
 	case render.SegmentSVG:
 		drawn, err := renderer.SVG([]byte(segment.Content))
 		if err != nil {
@@ -166,7 +167,7 @@ const drawingStep = 8
 // it whole: drawn, or as code when the user asked; one wider than the
 // conversation moved across as far as ctrl+←→ left it, saying so in a
 // line under it. One drawn as an image is as it was drawn.
-func (p *printer) diagram(source, drawn string) string {
+func (p *printer) diagram(source, drawn string, indent int) string {
 	if strings.Contains(drawn, "\x1b_G") || strings.Contains(drawn, "\x1bPtmux;") {
 		return p.picture("mermaid", source, drawn)
 	}
@@ -216,14 +217,14 @@ func (p *printer) diagram(source, drawn string) string {
 	shown := make([]string, len(lines))
 	d.shown = nil
 	for i, line := range lines {
-		shown[i] = ansi.Cut(line, 0, answerIndent) + ansi.Cut(line, answerIndent+d.left, everyColumn)
+		shown[i] = ansi.Cut(line, 0, indent) + ansi.Cut(line, indent+d.left, everyColumn)
 		d.shown = append(d.shown, strings.TrimRight(ansi.Strip(shown[i]), " "))
 	}
 	hidden := fmt.Sprintf("%d columns out of view", widest-p.width)
 	if d.left > 0 {
 		hidden = fmt.Sprintf("◂ %d · %d ▸ columns out of view", d.left, widest-p.width-d.left)
 	}
-	hint := strings.Repeat(" ", answerIndent) + hidden + " · ctrl+←→ moves across · a click shows it whole"
+	hint := strings.Repeat(" ", indent) + hidden + " · ctrl+←→ moves across · a click shows it whole"
 	d.shown = append(d.shown, hint)
 	return strings.Join(shown, "\n") + "\n" + dimStyle.Render(hint)
 }
@@ -375,7 +376,19 @@ func (p *printer) drawFile(path string, indent int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return indentLines(drawn, indent), nil
+	drawn = indentLines(drawn, indent)
+	// A file drawn from code keeps it, for its menu to show or copy.
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".svg":
+		if source, err := os.ReadFile(path); err == nil {
+			return p.picture("svg", string(source), drawn), nil
+		}
+	case ".mmd", ".mermaid":
+		if source, err := os.ReadFile(path); err == nil {
+			return p.diagram(string(source), drawn, indent), nil
+		}
+	}
+	return drawn, nil
 }
 
 // rendererAt draws in the width left beside an indent.

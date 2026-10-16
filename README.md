@@ -493,8 +493,9 @@ ctrl+→, with nothing typed, move every such diagram across, each to its own ed
 opens it over the whole screen, panned by dragging, the arrows, hjkl or the wheel (shift for
 across), `s` showing its code. A right click on any diagram shows its code in its place or
 the drawing again, all of them so, opens it whole, or copies its code; `/diagrams` switches
-all of them. A right click on an SVG, or on a diagram mermaid-cli drew as an image, shows its
-code in its place or the picture again, or copies its code. ctrl+↑↓ scroll the conversation; with nothing typed and without vim keys, ctrl+h j
+all of them. A right click on an SVG, written in an answer or a `.svg` file shown, or on a
+diagram mermaid-cli drew as an image, shows its code in its place or the picture again, or
+copies its code; a `.mmd` file shown is a diagram like any other. ctrl+↑↓ scroll the conversation; with nothing typed and without vim keys, ctrl+h j
 k l are ctrl+← ↓ ↑ →. Node shapes mermaid-ascii does not draw (stadiums, subroutines, cylinders,
 circles, hexagons, parallelograms) are drawn as boxes.
 
