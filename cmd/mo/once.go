@@ -8,6 +8,7 @@ import (
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/team"
 )
 
 // runOnce answers a single prompt without the UI: the answer goes to stdout,
@@ -54,4 +55,27 @@ func runOnce(ctx context.Context, a *agent.Agent, prompt string) error {
 func firstLine(text string) string {
 	line, _, _ := strings.Cut(text, "\n")
 	return line
+}
+
+// followOnce shows what subagents do when mo answers once, each line under
+// the subagent's name; what needs confirmation is denied as for the main
+// agent, and nobody answers their questions.
+func followOnce(subagents *team.Team) {
+	subagents.Follow(func(info team.Info) agent.Hooks {
+		prefix := fmt.Sprintf("  [%s·%d] ", info.Name, info.ID)
+		return agent.Hooks{
+			OnToolStart: func(call llm.ToolCall, summary string) {
+				fmt.Fprintf(os.Stderr, "%s● %s %s\n", prefix, call.Name, summary)
+			},
+			OnToolDone: func(call llm.ToolCall, output string, isError bool) {
+				if isError {
+					fmt.Fprintf(os.Stderr, "%s  ⎿ error: %s\n", prefix, firstLine(output))
+				}
+			},
+			Approve: func(_ context.Context, request agent.ApprovalRequest) agent.Decision {
+				fmt.Fprintf(os.Stderr, "%s● %s %s\n%s  ⎿ denied (needs confirmation; run with -y to allow)\n", prefix, request.Call.Name, request.Summary, prefix)
+				return agent.Deny
+			},
+		}
+	}, nil, nil)
 }

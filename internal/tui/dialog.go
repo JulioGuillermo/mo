@@ -418,8 +418,12 @@ func (m model) dialogLayout() (string, []region) {
 		content = body.Render("  ") + content
 		return content + body.Render(strings.Repeat(" ", max(width-ansi.StringWidth(content), 0)))
 	}
-	lines = append(lines, pad(""))
 	item := *d.item()
+	if from := d.groups[item.group].interaction.From; from != "" {
+		lines = append(lines, pad(lipgloss.NewStyle().Background(colors.body).Foreground(lipgloss.Color("#e0af68")).Bold(true).Render("? asked by subagent "+from)))
+	} else {
+		lines = append(lines, pad(""))
+	}
 	var content []string
 	var contentRegions []region
 	if item.approval >= 0 {
@@ -741,7 +745,11 @@ func (b *bridge) interact(ctx context.Context, interaction agent.Interaction) ag
 	for i, request := range interaction.Approvals {
 		if i < len(answered.Decisions) && answered.Decisions[i] == agent.Deny {
 			b.draw(func() string {
-				return b.printer.ToolStart(request.Call.Name, request.Call.Args, request.Summary) + "\n" + b.printer.Denied(request.Call.Name)
+				denied := b.printer.ToolStart(request.Call.Name, request.Call.Args, request.Summary) + "\n" + b.printer.Denied(request.Call.Name)
+				if interaction.From != "" {
+					denied = b.printer.Note("subagent "+interaction.From+":") + "\n" + denied
+				}
+				return denied
 			})
 		}
 	}

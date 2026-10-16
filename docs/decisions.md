@@ -1196,3 +1196,41 @@
   takes about 1 ms at 10000 lines and 4 ms at 100000. Clicks find their block by a binary search
   over where the blocks start, not by a map of every line; the whole text is still joined, but only
   on demand, to copy a selection or for vim's copy.
+
+## Subagents
+
+- Off by default, and set in the user file only: a project could otherwise start agents on a paid
+  model. `internal/team` runs them; the tools only know the `Subagents` interface, so the tools
+  package does not depend on the agent.
+- Each run is an `agent.Agent` of its own, made by a builder `cmd/mo` gives the team at every session
+  build: the main agent's model or `agents.model`, its tool options and policy, and its system prompt
+  with what the subagent is. It has no title tool, interfaces or jobs, which belong to the
+  conversation (a subagent taking the jobs' ended notes would steal them from the main agent).
+- Several in one call, not one call each: the calls of a reply run one after another, so tasks given
+  together in `tasks` are what work at once.
+- Places: `max_parallel` counts the subagents working. One waiting in `run`, `send` or `wait` for its
+  own gives its place up and takes one again after, so with one place and many levels the tree still
+  goes on. The main agent holds none.
+- Depth: a subagent gets the agent tool only above `agents.depth`; the team checks it again, and
+  that an agent only reaches the subagents under it.
+- What a subagent did is read from snapshots its own goroutine takes (at each usage report, each
+  call's end and the run's end, plus the message it starts from), never from its agent's history
+  while it runs, which would race.
+- Stopped or out of steps, the report says how far it got and how to go on; `send` gives it back its
+  history. Saved with the conversation as `agents`; restored, those that were working are stopped and
+  their agents are made again when sent a message.
+- What it asks goes to the same dialog, the interaction carrying who asks; its state is asking
+  meanwhile, for the panel to come.
+- A run is not over when the model stops: a message queued during its last step is read, and the
+  subagents it started in the background are waited for (its place given up meanwhile) and heard,
+  before it reports; otherwise both would be lost. A report waited for when its waiter is stopped
+  first lets those stopped with it end, for a few seconds, so it says they stopped, not that they work.
+- In the panel, the tree is always open; signs tell waiting (clocks) from failing (`⚠`) without
+  colour, and a parent's clock turns yellow, with a count, when one under it waits for the user, so
+  a question deep in the tree is seen from the top.
+- A subagent's view is drawn from its history with the same replay as a resumed conversation, again
+  only when it has more messages or the width changed, plus the reply it is writing, which its hooks
+  keep and tell a few times a second. Esc there stops that subagent: esc always stops what is in
+  front; ctrl+x closes, also while a question is open, which then stays in the main view.
+- Talking to a subagent from its view starts it without a waiter and without telling its parent:
+  it is the user's talk with it, which its parent reads in its log if it wants.

@@ -72,6 +72,12 @@ type settingsDraft struct {
 	skillDirs      string
 
 	loopEnabled       bool
+	agentsEnabled     bool
+	agentsDepth       string
+	agentsParallel    string
+	agentsMax         string
+	agentsSteps       string
+	agentsModel       string
 	loopReplies       string
 	loopRepeats       string
 	loopStreamRepeats string
@@ -154,6 +160,12 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		skillDirs:      strings.Join(cfg.Skills.Dirs, "\n"),
 
 		loopEnabled:       *cfg.Loop.Enabled,
+		agentsEnabled:     *cfg.Agents.Enabled,
+		agentsDepth:       strconv.Itoa(cfg.Agents.Depth),
+		agentsParallel:    strconv.Itoa(cfg.Agents.MaxParallel),
+		agentsMax:         strconv.Itoa(cfg.Agents.MaxAgents),
+		agentsSteps:       strconv.Itoa(cfg.Agents.MaxSteps),
+		agentsModel:       cfg.Agents.Model,
 		loopReplies:       strconv.Itoa(cfg.Loop.Replies),
 		loopRepeats:       strconv.Itoa(cfg.Loop.Repeats),
 		loopStreamRepeats: strconv.Itoa(cfg.Loop.StreamRepeats),
@@ -217,6 +229,11 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	if err != nil {
 		return layer, fmt.Errorf("max output tokens: %w", err)
 	}
+	agents, err := d.agents()
+	if err != nil {
+		return layer, err
+	}
+	layer.Agents = agents
 	loop, err := d.loop()
 	if err != nil {
 		return layer, err
@@ -386,6 +403,37 @@ func (d *settingsDraft) tryRules() string {
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// agents reads the subagents' fields, keeping only what differs from the
+// built-in defaults.
+func (d *settingsDraft) agents() (config.Agents, error) {
+	defaults := config.Defaults().Agents
+	var counts [4]int
+	for i, field := range []struct{ name, text string }{
+		{"subagent levels", d.agentsDepth}, {"subagents at once", d.agentsParallel}, {"subagents per turn", d.agentsMax}, {"subagent steps", d.agentsSteps},
+	} {
+		value, err := parseAtLeast(field.text, 1)
+		if err != nil {
+			return config.Agents{}, fmt.Errorf("%s: %w", field.name, err)
+		}
+		counts[i] = value
+	}
+	model := strings.TrimSpace(d.agentsModel)
+	if model != "" && !strings.Contains(model, "/") {
+		return config.Agents{}, fmt.Errorf("subagents' model: use provider/model, or leave it empty")
+	}
+	agents := config.Agents{
+		Depth:       unlessDefault(counts[0], defaults.Depth),
+		MaxParallel: unlessDefault(counts[1], defaults.MaxParallel),
+		MaxAgents:   unlessDefault(counts[2], defaults.MaxAgents),
+		MaxSteps:    unlessDefault(counts[3], defaults.MaxSteps),
+		Model:       model,
+	}
+	if d.agentsEnabled != *defaults.Enabled {
+		agents.Enabled = &d.agentsEnabled
+	}
+	return agents, nil
 }
 
 // loop reads the loop guard fields, keeping only what differs from the

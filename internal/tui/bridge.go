@@ -99,3 +99,8 @@ func (b *bridge) hooks() agent.Hooks {
 		Interact: b.interact,
 	}
 }
+
+// agentsChangedMsg says a subagent changed; agentEndedMsg that one the main
+// agent started in the background ended.
+type agentsChangedMsg struct{}
+type agentEndedMsg struct{}

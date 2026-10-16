@@ -7,8 +7,9 @@ import (
 	"github.com/jg/mo/internal/llm"
 )
 
-// tellEndedJobs puts a note in the conversation for each background job
-// that ended since the model was last told: in the last message when it is
+// tellEndedJobs puts a note in the conversation for each background job,
+// event of a UI or subagent started in the background that ended since the
+// model was last told: in the last message when it is
 // the user's side, so two user messages never follow each other.
 func (a *Agent) tellEndedJobs() {
 	var notes []string
@@ -20,6 +21,11 @@ func (a *Agent) tellEndedJobs() {
 	if uis := a.Tools.UIs(); uis != nil {
 		for _, event := range uis.TakeEvents() {
 			notes = append(notes, moNotePrefix+event.Note())
+		}
+	}
+	if agents := a.Tools.Agents(); agents != nil {
+		for _, note := range agents.TakeEnded() {
+			notes = append(notes, moNotePrefix+note)
 		}
 	}
 	if len(notes) == 0 {
@@ -39,8 +45,8 @@ func (a *Agent) HasEndedJobs() bool {
 	if a.Tools == nil {
 		return false
 	}
-	jobs, uis := a.Tools.Jobs(), a.Tools.UIs()
-	return (jobs != nil && jobs.HasEnded()) || (uis != nil && uis.HasEvents())
+	jobs, uis, agents := a.Tools.Jobs(), a.Tools.UIs(), a.Tools.Agents()
+	return (jobs != nil && jobs.HasEnded()) || (uis != nil && uis.HasEvents()) || (agents != nil && agents.HasEnded())
 }
 
 // RunEndedJobs lets the model react to background jobs that ended while it

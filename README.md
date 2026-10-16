@@ -207,6 +207,14 @@ replies = 10               # ... counted within the last replies of the model in
 stream_repeats = 5         # the same text this many times in a row cuts the reply
 warnings = 2               # loops the model is told about per turn; the next one stops the turn
 
+[agents]                   # user file only; /settings › Subagents
+enabled = false            # let the model start subagents with the agent tool
+depth = 1                  # levels: 1, only the main agent starts them; 2, theirs may too; ...
+max_parallel = 3           # working at once; one waiting for its own subagents does not count
+max_agents = 20            # started in one of your turns
+max_steps = 50             # replies of the model before a subagent is stopped
+model = ""                 # "provider/model" for them; empty for the main agent's
+
 [memory]
 dir = "~/.local/share/mo/memory"
 
@@ -360,6 +368,39 @@ to this folder unless asked for all.
 Changes outside the working directory, to mo's config, under `.git` or to hidden files in your home
 always ask, even with `-y` or after answering "always", in every mode but `all`. So do changes to
 global memories.
+
+## Subagents
+
+With `agents.enabled`, the model hands tasks to subagents with the `agent` tool. Each is an agent of
+its own: the same tools and permissions (no title, interfaces or background jobs), an empty
+conversation that starts from its task, and a system prompt that tells it to end with a report. Its
+parent reads only that report, so long searches or test runs stay out of its context.
+
+- `run` takes a `task` and a `name`, or several in `tasks`, which work at once; it waits for their
+  reports, or with `background: true` gives their ids at once and the model hears each report when
+  it ends, as it does of background jobs.
+- `log id` shows everything one did, with the view fields; `send id message` tells one more while it
+  works, or lets it go on from where it was once it ended or was stopped; `wait`, `status`, `stop`.
+  An agent sees its own subagents and theirs, never another branch's.
+- A subagent at `depth` has no `agent` tool. Waiting for its own subagents, one gives up its place
+  among the `max_parallel` working, so a tree never waits on itself.
+- What a subagent asks, an approval or a question, comes to you in the usual dialog, saying which one
+  asks. Esc stops the main agent and every subagent; with the main agent idle, it stops the subagents
+  still working.
+- Subagents are saved with the conversation, all they did, and come back with `/resume`: those that
+  were working, stopped, ready to go on.
+- The side panel lists them under **Agents** as a tree, each with a sign of how it does: `⧗` grey
+  waiting for a place, `⧗` purple waiting for its own subagents (yellow, with `· N asks`, when one
+  under it waits for you), `●` blue working, `?` yellow asking you, `✓` green done, `⚠` red failed or
+  stopped. A click opens its view; a right click stops it, removes it from the list or opens it.
+  `/agents` lists them to pick one, `/agents N` opens one.
+- Its view is a conversation over the whole screen, live while it works: a title bar with its sign,
+  name, level, where it is (`main › lead › scout`, each name opens that one) and `✕`; those under it
+  beside; its context and model under. Enter sends it a message: queued while it works, else it goes
+  on, its parent not told. Esc stops it and those under it, not the main agent; ctrl+x or `✕` closes.
+- Before it reports, a subagent reads what it was sent during its last step and waits for those it
+  left working in the background, to hear them. Answering once (`mo "…"`), subagents work too: what
+  they do shows on stderr under their name, and what needs confirmation is denied unless `-y`.
 
 ## Instructions
 
@@ -569,5 +610,5 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | click on the branch | the files changed, each with its kind |
 | right click | a small menu by the pointer, over the screen (↑↓ or j k, enter or a click, esc or a click outside closes it): the mode: all modes to pick · a task: change its state or delete it · a job in the panel, or a bash call still running: watch its output live, its last lines, send it to the background, kill it |
 | wheel over the side panel | scroll its tasks and jobs |
-| `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact` `/settings` `/providers` `/mcp` `/plugins` `/view <file>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
+| `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact` `/settings` `/providers` `/mcp` `/plugins` `/agents` `/view <file>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
 | `/<name> text` | a plugin command |

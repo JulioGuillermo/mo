@@ -24,6 +24,23 @@ const titleLength = 80
 type Record struct {
 	Info
 	History []llm.Message `json:"history"`
+	// Agents are the subagents of the conversation, with all they did.
+	Agents []AgentRecord `json:"agents,omitempty"`
+}
+
+// AgentRecord is a subagent as it was saved: who started it, its task,
+// how it ended and its whole conversation.
+type AgentRecord struct {
+	ID      int           `json:"id"`
+	Parent  int           `json:"parent"`
+	Depth   int           `json:"depth"`
+	Name    string        `json:"name"`
+	Task    string        `json:"task"`
+	State   string        `json:"state"`
+	Error   string        `json:"error,omitempty"`
+	Result  string        `json:"result,omitempty"`
+	History []llm.Message `json:"history"`
+	Usage   llm.Usage     `json:"usage"`
 }
 
 // Info is what a list shows of a conversation, without its messages.

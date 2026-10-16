@@ -48,8 +48,20 @@ import (
 
 func newEnv(t *testing.T) Env {
 	t.Helper()
-	return Env{WorkDir: t.TempDir(), Titles: NewTitles(), UIs: NewUIs("")}
+	return Env{WorkDir: t.TempDir(), Titles: NewTitles(), UIs: NewUIs(""), Agents: idleAgents{}}
 }
+
+// idleAgents are subagents that never start, so the agent tool is there.
+type idleAgents struct{}
+
+func (idleAgents) Run(context.Context, []SubTask, bool) (string, error)    { return "", nil }
+func (idleAgents) Send(context.Context, int, string, bool) (string, error) { return "", nil }
+func (idleAgents) Wait(context.Context, []int) (string, error)             { return "", nil }
+func (idleAgents) Log(int) (string, error)                                 { return "", nil }
+func (idleAgents) Status() string                                          { return "" }
+func (idleAgents) Stop(int) (string, error)                                { return "", nil }
+func (idleAgents) TakeEnded() []string                                     { return nil }
+func (idleAgents) HasEnded() bool                                          { return false }
 
 func writeFile(t *testing.T, env Env, name, content string) string {
 	t.Helper()

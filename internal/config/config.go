@@ -39,6 +39,7 @@ type Config struct {
 	Loop         Loop                      `toml:"loop,omitempty"`
 	Permissions  Permissions               `toml:"permissions,omitempty"`
 	Notify       Notify                    `toml:"notify,omitempty"`
+	Agents       Agents                    `toml:"agents,omitempty"`
 	Providers    map[string]ProviderConfig `toml:"providers,omitempty"`
 }
 
@@ -138,6 +139,25 @@ var Efforts = []string{"", "none", "minimal", "low", "medium", "high", "xhigh", 
 var DefaultAllow = []string{
 	"ls *", "pwd", "cat *", "head *", "tail *", "wc *", "grep *", "rg *", "tree *", "file *", "stat *",
 	"which *", "echo *", "git status *", "git diff *", "git log *", "git show *", "git branch",
+}
+
+// Agents lets the model hand tasks to subagents: agents of their own,
+// with their own conversation, whose report is all their parent reads
+// unless it asks for more.
+type Agents struct {
+	Enabled *bool `toml:"enabled,omitempty"`
+	// Depth is how many levels of subagents there may be: 1, only the
+	// main agent starts them; 2, those it started too; and so on.
+	Depth int `toml:"depth,omitzero"`
+	// MaxParallel is how many work at once; one waiting for its own does
+	// not count.
+	MaxParallel int `toml:"max_parallel,omitzero"`
+	// MaxAgents is how many may start in one of the user's turns.
+	MaxAgents int `toml:"max_agents,omitzero"`
+	// Model is "provider/model" for the subagents, or empty for the
+	// main agent's.
+	Model    string `toml:"model,omitempty"`
+	MaxSteps int    `toml:"max_steps,omitzero"`
 }
 
 type Loop struct {
@@ -320,6 +340,7 @@ func Defaults() Config {
 		Web:          Web{Search: web.SearchDuckDuckGo},
 		Render:       Render{Images: render.ModeAuto, Background: "#00081a", Sidebar: "auto", Status: "powerline", Icons: "nerd", Keys: "default", Bar: "shapes"},
 		Loop:         Loop{Enabled: ptr(true), Replies: 10, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2)},
+		Agents:       Agents{Enabled: ptr(false), Depth: 1, MaxParallel: 3, MaxAgents: 20, MaxSteps: 50},
 		Permissions:  Permissions{Mode: "edits", Allow: DefaultAllow},
 		Notify:       Notify{Finish: ptr(true), Approval: ptr(true), Method: "auto", Focused: ptr(false)},
 		Providers:    presets(),
@@ -425,6 +446,9 @@ func validate(cfg Config) error {
 	if compactAt := *cfg.Context.CompactAt; compactAt < 0 || compactAt >= 1 {
 		return fmt.Errorf("context.compact_at %v: use a fraction from 0 (never) to below 1", compactAt)
 	}
+	if err := validateAgents(cfg.Agents); err != nil {
+		return err
+	}
 	return validateLoop(cfg.Loop)
 }
 
@@ -453,6 +477,21 @@ func validatePermissions(rules Permissions) error {
 		if err := permissions.Compile(text); err != nil {
 			return fmt.Errorf("permissions: %w", err)
 		}
+	}
+	return nil
+}
+
+func validateAgents(agents Agents) error {
+	for _, field := range []struct {
+		name  string
+		value int
+	}{{"depth", agents.Depth}, {"max_parallel", agents.MaxParallel}, {"max_agents", agents.MaxAgents}, {"max_steps", agents.MaxSteps}} {
+		if field.value < 1 {
+			return fmt.Errorf("agents.%s %d: use 1 or more", field.name, field.value)
+		}
+	}
+	if agents.Model != "" && !strings.Contains(agents.Model, "/") {
+		return fmt.Errorf("agents.model %q: use provider/model, or leave it empty for the main agent's", agents.Model)
 	}
 	return nil
 }
@@ -525,6 +564,7 @@ func merge(base, layer Config) Config {
 	}
 	base.Permissions = mergePermissions(base.Permissions, layer.Permissions)
 	base.Notify = mergeNotify(base.Notify, layer.Notify)
+	base.Agents = mergeAgents(base.Agents, layer.Agents)
 	return base
 }
 
@@ -663,6 +703,20 @@ func mergeModes(base, layer map[string]tools.Mode) map[string]tools.Mode {
 	}
 	maps.Copy(merged, layer)
 	return merged
+}
+
+// mergeAgents takes the subagents' settings from the user file only: a
+// project could otherwise start agents on a paid model.
+func mergeAgents(base, layer Agents) Agents {
+	if layer.Enabled != nil {
+		base.Enabled = layer.Enabled
+	}
+	base.Depth = override(base.Depth, layer.Depth)
+	base.MaxParallel = override(base.MaxParallel, layer.MaxParallel)
+	base.MaxAgents = override(base.MaxAgents, layer.MaxAgents)
+	base.Model = override(base.Model, layer.Model)
+	base.MaxSteps = override(base.MaxSteps, layer.MaxSteps)
+	return base
 }
 
 func mergeLoop(base, layer Loop) Loop {

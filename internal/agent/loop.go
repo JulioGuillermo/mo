@@ -13,6 +13,9 @@ import (
 
 var ErrLooping = errors.New("stopped: the model kept repeating itself; send a message to go on")
 
+// ErrStepLimit stops a run that asked the model for MaxSteps replies.
+var ErrStepLimit = errors.New("stopped at its step limit")
+
 const (
 	loopNotePrefix     = "[mo loop guard] "
 	repeatedCallResult = loopNotePrefix + "Not run: you already made this exact call %d times in this turn and got the same result each time. You are going in circles: use the result you have or try something different."

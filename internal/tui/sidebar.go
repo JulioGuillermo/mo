@@ -197,6 +197,14 @@ func (m model) sidebarLines() ([]string, []region) {
 			}
 		}
 	}
+	if m.team() != nil {
+		if infos := m.team().List(); len(infos) > 0 {
+			section(paint(colors.title).Bold(true).Render("Agents"))
+			rows, rowRegions := m.agentRows(infos, 0, width, base, colors, len(lines))
+			regions = append(regions, rowRegions...)
+			lines = append(lines, rows...)
+		}
+	}
 	statuses := []tools.JobStatus{}
 	untold := map[int]bool{}
 	if jobs := m.jobs(); jobs != nil {
@@ -429,4 +437,13 @@ func (m *model) scrollSidebar(up bool) {
 		height -= len(context) + 1
 	}
 	m.sidebarScroll = max(0, min(m.sidebarScroll+sidebarWheelStep, len(lines)-height+1))
+}
+
+// agentEnded lets the main agent hear of a subagent it started in the
+// background that ended, at once when it is idle.
+func (m model) agentEnded() (tea.Model, tea.Cmd) {
+	if m.running || m.dialog != nil || m.settings != nil {
+		return m, nil
+	}
+	return m.reactToJobs()
 }

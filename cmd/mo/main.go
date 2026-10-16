@@ -19,6 +19,7 @@ import (
 	"github.com/jg/mo/internal/mcphub"
 	"github.com/jg/mo/internal/plugins"
 	"github.com/jg/mo/internal/render"
+	"github.com/jg/mo/internal/team"
 	"github.com/jg/mo/internal/tools"
 	"github.com/jg/mo/internal/tui"
 )
@@ -89,10 +90,13 @@ func run() error {
 		return err
 	}
 	if prompt != "" {
+		loaded.team = team.New()
+		defer loaded.team.Close()
 		session, err := buildSession(ctx, workDir, cfg, choice, loaded)
 		if err != nil {
 			return err
 		}
+		followOnce(loaded.team)
 		return runOnce(ctx, session.Agent, prompt)
 	}
 	defer startJobs(&loaded)()
@@ -106,12 +110,16 @@ func run() error {
 }
 
 // startJobs gives the interactive session its background jobs, killed when
-// mo exits, and the title tool, which only it can take.
+// mo exits, the title tool, which only it can take, and its subagents.
 func startJobs(loaded *extensions) func() {
 	loaded.jobs = tools.NewJobs(config.SessionDir())
 	loaded.titles = tools.NewTitles()
 	loaded.uis = tools.NewUIs(config.SessionDir())
-	return loaded.jobs.Close
+	loaded.team = team.New()
+	return func() {
+		loaded.team.Close()
+		loaded.jobs.Close()
+	}
 }
 
 // connectMCP connects to the configured servers before the UI starts and

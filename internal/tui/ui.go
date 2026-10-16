@@ -32,6 +32,7 @@ import (
 	"github.com/jg/mo/internal/plugins"
 	"github.com/jg/mo/internal/render"
 	"github.com/jg/mo/internal/sessions"
+	"github.com/jg/mo/internal/team"
 	"github.com/jg/mo/internal/tools"
 )
 
@@ -61,6 +62,9 @@ type Session struct {
 
 	Activate func()
 	Discard  func()
+
+	// Team runs the subagents; nil when mo cannot start any.
+	Team *team.Team
 }
 
 // activate is called once a reloaded session replaces the one in use, and
@@ -157,6 +161,8 @@ type model struct {
 	clickedAt        point
 	clicked          bool
 	settingsInFlight bool
+	// agentView, when set, shows a subagent over the whole screen.
+	agentView *agentView
 
 	suggestion int
 	// queued are the messages written while the model works, as typed,
@@ -234,6 +240,10 @@ func Run(session Session) error {
 	}
 	if uis := session.Agent.Tools.UIs(); uis != nil {
 		uis.OnChange(func() { bridge.send(uiChangedMsg{}) })
+	}
+	if session.Team != nil {
+		session.Team.Follow(func(team.Info) agent.Hooks { return agent.Hooks{Interact: bridge.interact} },
+			func() { bridge.send(agentsChangedMsg{}) }, func() { bridge.send(agentEndedMsg{}) })
 	}
 	final, err := program.Run()
 	close(bridge.exited)
@@ -335,6 +345,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.uiOpen != 0 && m.popup == nil && !isAgentMsg(msg) {
 		if _, tick := msg.(viewerTickMsg); !tick {
 			return m.updateUI(msg)
+		}
+	}
+	if m.agentView != nil && m.popup == nil && !isAgentMsg(msg) {
+		switch msg.(type) {
+		case tea.KeyPressMsg, tea.PasteMsg, tea.MouseWheelMsg, tea.MouseClickMsg:
+			return m.updateAgentView(msg)
 		}
 	}
 	if _, tick := msg.(viewerTickMsg); (tick || m.viewer != nil) && !isAgentMsg(msg) {
@@ -445,7 +461,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scroll(msg.Button == tea.MouseWheelUp, 3)
 		return m, nil
 	case tea.WindowSizeMsg:
-		return m, m.resize(msg)
+		resized := m.resize(msg)
+		m.refreshAgentView()
+		return m, resized
 	case redrawMsg:
 		if int(msg) == m.redraws {
 			m.redraw()
@@ -479,6 +497,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case activityMsg:
 		m.activity = string(msg)
 		return m, nil
+	case agentsChangedMsg:
+		m.refreshAgentView()
+		return m, nil
+	case agentEndedMsg:
+		return m.agentEnded()
 	case queuedReadMsg:
 		return m.queuedRead(int(msg))
 	case usageMsg:
@@ -626,6 +649,10 @@ func (m model) plainKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.titling.cancel()
 			return m, nil
 		}
+		if m.session.Team != nil && m.session.Team.Working() {
+			m.session.Team.StopAll()
+			return m.emit(m.printer.Note("subagents stopped"))
+		}
 		if m.input.Value() == "" && time.Since(m.lastEsc) < doubleEscWindow {
 			m.lastEsc = time.Time{}
 			return m.pickPrompt()
@@ -708,6 +735,9 @@ func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 
 	m.scrolled = false
 	m.newPrompt = true
+	if m.session.Team != nil {
+		m.session.Team.BeginTurn()
+	}
 	echo := drawText(func() string { return m.printer.User(prompt) })
 	sent := m.withAttachments(prompt)
 	return m.start(echo, func(ctx context.Context, hooks agent.Hooks) error {
@@ -826,6 +856,8 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 			return m, m.view(argument)
 		}
 		return m.openFile(argument)
+	case "agents":
+		return m.pickAgent(argument)
 	case "plugins":
 		return m, printText(m.printer.Note(pluginReport(m.session.Plugins)))
 	case "mcp":
@@ -852,6 +884,9 @@ func (m model) view(path string) tea.Cmd {
 func (m *model) stop() {
 	m.cancel()
 	m.closeDialog(true)
+	if m.session.Team != nil {
+		m.session.Team.StopAll()
+	}
 }
 
 func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
@@ -949,6 +984,11 @@ func (m model) View() tea.View {
 	} else if m.settings != nil {
 		view = tea.NewView(m.settings.form.View() + "\n" + dimStyle.Render(m.settings.helpLine()))
 		view.WindowTitle = "mo · settings"
+	} else if m.agentView != nil {
+		view = tea.NewView(m.agentViewScreen())
+		if info, ok := m.agentInfo(m.agentView.id); ok {
+			view.WindowTitle = "mo · " + info.Name
+		}
 	} else if m.viewer != nil {
 		view = tea.NewView(m.viewerView())
 		view.WindowTitle = fmt.Sprintf("mo · job %d", m.viewer.id)

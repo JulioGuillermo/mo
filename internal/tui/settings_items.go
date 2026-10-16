@@ -68,6 +68,14 @@ var settingsSections = []settingsSection{
 		}
 		return fmt.Sprintf("on · same call %s× · same text %s×", d.loopRepeats, d.loopStreamRepeats)
 	}, items: loopItems},
+	{key: "agents", title: "Subagents", summary: func(d *settingsDraft) string {
+		if !d.agentsEnabled {
+			return "off"
+		}
+		return fmt.Sprintf("on · %s levels · %s at once", d.agentsDepth, d.agentsParallel)
+	}, note: func(model, *settingsMenu) string {
+		return "the model hands tasks to subagents with the agent tool; each has its own conversation and reports back"
+	}, items: agentItems},
 	{key: "skills", title: "Skills", summary: skillsSummary, note: skillsNote, items: skillItems},
 	{key: "instructions", title: "Instructions", summary: func(d *settingsDraft) string {
 		if !d.instructionsOn {
@@ -441,6 +449,26 @@ func descriptionItems(m model, menu *settingsMenu) []settingItem {
 		}})
 	}
 	return items
+}
+
+func agentItems(model, *settingsMenu) []settingItem {
+	count := func(title, description string, value func(d *settingsDraft) *string) settingItem {
+		return settingItem{title, func(d *settingsDraft) string { return *value(d) }, func(d *settingsDraft) huh.Field {
+			return huh.NewInput().Title(title).Description(description).Validate(atLeast(1)).Value(value(d))
+		}}
+	}
+	return []settingItem{
+		{"Subagents", func(d *settingsDraft) string { return onOff(d.agentsEnabled) }, func(d *settingsDraft) huh.Field {
+			return huh.NewConfirm().Title("Subagents").Description("let the model start subagents").Affirmative("On").Negative("Off").Value(&d.agentsEnabled)
+		}},
+		count("Levels", "1: only the main agent starts them; 2: theirs may too; and so on", func(d *settingsDraft) *string { return &d.agentsDepth }),
+		count("Working at once", "one waiting for its own does not count", func(d *settingsDraft) *string { return &d.agentsParallel }),
+		count("Most per turn", "subagents started in one of your turns", func(d *settingsDraft) *string { return &d.agentsMax }),
+		count("Steps each", "replies of the model before a subagent is stopped", func(d *settingsDraft) *string { return &d.agentsSteps }),
+		{"Subagents' model", func(d *settingsDraft) string { return orDefault(d.agentsModel, "the main agent's") }, func(d *settingsDraft) huh.Field {
+			return huh.NewInput().Title("Subagents' model").Description("provider/model, e.g. llama-server/qwen3; empty for the main agent's").Value(&d.agentsModel)
+		}},
+	}
 }
 
 func loopItems(model, *settingsMenu) []settingItem {

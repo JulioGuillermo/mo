@@ -70,6 +70,9 @@ type Agent struct {
 	// EarlyCalls runs each call of a reply as soon as it is written, asking
 	// what it needs while the reply goes on, instead of once it ends.
 	EarlyCalls bool
+	// MaxSteps is how many replies a run may ask the model for; 0 for no
+	// limit. Subagents have one.
+	MaxSteps int
 
 	// Permissions is the mode and rules in force; without it the calls in
 	// ConfirmTools and those with a warning ask.
@@ -138,7 +141,10 @@ func (a *Agent) Run(ctx context.Context, prompt string, hooks Hooks) error {
 
 // turn asks the model and answers its tool calls until it ends.
 func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
-	for {
+	for steps := 0; ; steps++ {
+		if a.MaxSteps > 0 && steps >= a.MaxSteps {
+			return ErrStepLimit
+		}
 		a.tellEndedJobs()
 		a.tellNotes()
 		a.deliverQueued(hooks)

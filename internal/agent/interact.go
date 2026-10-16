@@ -20,6 +20,8 @@ const (
 type Interaction struct {
 	Approvals []ApprovalRequest
 	Questions []tools.Question
+	// From names the subagent that asks; empty for the main agent.
+	From string
 }
 
 // Reply holds a decision for each approval and an answer for each question;

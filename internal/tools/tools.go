@@ -62,6 +62,9 @@ type Env struct {
 	// ReadMaxSize is the largest file read takes whole, in bytes; a larger
 	// one only in parts. 0 for no limit.
 	ReadMaxSize int64
+	// Agents are the subagents this agent may start; without them there
+	// is no agent tool.
+	Agents Subagents
 }
 
 // Resolve turns a path from the model into an absolute one, relative paths
@@ -112,7 +115,7 @@ func NewRegistry(env Env, options Options) *Registry {
 	env.ReadMaxSize = options.ReadMaxSize
 	registry := &Registry{env: env, options: options}
 	for _, tool := range append(builtinsWith(options.Searcher), options.Extra...) {
-		if slices.Contains(options.Disabled, tool.Name) || (tool.Name == titleToolName && env.Titles == nil) || (tool.Name == "ui" && env.UIs == nil) {
+		if slices.Contains(options.Disabled, tool.Name) || (tool.Name == titleToolName && env.Titles == nil) || (tool.Name == "ui" && env.UIs == nil) || (tool.Name == AgentName && env.Agents == nil) {
 			continue
 		}
 		if description, ok := options.Descriptions[tool.Name]; ok {
@@ -160,7 +163,7 @@ func builtins() []Tool {
 func builtinsWith(searcher web.Searcher) []Tool {
 	return []Tool{
 		bashTool(), readTool(), writeTool(), editTool(), lsTool(), mkdirTool(), rmTool(), grepTool(),
-		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), gitTool(), titleTool(), uiTool(),
+		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), gitTool(), titleTool(), uiTool(), agentTool(),
 	}
 }
 
@@ -178,6 +181,14 @@ func (r *Registry) Titles() *Titles {
 		return nil
 	}
 	return r.env.Titles
+}
+
+// Agents are the subagents this agent may start, or nil.
+func (r *Registry) Agents() Subagents {
+	if r == nil {
+		return nil
+	}
+	return r.env.Agents
 }
 
 // UIs are the interfaces the model drew, or nil, also for no registry.

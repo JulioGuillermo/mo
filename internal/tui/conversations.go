@@ -55,7 +55,11 @@ func (m *model) saveConversation() tea.Cmd {
 	if len(prompts) > 0 && m.thread.title == "" {
 		m.thread.title = sessions.Title(prompts[0].Text)
 	}
-	record := sessions.Record{History: history, Info: sessions.Info{
+	var agents []sessions.AgentRecord
+	if m.session.Team != nil {
+		agents = m.session.Team.Records()
+	}
+	record := sessions.Record{History: history, Agents: agents, Info: sessions.Info{
 		ID: m.thread.id, WorkDir: config.ProjectKey(m.session.WorkDir), Title: m.thread.title,
 		Parent: m.thread.parent, Forked: m.thread.forked, Prompts: len(prompts),
 		Created: m.thread.created, Updated: now, Usage: m.session.Agent.LastUsage,
@@ -186,6 +190,9 @@ func (m model) resume(msg resumedMsg) (tea.Model, tea.Cmd) {
 	record := msg.record
 	m.worked = 0
 	m.session.Agent.Restore(record.History, record.Usage)
+	if m.session.Team != nil {
+		m.session.Team.Restore(record.Agents)
+	}
 	m.usage = record.Usage
 	m.thread = conversation{id: record.ID, title: record.Title, parent: record.Parent, forked: record.Forked, created: record.Created}
 	m.trackThread()
@@ -255,6 +262,9 @@ func (m model) rewind(prompt agent.Prompt) (tea.Model, tea.Cmd) {
 func (m *model) newConversation() {
 	m.worked = 0
 	m.session.Agent.Clear()
+	if m.session.Team != nil {
+		m.session.Team.Restore(nil)
+	}
 	m.usage = llm.Usage{}
 	m.thread = conversation{}
 	m.trackThread()
@@ -293,7 +303,7 @@ func ago(when time.Time) string {
 // work while the model does: settings saved then apply when it finishes.
 var whileRunning = map[string]bool{
 	"help": true, "settings": true, "providers": true, "mcp": true, "plugins": true, "notify": true,
-	"sidebar": true, "vim": true, "jobs": true, "kill": true, "view": true, "quit": true, "exit": true, "title": true, "model": true, "effort": true, "login": true, "logout": true,
+	"sidebar": true, "vim": true, "jobs": true, "agents": true, "kill": true, "view": true, "quit": true, "exit": true, "title": true, "model": true, "effort": true, "login": true, "logout": true,
 }
 
 // queue keeps a message written while the model works for its next step.

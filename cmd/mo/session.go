@@ -15,6 +15,7 @@ import (
 	"github.com/jg/mo/internal/permissions"
 	"github.com/jg/mo/internal/plugins"
 	"github.com/jg/mo/internal/skills"
+	"github.com/jg/mo/internal/team"
 	"github.com/jg/mo/internal/tools"
 	"github.com/jg/mo/internal/tui"
 	"github.com/jg/mo/internal/web"
@@ -46,6 +47,8 @@ type extensions struct {
 	recall *tools.Recall
 	// uis are the interfaces the model draws; nil when mo answers once.
 	uis *tools.UIs
+	// team runs the subagents; nil when mo answers once.
+	team *team.Team
 }
 
 // pendingHub is a connection to the MCP servers being made in the
@@ -144,7 +147,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	instructions := agent.FindInstructions(cfg.InstructionFiles(), filepath.Join(config.ConfigHome(), "mo"), workDir)
 	extra := extraTools(hub, loaded.plugins)
 	modes, groups := toolModes(cfg.Tools, extra, hub.ToolServers())
-	registry := tools.NewRegistry(env, tools.Options{
+	options := tools.Options{
 		Modes:        modes,
 		Groups:       groups,
 		SkillModes:   cfg.Skills.Modes,
@@ -159,36 +162,24 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		MaxOutput:    cfg.Tools.MaxOutput,
 		ReadMaxSize:  readMaxSize,
 		Descriptions: cfg.Tools.Descriptions,
-	})
+	}
 	policy, err := permissions.New(permissions.Mode(cfg.Permissions.Mode), cfg.Permissions.Allow, cfg.Permissions.Deny)
 	if err != nil {
 		return tui.Session{}, err
 	}
-	assistant := &agent.Agent{
-		Provider:      chosen.provider,
-		Model:         chosen.model,
-		System:        agent.SystemPrompt(cfg.SystemPrompt, workDir, instructions),
-		MaxTokens:     cfg.MaxTokens,
-		Effort:        cfg.Effort,
-		Tools:         registry,
-		ConfirmTools:  confirm,
-		Window:        chosen.window,
-		CompactAt:     *cfg.Context.CompactAt,
-		CompactPrompt: cfg.Context.CompactPrompt,
-		Strategy:      cfg.Context.Strategy,
-		KeepReasoning: *cfg.Context.KeepReasoning,
-		Permissions:   policy,
-		EarlyCalls:    cfg.Tools.Calls != "reply",
-		Loop: agent.LoopGuard{
-			Enabled:       *cfg.Loop.Enabled,
-			Replies:       cfg.Loop.Replies,
-			Repeats:       cfg.Loop.Repeats,
-			StreamRepeats: cfg.Loop.StreamRepeats,
-			Warnings:      *cfg.Loop.Warnings,
-		},
-		RewritePrompt: loaded.plugins.RewritePrompt,
-		BlockToolCall: loaded.plugins.BlockToolCall,
+	system := agent.SystemPrompt(cfg.SystemPrompt, workDir, instructions)
+	if loaded.team != nil && *cfg.Agents.Enabled {
+		subagents, err := subagentBuilder(ctx, cfg, chosen, env, options, policy, confirm, system)
+		if err != nil {
+			return tui.Session{}, err
+		}
+		loaded.team.Configure(team.Settings{Depth: cfg.Agents.Depth, MaxParallel: cfg.Agents.MaxParallel, MaxAgents: cfg.Agents.MaxAgents}, subagents)
+		env.Agents = loaded.team.Main()
 	}
+	registry := tools.NewRegistry(env, options)
+	assistant := newAgent(cfg, chosen, registry, system, confirm, policy)
+	assistant.RewritePrompt = loaded.plugins.RewritePrompt
+	assistant.BlockToolCall = loaded.plugins.BlockToolCall
 	reload := func(userLayer config.Config, projectLayer *config.Config) (tui.Session, error) {
 		if _, err := chooseProvider(context.Background(), config.UserSettings(userLayer), "", ""); err != nil {
 			return tui.Session{}, fmt.Errorf("outside this project: %w", err)
@@ -231,6 +222,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		Instructions: instructionPaths(instructions),
 
 		ToolDescriptions: toolDescriptions(hub, loaded.plugins),
+		Team:             loaded.team,
 	}, nil
 }
 
@@ -302,5 +294,32 @@ func toolEnv(workDir, memoryDir string) tools.Env {
 		WorkDir:        workDir,
 		ProtectedPaths: []string{filepath.Dir(config.UserFile()), config.ProjectDir(workDir), config.LegacyProjectFile(workDir), memoryDir},
 		MemoryDir:      memoryDir,
+	}
+}
+
+// newAgent is an agent as the config says, on the provider chosen.
+func newAgent(cfg config.Config, chosen chosenProvider, registry *tools.Registry, system string, confirm []string, policy *permissions.Policy) *agent.Agent {
+	return &agent.Agent{
+		Provider:      chosen.provider,
+		Model:         chosen.model,
+		System:        system,
+		MaxTokens:     cfg.MaxTokens,
+		Effort:        cfg.Effort,
+		Tools:         registry,
+		ConfirmTools:  confirm,
+		Window:        chosen.window,
+		CompactAt:     *cfg.Context.CompactAt,
+		CompactPrompt: cfg.Context.CompactPrompt,
+		Strategy:      cfg.Context.Strategy,
+		KeepReasoning: *cfg.Context.KeepReasoning,
+		Permissions:   policy,
+		EarlyCalls:    cfg.Tools.Calls != "reply",
+		Loop: agent.LoopGuard{
+			Enabled:       *cfg.Loop.Enabled,
+			Replies:       cfg.Loop.Replies,
+			Repeats:       cfg.Loop.Repeats,
+			StreamRepeats: cfg.Loop.StreamRepeats,
+			Warnings:      *cfg.Loop.Warnings,
+		},
 	}
 }
