@@ -377,6 +377,9 @@
 - An SVG, or a diagram mermaid-cli drew, is an image sent to the terminal once, which cannot be
   drawn again: its menu shows its code by swapping the text the conversation keeps for the
   image with the code, and back. Diagrams drawn with characters are drawn again instead.
+  A resumed conversation draws its answers as live ones are kept: the kitty uploads go to the
+  terminal once and leave the block, which keeps only the placeholders and stays as first
+  drawn, so its picture can be swapped and is not sent again at each redraw.
 - mermaid-ascii is kept in `third_party/mermaid-ascii`, through a `replace`, with one patch
   (its PATCHES.md): where placing each node by its first parent would send an arrow back up,
   as when paths join, a node goes one level past its deepest parent. Only then: in small

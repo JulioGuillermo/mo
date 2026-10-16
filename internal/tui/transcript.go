@@ -61,6 +61,15 @@ func drawText(draw func() string) tea.Cmd {
 	return func() tea.Msg { return drawMsg(draw) }
 }
 
+// sendRaw sends the terminal what it must get as it is, as kitty uploads;
+// nothing for nothing.
+func sendRaw(text string) tea.Cmd {
+	if text == "" {
+		return nil
+	}
+	return tea.Raw(text)
+}
+
 // emitDrawn adds a block that can be drawn again. One that uploads kitty
 // images stays as first drawn, so the images are sent only once.
 func (m model) emitDrawn(draw drawMsg) (tea.Model, tea.Cmd) {
@@ -278,7 +287,12 @@ func (m *model) clickDetails(y int) bool {
 // replay draws a conversation again from its history, as after a resume or
 // going back: prompts, reasonings, answers and tool calls with their
 // results. mo's own notes to the model are left out.
-func (m *model) replay(history []llm.Message) {
+//
+// It returns the kitty uploads of the images drawn, to send the terminal
+// once: their blocks keep only the placeholders and stay as first drawn,
+// as emitDrawn keeps live answers.
+func (m *model) replay(history []llm.Message) string {
+	var uploads strings.Builder
 	m.blocks = nil
 	m.todos = m.todosFrom(history)
 	printer := m.printer
@@ -295,7 +309,13 @@ func (m *model) replay(history []llm.Message) {
 		case message.Role == llm.RoleAssistant:
 			m.addReasoning(message.Reasoning)
 			if text := strings.TrimSpace(message.Text); text != "" {
-				m.blocks = append(m.blocks, block{text: printer.Answer(text), draw: func(bool) string { return printer.Answer(text) }})
+				drawn := printer.Answer(text)
+				if found := kittyUploads.FindAllString(drawn, -1); len(found) > 0 {
+					uploads.WriteString(strings.Join(found, ""))
+					m.blocks = append(m.blocks, block{text: kittyUploads.ReplaceAllString(drawn, "")})
+				} else {
+					m.blocks = append(m.blocks, block{text: drawn, draw: func(bool) string { return printer.Answer(text) }})
+				}
 			}
 			for _, call := range message.ToolCalls {
 				call = m.unwrap(call)
@@ -305,6 +325,7 @@ func (m *model) replay(history []llm.Message) {
 			m.finishTool(message.ToolCallID, message.Text, message.IsError)
 		}
 	}
+	return uploads.String()
 }
 
 // unwrap shows a tool_call as the tool it ran, the way it was shown live.

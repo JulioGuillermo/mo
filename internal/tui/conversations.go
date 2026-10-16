@@ -189,9 +189,10 @@ func (m model) resume(msg resumedMsg) (tea.Model, tea.Cmd) {
 	m.usage = record.Usage
 	m.thread = conversation{id: record.ID, title: record.Title, parent: record.Parent, forked: record.Forked, created: record.Created}
 	m.trackThread()
-	m.replay(record.History)
+	uploads := m.replay(record.History)
 	m.scrolled = false
-	return m.emit(m.printer.Note(fmt.Sprintf("resumed: %s · %d prompts · %s", orDefault(record.Title, record.ID), record.Prompts, ago(record.Updated))))
+	updated, cmd := m.emit(m.printer.Note(fmt.Sprintf("resumed: %s · %d prompts · %s", orDefault(record.Title, record.ID), record.Prompts, ago(record.Updated))))
+	return updated, tea.Batch(cmd, sendRaw(uploads))
 }
 
 // fork goes on in a copy of the conversation; the original stays as it was
@@ -242,11 +243,12 @@ func (m model) rewind(prompt agent.Prompt) (tea.Model, tea.Cmd) {
 	m.thread = conversation{parent: m.thread.id, title: m.thread.title, forked: sessions.Title(prompt.Text)}
 	m.session.Agent.Rewind(prompt.Index)
 	m.usage = llm.Usage{}
-	m.replay(m.session.Agent.History)
+	uploads := m.replay(m.session.Agent.History)
 	m.input.SetValue(prompt.Text)
 	m.input.CursorEnd()
 	m.scrolled = false
-	return m.emit(m.printer.Note("↩ back before this prompt, in a fork: edit it and send · the conversation as it was stays in /resume"))
+	updated, cmd := m.emit(m.printer.Note("↩ back before this prompt, in a fork: edit it and send · the conversation as it was stays in /resume"))
+	return updated, tea.Batch(cmd, sendRaw(uploads))
 }
 
 // newConversation starts over; the old one stays saved.

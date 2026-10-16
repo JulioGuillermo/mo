@@ -9,6 +9,7 @@ package tui
 // | WD-06 | Edge     | A menu option clicked opens nothing under it; ctrl+↑↓ and, with nothing typed, ctrl+hjkl scroll and pan; /diagrams switches all | P1 |
 // | WD-07 | Happy    | A right click on an SVG shows its code in its place and the picture back, or copies it | P1 |
 // | WD-08 | Happy    | With kitty images, an SVG written or a .svg file shown swaps its picture for its code and back | P1 |
+// | WD-09 | Edge     | A resumed answer with a kitty image sends its upload once and swaps its picture for its code | P1 |
 // | WD-04 | Happy    | ctrl+←→ moves every wide diagram in the chat across, each to its own edge; typing, it moves by words | P1 |
 
 import (
@@ -22,6 +23,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/render"
 )
 
@@ -369,6 +371,36 @@ func TestWideDrawings(t *testing.T) {
 			if strings.Contains(back, "<rect") || !strings.ContainsRune(back, '\U0010eeee') {
 				t.Errorf("%s: the picture should come back", name)
 			}
+		}
+	})
+
+	t.Run("WD-09 a resumed answer with a kitty image sends its upload once and swaps its picture for its code", func(t *testing.T) {
+		m := sidebarModel(t, 100)
+		m.printer.setImages(render.ModeKitty)
+		svg := "Here:\n\n```svg\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"40\" height=\"20\"><rect width=\"40\" height=\"20\" fill=\"red\"/></svg>\n```"
+		uploads := m.replay([]llm.Message{{Role: llm.RoleUser, Text: "draw it"}, {Role: llm.RoleAssistant, Text: svg}})
+		last := m.blocks[len(m.blocks)-1]
+
+		if !strings.Contains(uploads, "\x1b_G") || strings.Contains(last.text, "\x1b_G") || last.draw != nil {
+			t.Fatalf("the upload should go once and the block keep the placeholders only: uploads %d bytes, block has it %v, redrawn %v",
+				len(uploads), strings.Contains(last.text, "\x1b_G"), last.draw != nil)
+		}
+		y := -1
+		for i, line := range strings.Split(ansi.Strip(m.View().Content), "\n") {
+			if strings.ContainsRune(line, '\U0010eeee') {
+				y = i
+				break
+			}
+		}
+		updated, _ := m.Update(tea.MouseClickMsg{X: 5, Y: y, Button: tea.MouseRight})
+		m = updated.(model)
+		if m.popup == nil {
+			t.Fatal("no menu on the resumed picture")
+		}
+		chosen, _ := m.choosePopup(0)
+		m = chosen.(model)
+		if code := ansi.Strip(m.conversationContent()); !strings.Contains(code, "<rect") || strings.ContainsRune(code, '\U0010eeee') {
+			t.Errorf("its code should replace the picture:\n%s", code)
 		}
 	})
 }
