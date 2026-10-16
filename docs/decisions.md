@@ -992,8 +992,15 @@
   table. Its children stay a flat list, as every container's, so ids, focus and scripts treat a
   cell as any node; small models' rows of cells (`"rows": [[...], [...]]`) are flattened into
   it, short rows filled. gap parts the columns only; rows sit close, as a table's do.
-- An svg node draws its markup in half blocks, so it is text like the rest of the dialog, which is
-  drawn as a layer over the screen, and works in any terminal. A script changes it with ui.set,
+- An svg node is drawn as a kitty image at the terminal's own resolution where it speaks kitty,
+  else in half blocks. Both are text in the dialog's layer: kitty's are placeholders, which keep
+  their marks through the compositor, under an id of the node's own; each frame is sent again
+  under that id and takes the last one's place, the placeholders the same, so only the last
+  frame done is sent. The message that a frame is done is handled before a dialog, popup or
+  settings screen takes the messages, so the picture is sent whatever is open. on_click tells
+  where it was clicked in the svg's own units, as its viewBox counts them, the picture's fit in
+  its cells taken into account; a click in the margin beside it is none, and any node naming an
+  event needs an id. A script changes it with ui.set,
   as any field, so a chart or gauge follows a slider without the model. Its frames are drawn away
   from the screen's drawing, which shows the last one done meanwhile: a change while one is drawn
   waits, and the changes between are skipped, only the last drawn; each frame done tells the

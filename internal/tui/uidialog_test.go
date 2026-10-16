@@ -12,6 +12,8 @@ package tui
 // | UD-09 | Happy    | The dialog's title and keys sit in its edges, the card's title once; × closes it; what is inside is centred | P1 |
 // | UD-10 | Happy    | An svg node is drawn in half blocks; ui.set from a slider draws it anew; one that cannot be drawn says why | P1 |
 // | UD-11 | Edge     | Frames are drawn away from the screen; changes made while one is drawn are skipped but the last | P1 |
+// | UD-12 | Happy    | A click on an svg tells its on_click where, in the svg's own units; one beside its picture is none | P1 |
+// | UD-13 | Happy    | With kitty, an svg node is a kitty image sent again under its id each frame, the placeholders kept | P1 |
 // | UD-05 | Happy    | Select, slider, checkbox, switch and radio are drawn, change by keys and clicks, and go with submit | P0 |
 
 import (
@@ -471,6 +473,91 @@ func TestUISVG(t *testing.T) {
 		frames.mu.Unlock()
 		if count > 2 || last == nil || !strings.HasSuffix(shown, bar(50)) {
 			t.Errorf("the frames between should be skipped, the last shown: %d drawn, last %v", count, last != nil)
+		}
+	})
+}
+
+func TestUISVGClick(t *testing.T) {
+	t.Run("UD-12 a click on an svg tells its on_click where, in the svg's own units; one beside its picture is none", func(t *testing.T) {
+		m, uis := uiModel(t)
+		m.svgs = &svgFrames{}
+		square := `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='#ff0000'/></svg>`
+		tree := map[string]any{"type": "panel", "children": []any{
+			map[string]any{"type": "svg", "id": "pad", "width": 40, "height": 10, "svg": square, "on_click": "hit"},
+			map[string]any{"type": "label", "id": "where", "text": "none"},
+		}}
+		script := "function hit(e) ui.set('where', {text = string.format('%.0f %.0f %s', e.x, e.y, e.value)}) end"
+		args, _ := json.Marshal(map[string]any{"action": "create", "title": "Pad", "tree": tree, "script": script})
+		if output, isError := m.session.Agent.Tools.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args}); isError {
+			t.Fatal(output)
+		}
+		updated, _ := m.openUI(2)
+		m = updated.(model)
+		frame, _ := m.uiFrame()
+		var pad uiHit
+		for _, hit := range frame.hits {
+			if hit.id == "pad" {
+				pad = hit
+			}
+		}
+		where := func() string {
+			ui, _ := uis.Get(2)
+			label, _ := findNode(ui.Shown(), "where")
+			return label.Text
+		}
+		click := func(x, y int) {
+			updated, _ := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+			updated, _ = updated.(model).Update(tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseLeft})
+			m = updated.(model)
+		}
+
+		click(pad.x0, pad.y0+5)
+		beside := where()
+		click(pad.x0+20, pad.y0+5)
+		middle := strings.Fields(where())
+
+		if beside != "none" {
+			t.Errorf("a click beside the square should be none: %q", beside)
+		}
+		if len(middle) != 3 || middle[0] < "45" || middle[0] > "55" || middle[1] < "45" || middle[1] > "55" || !strings.Contains(middle[2], ",") {
+			t.Errorf("the middle should be about 50 50: %q", where())
+		}
+		_, isError := m.session.Agent.Tools.Run(context.Background(), llm.ToolCall{Name: "ui", Args: []byte(`{"action":"create","tree":{"type":"svg","on_click":"notify","svg":"<svg xmlns='http://www.w3.org/2000/svg'/>"}}`)})
+		if !isError {
+			t.Error("an svg with on_click and no id should be refused")
+		}
+	})
+}
+
+func TestUISVGKitty(t *testing.T) {
+	t.Run("UD-13 with kitty, an svg node is a kitty image sent again under its id each frame, the placeholders kept", func(t *testing.T) {
+		bar := func(width int) string {
+			return fmt.Sprintf(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 20'><rect width='%d' height='20' fill='#ff0000'/></svg>`, width)
+		}
+		frames := &svgFrames{kitty: true}
+		first, _ := frames.lines("1/bar", bar(10), 20, 2)
+		sentFirst := frames.uploads()
+		second, _ := frames.lines("1/bar", bar(90), 20, 2)
+		sentSecond := frames.uploads()
+		id := fmt.Sprintf("i=%d,", frames.frames["1/bar"].id)
+
+		if !strings.ContainsRune(strings.Join(first, ""), '\U0010eeee') || len(first) != 2 {
+			t.Fatalf("the picture should be kitty placeholders: %q", first)
+		}
+		if !strings.Contains(sentFirst, "\x1b_G") || !strings.Contains(sentFirst, id) || !strings.Contains(sentSecond, id) || frames.uploads() != "" {
+			t.Errorf("each frame should be sent once, under the node's id")
+		}
+		if strings.Join(first, "\n") != strings.Join(second, "\n") || sentFirst == sentSecond {
+			t.Error("a new frame should keep the placeholders and send another picture")
+		}
+
+		m, _ := uiModel(t)
+		m.svgs = &svgFrames{kitty: true}
+		m.svgs.lines("1/bar", bar(50), 20, 2)
+		m.uiOpen = 1
+		_, cmd := m.Update(svgReadyMsg{})
+		if cmd == nil {
+			t.Error("a frame done should be sent to the terminal, with a dialog open too")
 		}
 	})
 }

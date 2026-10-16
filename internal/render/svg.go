@@ -235,3 +235,42 @@ func loadFonts(renderer *resvg.Renderer) string {
 	}
 	return ""
 }
+
+// SVGPoint is where in an SVG's own units, as its viewBox counts them, a
+// point of its picture falls: fx and fy a fraction across and down the
+// cols × rows cells it was drawn in, proportions kept and centred, as
+// SVGCells or SVGKitty draw it. inside is unset in the margin around it.
+func SVGPoint(svg []byte, cols, rows int, kitty bool, fx, fy float64) (x, y float64, inside bool) {
+	root, err := svgRoot(svg)
+	if err != nil || cols <= 0 || rows <= 0 {
+		return 0, 0, false
+	}
+	attributes := map[string]string{}
+	for _, attribute := range root.Attr {
+		if attribute.Name.Space == "" {
+			attributes[attribute.Name.Local] = attribute.Value
+		}
+	}
+	width, height := svgSize(attributes)
+	minX, minY, boxWidth, boxHeight := 0.0, 0.0, width, height
+	if box := strings.Fields(strings.ReplaceAll(attributes["viewBox"], ",", " ")); len(box) == 4 {
+		values := make([]float64, 4)
+		for i, field := range box {
+			values[i], _ = strconv.ParseFloat(field, 64)
+		}
+		if values[2] > 0 && values[3] > 0 {
+			minX, minY, boxWidth, boxHeight = values[0], values[1], values[2], values[3]
+		}
+	}
+	cellWidth, cellHeight := svgCellScale, 2*svgCellScale
+	if kitty {
+		cellWidth, cellHeight = CellSize()
+	}
+	pixelWidth, pixelHeight := float64(cols*cellWidth), float64(rows*cellHeight)
+	scale := math.Min(pixelWidth/boxWidth, pixelHeight/boxHeight)
+	left, top := (pixelWidth-boxWidth*scale)/2, (pixelHeight-boxHeight*scale)/2
+	x = minX + (fx*pixelWidth-left)/scale
+	y = minY + (fy*pixelHeight-top)/scale
+	inside = x >= minX && x <= minX+boxWidth && y >= minY && y <= minY+boxHeight
+	return x, y, inside
+}

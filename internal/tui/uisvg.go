@@ -29,6 +29,10 @@ type svgFrames struct {
 	// ready tells the screen a frame is done; without it, as in tests,
 	// frames are drawn at once.
 	ready func()
+	// kitty draws pictures as kitty images at the terminal's resolution,
+	// each node's under an id of its own sent again for each frame; else
+	// in half blocks.
+	kitty bool
 }
 
 // svgFrame is one node's picture: the one shown and the one wanted.
@@ -39,6 +43,10 @@ type svgFrame struct {
 	cols, rows          int
 	busy                bool
 	wantedCols, wantRow int
+	// id is the kitty image the frames are sent under, and upload the
+	// last frame's, not sent yet.
+	id     uint32
+	upload string
 }
 
 // lines are the picture of a node's svg at a size: the last one drawn,
@@ -51,7 +59,7 @@ func (f *svgFrames) lines(slot, svg string, cols, rows int) ([]string, string) {
 	}
 	frame, ok := f.frames[slot]
 	if !ok {
-		frame = &svgFrame{}
+		frame = &svgFrame{id: render.NewImageID()}
 		f.frames[slot] = frame
 	}
 	if frame.shown == key {
@@ -76,6 +84,18 @@ func (f *svgFrames) lines(slot, svg string, cols, rows int) ([]string, string) {
 	return frame.lines, frame.failed
 }
 
+// uploads are the kitty frames done and not sent yet, to send now.
+func (f *svgFrames) uploads() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out strings.Builder
+	for _, frame := range f.frames {
+		out.WriteString(frame.upload)
+		frame.upload = ""
+	}
+	return out.String()
+}
+
 // draw draws what the frame wants until what it drew is the last asked
 // for, telling the screen of each frame done.
 func (f *svgFrames) draw(frame *svgFrame, ready func()) {
@@ -84,8 +104,20 @@ func (f *svgFrames) draw(frame *svgFrame, ready func()) {
 		key, cols, rows := frame.wanted, frame.wantedCols, frame.wantRow
 		f.mu.Unlock()
 		source := key[strings.IndexByte(key, 0)+1:]
-		lines, err := render.SVGCells([]byte(source), cols, rows)
+		var lines []string
+		var upload string
+		var err error
+		if f.kitty {
+			upload, lines, err = render.SVGKitty([]byte(source), cols, rows, frame.id)
+		} else {
+			lines, err = render.SVGCells([]byte(source), cols, rows)
+		}
 		f.mu.Lock()
+		if upload != "" {
+			// Frames under one id each take the last one's place: only the
+			// last needs sending.
+			frame.upload = upload
+		}
 		frame.shown, frame.cols, frame.rows = key, cols, rows
 		if err != nil {
 			frame.failed = err.Error()
@@ -131,5 +163,9 @@ func (r uiRenderer) svg(n tools.UINode, width int, bg string) uiBox {
 		}
 		lines[rows/2] = uiStyle("dim", bg, false).Render(lipgloss.PlaceHorizontal(cols, lipgloss.Center, ansi.Truncate(say, cols, "…")))
 	}
-	return uiBox{lines: lines, width: cols}
+	var hits []uiHit
+	if n.OnClick != "" && !n.Disabled {
+		hits = []uiHit{{x1: cols, y1: rows, id: n.ID}}
+	}
+	return uiBox{lines: lines, width: cols, hits: hits}
 }

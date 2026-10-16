@@ -10,6 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/jg/mo/internal/render"
 	"github.com/jg/mo/internal/tools"
 )
 
@@ -252,6 +253,8 @@ func (m model) updateUI(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case tools.UIButton:
 					state.focus = hit.id
 					return m.uiFire(ui.ID, hit.id, "click")
+				case tools.UISVG:
+					return m.clickSVG(ui.ID, node, hit, msg.X, msg.Y)
 				case tools.UIInput:
 					return m.leaveInput(ui, previous, hit.id)
 				case tools.UISelect:
@@ -468,7 +471,24 @@ func (m model) leaveInput(ui tools.UI, from, to string) (tea.Model, tea.Cmd) {
 // follows: a submitted or closed one hides, a removed one goes, and an
 // idle model gets a turn to hear what it was told.
 func (m model) uiFire(id int, element, event string) (tea.Model, tea.Cmd) {
-	outcome := m.uis().Fire(id, element, event)
+	return m.uiFollow(id, m.uis().Fire(id, element, event))
+}
+
+// clickSVG tells an svg's on_click where it was clicked, in the svg's own
+// units; a click in the margin around its picture is none.
+func (m model) clickSVG(id int, node tools.UINode, hit uiHit, x, y int) (tea.Model, tea.Cmd) {
+	cols, rows := hit.x1-hit.x0, hit.y1-hit.y0
+	fx := (float64(x-hit.x0) + 0.5) / float64(max(cols, 1))
+	fy := (float64(y-hit.y0) + 0.5) / float64(max(rows, 1))
+	at, down, inside := render.SVGPoint([]byte(node.SVG), cols, rows, m.svgs != nil && m.svgs.kitty, fx, fy)
+	if !inside {
+		return m, nil
+	}
+	return m.uiFollow(id, m.uis().FireAt(id, node.ID, "click", at, down))
+}
+
+// uiFollow follows what an event led to.
+func (m model) uiFollow(id int, outcome tools.UIOutcome) (tea.Model, tea.Cmd) {
 	if outcome.Submitted || outcome.Hidden || outcome.Removed {
 		m.uiOpen = 0
 	}

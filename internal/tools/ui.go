@@ -117,7 +117,7 @@ func validateUI(root UINode) error {
 		if !slices.Contains(UITypes, n.Type) {
 			return fmt.Errorf("%s: type %q: use %s, e.g. %s", path, n.Type, strings.Join(UITypes, ", "), uiTreeExample)
 		}
-		if n.Focusable() && n.ID == "" {
+		if (n.Focusable() || n.OnClick != "" || n.OnInput != "" || n.OnChange != "") && n.ID == "" {
 			return fmt.Errorf("%s needs an id", where)
 		}
 		if err := checkValue(n, where); err != nil {
@@ -229,6 +229,9 @@ type UIEvent struct {
 	Values  map[string]string
 	// Data is what a script passed to notify or submit, as JSON.
 	Data string
+	// X and Y are where an svg was clicked, in its own units, when At.
+	X, Y float64
+	At   bool
 	conv string
 }
 
@@ -543,6 +546,17 @@ func (u *UIs) Remove(id int) error {
 // every value, close the interface, or call the script's function, which
 // may do any of those. A button that names nothing tells the model.
 func (u *UIs) Fire(id int, element, event string) UIOutcome {
+	return u.fire(id, element, event, nil)
+}
+
+// FireAt does what an svg names for a click at x, y in its own units: the
+// script's function gets them as e.x and e.y, the model hears them as the
+// event's value.
+func (u *UIs) FireAt(id int, element, event string, x, y float64) UIOutcome {
+	return u.fire(id, element, event, &[2]float64{x, y})
+}
+
+func (u *UIs) fire(id int, element, event string, at *[2]float64) UIOutcome {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	ui := u.find(id)
@@ -554,11 +568,15 @@ func (u *UIs) Fire(id int, element, event string) UIOutcome {
 		return UIOutcome{}
 	}
 	handler := map[string]string{"click": node.OnClick, "input": node.OnInput, "change": node.OnChange}[event]
-	if handler == "" && event == "click" {
+	if handler == "" && event == "click" && node.Type == UIButton {
 		handler = UINotify
 	}
 	value := node.Current()
 	base := UIEvent{UI: ui.ID, Title: ui.Title, Event: event, Element: element, Value: value, conv: u.conversation}
+	if at != nil {
+		base.X, base.Y, base.At = at[0], at[1], true
+		base.Value = FormatNumber(at[0]) + "," + FormatNumber(at[1])
+	}
 	var outcome UIOutcome
 	switch handler {
 	case "":
@@ -677,17 +695,17 @@ slider    min, max, step (0, 100, 1 unless set), value, label, on_change
 checkbox  label, value "true"|"false", on_change
 switch    as checkbox, drawn as a switch
 radio     options, value, label, direction row|column, on_change
-svg       svg (its markup), width, height in cells (40, 12); with an id, ui.set(id, {svg = ...}) draws it anew
+svg       svg (its markup), width, height in cells (40, 12), on_click (e.x, e.y in viewBox units); ui.set(id, {svg = ...}) redraws it
 any node  id, fg, bg (#rrggbb or text|dim|accent|error|warning|success|surface|background), bold, visible, border rounded|normal|thick|double|none,
           padding, margin (1, 2 or 4 numbers, as in CSS), width, height, grow (share of the room left in a row)`},
-	{"events", `on_click (button), on_input (each key in an input), on_change (an input when left or on enter; any other control at each change) take:
+	{"events", `on_click (button, svg), on_input (each key in an input), on_change (an input when left or on enter; any other control at each change) take:
 notify   tell you of this event (only when you must act on it)
 submit   tell you every control's value, and close the dialog
 close    close the dialog; the interface stays
 remove   remove the interface, telling you
 <name>   call that function of the script
 A button without on_click notifies.`},
-	{"script", `Lua (base, table, string, math), run on the user's side. A function gets e.id, e.type (click|input|change), e.value.
+	{"script", `Lua (base, table, string, math), run on the user's side. A function gets e.id, e.type (click|input|change), e.value; a click on an svg, e.x and e.y too.
 ui.set shows its change at once: updating the interface needs no notify. Let it tell you only what you must act on, usually once, with submit.
 ui.set(id, {text=..., ...})  change a node: text, label, value, options, min, max, step, svg, placeholder, title, fg, bg, border, bold, visible, disabled, width, height
 ui.get(id)                   a node's fields, and checked
@@ -721,9 +739,8 @@ var uiNodeHelp = map[string]string{
 		`e.g. {"type":"slider","id":"volume","label":"Volume","max":10,"value":"4"}`,
 	UICheckbox: `[x] and its label; value "true" or "false"; on_change at each tick. e.g. {"type":"checkbox","id":"terms","label":"I agree"}`,
 	UISwitch:   `as checkbox, drawn as a switch. e.g. {"type":"switch","id":"dark","label":"Dark mode","value":"true"}`,
-	UISVG: "a picture of an SVG in width × height cells (40, 12 unless set), its proportions kept, drawn in half blocks, two dots to a cell: keep shapes large and text few and big. " +
-		"Give it a viewBox, and ' for its attributes, so it needs no escaping in JSON. " +
-		"A script draws it anew with ui.set(id, {svg = ...}), built with string.format: a chart a slider moves, a gauge, an icon. " +
+	UISVG: "an SVG drawn to fill width × height cells (40, 12), its proportions kept. Give it a viewBox, and ' for its attributes so JSON needs no escaping. " +
+		"ui.set(id, {svg = ...}) redraws it, as a chart a slider moves. on_click: e.x, e.y in viewBox units (value \"x,y\" to notify). " +
 		`e.g. {"type":"svg","id":"chart","width":30,"height":8,"svg":"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40'><rect width='60' height='40' fill='#7aa2f7'/></svg>"}`,
 	UIRadio: "one of its options, all shown, in a column or a row with direction row. options, value (none unless set), label; on_change at each pick. " +
 		`e.g. {"type":"radio","id":"plan","options":["free","pro"],"direction":"row"}`,

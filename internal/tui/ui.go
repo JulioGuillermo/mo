@@ -213,7 +213,7 @@ func Run(session Session) error {
 		history:  loadHistory(),
 		vim:      vimState{enabled: session.Config.Render.Keys == "vim"},
 		files:    &fileIndex{},
-		svgs:     &svgFrames{ready: func() { bridge.send(svgReadyMsg{}) }},
+		svgs:     &svgFrames{kitty: printer.images == render.ModeKitty, ready: func() { bridge.send(svgReadyMsg{}) }},
 	}
 	printer.setKind(m.toolKind)
 	m.configureJobs()
@@ -294,6 +294,10 @@ func (m model) Init() tea.Cmd {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case svgReadyMsg:
+		// A picture was drawn: the screen shows it as it is drawn again,
+		// and a kitty one goes to the terminal, whatever is open.
+		return m, sendRaw(m.svgs.uploads())
 	case settingsLoadedMsg:
 		return m.openSettings(msg)
 	case settingsSavedMsg:
@@ -405,9 +409,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			return m.emitError(msg.err)
 		}
-		return m, nil
-	case svgReadyMsg:
-		// A picture was drawn: the screen shows it as it is drawn again.
 		return m, nil
 	case edgeScrollMsg:
 		return m.edgeScroll()

@@ -86,6 +86,10 @@ func (u *UIs) runHandler(ui *UI, base UIEvent, handler string) UIOutcome {
 	event.RawSetString("id", lua.LString(base.Element))
 	event.RawSetString("type", lua.LString(base.Event))
 	event.RawSetString("value", lua.LString(base.Value))
+	if base.At {
+		event.RawSetString("x", lua.LNumber(base.X))
+		event.RawSetString("y", lua.LNumber(base.Y))
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), uiScriptEventTimeout)
 	defer cancel()
 	script.state.SetContext(ctx)

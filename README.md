@@ -298,9 +298,10 @@ column (`justify` start, center, end, space-between, space-around; `align`; `gap
 cards with a border and a title, labels, buttons and inputs, each with `bg`, `fg`, `padding`,
 `margin`, `width`, `height`, `visible` and, for buttons, `disabled`; grids, laying their
 children row by row in `columns`, each as wide as its widest cell or as `widths` fixes it, so
-labels line up beside their controls and data reads as a table; svg nodes, a picture in half
-blocks of `width` × `height` cells that a script draws anew with `ui.set(id, {svg = ...})`, as a
-chart a slider moves; and controls holding a value
+labels line up beside their controls and data reads as a table; svg nodes, a picture of `width` ×
+`height` cells, a kitty image where the terminal takes them and half blocks elsewhere, that a
+script draws anew with `ui.set(id, {svg = ...})`, as a chart a slider moves, and whose `on_click`
+gets `e.x` and `e.y` in the svg's own units; and controls holding a value
 you pick: `select` (`◂ M ▸`: ◂ and ▸ step through its `options`, a click on the value or enter lists them all), `slider` (`min`, `max`, `step`),
 `checkbox` (`[x]`), `switch` and `radio` (its options in a column, or a row with `direction`),
 each with a `label`. ←→ change them, space ticks a checkbox or switch, and a click picks an
