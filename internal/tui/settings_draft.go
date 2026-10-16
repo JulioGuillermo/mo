@@ -28,6 +28,7 @@ type settingsDraft struct {
 	mcpDisabled   []string
 	maxOutput     string
 	outputs       string
+	calls         string
 	outputTurns   string
 	window        string
 	compactAt     string
@@ -117,6 +118,7 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		mcpDisabled:   slices.Clone(cfg.Tools.MCPDisabled),
 		maxOutput:     strconv.Itoa(cfg.Tools.MaxOutput),
 		outputs:       cfg.Tools.Outputs,
+		calls:         cfg.Tools.Calls,
 		outputTurns:   strconv.Itoa(cfg.Tools.OutputTurns),
 		window:        strconv.Itoa(cfg.Context.Window),
 		compactAt:     strconv.FormatFloat(*cfg.Context.CompactAt, 'f', -1, 64),
@@ -242,6 +244,7 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 		return layer, fmt.Errorf("command output turns: use 0 or a number of turns")
 	}
 	layer.Tools.Outputs = unlessDefault(d.outputs, defaults.Tools.Outputs)
+	layer.Tools.Calls = unlessDefault(d.calls, defaults.Tools.Calls)
 	layer.Tools.OutputTurns = unlessDefault(outputTurns, defaults.Tools.OutputTurns)
 	layer.Tools.Descriptions = d.changedDescriptions()
 	layer.Context.Window = window

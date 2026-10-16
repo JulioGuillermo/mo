@@ -20,8 +20,10 @@ var ErrNothingToContinue = errors.New("nothing to continue")
 // keepPartial keeps the answer the user stopped mid-way in the history,
 // marked as cut, so the model knows what it had said.
 func (a *Agent) keepPartial() {
+	a.partialMu.Lock()
 	text := strings.TrimSpace(a.partial.String())
-	a.partial.Reset()
+	a.partialMu.Unlock()
+	a.resetPartial()
 	if text == "" {
 		return
 	}

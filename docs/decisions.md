@@ -1011,3 +1011,28 @@
   set one, else for every project; project files cannot set it. It is written once the switching
   has stopped for a moment, so cycling through the modes writes the settings once, and without
   rebuilding the session.
+
+## Calls run as they are written
+
+- With `tools.calls = "streamed"`, the default, each call of a reply runs as soon as it is whole,
+  while the model goes on writing: a call is whole when the next one starts or the reply ends,
+  and its arguments are JSON. What a call needs from the user is asked at once, joining the
+  dialog when it is open; each ask is answered on its own as soon as all its parts are. The calls
+  still run one at a time and in order: one waits for the answer to its own ask and for the calls
+  before it. A call whose arguments are not JSON when the next starts holds it and those after it
+  until the reply ends, when they run as written.
+- One goroutine prepares, asks and decides every call, so the agent's state is touched there
+  alone; the tool itself runs on another, so asks of later calls go on while one runs. With
+  nobody to ask, as when mo runs once, or with `reply`, the calls run once the reply ends, asked
+  together, as before.
+- The loop guard sees the calls the reply already ran, with their results, as when they run once
+  it ends, though the reply is not in the history yet. The history only changes once the
+  calls' goroutine is done, since that goroutine reads it.
+- What the reply wrote before its first call shows before the call runs, once, whether the first
+  call or the end of the reply comes first; the end shows only the rest.
+- A reply that breaks off after calls ran, by an error, a stop or the loop guard, keeps them with
+  their results and the text it had: they changed things, and the model must know. Such a
+  reply is not sent again, as a reply that failed before running anything may be.
+- The system prompt says the calls of a reply run one after another, in order, so a model can
+  chain calls that depend on each other in one reply. An edit's result names the lines it changed
+  as the file is after it, so it can be checked without reading the whole file again.

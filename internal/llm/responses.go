@@ -130,7 +130,7 @@ func (p *Responses) Stream(ctx context.Context, req Request, onEvent func(Event)
 			if event.Item.Type == "function_call" {
 				slots[event.OutputIndex] = len(calls)
 				calls = append(calls, &ToolCall{ID: event.Item.CallID, Name: event.Item.Name})
-				onEvent(Event{Kind: EventToolCall, Call: len(calls) - 1, Name: event.Item.Name})
+				onEvent(Event{Kind: EventToolCall, Call: len(calls) - 1, Name: event.Item.Name, ID: event.Item.CallID})
 			}
 		case "response.function_call_arguments.delta":
 			if slot, ok := slots[event.OutputIndex]; ok {

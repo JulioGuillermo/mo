@@ -170,6 +170,7 @@ mcp_disabled = []          # MCP servers set up but not started, e.g. ["docs"]
 max_output = 10000         # bytes of tool output sent to the model
 outputs = "disk"           # whole command output kept: disk, memory or none
 output_turns = 0           # for how many of your turns; 0 for the whole conversation
+calls = "streamed"         # streamed: each call runs as soon as it is written; reply: all once the reply ends
 
 [tools.descriptions]       # replace what the model reads about a tool; "" sends none
 grep = "Regex search in files."

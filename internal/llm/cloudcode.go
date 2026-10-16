@@ -160,7 +160,7 @@ func (p *CloudCode) Stream(ctx context.Context, req Request, onEvent func(Event)
 					if part.ThoughtSignature != "" {
 						call.Extra, _ = json.Marshal(map[string]string{"thoughtSignature": part.ThoughtSignature})
 					}
-					onEvent(Event{Kind: EventToolCall, Call: len(calls), Name: call.Name, Text: string(call.Args)})
+					onEvent(Event{Kind: EventToolCall, Call: len(calls), Name: call.Name, ID: call.ID, Text: string(call.Args)})
 					calls = append(calls, call)
 				case part.Thought:
 					reasoning.WriteString(part.Text)

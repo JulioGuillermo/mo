@@ -55,7 +55,10 @@ type Tools struct {
 	// Outputs is where the whole output of commands is kept, to read
 	// later: disk, memory until mo exits, or none; OutputTurns for how many
 	// of the user's turns, 0 for as long as the conversation.
-	Outputs      string            `toml:"outputs,omitempty"`
+	Outputs string `toml:"outputs,omitempty"`
+	// Calls is when the calls of a reply run: streamed, each as soon as it
+	// is written, or reply, all once it ends.
+	Calls        string            `toml:"calls,omitempty"`
 	OutputTurns  int               `toml:"output_turns,omitzero"`
 	Descriptions map[string]string `toml:"descriptions,omitempty"`
 	// Modes set the mode of single tools over Mode: full, compact, or
@@ -298,6 +301,7 @@ func Defaults() Config {
 			Confirm:      []string{"bash", "rm", "fetch"},
 			MaxOutput:    10000,
 			Outputs:      "disk",
+			Calls:        "streamed",
 		},
 		Context:      Context{CompactAt: ptr(0.75), Strategy: "compact", KeepReasoning: ptr(false)},
 		Memory:       Memory{Dir: defaultMemoryDir()},
@@ -377,6 +381,9 @@ func validate(cfg Config) error {
 	}
 	if cfg.Render.Status != "powerline" && cfg.Render.Status != "plain" {
 		return fmt.Errorf("render.status %q: use powerline or plain", cfg.Render.Status)
+	}
+	if cfg.Tools.Calls != "streamed" && cfg.Tools.Calls != "reply" {
+		return fmt.Errorf("tools.calls %q: use streamed or reply", cfg.Tools.Calls)
 	}
 	if !slices.Contains([]string{"disk", "memory", "none"}, cfg.Tools.Outputs) {
 		return fmt.Errorf("tools.outputs %q: use disk, memory or none", cfg.Tools.Outputs)
@@ -597,6 +604,7 @@ func mergeHarmless(base, layer Config) Config {
 	}
 	base.Tools.MaxOutput = override(base.Tools.MaxOutput, layer.Tools.MaxOutput)
 	base.Tools.Outputs = override(base.Tools.Outputs, layer.Tools.Outputs)
+	base.Tools.Calls = override(base.Tools.Calls, layer.Tools.Calls)
 	base.Tools.OutputTurns = override(base.Tools.OutputTurns, layer.Tools.OutputTurns)
 	if layer.Tools.AlwaysLoaded != nil {
 		base.Tools.AlwaysLoaded = layer.Tools.AlwaysLoaded

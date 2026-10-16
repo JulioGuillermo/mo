@@ -9,6 +9,7 @@ package tui
 // | DG-05 | Happy    | The dialog stays above the input, the conversation scrolled or not   | P1       |
 // | DG-06 | Happy    | A long command scrolls to its end; a long line wraps instead of being cut | P1   |
 // | DG-07 | Happy    | Each part of a bash command shows what the rules say of it            | P1       |
+// | DG-08 | Happy    | What a later call asks joins the open dialog; each ask is answered once its parts are | P0 |
 // | HL-01 | Happy    | Bash is coloured by what each piece is, on the block's background     | P2       |
 // | FC-01 | Happy    | An opened edit shows its diff highlighted; an opened write what it wrote | P1    |
 
@@ -191,6 +192,37 @@ func TestCommandView(t *testing.T) {
 			if !strings.Contains(view, want) {
 				t.Errorf("missing %q in:\n%s", want, view)
 			}
+		}
+	})
+
+	t.Run("DG-08 what a later call asks joins the open dialog; each ask is answered once its parts are", func(t *testing.T) {
+		m, first := asking(agent.Interaction{Approvals: []agent.ApprovalRequest{bash("rm -rf build")}})
+		second := make(chan agent.Reply, 1)
+		updated, _ := m.Update(interactionMsg{interaction: agent.Interaction{Approvals: []agent.ApprovalRequest{bash("make test")}}, reply: second})
+		m = updated.(model)
+		tabs := ansi.Strip(m.View().Content)
+
+		m = keys(t, m, keyN)
+		var gotFirst agent.Reply
+		select {
+		case gotFirst = <-first:
+		default:
+			t.Fatal("the first ask should be answered as soon as its part is")
+		}
+		stillOpen := m.dialog != nil
+		select {
+		case <-second:
+			t.Fatal("the second ask is not answered yet")
+		default:
+		}
+		m = keys(t, m, tea.KeyPressMsg{Code: 'y', Text: "y"})
+		gotSecond := <-second
+
+		if m.dialog != nil {
+			t.Error("the dialog should close once everything is answered")
+		}
+		if !strings.Contains(tabs, "2") || !stillOpen || gotFirst.Decisions[0] != agent.Deny || gotSecond.Decisions[0] != agent.Allow {
+			t.Errorf("open %v first %+v second %+v tabs:\n%s", stillOpen, gotFirst, gotSecond, tabs)
 		}
 	})
 

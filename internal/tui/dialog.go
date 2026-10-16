@@ -29,16 +29,25 @@ type interactionMsg struct {
 
 // dialog shows what the agent asks, pinned above the input until every
 // part is answered: the calls to approve and the questions, one at a time,
-// with tabs to see how many there are and go between them.
+// with tabs to see how many there are and go between them. What a call
+// written later asks joins it while it is open; each group of parts is
+// answered as soon as all of its are.
 type dialog struct {
-	interaction agent.Interaction
-	reply       chan agent.Reply
-	items       []dialogItem
-	current     int
+	groups  []*dialogGroup
+	items   []dialogItem
+	current int
 }
 
-// dialogItem is one call to approve or one question.
+// dialogGroup is what one ask of the agent's needs, answered on its own.
+type dialogGroup struct {
+	interaction agent.Interaction
+	reply       chan agent.Reply
+	sent        bool
+}
+
+// dialogItem is one call to approve or one question, of its group.
 type dialogItem struct {
+	group    int
 	approval int
 	question int
 	answered bool
@@ -60,22 +69,31 @@ type dialogButton struct {
 }
 
 func newDialog(msg interactionMsg) *dialog {
-	d := &dialog{interaction: msg.interaction, reply: msg.reply}
+	d := &dialog{}
+	d.add(msg)
+	return d
+}
+
+// add puts what an ask needs after the parts already shown.
+func (d *dialog) add(msg interactionMsg) {
+	group := len(d.groups)
+	d.groups = append(d.groups, &dialogGroup{interaction: msg.interaction, reply: msg.reply})
+	first := len(d.items)
 	for i := range msg.interaction.Approvals {
-		d.items = append(d.items, dialogItem{approval: i, question: -1, decision: agent.Deny})
+		d.items = append(d.items, dialogItem{group: group, approval: i, question: -1, decision: agent.Deny})
 	}
 	for i := range msg.interaction.Questions {
 		other := textinput.New()
 		other.Placeholder = "your own answer"
 		other.Prompt = ""
-		d.items = append(d.items, dialogItem{approval: -1, question: i, picked: map[int]bool{}, other: other})
+		d.items = append(d.items, dialogItem{group: group, approval: -1, question: i, picked: map[int]bool{}, other: other})
 	}
-	for i := range d.items {
+	for i := first; i < len(d.items); i++ {
 		if d.items[i].approval >= 0 {
 			d.items[i].button = len(d.buttonsFor(d.items[i])) - 1
 		}
 	}
-	return d
+	d.sendAnswered()
 }
 
 func (d *dialog) item() *dialogItem {
@@ -83,11 +101,43 @@ func (d *dialog) item() *dialogItem {
 }
 
 func (d *dialog) request(item dialogItem) agent.ApprovalRequest {
-	return d.interaction.Approvals[item.approval]
+	return d.groups[item.group].interaction.Approvals[item.approval]
 }
 
 func (d *dialog) questionOf(item dialogItem) tools.Question {
-	return d.interaction.Questions[item.question]
+	return d.groups[item.group].interaction.Questions[item.question]
+}
+
+// sendAnswered answers every group whose parts are all answered, or all
+// of them, as denied, when cancelled.
+func (d *dialog) sendAnswered(cancelled ...bool) {
+	stop := len(cancelled) > 0 && cancelled[0]
+	for g, group := range d.groups {
+		if group.sent {
+			continue
+		}
+		reply := agent.Reply{Decisions: make([]agent.Decision, len(group.interaction.Approvals)), Answers: make([]string, len(group.interaction.Questions))}
+		complete := true
+		for _, item := range d.items {
+			if item.group != g {
+				continue
+			}
+			complete = complete && item.answered
+			if item.approval >= 0 {
+				reply.Decisions[item.approval] = item.decision
+			} else {
+				reply.Answers[item.question] = item.answer
+			}
+		}
+		switch {
+		case stop:
+			reply = agent.Reply{Decisions: make([]agent.Decision, len(group.interaction.Approvals)), Answers: make([]string, len(group.interaction.Questions))}
+		case !complete:
+			continue
+		}
+		group.reply <- reply
+		group.sent = true
+	}
 }
 
 // buttonsFor are the answers to a call: yes, always when it can be, no. No
@@ -105,8 +155,13 @@ func (d *dialog) buttonsFor(item dialogItem) []string {
 	return []string{"Yes", "Always this session", "No"}
 }
 
-// openDialog shows what the agent asks, starting at the first part.
+// openDialog shows what the agent asks, starting at the first part; with
+// a dialog open, what is asked joins it.
 func (m model) openDialog(msg interactionMsg) (tea.Model, tea.Cmd) {
+	if m.dialog != nil {
+		m.dialog.add(msg)
+		return m, m.interactionAsked(msg.interaction)
+	}
 	m.dialog = newDialog(msg)
 	if len(m.dialog.items) == 0 {
 		msg.reply <- agent.Reply{}
@@ -291,9 +346,11 @@ func (m *model) allowByRules(policy *permissions.Policy) {
 	}
 }
 
-// next goes to the next part left, or sends every answer once none is.
+// next answers the groups now complete, so their calls run, and goes to
+// the next part left; with none, the dialog closes.
 func (m model) next() (tea.Model, tea.Cmd) {
 	d := m.dialog
+	d.sendAnswered()
 	for step := 1; step <= len(d.items); step++ {
 		i := (d.current + step) % len(d.items)
 		if !d.items[i].answered {
@@ -311,17 +368,7 @@ func (m *model) closeDialog(cancelled bool) {
 	if d == nil {
 		return
 	}
-	reply := agent.Reply{Decisions: make([]agent.Decision, len(d.interaction.Approvals)), Answers: make([]string, len(d.interaction.Questions))}
-	if !cancelled {
-		for _, item := range d.items {
-			if item.approval >= 0 {
-				reply.Decisions[item.approval] = item.decision
-			} else {
-				reply.Answers[item.question] = item.answer
-			}
-		}
-	}
-	d.reply <- reply
+	d.sendAnswered(cancelled)
 	m.dialog = nil
 }
 

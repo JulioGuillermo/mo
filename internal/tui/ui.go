@@ -408,6 +408,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case toolStartMsg:
 		m.followTodos(msg.call)
+		m.formingStarted(msg.call.ID)
 		m.addTool(msg.call, msg.summary)
 		running := msg.call
 		m.runningTool = &running
@@ -442,7 +443,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastEvent = msg.Kind
 		switch msg.Kind {
 		case llm.EventToolCall:
-			m.growCall(msg.Call, msg.Name, msg.Text)
+			m.growCall(msg.Call, msg.ID, msg.Name, msg.Text)
 		case llm.EventPromptProgress:
 			m.promptRead = msg.Progress
 		case llm.EventReasoning:

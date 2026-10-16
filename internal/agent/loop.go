@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/jg/mo/internal/llm"
@@ -42,8 +43,12 @@ func (a *Agent) earlierRuns(call llm.ToolCall) int {
 	earlier := 0
 	outputs := map[string]bool{}
 	replies := 0
-	for i := len(a.History) - 1; i >= 0 && replies < a.Loop.Replies; i-- {
-		message := a.History[i]
+	history := a.History
+	if len(a.inReply) > 0 {
+		history = append(slices.Clone(a.History), a.inReply...)
+	}
+	for i := len(history) - 1; i >= 0 && replies < a.Loop.Replies; i-- {
+		message := history[i]
 		if isPrompt(message) {
 			break
 		}
@@ -51,7 +56,7 @@ func (a *Agent) earlierRuns(call llm.ToolCall) int {
 			continue
 		}
 		replies++
-		results := a.History[i+1:]
+		results := history[i+1:]
 		for j := len(message.ToolCalls) - 1; j >= 0; j-- {
 			made := message.ToolCalls[j]
 			if j >= len(results) || results[j].Role != llm.RoleTool || results[j].ToolCallID != made.ID {

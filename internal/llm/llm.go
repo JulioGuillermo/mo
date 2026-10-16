@@ -100,10 +100,11 @@ func (p PromptProgress) Share() float64 {
 type Event struct {
 	Kind EventKind
 	Text string
-	// Call numbers the tool call a piece belongs to, in the reply, and
-	// Name is its tool when the piece names it.
+	// Call numbers the tool call a piece belongs to, in the reply; Name is
+	// its tool and ID its id when the piece names them.
 	Call int
 	Name string
+	ID   string
 	// Progress is set on EventPromptProgress.
 	Progress PromptProgress
 }

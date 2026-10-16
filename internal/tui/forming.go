@@ -19,20 +19,37 @@ const (
 )
 
 // formingCall is a tool call the model is still writing: its name once it
-// came, and its arguments so far, JSON not finished yet.
+// came, and its arguments so far, JSON not finished yet; its id, the
+// agent's own when the reply gives none, and started once it runs while
+// the reply is still written, so its block shows instead.
 type formingCall struct {
-	name string
-	args string
+	id      string
+	name    string
+	args    string
+	started bool
 }
 
 // growCall adds a piece of a tool call as it streams in.
-func (m *model) growCall(index int, name, args string) {
+func (m *model) growCall(index int, id, name, args string) {
 	m.forming = slices.Clone(m.forming)
 	for len(m.forming) <= index {
-		m.forming = append(m.forming, formingCall{})
+		m.forming = append(m.forming, formingCall{id: fmt.Sprintf("call_%d", len(m.forming))})
+	}
+	if id != "" {
+		m.forming[index].id = id
 	}
 	m.forming[index].name += name
 	m.forming[index].args += args
+}
+
+// formingStarted stops showing a call being written once it runs.
+func (m *model) formingStarted(id string) {
+	for i := range m.forming {
+		if m.forming[i].id == id {
+			m.forming = slices.Clone(m.forming)
+			m.forming[i].started = true
+		}
+	}
 }
 
 // partialString reads the string a key holds in JSON that may stop short,
@@ -93,7 +110,7 @@ func partialString(json, key string) (string, bool) {
 func (m model) formingView() string {
 	var parts []string
 	for _, call := range m.forming {
-		if call.name == "" {
+		if call.name == "" || call.started {
 			continue
 		}
 		name := call.name

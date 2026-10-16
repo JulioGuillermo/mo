@@ -278,6 +278,24 @@ func TestGrepOutputs(t *testing.T) {
 func TestEditMany(t *testing.T) {
 	ctx := context.Background()
 
+	t.Run("edit says the lines it changed, as the file is after, earlier ones moved by later ones", func(t *testing.T) {
+		env := newEnv(t)
+		writeFile(t, env, "a.txt", "one\ntwo\nthree\nfour\nfive\nsix\n")
+
+		grew, _ := runEdit(ctx, env, args(t, map[string]any{"path": "a.txt", "edits": []map[string]any{
+			{"old": "five", "new": "FIVE"}, {"old": "two", "new": "2a\n2b\n2c"}}}))
+		gone, _ := runEdit(ctx, env, args(t, map[string]any{"path": "a.txt", "old": "three\n", "new": ""}))
+		joined, _ := runEdit(ctx, env, args(t, map[string]any{"path": "a.txt", "old": "2", "new": "two-", "all": true}))
+		data, _ := os.ReadFile(filepath.Join(env.WorkDir, "a.txt"))
+
+		if grew != "made 2 edits, 2 replacement(s), at lines 2-4 and 7" {
+			t.Errorf("grew = %q", grew)
+		}
+		if gone != "replaced 1 occurrence(s), at line 5" || joined != "replaced 3 occurrence(s), at lines 2-4" {
+			t.Errorf("gone = %q joined = %q data = %q", gone, joined, data)
+		}
+	})
+
 	t.Run("edit makes several replacements, or none when one fails", func(t *testing.T) {
 		env := newEnv(t)
 		writeFile(t, env, "a.txt", "alpha beta gamma\n")
@@ -286,7 +304,7 @@ func TestEditMany(t *testing.T) {
 		_, failed := runEdit(ctx, env, args(t, map[string]any{"path": "a.txt", "edits": []map[string]any{{"old": "beta", "new": "B"}, {"old": "missing", "new": "x"}}}))
 		data, _ := os.ReadFile(filepath.Join(env.WorkDir, "a.txt"))
 
-		if err != nil || done != "made 2 edits, 2 replacement(s)" || string(data) != "A beta G\n" {
+		if err != nil || done != "made 2 edits, 2 replacement(s), at line 1" || string(data) != "A beta G\n" {
 			t.Errorf("done = %q err = %v data = %q", done, err, data)
 		}
 		if failed == nil || !strings.Contains(failed.Error(), "edit 2: old text not found") {

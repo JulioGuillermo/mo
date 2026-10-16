@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/permissions"
@@ -62,6 +63,13 @@ type Agent struct {
 	KeepReasoning bool
 
 	Loop LoopGuard
+	// inReply is the reply being written with the calls it ran so far and
+	// their results, for the loop guard to see while it is not in the
+	// history yet; only the early calls' goroutine touches it.
+	inReply []llm.Message
+	// EarlyCalls runs each call of a reply as soon as it is written, asking
+	// what it needs while the reply goes on, instead of once it ends.
+	EarlyCalls bool
 
 	// Permissions is the mode and rules in force; without it the calls in
 	// ConfirmTools and those with a warning ask.
@@ -82,9 +90,16 @@ type Agent struct {
 	alwaysAllowed map[string]bool
 	queued        queue
 	told          notes
-	// partial is the answer being streamed, kept when the user stops it.
-	partial    strings.Builder
-	judgedSafe map[string]bool
+	// partial is the answer being streamed, kept when the user stops it,
+	// with its reasoning; shown is what of them was shown before a call
+	// run while the reply was written. The stream writes them while a
+	// call runs, hence the lock.
+	partialMu        sync.Mutex
+	partial          strings.Builder
+	partialReasoning strings.Builder
+	shownText        string
+	shownReasoning   string
+	judgedSafe       map[string]bool
 }
 
 // Hooks lets the caller follow a run. Every field is optional. Without
@@ -127,25 +142,49 @@ func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
 		if a.needsCompaction() {
 			a.makeRoom(ctx, hooks)
 		}
-		response, repeated, err := a.stream(ctx, hooks)
-		if err != nil && ctx.Err() == nil && a.withoutImages() {
+		early := a.startEarlyCalls(ctx, hooks)
+		response, repeated, err := a.stream(ctx, hooks, early)
+		if err != nil && ctx.Err() == nil && (early == nil || !early.any()) && a.withoutImages() {
 			if hooks.OnNotice != nil {
 				hooks.OnNotice(fmt.Sprintf("the model did not take the images (%v); sending without them", err))
 			}
-			response, repeated, err = a.stream(ctx, hooks)
+			if early != nil {
+				early.abort()
+				early = a.startEarlyCalls(ctx, hooks)
+			}
+			response, repeated, err = a.stream(ctx, hooks, early)
 		}
 		if err != nil {
-			if ctx.Err() != nil {
+			stopped := ctx.Err() != nil
+			if !a.keepEarly(early, stopped) && stopped {
 				a.keepPartial()
+			}
+			if stopped {
 				return ctx.Err()
 			}
 			return err
 		}
 		if repeated != "" {
+			a.keepEarly(early, false)
 			if err := a.cutLoopingReply(repeated, hooks); err != nil {
 				return err
 			}
 			continue
+		}
+		// The early calls' goroutine reads the history: it is done before
+		// the history changes.
+		var ran []*earlyCall
+		if early != nil {
+			// What was written shows once, before any call runs, whether
+			// the first call or the end of the reply comes first; the end
+			// shows only the rest, before the calls left are waited for.
+			if len(response.Message.ToolCalls) > 0 {
+				early.showWritten()
+			}
+			if hooks.OnAssistant != nil {
+				hooks.OnAssistant(a.unshown(response.Message))
+			}
+			ran = early.finish(response.Message.ToolCalls)
 		}
 		a.History = append(a.History, response.Message)
 		a.LastUsage = response.Usage
@@ -153,14 +192,19 @@ func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
 		if hooks.OnUsage != nil {
 			hooks.OnUsage(response.Usage)
 		}
-		if hooks.OnAssistant != nil {
+		if early == nil && hooks.OnAssistant != nil {
 			hooks.OnAssistant(response.Message)
 		}
 		if len(response.Message.ToolCalls) == 0 {
 			return nil
 		}
 		asked := len(a.History) - 1
-		unfinished := a.answerToolCalls(ctx, response.Message.ToolCalls, hooks)
+		var unfinished map[string]bool
+		if early != nil {
+			unfinished = a.answerEarly(ctx, ran, response.Message.ToolCalls)
+		} else {
+			unfinished = a.answerToolCalls(ctx, response.Message.ToolCalls, hooks)
+		}
 		if ctx.Err() != nil {
 			a.dropUnfinished(asked, unfinished)
 			return ctx.Err()
@@ -177,7 +221,7 @@ func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
 
 // stream sends the request and, with the loop guard on, cuts the reply as
 // soon as it repeats itself, returning the repeated piece instead of it.
-func (a *Agent) stream(ctx context.Context, hooks Hooks) (llm.Response, string, error) {
+func (a *Agent) stream(ctx context.Context, hooks Hooks, early *earlyRunner) (llm.Response, string, error) {
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var watch *repeatWatch
@@ -185,13 +229,24 @@ func (a *Agent) stream(ctx context.Context, hooks Hooks) (llm.Response, string, 
 		watch = newRepeatWatch(a.Loop.StreamRepeats)
 	}
 	repeated := ""
-	a.partial.Reset()
+	a.resetPartial()
 	response, err := a.Provider.Stream(streamCtx, a.request(), func(event llm.Event) {
 		if repeated != "" {
 			return
 		}
-		if event.Kind == llm.EventText {
-			a.partial.WriteString(event.Text)
+		switch event.Kind {
+		case llm.EventText, llm.EventReasoning:
+			a.partialMu.Lock()
+			if event.Kind == llm.EventText {
+				a.partial.WriteString(event.Text)
+			} else {
+				a.partialReasoning.WriteString(event.Text)
+			}
+			a.partialMu.Unlock()
+		case llm.EventToolCall:
+			if early != nil {
+				early.piece(event)
+			}
 		}
 		if hooks.OnEvent != nil {
 			hooks.OnEvent(event)
@@ -206,7 +261,9 @@ func (a *Agent) stream(ctx context.Context, hooks Hooks) (llm.Response, string, 
 	if repeated == "" {
 		return response, "", err
 	}
-	a.partial.Reset()
+	if early == nil || !early.any() {
+		a.resetPartial()
+	}
 	if ctx.Err() != nil {
 		return llm.Response{}, "", ctx.Err()
 	}

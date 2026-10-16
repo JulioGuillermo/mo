@@ -146,6 +146,24 @@ func (a *Agent) interact(ctx context.Context, interaction Interaction, hooks Hoo
 
 // finishCall runs a call the user let through, or says why it did not run.
 func (a *Agent) finishCall(ctx context.Context, pending pendingCall, reply Reply, hooks Hooks) (string, bool, bool) {
+	output, isError, run := a.decideCall(ctx, pending, reply, hooks)
+	if !run {
+		return output, isError, false
+	}
+	if hooks.OnToolStart != nil {
+		hooks.OnToolStart(pending.call, pending.summary)
+	}
+	output, isError = a.Tools.Run(ctx, pending.call)
+	interrupted := ctx.Err() != nil
+	if hooks.OnToolDone != nil {
+		hooks.OnToolDone(pending.call, output, isError)
+	}
+	return output, isError, interrupted
+}
+
+// decideCall tells whether a call runs now that the user answered: run, or
+// its result without running, as when it was denied or stopped.
+func (a *Agent) decideCall(ctx context.Context, pending pendingCall, reply Reply, hooks Hooks) (string, bool, bool) {
 	switch {
 	case pending.settled:
 		return pending.result, pending.isError, false
@@ -171,15 +189,7 @@ func (a *Agent) finishCall(ctx context.Context, pending pendingCall, reply Reply
 			a.alwaysAllowed[pending.call.Name] = true
 		}
 	}
-	if hooks.OnToolStart != nil {
-		hooks.OnToolStart(pending.call, pending.summary)
-	}
-	output, isError := a.Tools.Run(ctx, pending.call)
-	interrupted := ctx.Err() != nil
-	if hooks.OnToolDone != nil {
-		hooks.OnToolDone(pending.call, output, isError)
-	}
-	return output, isError, interrupted
+	return "", false, true
 }
 
 // answersText gives the model each question with its answer.

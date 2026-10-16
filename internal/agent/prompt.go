@@ -8,6 +8,10 @@ import (
 	"github.com/jg/mo/internal/tools"
 )
 
+// callOrder lets the model chain calls that depend on each other in one
+// reply.
+const callOrder = "The calls of one reply run one after another, in the order you write them."
+
 const DefaultSystemPrompt = `You are mo, a coding agent in the user's terminal.
 Use the tools to inspect and change files and run commands. Never guess what a file or directory contains: look first.
 Read a file before editing it; use edit, not write, to change existing files.
@@ -23,7 +27,7 @@ func SystemPrompt(custom, workDir string, instructions []Instruction) string {
 	if custom != "" {
 		prompt = custom
 	}
-	prompt = fmt.Sprintf("%s\n\nWorking directory: %s\nOS: %s\nDate: %s\n\n%s",
-		prompt, workDir, runtime.GOOS, time.Now().Format("2006-01-02"), tools.ViewGuide)
+	prompt = fmt.Sprintf("%s\n\nWorking directory: %s\nOS: %s\nDate: %s\n\n%s\n%s",
+		prompt, workDir, runtime.GOOS, time.Now().Format("2006-01-02"), tools.ViewGuide, callOrder)
 	return prompt + instructionsText(instructions)
 }

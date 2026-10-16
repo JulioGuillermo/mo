@@ -168,8 +168,8 @@ func (p *OpenAI) Stream(ctx context.Context, req Request, onEvent func(Event)) (
 			if delta.Content != "" {
 				emit(think.feed(delta.Content))
 			}
-			calls = mergeToolCallDeltas(calls, delta.ToolCalls, func(index int, name, args string) {
-				onEvent(Event{Kind: EventToolCall, Call: index, Name: name, Text: args})
+			calls = mergeToolCallDeltas(calls, delta.ToolCalls, func(index int, id, name, args string) {
+				onEvent(Event{Kind: EventToolCall, Call: index, ID: id, Name: name, Text: args})
 			})
 			if choice.FinishReason == "length" {
 				cutOff = true
@@ -202,10 +202,10 @@ func (p *OpenAI) Stream(ctx context.Context, req Request, onEvent func(Event)) (
 // mergeToolCallDeltas assembles tool calls that arrive in pieces: the first
 // piece for an index carries id and name, later ones append to the arguments.
 // A piece without index continues the last call unless it starts a new one.
-func mergeToolCallDeltas(calls []*openAIToolCall, deltas []openAIToolCall, onDelta func(index int, name, args string)) []*openAIToolCall {
+func mergeToolCallDeltas(calls []*openAIToolCall, deltas []openAIToolCall, onDelta func(index int, id, name, args string)) []*openAIToolCall {
 	for _, delta := range deltas {
 		index := deltaIndex(delta, len(calls))
-		onDelta(index, delta.Function.Name, delta.Function.Arguments)
+		onDelta(index, delta.ID, delta.Function.Name, delta.Function.Arguments)
 		for len(calls) <= index {
 			calls = append(calls, &openAIToolCall{})
 		}

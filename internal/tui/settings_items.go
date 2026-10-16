@@ -198,6 +198,13 @@ func toolItems(m model, menu *settingsMenu) []settingItem {
 		{"Max tool output (bytes)", func(d *settingsDraft) string { return d.maxOutput }, func(d *settingsDraft) huh.Field {
 			return huh.NewInput().Title("Max tool output (bytes)").Validate(validCount).Value(&d.maxOutput)
 		}},
+		{"Tool calls run", func(d *settingsDraft) string { return d.calls }, func(d *settingsDraft) huh.Field {
+			return huh.NewSelect[string]().Title("Tool calls run").
+				Description("the calls of a reply run one after another, in order, either way").Options(
+				huh.NewOption("streamed: each as soon as it is written, asking what it needs while the reply goes on", "streamed"),
+				huh.NewOption("reply: all once the reply ends, asked together", "reply"),
+			).Value(&d.calls)
+		}},
 		{"Command output kept", func(d *settingsDraft) string { return d.outputs }, func(d *settingsDraft) huh.Field {
 			return huh.NewSelect[string]().Title("Command output kept").
 				Description("the whole output of each bash command, for the model to read any part of later").Options(

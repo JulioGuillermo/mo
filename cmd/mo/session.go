@@ -173,6 +173,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		Strategy:      cfg.Context.Strategy,
 		KeepReasoning: *cfg.Context.KeepReasoning,
 		Permissions:   policy,
+		EarlyCalls:    cfg.Tools.Calls != "reply",
 		Loop: agent.LoopGuard{
 			Enabled:       *cfg.Loop.Enabled,
 			Replies:       cfg.Loop.Replies,
