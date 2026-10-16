@@ -138,13 +138,18 @@ func (m model) agentRows(infos []team.Info, below int, width int, base lipgloss.
 	for _, info := range infos {
 		mark, tint := agentMark(info, dark)
 		indent := strings.Repeat("  ", max(info.Depth-below-1, 0))
-		line := base.Foreground(tint).Render(indent+mark+" ") + base.Render(oneLine(info.Name, max(width-len(indent)-14, 6)))
-		note := string(info.State)
+		note, noteStyle := " · "+string(info.State), base.Foreground(colors.dim)
 		if info.AskingBelow > 0 && info.State != team.Asking {
-			line += base.Foreground(lipgloss.Color("#e0af68")).Render(fmt.Sprintf(" · %d asks", info.AskingBelow))
-		} else {
-			line += base.Foreground(colors.dim).Render(" · " + note)
+			note, noteStyle = fmt.Sprintf(" · %d asks", info.AskingBelow), base.Foreground(lipgloss.Color("#e0af68"))
 		}
+		// Its context, used of its window, on the right; the name gives
+		// way when there is no room.
+		tokens := agentTokens(info)
+		room := width - ansi.StringWidth(indent+mark+" "+note) - ansi.StringWidth(tokens) - 1
+		name := oneLine(info.Name, max(room, 4))
+		gap := max(width-ansi.StringWidth(indent+mark+" "+name+note+tokens), 1)
+		line := base.Foreground(tint).Render(indent+mark+" ") + base.Render(name) + noteStyle.Render(note) +
+			base.Render(strings.Repeat(" ", gap)) + base.Foreground(colors.dim).Render(tokens)
 		id := info.ID
 		open := func(m model) (tea.Model, tea.Cmd) { return m.openAgentView(id) }
 		menu := func(m model) (tea.Model, tea.Cmd) { return m.agentMenu(id) }
@@ -455,4 +460,30 @@ func (m model) pickAgent(argument string) (tea.Model, tea.Cmd) {
 	return m.showChoices("Subagents", "pick one to see what it does and talk to it", options, func(m model, choice string) (tea.Model, tea.Cmd) {
 		return m.pickAgent(choice)
 	})
+}
+
+// agentTokens is a subagent's context, used of its window, as 4.5k/1M.
+func agentTokens(info team.Info) string {
+	used := info.Usage.InputTokens + info.Usage.OutputTokens
+	if used == 0 && info.Window == 0 {
+		return ""
+	}
+	if info.Window == 0 {
+		return shortTokens(used)
+	}
+	return shortTokens(used) + "/" + shortTokens(info.Window)
+}
+
+// shortTokens is a count of tokens in a few characters: 950, 4.5k, 1M.
+func shortTokens(count int) string {
+	trim := func(value float64, unit string) string {
+		return strings.TrimSuffix(fmt.Sprintf("%.1f", value), ".0") + unit
+	}
+	switch {
+	case count >= 1_000_000:
+		return trim(float64(count)/1_000_000, "M")
+	case count >= 1000:
+		return trim(float64(count)/1000, "k")
+	}
+	return fmt.Sprint(count)
 }

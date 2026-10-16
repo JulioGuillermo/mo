@@ -287,7 +287,7 @@ func (t *Team) Records() []sessions.AgentRecord {
 	for _, m := range t.members {
 		records = append(records, sessions.AgentRecord{
 			ID: m.ID, Parent: m.Parent, Depth: m.Depth, Name: m.Name, Task: m.Task, State: string(m.State),
-			Error: m.Err, Result: m.result, History: slices.Clone(m.history), Usage: m.Usage,
+			Error: m.Err, Result: m.result, History: slices.Clone(m.history), Usage: m.Usage, Model: m.Model, Window: m.Window,
 		})
 	}
 	return records
@@ -308,7 +308,7 @@ func (t *Team) Restore(records []sessions.AgentRecord) {
 		}
 		t.members = append(t.members, &member{
 			Info: Info{ID: record.ID, Parent: record.Parent, Depth: record.Depth, Name: record.Name, Task: record.Task,
-				State: state, Err: record.Error, Steps: steps(record.History), Usage: record.Usage},
+				State: state, Err: record.Error, Steps: steps(record.History), Usage: record.Usage, Model: record.Model, Window: record.Window},
 			history: record.History, result: record.Result,
 		})
 	}

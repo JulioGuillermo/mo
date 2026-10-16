@@ -10,6 +10,7 @@ package tui
 // | AV-06 | Happy    | A right click offers to stop one that works, or remove one that ended, which closes its view | P1 |
 // | AV-07 | Happy    | What it is writing shows in its view as it comes                          | P1       |
 // | AV-08 | Edge     | /agents without subagents says how to have them                           | P2       |
+// | AV-09 | Happy    | Each row says the context it used of its window, the name giving way when there is no room | P1 |
 
 import (
 	"context"
@@ -254,6 +255,30 @@ func TestAgentView(t *testing.T) {
 
 		if !strings.Contains(shown(updated.(model)), "agents.enabled") {
 			t.Errorf("transcript:\n%s", shown(updated.(model)))
+		}
+	})
+}
+
+func TestAgentTokens(t *testing.T) {
+	t.Run("AV-09 each row says the context it used of its window, the name giving way when there is no room", func(t *testing.T) {
+		m, _ := teamModel(t)
+		m.session.Team.Restore([]sessions.AgentRecord{
+			{ID: 1, Depth: 1, Name: "lead", State: "done", Usage: llm.Usage{InputTokens: 4000, OutputTokens: 500}, Window: 1_000_000},
+			{ID: 2, Parent: 1, Depth: 2, Name: "a-very-long-name-for-a-subagent", State: "done", Usage: llm.Usage{InputTokens: 950}, Window: 32768},
+		})
+
+		view := screenOf(m)
+
+		if !strings.Contains(view, "✓ lead · done") || !strings.Contains(view, "4.5k/1M") || !strings.Contains(view, "950/32.8k") {
+			t.Errorf("view:\n%s", view)
+		}
+		for _, line := range strings.Split(view, "\n") {
+			if ansi.StringWidth(line) > m.width {
+				t.Errorf("too wide: %q", line)
+			}
+		}
+		if shortTokens(999) != "999" || shortTokens(1000) != "1k" || shortTokens(200000) != "200k" || shortTokens(1500000) != "1.5M" {
+			t.Errorf("short %s %s %s %s", shortTokens(999), shortTokens(1000), shortTokens(200000), shortTokens(1500000))
 		}
 	})
 }

@@ -392,7 +392,8 @@ parent reads only that report, so long searches or test runs stay out of its con
 - The side panel lists them under **Agents** as a tree, each with a sign of how it does: `⧗` grey
   waiting for a place, `⧗` purple waiting for its own subagents (yellow, with `· N asks`, when one
   under it waits for you), `●` blue working, `?` yellow asking you, `✓` green done, `⚠` red failed or
-  stopped. A click opens its view; a right click stops it, removes it from the list or opens it.
+  stopped, and on the right the context it used of its window, as `4.5k/1M`. A click opens its view;
+  a right click stops it, removes it from the list or opens it.
   `/agents` lists them to pick one, `/agents N` opens one.
 - Its view is a conversation over the whole screen, live while it works: a title bar with its sign,
   name, level, where it is (`main › lead › scout`, each name opens that one) and `✕`; those under it

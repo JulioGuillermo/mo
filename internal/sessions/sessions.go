@@ -41,6 +41,8 @@ type AgentRecord struct {
 	Result  string        `json:"result,omitempty"`
 	History []llm.Message `json:"history"`
 	Usage   llm.Usage     `json:"usage"`
+	Model   string        `json:"model,omitempty"`
+	Window  int           `json:"window,omitempty"`
 }
 
 // Info is what a list shows of a conversation, without its messages.
