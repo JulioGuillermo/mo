@@ -9,6 +9,7 @@ package tui
 // | UD-06 | Happy    | A grid lines each column's cells up, as wide as the widest, a fixed width kept, a click reaching a cell | P1 |
 // | UD-07 | Happy    | An opened ui call shows its tree under guides, as mended, and its script highlighted; folded, a hint says so | P1 |
 // | UD-08 | Happy    | A click on a select's value lists its options over the interface; one taken is set; a long list scrolls | P1 |
+// | UD-09 | Happy    | The dialog's title and keys sit in its edges, the card's title once; × closes it; what is inside is centred | P1 |
 // | UD-05 | Happy    | Select, slider, checkbox, switch and radio are drawn, change by keys and clicks, and go with submit | P0 |
 
 import (
@@ -58,7 +59,7 @@ func TestUIDialog(t *testing.T) {
 		if !strings.Contains(panel, "UIs") || !strings.Contains(panel, "● 1 Sign up") {
 			t.Errorf("panel:\n%s", panel)
 		}
-		if m.uiOpen != 1 || !ui.Seen || !strings.Contains(screen, "UI 1 · Sign up") || !strings.Contains(screen, "Create") || !strings.Contains(screen, "Jobs") {
+		if m.uiOpen != 1 || !ui.Seen || !strings.Contains(screen, "UI 1 · ×") || !strings.Contains(screen, "Create") || !strings.Contains(screen, "Jobs") {
 			t.Errorf("dialog:\n%s", screen)
 		}
 	})
@@ -329,6 +330,66 @@ func TestSelectList(t *testing.T) {
 		}
 		if !strings.Contains(later, "option 31") || !strings.Contains(later, "↑") || strings.Contains(later, "option 01") {
 			t.Errorf("the list should scroll with the selection:\n%s", later)
+		}
+	})
+}
+
+func TestUIFrame(t *testing.T) {
+	t.Run("UD-09 the dialog's title and keys sit in its edges, the card's title once; × closes it; what is inside is centred", func(t *testing.T) {
+		m, _ := uiModel(t)
+		open := func(title, tree string) uiFrame {
+			args, _ := json.Marshal(map[string]any{"action": "create", "title": title, "tree": json.RawMessage(tree)})
+			output, isError := m.session.Agent.Tools.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args})
+			if isError {
+				t.Fatal(output)
+			}
+			var id int
+			fmt.Sscanf(output, "UI %d", &id)
+			updated, _ := m.openUI(id)
+			m = updated.(model)
+			frame, _ := m.uiFrame()
+			return frame
+		}
+		plain := func(frame uiFrame) []string {
+			var lines []string
+			for _, line := range frame.lines {
+				lines = append(lines, ansi.Strip(line))
+			}
+			return lines
+		}
+
+		card := plain(open("Keys", `{"type":"card","title":"Keys","children":[{"type":"button","id":"a","label":"A"},{"type":"button","id":"b","label":"B"}]}`))
+		if strings.Count(strings.Join(card, "\n"), "Keys") != 1 || !strings.Contains(card[0], "UI 2 · ×") {
+			t.Errorf("the card's title should show once, the number and × in the top edge:\n%s", strings.Join(card, "\n"))
+		}
+		if last := card[len(card)-1]; !strings.Contains(last, "tab") || !strings.Contains(last, "enter") || strings.Contains(last, "←→") {
+			t.Errorf("the keys should be the buttons': %q", last)
+		}
+
+		frame := open("Choose a plan for the account", `{"type":"panel","children":[{"type":"radio","id":"p","options":["free","pro"]}]}`)
+		lines := plain(frame)
+		if !strings.HasPrefix(lines[0], "╭─ Choose a plan for the account ") || !strings.Contains(lines[len(lines)-1], "←→ change") {
+			t.Errorf("title and keys:\n%s", strings.Join(lines, "\n"))
+		}
+		row := lines[1]
+		left := strings.Index(row, "(")
+		rightGap := len([]rune(row)) - len([]rune(strings.TrimRight(strings.TrimSuffix(row, "│"), " "))) - 1
+		if left < 6 || rightGap < 4 {
+			t.Errorf("the radio should sit in the middle: %q", row)
+		}
+
+		var close uiHit
+		for _, hit := range frame.hits {
+			if hit.id == uiCloseHit {
+				close = hit
+			}
+		}
+		if !strings.HasPrefix(string([]rune(lines[0])[close.x0-frame.x:]), "×") {
+			t.Fatalf("the × hit should be on the ×: %q at %d", lines[0], close.x0-frame.x)
+		}
+		updated, _ := m.Update(tea.MouseClickMsg{X: close.x0, Y: close.y0, Button: tea.MouseLeft})
+		if updated.(model).uiOpen != 0 {
+			t.Error("a click on × should close the dialog")
 		}
 	})
 }

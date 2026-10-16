@@ -206,6 +206,10 @@ func (r uiRenderer) render(n tools.UINode, width int, parentBG string, fill bool
 	}
 	box := surround(content, pt, pr, pb, pl, bg)
 	if bordered {
+		// A card is as wide as its title needs, so the title shows.
+		if need := ansi.StringWidth(n.Title) + 4; n.Title != "" && box.width < need {
+			box = widen(box, min(need, max(room-2, box.width)), bg)
+		}
 		box = framed(box, border, n.Title, n.FG, bg)
 	}
 	return surround(box, mt, mr, mb, ml, parentBG)

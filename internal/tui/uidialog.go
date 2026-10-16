@@ -15,7 +15,6 @@ import (
 
 const (
 	uiDialogMaxWidth = 100
-	uiDialogHelp     = "tab move · enter press · ←→ change · esc hides it"
 )
 
 // uiChangedMsg says the model created, updated or removed an interface.
@@ -85,31 +84,126 @@ func (m model) uiFrame() (uiFrame, bool) {
 		return uiFrame{}, false
 	}
 	state := m.live(m.uiOpen)
-	width := max(min(m.width-6, uiDialogMaxWidth), 20)
-	body := uiRenderer{focus: state.focus}.render(ui.Shown(), width-4, "", false)
-	room := max(m.height-6, 3)
+	most := max(min(m.width-6, uiDialogMaxWidth), 20)
+	tree := ui.Shown()
+	body := uiRenderer{focus: state.focus}.render(tree, most-4, "", false)
+	room := max(m.height-4, 3)
 	state.scroll = min(max(state.scroll, 0), max(body.height()-room, 0))
 	shown := body.lines[state.scroll:min(state.scroll+room, body.height())]
-	content := strings.Join(shown, "\n") + "\n"
-	if ui.Error != "" {
-		content += "\n" + errorStyle.Render(ansi.Truncate("script: "+ui.Error, width-4, "…"))
+
+	// The title goes in the top edge, unless the interface's own card says
+	// it; the number and × at its right; the keys in the bottom edge.
+	title := ui.Title
+	if tree.Type == tools.UICard && strings.TrimSpace(tree.Title) == strings.TrimSpace(ui.Title) {
+		title = ""
 	}
-	content += "\n" + dimStyle.Render(ansi.Truncate(uiDialogHelp, width-4, "…"))
-	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(popupBorder).Padding(0, 1).
-		Render(toolName.Render(fmt.Sprintf("UI %d · %s", ui.ID, ui.Title)) + "\n" + content)
-	lines := strings.Split(box, "\n")
+	tag := fmt.Sprintf(" UI %d · ", ui.ID)
+	inner := body.width
+	if title != "" {
+		inner = max(inner, min(ansi.StringWidth(title)+ansi.StringWidth(tag)+6, most-4))
+	}
+	inner = max(inner, ansi.StringWidth(tag)+4)
+	keys, short := uiKeys(tree)
+	inner = max(inner, min(ansi.StringWidth(short)+2, most-4))
+	failure := ""
+	if ui.Error != "" {
+		failure = "script: " + ui.Error
+		inner = max(inner, min(ansi.StringWidth(failure), most-4))
+	}
+	// The interface sits in the middle when the edges make the dialog wider.
+	indent := (inner - body.width) / 2
+	edge := lipgloss.NewStyle().Foreground(popupBorder)
+	pad := func(line string, indent int) string {
+		line = strings.Repeat(" ", indent) + line
+		return edge.Render("│") + " " + line + strings.Repeat(" ", max(inner-ansi.StringWidth(line), 0)) + " " + edge.Render("│")
+	}
+	head := edge.Render("╭─")
+	used := 2
+	if title != "" {
+		name := ansi.Truncate(title, max(inner-ansi.StringWidth(tag)-4, 4), "…")
+		head += " " + toolName.Render(name) + " "
+		used += ansi.StringWidth(name) + 2
+	}
+	right := dimStyle.Render(tag) + toolName.Render("×") + edge.Render(" ─╮")
+	rightWidth := ansi.StringWidth(tag) + 1 + 3
+	fill := max(inner+4-used-rightWidth, 1)
+	head += edge.Render(strings.Repeat("─", fill)) + right
+	closeAt := used + fill + ansi.StringWidth(tag)
+	lines := []string{head}
+	for _, line := range shown {
+		lines = append(lines, pad(line, indent))
+	}
+	if failure != "" {
+		lines = append(lines, pad(errorStyle.Render(ansi.Truncate(failure, inner, "…")), 0))
+	}
+	if ansi.StringWidth(keys) > inner-2 {
+		keys = short
+	}
+	keys = ansi.Truncate(keys, max(inner-2, 1), "…")
+	lines = append(lines, edge.Render("╰─ ")+dimStyle.Render(keys)+" "+edge.Render(strings.Repeat("─", max(inner-ansi.StringWidth(keys)-1, 0))+"╯"))
+
 	x := max((m.width-ansi.StringWidth(lines[0]))/2, 0)
 	y := max((m.height-len(lines))/2, 0)
-	var hits []uiHit
+	hits := []uiHit{{x0: x + closeAt, x1: x + closeAt + 1, y0: y, y1: y + 1, id: uiCloseHit}}
 	for _, hit := range body.hits {
 		top := hit.y0 - state.scroll
 		if top < 0 || top >= len(shown) {
 			continue
 		}
-		// border, padding and the title line come before the body.
-		hits = append(hits, hit.moved(x+2, y+2-state.scroll))
+		// The top edge comes before the body, the edge and a space beside it.
+		hits = append(hits, hit.moved(x+2+indent, y+1-state.scroll))
 	}
 	return uiFrame{lines: lines, x: x, y: y, hits: hits}, true
+}
+
+// uiCloseHit is the id of the × in the dialog's top edge.
+const uiCloseHit = "\x00close"
+
+// uiKeys are the keys the interface takes, as its controls ask for, said
+// whole and, for a narrow dialog, the keys alone.
+func uiKeys(tree tools.UINode) (string, string) {
+	var buttons, inputs, changes, ticks bool
+	var walk func(n tools.UINode)
+	walk = func(n tools.UINode) {
+		if !n.Shown() {
+			return
+		}
+		switch n.Type {
+		case tools.UIButton:
+			buttons = true
+		case tools.UIInput:
+			inputs = true
+		case tools.UISelect, tools.UISlider, tools.UIRadio:
+			changes = true
+		case tools.UICheckbox, tools.UISwitch:
+			ticks = true
+		}
+		for _, child := range n.Children {
+			walk(child)
+		}
+	}
+	walk(tree)
+	var keys, short []string
+	add := func(key, what string) {
+		keys, short = append(keys, key+" "+what), append(short, key)
+	}
+	if len(focusable(tree)) > 1 {
+		add("tab", "move")
+	}
+	if inputs {
+		keys, short = append(keys, "type"), append(short, "type")
+	}
+	if buttons {
+		add("enter", "press")
+	}
+	if changes {
+		add("←→", "change")
+	}
+	if ticks {
+		add("space", "tick")
+	}
+	add("esc", "hides")
+	return strings.Join(keys, " · "), strings.Join(short, " · ")
 }
 
 // overUI draws the open interface over the screen.
@@ -145,6 +239,10 @@ func (m model) updateUI(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		for _, hit := range frame.hits {
 			if msg.X >= hit.x0 && msg.X < hit.x1 && msg.Y >= hit.y0 && msg.Y < hit.y1 {
+				if hit.id == uiCloseHit {
+					m.uiOpen = 0
+					return m, nil
+				}
 				node, _ := findNode(ui.Shown(), hit.id)
 				if node.Disabled {
 					return m, nil

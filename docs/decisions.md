@@ -977,6 +977,12 @@
   topic is a line for each, and each type is a topic of its own, asked by its name, saying what it
   is and how it is used with an example. The detail costs only when asked for, and the whole
   help stays the size it was.
+- The dialog an interface opens in takes as little room as it can: its title sits in its top
+  edge, with the interface's number and a × that closes it, and the keys in its bottom edge,
+  only those its controls take, and only the keys when the words do not fit. A card at the root
+  titled as the interface keeps its title, which the edge then leaves out; a card is as wide as
+  its title needs. The dialog is as wide as what is inside, which sits in its middle when the
+  edges make it wider.
 - An opened ui call shows what the model gave, in blocks like a write's: its tree under guides
   (├─ └─), a node to a line with its type, #id, words and other fields coloured as code is, as
   the tool mended it, so what is read is what is drawn; and its script highlighted as Lua. JSON
