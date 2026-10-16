@@ -99,3 +99,25 @@ func TestSpacing(t *testing.T) {
 		}
 	})
 }
+
+func TestTerminalText(t *testing.T) {
+	t.Run("a command's output is drawn as a terminal leaves it: \\r\\n a new line, \\r over its line, no controls", func(t *testing.T) {
+		output := "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Headers: Authorization, Accept\r\n\r\n" +
+			"downloading  10%\rdownloading  50%\rdownloading 100%\n\x1b[32mdone\x1b[0m\a\n\tindented"
+		p := newPrinter()
+		drawn := p.fullResult(output, false) + "\n" + p.ToolResult(output, false)
+
+		if strings.ContainsAny(ansi.Strip(drawn), "\r\a\b") {
+			t.Errorf("controls drawn: %q", ansi.Strip(drawn))
+		}
+		plain := ansi.Strip(drawn)
+		for _, want := range []string{"HTTP/1.1 200 OK", "Access-Control-Allow-Headers: Authorization, Accept", "downloading 100%", "done"} {
+			if !strings.Contains(plain, want) {
+				t.Errorf("%q not shown:\n%s", want, plain)
+			}
+		}
+		if strings.Contains(plain, "downloading  10%") || terminalText("a\r") != "a" || terminalText("plain\ttext") != "plain\ttext" {
+			t.Errorf("a \\r should leave its last text: %q", plain)
+		}
+	})
+}

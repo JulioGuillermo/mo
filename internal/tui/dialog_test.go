@@ -9,11 +9,13 @@ package tui
 // | DG-05 | Happy    | The dialog stays above the input, the conversation scrolled or not   | P1       |
 // | DG-06 | Happy    | A long command scrolls to its end; a long line wraps instead of being cut | P1   |
 // | DG-07 | Happy    | Each part of a bash command shows what the rules say of it            | P1       |
+// | DG-09 | Happy    | A command of many parts scrolls with them, every part reachable       | P1       |
 // | DG-08 | Happy    | What a later call asks joins the open dialog; each ask is answered once its parts are | P0 |
 // | HL-01 | Happy    | Bash is coloured by what each piece is, on the block's background     | P2       |
 // | FC-01 | Happy    | An opened edit shows its diff highlighted; an opened write what it wrote | P1    |
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -173,7 +175,7 @@ func TestCommandView(t *testing.T) {
 		m = keys(t, m, keyTab)
 		wrapped := ansi.Strip(m.dialogView())
 
-		if strings.Contains(top, "rm -rf build") || !strings.Contains(top, "lines 1–7 of 41") || !strings.Contains(bottom, "rm -rf build") || !strings.Contains(bottom, "of 41") {
+		if strings.Contains(top, "rm -rf build") || !strings.Contains(top, "lines 1–7 of ") || !strings.Contains(bottom, "rm -rf build") {
 			t.Errorf("top:\n%s\nbottom:\n%s", top, bottom)
 		}
 		if strings.Contains(wrapped, "…") || strings.Count(wrapped, "xxxxxxxxxx") < 4 {
@@ -223,6 +225,25 @@ func TestCommandView(t *testing.T) {
 		}
 		if !strings.Contains(tabs, "2") || !stillOpen || gotFirst.Decisions[0] != agent.Deny || gotSecond.Decisions[0] != agent.Allow {
 			t.Errorf("open %v first %+v second %+v tabs:\n%s", stillOpen, gotFirst, gotSecond, tabs)
+		}
+	})
+
+	t.Run("DG-09 a command of many parts scrolls with them, every part reachable", func(t *testing.T) {
+		var parts []string
+		for i := 1; i <= 20; i++ {
+			parts = append(parts, fmt.Sprintf("echo part%02d", i))
+		}
+		m, _ := asking(agent.Interaction{Approvals: []agent.ApprovalRequest{{Call: llm.ToolCall{Name: "bash"}, Summary: strings.Join(parts, "; "), Ruled: true}}})
+		m.width, m.height = 80, 30
+		top := ansi.Strip(m.dialogView())
+		m = keys(t, m, tea.KeyPressMsg{Code: tea.KeyEnd})
+		bottom := ansi.Strip(m.dialogView())
+
+		if !strings.Contains(top, "lines 1–") || strings.Contains(top, "● echo part20") || strings.Contains(top, "more") {
+			t.Errorf("top:\n%s", top)
+		}
+		if !strings.Contains(bottom, "● echo part20") {
+			t.Errorf("the last part should be reached:\n%s", bottom)
 		}
 	})
 

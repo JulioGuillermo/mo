@@ -1175,14 +1175,10 @@ func contextGauge(share float64) string {
 	return string(levels[max(0, min(int(share*float64(len(levels))), len(levels)-1))])
 }
 
-// contextBar draws how full the context is in cells, the used ones in fill.
-func contextBar(share float64, cells int, fill, empty color.Color) string {
-	used := min(int(share*float64(cells)+0.5), cells)
-	if share > 0 && used == 0 {
-		used = 1
-	}
-	return lipgloss.NewStyle().Foreground(fill).Render(strings.Repeat("▰", used)) +
-		lipgloss.NewStyle().Foreground(empty).Render(strings.Repeat("▱", cells-used))
+// contextBar draws how full the context is in cells, in the style the
+// settings pick.
+func contextBar(share float64, cells int, fill, empty color.Color, style string) string {
+	return barStyleNamed(style).draw(share, cells, fill, empty)
 }
 
 type statusColors struct {

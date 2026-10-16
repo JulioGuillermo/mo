@@ -1101,3 +1101,22 @@
   tokens from its first piece to its last over that time; the prompt's speed, what was read past
   the cache over the time since reading began. A piece of the stream is a token for most
   servers, and four characters one for those that send more at once, whichever is more.
+
+## Permissions: parts of a command
+
+- A shell's -c script written out, as bash -c '...' or sh -ec "...", is split into its own commands:
+  the shell runs just that, so it is no part of its own. One whose script is not written out,
+  expanded from a variable or a substitution, stays a part, as one that writes a file or sets
+  variables before it, since those change what runs.
+- A part holding commands of its own, in $(...), backquotes or <(...), shows them as $(…) when it
+  is long or spans lines, as an assignment SESS=$(curl ... | grep ... | awk ...): those commands
+  are parts of their own, checked alone. Its rules see it the same way.
+- The dialog scrolls a call's command and its parts as one, so every part can be read; nothing is
+  left out as "+N more".
+- The context bar's look is a setting, render.bar, the shapes ▰▱ by default. Shapes such as these,
+  circles and squares come from whatever font has them, wider or narrower than a cell where the
+  terminal's own lacks them; box drawing, block elements and braille are drawn by most terminals
+  themselves a cell wide. Braille, half-circles and half-squares fill two steps a cell: braille's
+  top and bottom dots outline the bar, its middle ones fill it a column at a time. Circles and
+  squares come whole too, as the half ones look different from font to font. The settings show
+  each at 65%, in the bar's own colours, since some fill with the mark they leave empty.

@@ -215,7 +215,7 @@ func (m model) reloadViewer() error {
 	}
 	v := m.viewer
 	v.status = status
-	v.lines = strings.Split(strings.TrimSuffix(strings.ReplaceAll(text, "\r\n", "\n"), "\n"), "\n")
+	v.lines = strings.Split(strings.TrimSuffix(terminalText(text), "\n"), "\n")
 	if text == "" {
 		v.lines = nil
 	}

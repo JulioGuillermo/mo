@@ -772,6 +772,7 @@ func (p *printer) toolHidesSome(run toolRun) bool {
 
 // fullResult is every line of a result, wrapped to the width.
 func (p *printer) fullResult(output string, isError bool) string {
+	output = terminalText(output)
 	style := dimStyle
 	if isError {
 		style = errorStyle
@@ -792,6 +793,7 @@ func (p *printer) fullResult(output string, isError bool) string {
 // ToolResult shows the first lines of a result, enough to see what happened
 // without flooding the scrollback.
 func (p *printer) ToolResult(output string, isError bool) string {
+	output = terminalText(output)
 	lines := strings.Split(strings.TrimRight(output, "\n"), "\n")
 	shown := lines[:min(len(lines), toolPreviewLines)]
 	style := dimStyle

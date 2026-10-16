@@ -413,7 +413,7 @@ func (m model) contextPart(show statusParts, colors statusColors) string {
 	case window > 0:
 		part := paint(fill, contextGauge(share)) + " "
 		if show.bar > 0 {
-			part = contextBar(share, show.bar, fill, colors.empty) + " "
+			part = contextBar(share, show.bar, fill, colors.empty, m.session.Config.Render.Bar) + " "
 		}
 		part += paint(fill, m.about()+fmt.Sprintf("%.0f%%", share*100))
 		if show.tokens {

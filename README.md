@@ -215,6 +215,7 @@ background = "#00081a"     # painted behind everything so mo looks the same in a
 sidebar = "auto"           # side panel of tasks and jobs when wide enough; "off" never
 keys = "default"           # "vim" for vim keys: modes, and ctrl+h/j/k/l between the panes
 status = "powerline"       # segments on backgrounds with arrows (needs a Nerd Font); "plain" for any font
+bar = "shapes"             # context bar: shapes ▰▱, braille, circles, half-circles, squares, half-squares, dots, rings, dashes, shade, blocks, halves, line
 icons = "nerd"             # Nerd Font icons for the branch and its changes; "text": + ~ - » ? ! ✓
 
 [permissions]

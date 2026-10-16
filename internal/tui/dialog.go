@@ -487,15 +487,7 @@ func (m model) approvalLines(item dialogItem, colors dialogColors, body lipgloss
 		title += body.Render("  ") + body.Foreground(lipgloss.Color("#f7768e")).Render(request.Warning)
 	}
 	lines := []string{title, ""}
-	lines = append(lines, m.commandBlock(item, colors, body, width)...)
-	parts := m.commandParts(request, body, colors, width)
-	lines = append(lines, parts...)
-	if request.Reason != "" {
-		lines = append(lines, "", body.Foreground(warning).Render(request.Reason))
-	}
-	if request.Ruled && len(request.Commands) > 0 && len(parts) == 0 {
-		lines = append(lines, body.Foreground(colors.dim).Render("no rule allows: ")+body.Render(strings.Join(request.Commands, " · ")))
-	}
+	lines = append(lines, m.approvalBody(item, colors, body, width)...)
 	lines = append(lines, "")
 	var buttons []string
 	var regions []region
@@ -544,27 +536,60 @@ func (m model) commandLines(request agent.ApprovalRequest, colors dialogColors, 
 	return highlightLines(request.Summary, language, width-2, colors.command, m.printer == nil || m.printer.isDark())
 }
 
-// commandBlock shows the whole command, wrapped, scrolled to where the
-// user moved it when it does not fit.
-func (m model) commandBlock(item dialogItem, colors dialogColors, body lipgloss.Style, width int) []string {
+// approvalLinesAll is what a call to approve shows under its title: its
+// command, wrapped, the parts of a bash command and what the rules say of
+// each, and why it asks; all of it, to scroll.
+func (m model) approvalLinesAll(request agent.ApprovalRequest, colors dialogColors, body lipgloss.Style, width int) []string {
 	command := lipgloss.NewStyle().Background(colors.command)
-	all := m.commandLines(m.dialog.request(item), colors, width)
-	rows := m.commandRows()
-	first := min(max(item.scroll, 0), max(len(all)-rows, 0))
-	shown := all[first:min(first+rows, len(all))]
 	var lines []string
-	for _, line := range shown {
+	for _, line := range m.commandLines(request, colors, width) {
 		lines = append(lines, command.Render(" ")+line+command.Render(strings.Repeat(" ", max(width-1-ansi.StringWidth(line), 0))))
 	}
-	if len(all) > rows {
-		lines = append(lines, body.Foreground(colors.dim).Render(fmt.Sprintf("lines %d–%d of %d · ↑↓ pgup pgdn scroll", first+1, first+len(shown), len(all))))
+	parts := m.commandParts(request, body, colors, width)
+	lines = append(lines, parts...)
+	if request.Reason != "" {
+		lines = append(lines, "")
+		for _, line := range strings.Split(ansi.Wrap(request.Reason, width, " "), "\n") {
+			lines = append(lines, body.Foreground(warning).Render(line))
+		}
+	}
+	if request.Ruled && len(request.Commands) > 0 && len(parts) == 0 {
+		for i, line := range strings.Split(ansi.Wrap("no rule allows: "+strings.Join(request.Commands, " · "), width, " "), "\n") {
+			if i == 0 {
+				line = body.Foreground(colors.dim).Render("no rule allows: ") + body.Render(strings.TrimPrefix(line, "no rule allows: "))
+			} else {
+				line = body.Render(line)
+			}
+			lines = append(lines, line)
+		}
 	}
 	return lines
 }
 
-// scrollCommand moves the command shown by a line, a page or to an end.
+// approvalBody shows what a call to approve shows, scrolled to where the
+// user moved it when it does not fit, the command and its parts as one.
+func (m model) approvalBody(item dialogItem, colors dialogColors, body lipgloss.Style, width int) []string {
+	all := m.approvalLinesAll(m.dialog.request(item), colors, body, width)
+	rows := m.commandRows()
+	if len(all) <= rows {
+		return all
+	}
+	first := min(max(item.scroll, 0), max(len(all)-rows, 0))
+	shown := append([]string{}, all[first:min(first+rows, len(all))]...)
+	return append(shown, body.Foreground(colors.dim).Render(fmt.Sprintf("lines %d–%d of %d · ↑↓ pgup pgdn scroll", first+1, first+rows, len(all))))
+}
+
+// approvalTotal is how many lines a call to approve has to scroll through.
+func (m model) approvalTotal(item dialogItem) int {
+	colors := dialogPalette(m.printer == nil || m.printer.isDark())
+	body := lipgloss.NewStyle().Background(colors.body).Foreground(colors.text)
+	return len(m.approvalLinesAll(m.dialog.request(item), colors, body, max(m.mainWidth(), 30)-4-4))
+}
+
+// scrollCommand moves what a call to approve shows by a line, a page or to
+// an end.
 func (m model) scrollCommand(item *dialogItem, pressed string) {
-	total := len(m.commandLines(m.dialog.request(*item), dialogPalette(true), max(m.mainWidth(), 30)-4))
+	total := m.approvalTotal(*item)
 	rows := m.commandRows()
 	last := max(total-rows, 0)
 	item.scroll = min(max(item.scroll, 0), last)
@@ -585,8 +610,6 @@ func (m model) scrollCommand(item *dialogItem, pressed string) {
 	item.scroll = min(max(item.scroll, 0), last)
 }
 
-const shownParts = 8
-
 // commandParts lists the simple commands of a bash call and what the
 // rules say of each: allowed and by which rule, denied, not covered yet,
 // or writing a file.
@@ -603,11 +626,7 @@ func (m model) commandParts(request agent.ApprovalRequest, body lipgloss.Style, 
 	}
 	policy := m.session.Agent.Permissions
 	lines := []string{"", body.Foreground(colors.dim).Render(fmt.Sprintf("%d parts", len(parts)))}
-	for i, part := range parts {
-		if i == shownParts {
-			lines = append(lines, body.Foreground(colors.dim).Render(fmt.Sprintf("  … +%d more", len(parts)-shownParts)))
-			break
-		}
+	for _, part := range parts {
 		mark, note, tint := "●", "no rule allows it", warning
 		if policy != nil {
 			switch verdict, rule := policy.Check(part.Text); verdict {
@@ -688,7 +707,7 @@ func (m model) dialogKeys(item dialogItem) string {
 	keys := []string{}
 	if item.approval >= 0 {
 		keys = append(keys, "←→ choose · enter press · y yes · n no")
-		if len(m.commandLines(m.dialog.request(item), dialogPalette(true), max(m.mainWidth(), 30)-4)) > m.commandRows() {
+		if m.approvalTotal(item) > m.commandRows() {
 			keys = append(keys, "↑↓ scroll")
 		}
 		if len(m.dialog.buttonsFor(item)) == 3 {

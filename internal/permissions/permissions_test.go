@@ -90,7 +90,7 @@ func TestCommands(t *testing.T) {
 	t.Run("PM-05 a script splits into every simple command, also inside $(...)", func(t *testing.T) {
 		commands, err := Commands("cd src && ls -la | grep x; for f in *.go; do wc -l $f; done\necho $(rm -rf /tmp/x)")
 
-		want := []string{"cd src", "ls -la", "grep x", "wc -l $f", "echo $(rm -rf /tmp/x)", "rm -rf /tmp/x"}
+		want := []string{"cd src", "ls -la", "grep x", "wc -l $f", "echo $(…)", "rm -rf /tmp/x"}
 		got := texts(commands)
 		if err != nil || len(got) != len(want) {
 			t.Fatalf("commands = %q err = %v", got, err)

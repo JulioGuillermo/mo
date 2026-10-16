@@ -169,6 +169,9 @@ type MCPServer struct {
 	Trust   bool              `toml:"trust,omitempty"`
 }
 
+// BarStyles are the looks of the context bar, the first the default.
+var BarStyles = []string{"shapes", "braille", "circles", "half-circles", "squares", "half-squares", "dots", "rings", "dashes", "shade", "blocks", "halves", "line"}
+
 type Render struct {
 	Images render.Mode `toml:"images,omitempty"`
 	// Background is the colour mo paints behind everything, as #rrggbb, so
@@ -186,6 +189,8 @@ type Render struct {
 	// Keys are the usual keys, or "vim": modes to write, move and select,
 	// and ctrl+h/j/k/l between the panes.
 	Keys string `toml:"keys,omitempty"`
+	// Bar is how the context bar is drawn, one of BarStyles.
+	Bar string `toml:"bar,omitempty"`
 }
 
 type Memory struct {
@@ -308,7 +313,7 @@ func Defaults() Config {
 		Skills:       Skills{Mode: tools.ModeFull},
 		Instructions: Instructions{Enabled: ptr(true), Files: []string{"AGENTS.md", "AGENT.md"}},
 		Web:          Web{Search: web.SearchDuckDuckGo},
-		Render:       Render{Images: render.ModeAuto, Background: "#00081a", Sidebar: "auto", Status: "powerline", Icons: "nerd", Keys: "default"},
+		Render:       Render{Images: render.ModeAuto, Background: "#00081a", Sidebar: "auto", Status: "powerline", Icons: "nerd", Keys: "default", Bar: "shapes"},
 		Loop:         Loop{Enabled: ptr(true), Replies: 10, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2)},
 		Permissions:  Permissions{Mode: "edits", Allow: DefaultAllow},
 		Notify:       Notify{Finish: ptr(true), Approval: ptr(true), Method: "auto", Focused: ptr(false)},
@@ -378,6 +383,9 @@ func validate(cfg Config) error {
 	}
 	if cfg.Render.Icons != "nerd" && cfg.Render.Icons != "text" {
 		return fmt.Errorf("render.icons %q: use nerd or text", cfg.Render.Icons)
+	}
+	if !slices.Contains(BarStyles, cfg.Render.Bar) {
+		return fmt.Errorf("render.bar %q: use %s", cfg.Render.Bar, strings.Join(BarStyles, ", "))
 	}
 	if cfg.Render.Status != "powerline" && cfg.Render.Status != "plain" {
 		return fmt.Errorf("render.status %q: use powerline or plain", cfg.Render.Status)
@@ -629,6 +637,7 @@ func mergeHarmless(base, layer Config) Config {
 	base.Render.Sidebar = override(base.Render.Sidebar, layer.Render.Sidebar)
 	base.Render.Keys = override(base.Render.Keys, layer.Render.Keys)
 	base.Render.Status = override(base.Render.Status, layer.Render.Status)
+	base.Render.Bar = override(base.Render.Bar, layer.Render.Bar)
 	base.Render.Icons = override(base.Render.Icons, layer.Render.Icons)
 	base.Loop = mergeLoop(base.Loop, layer.Loop)
 	return base

@@ -58,6 +58,7 @@ type settingsDraft struct {
 	background   string
 	sidebar      string
 	statusStyle  string
+	bar          string
 	icons        string
 	keys         string
 	memoryDir    string
@@ -139,6 +140,7 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		background:    cfg.Render.Background,
 		sidebar:       cfg.Render.Sidebar,
 		statusStyle:   cfg.Render.Status,
+		bar:           cfg.Render.Bar,
 		icons:         cfg.Render.Icons,
 		keys:          cfg.Render.Keys,
 
@@ -279,6 +281,7 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	layer.Render.Background = unlessDefault(strings.TrimSpace(d.background), defaults.Render.Background)
 	layer.Render.Sidebar = unlessDefault(d.sidebar, defaults.Render.Sidebar)
 	layer.Render.Status = unlessDefault(d.statusStyle, defaults.Render.Status)
+	layer.Render.Bar = unlessDefault(d.bar, defaults.Render.Bar)
 	layer.Render.Icons = unlessDefault(d.icons, defaults.Render.Icons)
 	layer.Render.Keys = unlessDefault(d.keys, defaults.Render.Keys)
 	layer.Notify = config.Notify{

@@ -394,7 +394,7 @@ func (m model) contextBlock(width int, base lipgloss.Style, colors sidebarColors
 	paint := func(c color.Color) lipgloss.Style { return base.Foreground(c) }
 	var lines []string
 	if window > 0 {
-		bar := contextBar(share, width-6, fill, status.empty)
+		bar := contextBar(share, width-6, fill, status.empty, m.session.Config.Render.Bar)
 		lines = append(lines,
 			sidebarBackground(bar, colors.background)+paint(fill).Render(fmt.Sprintf(" %3.0f%%", share*100)),
 			paint(colors.dim).Render(fmt.Sprintf("%s of %s tokens", formatTokens(used), formatTokens(window))))
