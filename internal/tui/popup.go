@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -29,6 +30,8 @@ type popup struct {
 	options     []huh.Option[string]
 	do          func(m model, choice string) (tea.Model, tea.Cmd)
 	selected    int
+	// top is the first option shown when they do not all fit.
+	top int
 	// at is where it was opened from; anchored is unset to center it.
 	at       point
 	anchored bool
@@ -75,14 +78,26 @@ func (m model) popupLayout() popupBox {
 		}
 	}
 	body = append(body, "")
-	for i, option := range p.options {
-		label := " " + ansi.Truncate(option.Key, width-2, "…")
+	// As many options as fit, scrolled to keep the one selected in view.
+	room := len(p.options)
+	if fits := screenHeight - len(body) - 2; room > fits {
+		room = max(fits-2, 1)
+	}
+	p.top = min(max(p.top, p.selected-room+1, 0), p.selected, max(len(p.options)-room, 0))
+	if p.top > 0 {
+		body = append(body, dimStyle.Render(fmt.Sprintf(" ↑ %d more", p.top)))
+	}
+	for i := p.top; i < min(p.top+room, len(p.options)); i++ {
+		label := " " + ansi.Truncate(p.options[i].Key, width-2, "…")
 		label += strings.Repeat(" ", max(width-ansi.StringWidth(label), 0))
 		if i == p.selected {
 			label = popupSelected.Render(ansi.Strip(label))
 		}
 		options[len(body)+1] = i
 		body = append(body, label)
+	}
+	if below := len(p.options) - p.top - room; below > 0 {
+		body = append(body, dimStyle.Render(fmt.Sprintf(" ↓ %d more", below)))
 	}
 	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(popupBorder).Padding(0, 1).
 		Background(lipgloss.Color("#16161e")).Render(strings.Join(body, "\n"))

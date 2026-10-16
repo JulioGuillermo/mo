@@ -175,9 +175,12 @@ type model struct {
 	openSection string
 	// selected is text being picked with the mouse; flash says for a moment
 	// what was copied.
-	selected    *selection
-	flash       string
-	flashes     int
+	selected *selection
+	flash    string
+	flashes  int
+	// modeSaves counts the permission mode's switches, so only the last is
+	// written.
+	modeSaves   int
 	jobsTicking bool
 	viewport    viewport.Model
 	scrolled    bool
@@ -389,6 +392,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.drag(msg.X, msg.Y)
 	case tea.MouseReleaseMsg:
 		return m.release(msg.X, msg.Y)
+	case modeSaveMsg:
+		return m.saveMode(msg)
+	case modeSavedMsg:
+		if msg.err != nil {
+			return m.emitError(msg.err)
+		}
+		return m, nil
 	case edgeScrollMsg:
 		return m.edgeScroll()
 	case flashDoneMsg:
@@ -534,7 +544,7 @@ func (m model) plainKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "shift+tab":
 		if policy := m.session.Agent.Permissions; policy != nil {
-			policy.SetMode(policy.Mode().Next())
+			return m.setMode(policy.Mode().Next())
 		}
 		return m, nil
 	case "ctrl+o":

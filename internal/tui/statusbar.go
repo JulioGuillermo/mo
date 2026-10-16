@@ -138,8 +138,7 @@ func (m model) statusSegments(show statusParts) []segment {
 		}
 		segments = append(segments, segment{text: text, bg: shade(colors.mode(mode), colors.base, 0.22),
 			do: func(m model) (tea.Model, tea.Cmd) {
-				policy.SetMode(policy.Mode().Next())
-				return m, nil
+				return m.setMode(policy.Mode().Next())
 			}, menu: func(m model) (tea.Model, tea.Cmd) { return m.modeMenu() }})
 	}
 	modelName := lipgloss.NewStyle().Foreground(colors.model).Bold(true).Render(shortModelName(m.session.Model))

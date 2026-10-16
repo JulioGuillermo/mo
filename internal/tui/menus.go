@@ -37,10 +37,9 @@ func (m model) modeMenu() (tea.Model, tea.Cmd) {
 			options[i] = huh.NewOption(option.Key+"  ● now", option.Value)
 		}
 	}
-	return m.showChoices("Permission mode", "for this session · /settings › Permissions sets the one to start in", options,
+	return m.showChoices("Permission mode", "kept until you pick another", options,
 		func(m model, choice string) (tea.Model, tea.Cmd) {
-			policy.SetMode(permissions.Mode(choice))
-			return m, nil
+			return m.setMode(permissions.Mode(choice))
 		})
 }
 

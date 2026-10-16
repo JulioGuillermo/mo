@@ -12,9 +12,10 @@ import (
 
 const (
 	uiSliderWidth = 20
-	// A select's arrows, as parts of its hit.
+	// A select's arrows and its value between them, as parts of its hit.
 	uiSelectEarlier = 1
 	uiSelectLater   = 2
+	uiSelectList    = 3
 )
 
 // controlColors are a control's mark and text: dim when disabled, the
@@ -39,7 +40,7 @@ func labelPart(n tools.UINode, width int, bg string) (string, int) {
 }
 
 // selectBox draws ◂ value ▸ as wide as the widest option; a click on ◂
-// goes back, anywhere else on.
+// goes back, on ▸ on, and on the value opens the list of them all.
 func (r uiRenderer) selectBox(n tools.UINode, width int, bg string) uiBox {
 	label, lw := labelPart(n, width, bg)
 	widest := 1
@@ -56,7 +57,8 @@ func (r uiRenderer) selectBox(n tools.UINode, width int, bg string) uiBox {
 	w := lw + widest + 4
 	return uiBox{lines: []string{line}, width: w, hits: []uiHit{
 		{x0: lw, x1: lw + 2, y1: 1, id: n.ID, part: uiSelectEarlier},
-		{x0: lw + 2, x1: w, y1: 1, id: n.ID, part: uiSelectLater},
+		{x0: lw + 2, x1: w - 2, y1: 1, id: n.ID, part: uiSelectList},
+		{x0: w - 2, x1: w, y1: 1, id: n.ID, part: uiSelectLater},
 	}}
 }
 

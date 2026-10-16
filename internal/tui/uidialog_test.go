@@ -8,11 +8,13 @@ package tui
 // | UD-04 | Happy    | A script reacts to typing in the dialog; its error shows under the interface | P0   |
 // | UD-06 | Happy    | A grid lines each column's cells up, as wide as the widest, a fixed width kept, a click reaching a cell | P1 |
 // | UD-07 | Happy    | An opened ui call shows its tree under guides, as mended, and its script highlighted; folded, a hint says so | P1 |
+// | UD-08 | Happy    | A click on a select's value lists its options over the interface; one taken is set; a long list scrolls | P1 |
 // | UD-05 | Happy    | Select, slider, checkbox, switch and radio are drawn, change by keys and clicks, and go with submit | P0 |
 
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -262,6 +264,71 @@ func TestUICallOpened(t *testing.T) {
 			if !strings.Contains(opened, want) {
 				t.Errorf("%q not in:\n%s", want, opened)
 			}
+		}
+	})
+}
+
+func TestSelectList(t *testing.T) {
+	t.Run("UD-08 a click on a select's value lists its options over the interface; one taken is set; a long list scrolls", func(t *testing.T) {
+		m, uis := uiModel(t)
+		var many []string
+		for i := 1; i <= 40; i++ {
+			many = append(many, fmt.Sprintf("%q", fmt.Sprintf("option %02d", i)))
+		}
+		tree := `{"type":"panel","children":[
+		  {"type":"select","id":"size","label":"Size","options":["S","M","L"],"value":"M"},
+		  {"type":"select","id":"many","options":[` + strings.Join(many, ",") + `]}]}`
+		args, _ := json.Marshal(map[string]any{"action": "create", "title": "Pick", "tree": json.RawMessage(tree)})
+		if output, isError := m.session.Agent.Tools.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args}); isError {
+			t.Fatal(output)
+		}
+		updated, _ := m.openUI(2)
+		m = updated.(model)
+		hit := func(id string, part int) uiHit {
+			frame, _ := m.uiFrame()
+			for _, each := range frame.hits {
+				if each.id == id && each.part == part {
+					return each
+				}
+			}
+			t.Fatalf("no hit %s/%d", id, part)
+			return uiHit{}
+		}
+		middle := hit("size", uiSelectList)
+		listed, _ := m.Update(tea.MouseClickMsg(tea.Mouse{X: middle.x0, Y: middle.y0, Button: tea.MouseLeft}))
+		m = listed.(model)
+		if m.popup == nil || m.popup.selected != 1 || m.uiOpen != 2 {
+			t.Fatalf("popup = %+v open = %d", m.popup, m.uiOpen)
+		}
+		box := m.popupLayout()
+		row := -1
+		for r, i := range box.options {
+			if i == 2 {
+				row = r
+			}
+		}
+		chosen, _ := m.Update(tea.MouseClickMsg(tea.Mouse{X: box.x + 2, Y: box.y + row, Button: tea.MouseLeft}))
+		m = chosen.(model)
+		ui, _ := uis.Get(2)
+		size, _ := findNode(ui.Shown(), "size")
+		if size.Current() != "L" || m.popup != nil || m.uiOpen != 2 {
+			t.Errorf("size = %q popup = %v open = %d", size.Current(), m.popup != nil, m.uiOpen)
+		}
+
+		m.live(2).focus = "many"
+		opened, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		m = opened.(model)
+		first := ansi.Strip(strings.Join(m.popupLayout().lines, "\n"))
+		for range 30 {
+			down, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+			m = down.(model)
+		}
+		later := ansi.Strip(strings.Join(m.popupLayout().lines, "\n"))
+		if m.popup == nil || len(m.popupLayout().lines) > m.height || !strings.Contains(first, "↓") || strings.Contains(first, "↑") {
+			t.Fatalf("the long list should fit and say there is more:\n%s", first)
+		}
+		if !strings.Contains(later, "option 31") || !strings.Contains(later, "↑") || strings.Contains(later, "option 01") {
+			t.Errorf("the list should scroll with the selection:\n%s", later)
 		}
 	})
 }

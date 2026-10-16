@@ -217,7 +217,7 @@ status = "powerline"       # segments on backgrounds with arrows (needs a Nerd F
 icons = "nerd"             # Nerd Font icons for the branch and its changes; "text": + ~ - » ? ! ✓
 
 [permissions]
-mode = "edits"             # ask | edits | auto | all; shift+tab changes it for the session
+mode = "edits"             # ask | edits | auto | all; shift+tab changes it and it is kept
 allow = ["ls *", "git status *", "re:^npm (test|run lint)$", "fetch https://go.dev/*"]
 deny = ["git push *"]      # asks in every mode, also in all
 
@@ -298,7 +298,7 @@ cards with a border and a title, labels, buttons and inputs, each with `bg`, `fg
 `margin`, `width`, `height`, `visible` and, for buttons, `disabled`; grids, laying their
 children row by row in `columns`, each as wide as its widest cell or as `widths` fixes it, so
 labels line up beside their controls and data reads as a table; and controls holding a value
-you pick: `select` (`◂ M ▸`, its `options` one at a time), `slider` (`min`, `max`, `step`),
+you pick: `select` (`◂ M ▸`: ◂ and ▸ step through its `options`, a click on the value or enter lists them all), `slider` (`min`, `max`, `step`),
 `checkbox` (`[x]`), `switch` and `radio` (its options in a column, or a row with `direction`),
 each with a `label`. ←→ change them, space ticks a checkbox or switch, and a click picks an
 option, an arrow of a select or a place on a slider; their `on_change` is told at each change,
@@ -408,7 +408,7 @@ counts as focused once you type: set `focused = true` there.
 
 ## Permissions
 
-The status line shows the mode; shift+tab changes it for the session.
+The status line shows the mode; shift+tab, a click on it or its menu changes it, and the mode is kept until you pick another: where the user settings had it, for this project or for all.
 
 | Mode | What runs without asking |
 |---|---|

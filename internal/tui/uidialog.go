@@ -156,6 +156,14 @@ func (m model) updateUI(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m.uiFire(ui.ID, hit.id, "click")
 				case tools.UIInput:
 					return m.leaveInput(ui, previous, hit.id)
+				case tools.UISelect:
+					if hit.part == uiSelectList {
+						left, cmd := m.leaveInput(ui, previous, hit.id)
+						after := left.(model)
+						after.clickedAt, after.clicked = point{msg.X, msg.Y}, true
+						listed, more := after.selectList(ui.ID, node)
+						return listed, tea.Batch(cmd, more)
+					}
 				}
 				value := clickedValue(node, hit, msg.X)
 				left, cmd := m.leaveInput(ui, previous, hit.id)
@@ -212,7 +220,9 @@ func (m model) uiKey(ui tools.UI, state *uiLive, msg tea.KeyPressMsg) (tea.Model
 			return m.uiFire(ui.ID, node.ID, "click")
 		case tools.UICheckbox, tools.UISwitch:
 			return m.uiChange(ui.ID, node, node.Toggled())
-		case tools.UISelect, tools.UIRadio:
+		case tools.UISelect:
+			return m.selectList(ui.ID, node)
+		case tools.UIRadio:
 			return m.uiChange(ui.ID, node, node.Moved(1))
 		case tools.UIInput:
 			updated, cmd := m.uiFire(ui.ID, node.ID, "change")
@@ -276,6 +286,36 @@ func (m model) uiChange(id int, node tools.UINode, value string) (tea.Model, tea
 	}
 	m.uis().SetValue(id, node.ID, value)
 	return m.uiFire(id, node.ID, "change")
+}
+
+// selectList opens the list of a select's options over the interface,
+// the one it holds marked and selected; taking one sets it.
+func (m model) selectList(id int, node tools.UINode) (tea.Model, tea.Cmd) {
+	current := node.Current()
+	options := make([]huh.Option[string], len(node.Options))
+	at := 0
+	for i, option := range node.Options {
+		label := option
+		if option == current {
+			label, at = option+"  ●", i
+		}
+		options[i] = huh.NewOption(label, option)
+	}
+	title := orDefault(node.Label, node.ID)
+	updated, cmd := m.openPopup(title, "", options, func(m model, choice string) (tea.Model, tea.Cmd) {
+		ui, ok := m.uis().Get(id)
+		if !ok {
+			return m, nil
+		}
+		fresh, found := findNode(ui.Shown(), node.ID)
+		if !found {
+			return m, nil
+		}
+		return m.uiChange(id, fresh, choice)
+	})
+	listed := updated.(model)
+	listed.popup.selected = at
+	return listed, cmd
 }
 
 // clickedValue is the value a click on a control gives it: the option

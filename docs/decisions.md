@@ -953,8 +953,9 @@
 - Controls with a value the user picks, select, slider, checkbox, switch and radio, keep it as
   a string as an input does, in the interface's values: one place for what the user did, sent
   whole with submit, kept on resume and read by `ui.value`. A checkbox's is `true` or `false`, a
-  slider's a number on its step. A select cycles in place (`◂ M ▸`) rather than opening a list:
-  a list over the dialog would be a dialog in a dialog for a choice of a few. Each tells its
+  slider's a number on its step. A select steps in place (`◂ M ▸`): its arrows go back and on; a
+  click on its value, or enter, lists every option in a popup over the interface, scrolled when
+  long, so a long list is picked from without stepping through it. Each tells its
   on_change at every change, since unlike typing each change is a choice; clicks know which
   option or arrow was hit through a part of the hit, and a slider takes the place clicked.
 - Small models get the tree wrong in the same few ways, so a tree is mended before it is checked
@@ -1002,3 +1003,11 @@
   a time; terminals send no motion while the mouse is held still, so a tick goes on scrolling
   every 50 ms until the mouse leaves the edge or the button is let go. Selections in the side
   panel or the input stay in screen rows: nothing scrolls under them.
+
+## Permission mode
+
+- The mode picked with shift+tab, a click or its menu is kept as the one to start in, until
+  another is picked: written where the user settings had it, the rules for this project when they
+  set one, else for every project; project files cannot set it. It is written once the switching
+  has stopped for a moment, so cycling through the modes writes the settings once, and without
+  rebuilding the session.

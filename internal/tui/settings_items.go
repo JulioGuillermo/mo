@@ -493,8 +493,8 @@ func permissionItems(model, *settingsMenu) []settingItem {
 		}}
 	}
 	items := []settingItem{
-		{"Permission mode to start in", func(d *settingsDraft) string { return d.permMode }, func(d *settingsDraft) huh.Field {
-			return huh.NewSelect[string]().Title("Mode to start in").Options(modeOptions...).Value(&d.permMode)
+		{"Permission mode", func(d *settingsDraft) string { return d.permMode }, func(d *settingsDraft) huh.Field {
+			return huh.NewSelect[string]().Title("Permission mode").Description("shift+tab changes it too; it is kept").Options(modeOptions...).Value(&d.permMode)
 		}},
 		rules("Allowed commands", "run without asking in every project", func(d *settingsDraft) *string { return &d.allow }),
 		rules("Never without asking", "ask in every mode, also in all; wins over allowed", func(d *settingsDraft) *string { return &d.deny }),
