@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"path/filepath"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -386,6 +387,9 @@ func (m model) showChanges() (tea.Model, tea.Cmd) {
 // contextShare is how full the context is, and the colour that says so.
 func (m model) contextShare(colors statusColors) (int, int, float64, color.Color) {
 	used := m.usage.InputTokens + m.usage.OutputTokens
+	if m.running && m.metrics.active() {
+		used = m.metrics.context(used)
+	}
 	window := m.session.Agent.Window
 	if window <= 0 {
 		return used, 0, 0, colors.low
@@ -411,26 +415,46 @@ func (m model) contextPart(show statusParts, colors statusColors) string {
 		if show.bar > 0 {
 			part = contextBar(share, show.bar, fill, colors.empty) + " "
 		}
-		part += paint(fill, fmt.Sprintf("%.0f%%", share*100))
+		part += paint(fill, m.about()+fmt.Sprintf("%.0f%%", share*100))
 		if show.tokens {
 			part += paint(colors.label, fmt.Sprintf(" %s/%s", formatTokens(used), formatTokens(window)))
 		}
 		return part
 	case used > 0:
-		return paint(colors.label, "ctx ") + paint(colors.low, formatTokens(used))
+		return paint(colors.label, "ctx ") + paint(colors.low, m.about()+formatTokens(used))
 	}
 	return ""
 }
 
-// speedPart is how fast the last reply read the prompt and wrote.
+// about marks the context counted from the reply being written, not yet
+// the server's exact count.
+func (m model) about() string {
+	if m.running && m.metrics.active() {
+		return "~"
+	}
+	return ""
+}
+
+// speedPart is how fast the last reply read the prompt and wrote, or, while
+// one is written, how fast it goes, marked ~.
 func (m model) speedPart(show statusParts, colors statusColors) string {
 	paint := func(c color.Color, text string) string { return lipgloss.NewStyle().Foreground(c).Render(text) }
 	var speeds []string
-	if show.prompt && m.speed.PromptRate > 0 {
-		speeds = append(speeds, paint(colors.label, "pp ")+paint(colors.prompt, fmt.Sprintf("%.0f", m.speed.PromptRate)))
+	prompt, generation := m.speed.PromptRate, m.speed.GenerationRate
+	promptLive, generationLive := "", ""
+	if m.running {
+		if rate := m.metrics.promptRate(time.Now()); rate > 0 && m.metrics.pieces == 0 {
+			prompt, promptLive = rate, "~"
+		}
+		if rate := m.metrics.generation(); rate > 0 {
+			generation, generationLive = rate, "~"
+		}
 	}
-	if show.generation && m.speed.GenerationRate > 0 {
-		speeds = append(speeds, paint(colors.label, "tg ")+paint(colors.generation, fmt.Sprintf("%.1f", m.speed.GenerationRate)))
+	if show.prompt && prompt > 0 {
+		speeds = append(speeds, paint(colors.label, "pp ")+paint(colors.prompt, fmt.Sprintf("%s%.0f", promptLive, prompt)))
+	}
+	if show.generation && generation > 0 {
+		speeds = append(speeds, paint(colors.label, "tg ")+paint(colors.generation, fmt.Sprintf("%s%.1f", generationLive, generation)))
 	}
 	if len(speeds) == 0 {
 		return ""

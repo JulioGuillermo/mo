@@ -1078,3 +1078,12 @@
 - The system prompt says the calls of a reply run one after another, in order, so a model can
   chain calls that depend on each other in one reply. An edit's result names the lines it changed
   as the file is after it, so it can be checked without reading the whole file again.
+
+## Context and speeds as a reply is written
+
+- While a reply streams, the context and speeds are counted from it, marked ~, until the
+  server's exact ones come as it ends: the context is the prompt as llama-server counts it while
+  reading it, or what was used before, and what the reply wrote; the generation speed is the
+  tokens from its first piece to its last over that time; the prompt's speed, what was read past
+  the cache over the time since reading began. A piece of the stream is a token for most
+  servers, and four characters one for those that send more at once, whichever is more.

@@ -117,6 +117,9 @@ type model struct {
 	// promptRead is how far the server is in reading the prompt, when it
 	// says so.
 	promptRead  llm.PromptProgress
+	// metrics counts the reply being written's context and speeds until the
+	// exact ones come.
+	metrics liveMetrics
 	runningTool *llm.ToolCall
 	streamDone  string
 	reasoning   string
@@ -441,6 +444,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focused = true
 		return m.handleKey(msg)
 	case streamMsg:
+		m.metrics.add(llm.Event(msg), time.Now())
 		m.lastEvent = msg.Kind
 		switch msg.Kind {
 		case llm.EventToolCall:
@@ -462,6 +466,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case usageMsg:
 		m.usage = llm.Usage(msg)
+		m.metrics = liveMetrics{}
 		if msg.GenerationRate > 0 || msg.PromptRate > 0 {
 			m.speed = llm.Usage(msg)
 		}
