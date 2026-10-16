@@ -40,10 +40,7 @@ type modelsMsg struct {
 func listModels(ctx context.Context, provider string, settings config.ProviderConfig) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, modelsTimeout)
 	defer cancel()
-	var token func(context.Context) (string, error)
-	if settings.OAuth != nil {
-		token = auth.NewSource(provider, *settings.OAuth).WithHeaders(settings.Headers).Token
-	}
+	token := auth.TokenFor(provider, settings)
 	switch settings.Protocol {
 	case "cloudcode":
 		return (&llm.CloudCode{BaseURL: settings.BaseURL, Token: token}).ListModels(ctx)

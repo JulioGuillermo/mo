@@ -86,8 +86,17 @@ in `/providers`, sends mo's prompt alone (Claude accounts' tokens may be refused
 | `[model_providers.*]` with `wire_api = "chat"` in `~/.codex/config.toml` | `codex-<name>` |
 | API logins in opencode's `auth.json` | `<provider>-opencode`, key read from opencode when needed |
 | providers with a `baseURL` in `opencode.json` | `opencode-<name>`; `{env:NAME}` keys only |
+| Antigravity's sign-in (its `state.vscdb`, read with the `sqlite3` command) | `antigravity-detected` |
+| Claude Code's sign-in (`~/.claude/.credentials.json`) | `claude-code-detected` |
+| Codex's ChatGPT sign-in (`~/.codex/auth.json`) | `codex-detected` |
 
 mo stores a reference (`api_key_from = "codex"`, `"opencode"` or `"opencode:<provider>"`), never a copy of the key.
+
+`/providers` lists everything found under **Detected**; picking one uses it with no second sign-in. A borrowed sign-in is
+`token_from = "claude-code"`, `"codex"` or `"antigravity"`: mo reads the other app's token each time and keeps none. By default
+it only reads. When the token expires, Claude Code's and Codex's refresh tokens change at each renewal, so mo asks you to open
+the app to renew it, unless the provider has `token_renew = true` (**Renew its login** in its form): then mo renews it and writes
+the new token back to the app's file. Antigravity's refresh token does not change, so mo renews it in memory and writes nothing.
 
 A provider can sign in with OAuth 2 instead of a key, set in its form in `/providers` or by hand:
 

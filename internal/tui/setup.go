@@ -15,9 +15,11 @@ const (
 	newProviderChoice = "\x00new"
 	// activeProviderChoice opens the choice of the provider in use.
 	activeProviderChoice = "\x00active"
-	continueChoice       = "\x00continue"
-	quitChoice           = "\x00quit"
-	defaultNewURL        = "http://localhost:8080/v1"
+	// detectedProviderChoice opens the providers found on this machine.
+	detectedProviderChoice = "\x00detected"
+	continueChoice         = "\x00continue"
+	quitChoice             = "\x00quit"
+	defaultNewURL          = "http://localhost:8080/v1"
 )
 
 // ProviderProblem is what the setup screen starts from: why mo cannot talk

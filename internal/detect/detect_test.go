@@ -5,7 +5,7 @@ package detect
 // | DT-01 | Happy    | A provider key in the environment is a usable finding                | P0       |
 // | DT-02 | Security | opencode OAuth logins are listed as not usable and give no key       | P0       |
 // | DT-03 | Happy    | An opencode API login becomes a provider whose key is read from it   | P0       |
-// | DT-04 | Happy    | codex's API key becomes openai-codex; its ChatGPT login is not usable| P0       |
+// | DT-04 | Happy    | codex's API key becomes openai-codex; its ChatGPT login is borrowed  | P0       |
 // | DT-05 | Happy    | codex providers on chat completions are imported; responses are not  | P1       |
 // | DT-06 | Security | an opencode provider with a literal key is not imported with it      | P0       |
 // | DT-07 | Happy    | an opencode provider with {env:NAME} uses that variable              | P1       |
@@ -112,7 +112,7 @@ func TestDetect(t *testing.T) {
 		}
 	})
 
-	t.Run("DT-04 codex's API key becomes openai-codex; its ChatGPT login is not usable", func(t *testing.T) {
+	t.Run("DT-04 codex's API key becomes openai-codex; its ChatGPT login is borrowed", func(t *testing.T) {
 		h := isolatedHomes(t)
 		writeFile(t, filepath.Join(h.codex, "auth.json"), `{"auth_mode":"apikey","OPENAI_API_KEY":"sk-codex","tokens":{"access_token":"x"}}`)
 
@@ -122,7 +122,7 @@ func TestDetect(t *testing.T) {
 		if codex == nil || !codex.Usable || codex.Settings.APIKeyFrom != config.KeyFromCodex || codex.Settings.Key() != "sk-codex" {
 			t.Errorf("codex = %+v", codex)
 		}
-		if chatgpt := find(findings, "chatgpt"); chatgpt == nil || chatgpt.Usable {
+		if chatgpt := find(findings, "codex-detected"); chatgpt == nil || !chatgpt.Usable || chatgpt.Settings.TokenFrom != config.TokenFromCodex {
 			t.Errorf("chatgpt = %+v", chatgpt)
 		}
 	})

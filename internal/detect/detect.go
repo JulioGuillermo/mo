@@ -33,6 +33,7 @@ func Run(ctx context.Context, cfg config.Config) []Finding {
 	var findings []Finding
 	findings = append(findings, fromEnvironment(cfg)...)
 	findings = append(findings, localServers(ctx, cfg)...)
+	findings = append(findings, fromLogins()...)
 	findings = append(findings, fromCodex(cfg)...)
 	findings = append(findings, fromOpencode(cfg)...)
 	return findings

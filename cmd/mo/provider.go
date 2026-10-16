@@ -48,7 +48,7 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 	settings, ok := cfg.Providers[name]
 	if !ok {
 		settings, ok = detectedProvider(ctx, cfg, name)
-	} else if settings.OAuth == nil && settings.NeedsKey() && settings.Key() == "" {
+	} else if settings.OAuth == nil && settings.TokenFrom == "" && settings.NeedsKey() && settings.Key() == "" {
 		// A sign-in needs no key; looking for one would probe every local
 		// server for a second.
 		if detected, found := detectedProvider(ctx, cfg, name); found && detected.Key() != "" {
@@ -61,10 +61,7 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 		known := slices.Sorted(maps.Keys(cfg.Providers))
 		return chosenProvider{}, fmt.Errorf("unknown provider %q (known: %s; see mo -detect)", name, strings.Join(known, ", "))
 	}
-	var token func(context.Context) (string, error)
-	if settings.OAuth != nil {
-		token = auth.NewSource(name, *settings.OAuth).WithHeaders(settings.Headers).Token
-	}
+	token := auth.TokenFor(name, settings)
 	if token == nil && settings.NeedsKey() && settings.Key() == "" {
 		return chosenProvider{}, fmt.Errorf("%s needs an API key and none was found (%s)", name, keyOrigin(settings))
 	}

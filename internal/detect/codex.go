@@ -42,9 +42,6 @@ func codexLogins(cfg config.Config, auth config.CodexAuth) []Finding {
 	case auth.OpenAIAPIKey != "":
 		findings = append(findings, Finding{Provider: "openai-codex", Origin: codexOrigin + " API key", Note: "stored with the ChatGPT login: not usable"})
 	}
-	if auth.HasChatGPTLogin() {
-		findings = append(findings, Finding{Provider: "chatgpt", Origin: codexOrigin + " ChatGPT login", Note: "subscription login: not supported"})
-	}
 	return findings
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/jg/mo/internal/auth"
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/detect"
+	"github.com/jg/mo/internal/login"
 )
 
 // providerTypes name the types of provider a form offers.
@@ -51,6 +52,11 @@ type providerDraft struct {
 	oauthScopes string
 	// preamble, for Cloud Code and Claude Code, sends their opening first.
 	preamble bool
+	// tokenFrom borrows another app's sign-in, and tokenRenew lets mo renew
+	// it; logins are the apps found with one.
+	tokenFrom  string
+	tokenRenew bool
+	logins     []string
 }
 
 func newProviderDraft(name string, cfg config.Config, findings []detect.Finding) *providerDraft {
@@ -77,6 +83,10 @@ func newProviderDraft(name string, cfg config.Config, findings []detect.Finding)
 		keyFrom:   settings.APIKeyFrom,
 		inUse:     inUse,
 		preamble:  settings.Preamble == nil || *settings.Preamble,
+
+		tokenFrom:  settings.TokenFrom,
+		tokenRenew: settings.TokenRenew,
+		logins:     foundLogins(findings, settings.TokenFrom),
 	}
 	if settings.OAuth != nil {
 		draft.oauth = *settings.OAuth
@@ -88,7 +98,8 @@ func newProviderDraft(name string, cfg config.Config, findings []detect.Finding)
 // settings are the provider as the form has it now, with the key typed or
 // the one saved, to ask it for its models.
 func (d *providerDraft) settings(cfg config.Config) config.ProviderConfig {
-	settings := config.ProviderConfig{Protocol: d.protocol, BaseURL: d.baseURL, APIKeyEnv: d.keyEnv, APIKeyFrom: d.keyFrom}
+	settings := config.ProviderConfig{Protocol: d.protocol, BaseURL: d.baseURL, APIKeyEnv: d.keyEnv, APIKeyFrom: d.keyFrom,
+		TokenFrom: d.tokenFrom, TokenRenew: d.tokenRenew}
 	if d.oauth.Flow != "" {
 		oauth := d.oauth
 		settings.OAuth = &oauth
@@ -187,6 +198,29 @@ func (d *providerDraft) entries(cfg config.Config) []entry {
 			return huh.NewSelect[string]().Title("Or take the key from").Options(sources...).Value(&d.keyFrom)
 		}})
 	}
+	if len(d.logins) > 0 {
+		entries = append(entries, entry{"Take the login from", func() string {
+			if d.tokenFrom == "" {
+				return "nowhere else: sign in here"
+			}
+			return login.Name(d.tokenFrom)
+		}, func() huh.Field {
+			options := []huh.Option[string]{huh.NewOption("nowhere else: sign in here, or use a key", "")}
+			for _, from := range d.logins {
+				options = append(options, huh.NewOption(login.Name(from)+": use the login it has, with no second sign-in", from))
+			}
+			return huh.NewSelect[string]().Title("Take the login from").Description("another app's sign-in on this machine; mo reads its token each time and keeps none").
+				Options(options...).Value(&d.tokenFrom)
+		}})
+	}
+	if d.tokenFrom != "" && login.Rotates(d.tokenFrom) {
+		app := login.Name(d.tokenFrom)
+		entries = append(entries, entry{"Renew its login", func() string { return yesNo(d.tokenRenew) }, func() huh.Field {
+			return huh.NewConfirm().Title("Renew " + app + "'s login when it expires").
+				Description("yes: mo renews it and writes the new token in " + app + "'s file, since the old refresh token stops working; if " + app + " is open it may need to read it again. no: mo only uses the token while it is valid, and says when to open " + app + " to renew it").
+				Value(&d.tokenRenew)
+		}})
+	}
 	if !d.inUse {
 		entries = append(entries, entry{"Use it from now on", func() string { return yesNo(d.use) }, func() huh.Field {
 			return huh.NewConfirm().Title("Use it from now on").Value(&d.use)
@@ -214,6 +248,34 @@ func (d *providerDraft) keyState() string {
 		return "saved"
 	}
 	return "none"
+}
+
+// foundLogins are the apps with a sign-in to borrow, and the one in use
+// even when it is no longer found.
+func foundLogins(findings []detect.Finding, current string) []string {
+	var apps []string
+	for _, from := range login.Sources() {
+		for _, found := range findings {
+			if found.Usable && found.Settings != nil && found.Settings.TokenFrom == from && !slices.Contains(apps, from) {
+				apps = append(apps, from)
+			}
+		}
+	}
+	if current != "" && !slices.Contains(apps, current) {
+		apps = append(apps, current)
+	}
+	return apps
+}
+
+// detectedFindings are the providers found that can be chosen.
+func detectedFindings(findings []detect.Finding) []detect.Finding {
+	var usable []detect.Finding
+	for _, found := range findings {
+		if found.Usable {
+			usable = append(usable, found)
+		}
+	}
+	return usable
 }
 
 // keySources lists the logins of other tools mo can take a key from, and
@@ -279,9 +341,17 @@ func (d *providerDraft) applyTo(layer config.Config) (config.Config, error) {
 		if oauth.ClientID == "" || oauth.TokenURL == "" {
 			return layer, fmt.Errorf("%s: signing in needs a client id and a token URL", name)
 		}
-		if preset.OAuth == nil || !reflect.DeepEqual(oauth, *preset.OAuth) {
+		standard := preset.OAuth
+		if standard == nil {
+			standard = config.Defaults().Providers[d.tokenFrom].OAuth
+		}
+		if standard == nil || !reflect.DeepEqual(oauth, *standard) {
 			entry.OAuth = &oauth
 		}
+	}
+	if d.tokenFrom != "" {
+		entry.TokenFrom = d.tokenFrom
+		entry.TokenRenew = d.tokenRenew && login.Rotates(d.tokenFrom)
 	}
 	if key := strings.TrimSpace(d.key); key != "" {
 		entry.APIKey = key
@@ -328,13 +398,20 @@ func (m model) pickProvider(msg settingsLoadedMsg, menu *settingsMenu) (tea.Mode
 	picked := m.session.Provider
 	options := providerOptions(cfg, msg.findings, msg.layer.Provider)[1:]
 	options = append([]huh.Option[string]{huh.NewOption(keyStyle.Render("Active provider")+"   "+dimStyle.Render(orDefault(msg.layer.Provider, "auto")+" · pick the one mo uses"), activeProviderChoice)}, options...)
+	if found := detectedFindings(msg.findings); len(found) > 0 {
+		detected := huh.NewOption(keyStyle.Render("Detected")+"   "+dimStyle.Render(fmt.Sprintf("%d found on this machine · use one without setting it up", len(found))), detectedProviderChoice)
+		options = slices.Insert(options, 1, detected)
+	}
 	options = append(options, huh.NewOption("+ set up a new provider", newProviderChoice))
 	form := newForm(huh.NewGroup(
 		huh.NewSelect[string]().Title("Provider to edit").Options(options...).Value(&picked),
 	)).WithShowHelp(false)
 	next := func(m model) (tea.Model, tea.Cmd) {
-		if picked == activeProviderChoice {
-			return m.chooseActiveProvider(msg, cfg, menu)
+		switch picked {
+		case activeProviderChoice:
+			return m.chooseActiveProvider(msg, cfg, menu, false)
+		case detectedProviderChoice:
+			return m.chooseActiveProvider(msg, cfg, menu, true)
 		}
 		return m.editProvider(msg, cfg, picked, menu)
 	}
@@ -347,11 +424,18 @@ func (m model) pickProvider(msg settingsLoadedMsg, menu *settingsMenu) (tea.Mode
 
 // chooseActiveProvider picks the provider mo uses, with no field to edit: a
 // provider found in another tool and not in the config yet comes along.
-func (m model) chooseActiveProvider(msg settingsLoadedMsg, cfg config.Config, menu *settingsMenu) (tea.Model, tea.Cmd) {
+// detectedOnly lists just what was found: keys in the environment, local
+// servers, and the sign-ins and keys of other tools.
+func (m model) chooseActiveProvider(msg settingsLoadedMsg, cfg config.Config, menu *settingsMenu, detectedOnly bool) (tea.Model, tea.Cmd) {
 	chosen := msg.layer.Provider
+	title, options := "Active provider", providerOptions(cfg, msg.findings, msg.layer.Provider)
+	if detectedOnly {
+		title, options = "Detected", detectedOptions(msg.findings)
+		chosen = options[0].Value
+	}
 	form := newForm(huh.NewGroup(
-		huh.NewSelect[string]().Title("Active provider").Description("the model comes from its own settings; /model picks another").
-			Options(providerOptions(cfg, msg.findings, msg.layer.Provider)...).Value(&chosen),
+		huh.NewSelect[string]().Title(title).Description("the model comes from its own settings; /model picks another").
+			Options(options...).Value(&chosen),
 	)).WithShowHelp(false)
 	back := func(m model) (tea.Model, tea.Cmd) { return m.pickProvider(msg, menu) }
 	apply := func(layer config.Config) (config.Config, error) {

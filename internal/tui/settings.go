@@ -18,6 +18,7 @@ import (
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/detect"
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/login"
 	"github.com/jg/mo/internal/tools"
 )
 
@@ -374,10 +375,26 @@ func providerOptions(cfg config.Config, findings []detect.Finding, saved string)
 	return options
 }
 
+// detectedOptions lists what was found and can be used, in the order it was
+// found.
+func detectedOptions(findings []detect.Finding) []huh.Option[string] {
+	var options []huh.Option[string]
+	for _, found := range detectedFindings(findings) {
+		label := found.Provider + "  · " + found.Origin
+		if found.Note != "" {
+			label += " · " + found.Note
+		}
+		options = append(options, huh.NewOption(label, found.Provider))
+	}
+	return options
+}
+
 func providerLabel(name string, settings config.ProviderConfig) string {
 	switch {
 	case !settings.NeedsKey():
 		return name + "  · " + settings.BaseURL
+	case settings.TokenFrom != "":
+		return name + "  · login of " + login.Name(settings.TokenFrom)
 	case settings.OAuth != nil:
 		if _, err := auth.Load(name); err != nil {
 			return name + "  · not signed in"

@@ -208,7 +208,24 @@ type ProviderConfig struct {
 	// alone, which Claude accounts' tokens may be refused for. Unset is
 	// true.
 	Preamble *bool `toml:"preamble,omitempty"`
+	// TokenFrom borrows the sign-in another app already has: "claude-code",
+	// "codex" or "antigravity". mo reads its token each time it is needed
+	// and keeps none of its own.
+	TokenFrom string `toml:"token_from,omitempty"`
+	// TokenRenew lets mo renew a borrowed token that expired, and write the
+	// renewed one back for the other app. Codex's and Claude Code's refresh
+	// tokens change at each renewal, so without writing it back the other
+	// app would be left with one that no longer works; off, mo only uses
+	// the token while it is valid.
+	TokenRenew bool `toml:"token_renew,omitempty"`
 }
+
+// The apps whose sign-in a provider can borrow with token_from.
+const (
+	TokenFromClaudeCode  = "claude-code"
+	TokenFromCodex       = "codex"
+	TokenFromAntigravity = "antigravity"
+)
 
 // OAuth flows a provider may sign in with.
 const (
@@ -269,7 +286,7 @@ func (p ProviderConfig) Key() string {
 // NeedsKey tells whether the provider takes a credential: a key, or a
 // sign-in.
 func (p ProviderConfig) NeedsKey() bool {
-	return p.APIKey != "" || p.APIKeyEnv != "" || p.APIKeyFrom != "" || p.OAuth != nil
+	return p.APIKey != "" || p.APIKeyEnv != "" || p.APIKeyFrom != "" || p.OAuth != nil || p.TokenFrom != ""
 }
 
 func Defaults() Config {
@@ -651,6 +668,8 @@ func mergeProvider(base, layer ProviderConfig) ProviderConfig {
 	if layer.Preamble != nil {
 		base.Preamble = layer.Preamble
 	}
+	base.TokenFrom = override(base.TokenFrom, layer.TokenFrom)
+	base.TokenRenew = base.TokenRenew || layer.TokenRenew
 	return base
 }
 

@@ -154,13 +154,7 @@ func (s *Source) accessToken(ctx context.Context) (string, error) {
 	case s.token.RefreshToken == "":
 		return "", fmt.Errorf("%s: the token expired: %w again: /login %s", s.provider, ErrNeedsLogin, s.provider)
 	}
-	var renewed *oauth2.Token
-	var err error
-	if s.settings.JSON {
-		renewed, err = jsonRefresh(ctx, s.settings, s.token.RefreshToken)
-	} else {
-		renewed, err = oauthConfig(s.settings, "").TokenSource(ctx, s.token).Token()
-	}
+	renewed, err := renew(ctx, s.settings, s.token)
 	if err != nil {
 		return "", fmt.Errorf("%s: renewing the token: %v: /login %s", s.provider, err, s.provider)
 	}
@@ -172,6 +166,14 @@ func (s *Source) accessToken(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return renewed.AccessToken, nil
+}
+
+// renew trades a token's refresh token for a new token.
+func renew(ctx context.Context, settings config.OAuth, token *oauth2.Token) (*oauth2.Token, error) {
+	if settings.JSON {
+		return jsonRefresh(ctx, settings, token.RefreshToken)
+	}
+	return oauthConfig(settings, "").TokenSource(ctx, token).Token()
 }
 
 // Prompt is what the user must do to sign in: open a page, and with the
