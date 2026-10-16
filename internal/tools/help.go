@@ -2,6 +2,7 @@ package tools
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -10,9 +11,18 @@ type helpTopic struct {
 	name, text string
 }
 
-const viewHelp = "offset: lines to skip, from the end when negative (-50: the last 50); limit: lines to show (2000); " +
-	"col: byte of each line to start at (0); width: bytes of each line (2000); match: only the lines matching a regexp; " +
-	"numbered: line numbers. What is left out is said, with the offset or col that shows it."
+// helpAbouts are the topics that are no action, marked as topics where
+// help lists them beside the actions.
+var helpAbouts = []string{"view", "conflicts", "nodes", "events", "script", "example"}
+
+// viewHelp says how to see a part of a tool's text output, in help's view
+// topic; ViewGuide says it once in the system prompt, so no tool's
+// description repeats it.
+const viewHelp = "offset: lines to skip, from the end when negative (-50: the last 50); limit: lines (2000); " +
+	"match: only the lines matching a regexp; numbered: line numbers; col and width: the bytes of each line to show, for long lines (0, 2000). " +
+	"What is left out is said, with the offset or col that shows it."
+
+const ViewGuide = "A tool with offset and limit fields shows a part of its text output. " + viewHelp
 
 // help answers a tool's help action, the view explained too: every topic
 // in a line, or one whole.
@@ -34,10 +44,14 @@ func helpOn(topics []helpTopic, topic string) (string, error) {
 					b.WriteString("\n")
 				}
 			}
+			name := each.name
+			if slices.Contains(helpAbouts, name) {
+				name = "topic " + name
+			}
 			if long {
-				b.WriteString(each.name + ":\n" + each.text)
+				b.WriteString(name + ":\n" + each.text)
 			} else {
-				b.WriteString(each.name + ": " + each.text)
+				b.WriteString(name + ": " + each.text)
 			}
 			apart = long
 		}

@@ -655,10 +655,11 @@ func inputValuesOf(n UINode) map[string]string {
 }
 
 var uiHelp = []helpTopic{
-	{"create", "title, tree, script (optional): shows the interface and returns its id. What the user does in it comes to you as notes."},
+	{"create", "title, tree, script (optional): shows the interface and returns its id. What the user does in it reaches you as [mo] notes."},
 	{"update", "id, and any of title, tree, script: replaces them. What the user set and the script's state stay."},
 	{"remove", "id: removes the interface."},
 	{"nodes", `Every node is {"type": ..., more fields}; panel, card and grid hold nodes in "children". Buttons and controls need an id.
+Topic <type> explains one, with an example.
 panel     children, direction row|column, gap, justify start|center|end|space-between|space-around, align start|center|end|stretch
 card      a panel with a border and a title
 grid      children row by row in columns (a number), each column as wide as its widest cell, like a table; gap between columns,
@@ -682,7 +683,7 @@ remove   remove the interface, telling you
 <name>   call that function of the script
 A button without on_click notifies.`},
 	{"script", `Lua (base, table, string, math), run on the user's side. A function gets e.id, e.type (click|input|change), e.value.
-ui.set shows its change at once: updating the interface needs no notify. Tell yourself only what you must act on, usually once, with submit.
+ui.set shows its change at once: updating the interface needs no notify. Let it tell you only what you must act on, usually once, with submit.
 ui.set(id, {text=..., ...})  change a node: text, label, value, options, min, max, step, placeholder, title, fg, bg, border, bold, visible, disabled, width, height
 ui.get(id)                   a node's fields, and checked
 ui.value(id)                 a control's value; a checkbox's is "true" or "false"
@@ -697,18 +698,53 @@ controls, labels lined up in a grid:
 {"action":"create","title":"Prefs","tree":{"type":"card","title":"Prefs","children":[{"type":"grid","columns":2,"gap":2,"children":[{"type":"label","text":"Size"},{"type":"select","id":"size","options":["S","M","L"],"value":"M"},{"type":"label","text":"Volume"},{"type":"slider","id":"volume","min":0,"max":10,"value":"4"},{"type":"label","text":"Dark mode"},{"type":"switch","id":"dark","value":"true"},{"type":"label","text":"Plan"},{"type":"radio","id":"plan","options":["free","pro"],"direction":"row"}]},{"type":"checkbox","id":"terms","label":"I agree"},{"type":"button","id":"go","label":"Save","on_click":"submit"}]}}`},
 }
 
+// uiNodeHelp explains each node type, asked as its own topic.
+var uiNodeHelp = map[string]string{
+	UIPanel: "lays its children out in a column, or a row with direction row. gap: cells between them; justify (along): start|center|end|space-between|space-around; " +
+		`align (across): start|center|end|stretch. e.g. {"type":"panel","direction":"row","gap":2,"children":[...]}`,
+	UICard: `a panel with a border and a title. e.g. {"type":"card","title":"Login","children":[...]}`,
+	UIGrid: "children row by row in columns, each column as wide as its widest cell, like a table: labels line up beside their controls. " +
+		"columns: how many; widths [12,0]: fixed widths, 0 as needed; gap: cells between columns; align: within the cells; a cell's grow widens its column. " +
+		`e.g. {"type":"grid","columns":2,"gap":2,"children":[{"type":"label","text":"Name"},{"type":"input","id":"name"}]}`,
+	UILabel:  `text, wrapped to its room; bold and fg colour it. e.g. {"type":"label","text":"Saved","fg":"success"}`,
+	UIButton: `label; on_click: what it does (topic events), notify when unset; disabled. e.g. {"type":"button","id":"ok","label":"OK","on_click":"submit"}`,
+	UIInput: "a line the user types in. value, placeholder, width; on_input at each key, on_change when left or on enter. " +
+		`e.g. {"type":"input","id":"name","placeholder":"your name"}`,
+	UISelect: "one of its options, shown as ◂ value ▸; ←→ or a click change it. options, value (the first unless set), label; on_change at each change. " +
+		`e.g. {"type":"select","id":"size","label":"Size","options":["S","M","L"],"value":"M"}`,
+	UISlider: "a number on a track. min, max, step (0, 100, 1 unless set), value, label; on_change at each step; width or grow lengthens it. " +
+		`e.g. {"type":"slider","id":"volume","label":"Volume","max":10,"value":"4"}`,
+	UICheckbox: `[x] and its label; value "true" or "false"; on_change at each tick. e.g. {"type":"checkbox","id":"terms","label":"I agree"}`,
+	UISwitch:   `as checkbox, drawn as a switch. e.g. {"type":"switch","id":"dark","label":"Dark mode","value":"true"}`,
+	UIRadio: "one of its options, all shown, in a column or a row with direction row. options, value (none unless set), label; on_change at each pick. " +
+		`e.g. {"type":"radio","id":"plan","options":["free","pro"],"direction":"row"}`,
+}
+
+// uiHelpOn answers ui's help: its topics, or one node type.
+func uiHelpOn(topic string) (string, error) {
+	if text, ok := uiNodeHelp[topic]; ok {
+		return text, nil
+	}
+	text, err := helpOn(uiHelp, topic)
+	if err != nil {
+		return "", fmt.Errorf("%w, or a node type: %s", err, strings.Join(UITypes, ", "))
+	}
+	return text, nil
+}
+
 func uiTool() Tool {
 	return Tool{
 		Name: "ui",
-		Description: "Show the user an interface in a dialog: labels, buttons, inputs, selects, sliders, checkboxes, switches and radios, laid out in panels, cards and grids. " +
-			`Its Lua script updates it on the user's side by itself; you hear only what it notifies or submits. Unsure how? Call {"action":"help"}. A tree: ` + uiTreeExample,
+		Description: "Build an interface the user works with on their own, in a dialog: a form, a settings panel, a picker, a small tool. " +
+			"Its Lua script reacts on their side without you; you hear only what it notifies or submits. For one question, use ask. " +
+			"Node types: panel, card, grid, label, button, input, select, slider, checkbox, switch, radio. " +
+			`{"action":"help"} explains how. A tree: ` + uiTreeExample,
 		Schema: json.RawMessage(`{"type":"object","properties":{
 "action":{"type":"string","enum":["create","update","remove","help"]},
-"id":{"type":"integer","description":"for update and remove"},
+"id":{"type":"integer"},
 "title":{"type":"string"},
 "tree":{"type":"object","description":"the root node, {\"type\":...,\"children\":[...]}; help topic nodes"},
-"script":{"type":"string","description":"Lua functions the events name; help topic script"},
-"topic":{"type":"string","description":"for help: nodes, events, script, example, create, update or remove; none for all"}},"required":["action"]}`),
+"script":{"type":"string"},"topic":{"type":"string"}},"required":["action"]}`),
 		Run:       runUI,
 		LooseArgs: false,
 		Summary: func(args json.RawMessage) string {
@@ -730,7 +766,7 @@ func runUI(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 		return "", err
 	}
 	if args.Action == "help" {
-		return helpOn(uiHelp, args.Topic)
+		return uiHelpOn(args.Topic)
 	}
 	if env.UIs == nil {
 		return "", errors.New("interfaces are not available here")

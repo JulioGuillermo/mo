@@ -2,10 +2,17 @@
 
 ## Context budget
 
-- The built-in system prompt is four lines plus working directory, OS and date (~90 tokens). The
-  15 tool definitions are ~5.6 KB (~1,400 tokens) in full mode. Tool descriptions stay one line;
-  parameters carry no description: their names must be enough for a model that reads nothing else.
-  What an action takes is in the tool's `help` action, asked when needed, not sent every time.
+- The built-in system prompt is four lines plus working directory, OS and date (~90 tokens), then
+  how to see a part of a tool's output (~90 tokens), said once there for every tool with offset and
+  limit, so no tool's description repeats it and a model knows before its first call; a custom
+  prompt keeps it. The 15 tool definitions are ~7.2 KB (~1,800 tokens) in full mode. Tool
+  descriptions stay short; parameters carry no description: their names must be enough for a model
+  that reads nothing else. The one exception is ui's tree, an object whose shape no name could say,
+  which small models otherwise sent without types. What an action takes is in the tool's `help`
+  action, asked when needed, not sent every time.
+- ask and ui say when each is the one: ask waits for an answer to a question; ui is for something
+  the user works with on their own, a form, a panel, a small tool, that its script runs without
+  the model.
 - Requests that fail at the network level are sent once more; llama-server closes keep-alive
   connections after streaming, and a repeated model request has no side effect.
 - No limit without a way past it. Every tool that returns text takes the same view fields, applied
@@ -930,6 +937,10 @@
 - What the user typed, what scripts changed and their `ui.state` are kept with the interface, in
   `sessions/<id>/uis.json`, written after each event and change: resuming a conversation runs
   its scripts again with their state, so interfaces come back as they were left.
+- ui's description names the node types as they are written in a tree, nothing more; help's nodes
+  topic is a line for each, and each type is a topic of its own, asked by its name, saying what it
+  is and how it is used with an example. The detail costs only when asked for, and the whole
+  help stays the size it was.
 - An opened ui call shows what the model gave, in blocks like a write's: its tree under guides
   (├─ └─), a node to a line with its type, #id, words and other fields coloured as code is, as
   the tool mended it, so what is read is what is drawn; and its script highlighted as Lua. JSON
@@ -982,3 +993,12 @@
   effort a server does not know.
 - On llama-server `none` turns thinking off through `chat_template_kwargs.enable_thinking`, which
   Qwen3 and the like read; a level goes there too, as `reasoning_effort`, for gpt-oss.
+
+## Selecting with the mouse
+
+- A selection started in the conversation counts its rows in the conversation's lines, not the
+  screen's, so it holds while the conversation scrolls, and copies from the whole conversation,
+  not only what is on screen. Dragged to the conversation's top or bottom, it scrolls a line at
+  a time; terminals send no motion while the mouse is held still, so a tick goes on scrolling
+  every 50 ms until the mouse leaves the edge or the button is let go. Selections in the side
+  panel or the input stay in screen rows: nothing scrolls under them.

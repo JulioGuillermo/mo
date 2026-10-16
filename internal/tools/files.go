@@ -19,7 +19,7 @@ const readMaxLineBytes = 2000
 func readTool() Tool {
 	return Tool{
 		Name:        "read",
-		Description: "Read a text file.",
+		Description: "Read a text file, or see an image.",
 		Schema:      json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`),
 		Run:         runRead,
 		View:        true,

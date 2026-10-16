@@ -9,7 +9,7 @@ package tools
 // | UI-05 | Error    | A missing function is refused; a failing or endless one is shown and told | P0     |
 // | UI-06 | Happy    | Interfaces are saved with the conversation and come back on resume, scripts and all | P0 |
 // | UI-07 | Edge     | A tree as small models send it is mended; what cannot be is told with an example | P0 |
-// | UI-08 | Happy    | help lists every topic with an example, and one topic alone              | P1       |
+// | UI-08 | Happy    | help lists every topic with an example, one topic alone, and each node type as its own | P1 |
 // | UI-09 | Happy    | Controls start at their defaults, move within their options and range, and go with submit | P0 |
 // | UI-10 | Error    | A control's bad options, range or value are refused; a script sets one only to a valid value | P0 |
 // | UI-12 | Happy    | A grid takes columns or widths, refuses neither; rows of cells are flattened, short rows filled | P1 |
@@ -214,11 +214,21 @@ end`
 		}
 	})
 
-	t.Run("UI-08 help lists every topic with an example, and one topic alone", func(t *testing.T) {
+	t.Run("UI-08 help lists every topic with an example, one topic alone, and each node type as its own", func(t *testing.T) {
 		registry, _ := uiRegistry(t)
 		all, _ := registry.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args(t, map[string]any{"action": "help"})})
 		example, isError := registry.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args(t, map[string]any{"action": "help", "topic": "example"})})
-		if !strings.Contains(all, "\n\nnodes:\nEvery node") || !strings.Contains(all, "\nexample:\n{") || strings.Contains(all, "view:") || isError || !strings.HasPrefix(example, `{"action":"create"`) {
+		slider, _ := registry.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args(t, map[string]any{"action": "help", "topic": "slider"})})
+		unknown, _ := registry.Run(context.Background(), llm.ToolCall{Name: "ui", Args: args(t, map[string]any{"action": "help", "topic": "knob"})})
+		for _, kind := range UITypes {
+			if uiNodeHelp[kind] == "" || strings.Contains(all, uiNodeHelp[kind]) {
+				t.Errorf("%s should have a topic of its own, out of the list", kind)
+			}
+		}
+		if !strings.HasPrefix(slider, "a number on a track") || !strings.Contains(slider, `{"type":"slider"`) || !strings.Contains(unknown, "or a node type: panel, card, grid") {
+			t.Errorf("slider = %q unknown = %q", slider, unknown)
+		}
+		if !strings.Contains(all, "\n\ntopic nodes:\nEvery node") || !strings.Contains(all, "\ntopic example:\n{") || strings.Contains(all, "view:") || isError || !strings.HasPrefix(example, `{"action":"create"`) {
 			t.Errorf("all = %q example = %q", all, example)
 		}
 	})

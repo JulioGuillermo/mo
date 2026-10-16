@@ -561,7 +561,7 @@ func TestHelpAndView(t *testing.T) {
 		pull, _ := call(t, env, "git", map[string]any{"action": "help", "topic": "pull"})
 		unknown, isError := call(t, env, "memory", map[string]any{"action": "help", "topic": "fly"})
 
-		if !strings.Contains(all, "\npull: remote, name") || !strings.Contains(all, "\nview: offset") {
+		if !strings.Contains(all, "\npull: remote, name") || !strings.Contains(all, "\ntopic view: offset") || !strings.Contains(all, "\ntopic conflicts: ") {
 			t.Errorf("all = %q", all)
 		}
 		if !strings.HasPrefix(pull, "remote, name: the branch to take") {

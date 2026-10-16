@@ -24,18 +24,21 @@ const (
 )
 
 var bashHelp = []helpTopic{
-	{"run", "the default: command runs in the working directory, without stdin. timeout: seconds, 120 by default, 600 at most. " +
-		"background: returns at once, for servers, watchers and long builds; you are told when it ends. " +
-		"until (a regexp) and wait (seconds, 30 by default with until, 600 at most): with background, return when a line matches, the time is up or it ends, with what it printed so far, as a server's start. " +
-		"Every command is a job, [job N] after its output; a long output comes cut to its start and end, and is kept whole."},
+	{"run", `the default: command runs in the working directory, without stdin.
+timeout     seconds (120, at most 600)
+background  return at once, for servers, watchers and long builds; you are told when it ends
+until       with background: a regexp; return when a line matches, with what it printed so far, as a server's start
+wait        with until: seconds to wait for it (30, at most 600)
+Every command is a job, [job N] after its output; a long output comes cut to its start and end, kept whole for output.`},
 	{"output", "id: the output and state of a job; without id, the jobs of this conversation; without id but with match, the matching lines of every job, as job:line: text."},
 	{"kill", "id: stop a job and what it started."},
 }
 
 func bashTool() Tool {
 	return Tool{
-		Name:        "bash",
-		Description: "Run a shell command. Each is a job whose whole output stays: output reads it, kill stops it, help explains.",
+		Name: "bash",
+		Description: "Run a shell command (action run, the default). Each is a job whose whole output is kept: action output reads it, kill stops it. " +
+			`{"action":"help"} explains each action.`,
 		Schema: json.RawMessage(`{"type":"object","properties":{
 "command":{"type":"string"},"action":{"type":"string","enum":["run","output","kill","help"]},
 "timeout":{"type":"integer"},"background":{"type":"boolean"},"until":{"type":"string"},"wait":{"type":"integer"},"id":{"type":"integer"},"topic":{"type":"string"}}}`),

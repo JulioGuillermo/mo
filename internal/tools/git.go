@@ -37,19 +37,20 @@ var gitHelp = []helpTopic{
 	{"abort", "give up a merge, cherry_pick or rebase."},
 	{"pull", "remote, name: the branch to take (the one tracked); rebase: true replays yours on top, false merges, unset as git's pull.rebase says."},
 	{"push", "remote: push the current branch (origin); never forced."},
-	{"stash", "message: put the changes aside."},
+	{"stash", "message: put the tracked changes aside; untracked files stay."},
 	{"stash_apply", "index: apply a stash and keep it (0, the newest)."},
 	{"stash_pop", "index: apply a stash and drop it."},
 	{"stash_drop", "index: drop a stash for good."},
 	{"tag", "name, revision (HEAD), message: annotated when given."},
-	{"reset", "revision, mode: soft, mixed (default) or hard."},
-	{"conflicts", "they stay as markers in the files: edit them away, then continue; commit and continue refuse while markers are left. Untracked files are never touched; hooks do not run."},
+	{"reset", "revision, mode: soft, mixed (default) or hard; untracked files stay."},
+	{"conflicts", "they stay as markers in the files: edit them away, then continue; commit and continue refuse while markers are left."},
 }
 
 func gitTool() Tool {
 	return Tool{
-		Name:        "git",
-		Description: "Git in the working directory, its output kept short. help lists what each action takes; for what it does not do, run git with bash.",
+		Name: "git",
+		Description: "Git in the working directory, its output kept short; hooks do not run. " +
+			`{"action":"help"} explains each action; for what they do not do, run git with bash.`,
 		Schema: json.RawMessage(`{"type":"object","properties":{
 "action":{"type":"string","enum":["status","diff","log","show","blame","branches","check","fetch","stash_list","tags","add","commit","branch","switch","merge","cherry_pick","rebase","continue","abort","pull","push","stash","stash_apply","stash_pop","stash_drop","tag","reset","help"]},
 "paths":{"type":"array","items":{"type":"string"}},"path":{"type":"string"},"revision":{"type":"string"},"name":{"type":"string"},"message":{"type":"string"},

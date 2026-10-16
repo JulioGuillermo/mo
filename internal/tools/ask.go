@@ -28,7 +28,7 @@ type Question struct {
 func askTool() Tool {
 	return Tool{
 		Name:        AskName,
-		Description: "Ask the user when you need a decision or information you cannot find yourself. Up to 4 questions; options: short choices; multiple: several may be picked. The user can always answer in their own words.",
+		Description: "Ask the user and wait for the answer, when you need a decision or information you cannot find yourself. Up to 4 questions; options: short choices; multiple: several may be picked. The user can always answer in their own words. For a form or a tool the user works with on their own, use ui.",
 		Schema: json.RawMessage(`{"type":"object","properties":{
 "questions":{"type":"array","items":{"type":"object","properties":{"question":{"type":"string"},"options":{"type":"array","items":{"type":"string"}},"multiple":{"type":"boolean"}},"required":["question"]}}},"required":["questions"]}`),
 		Run: func(context.Context, Env, json.RawMessage) (string, error) {

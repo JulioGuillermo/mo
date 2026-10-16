@@ -22,16 +22,16 @@ var memoryNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
 var memoryHelp = []helpTopic{
 	{"list", "the notes of this project and the global ones, each with its summary, the first line."},
-	{"read", "name: a note, or an id from search: m:… a note, c:<conversation> its turns, c:<conversation>#<n> one turn whole."},
+	{"read", "name: a note, or an id search gave: m:name a note, c:id a past conversation's turns, c:id#3 one turn whole."},
 	{"write", "name (lowercase letters, digits, - and _), content: save a note; scope: project (default) or global, for every project."},
 	{"delete", "name, scope: delete a note."},
-	{"search", "query: words to find in the notes and the past conversations of this project; scope all: of every project. kind: notes or conversations only. count: results (6, at most 20)."},
+	{"search", "query: words to find in the notes and past conversations; scope: project (default) or all, every project's. kind: notes or conversations only. count: results (6, at most 20)."},
 }
 
 func memoryTool() Tool {
 	return Tool{
 		Name:        "memory",
-		Description: "Notes kept across conversations, and search over them and past conversations. help explains each action.",
+		Description: "Notes kept across conversations, and search over them and past conversations. " + `{"action":"help"} explains each action.`,
 		Schema: json.RawMessage(`{"type":"object","properties":{
 "action":{"type":"string","enum":["list","read","write","delete","search","help"]},
 "name":{"type":"string"},"content":{"type":"string"},"query":{"type":"string"},
