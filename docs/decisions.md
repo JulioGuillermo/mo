@@ -1336,3 +1336,12 @@
   pace whatever draws the screen; the spinner's ticks, which draw it again while something moves,
   come as often as the quickest needs. The status line's spinner is drawn the same way, its frames
   those of bubbles' MiniDot.
+
+## The screen's settings apply at once
+
+- Settings saved while the model works build a new session that waits for the turn's end, as
+  swapping the agent mid-reply would pull it from under its feet. What is the screen's alone,
+  `[render]` and `[notify]` (images, background, side panel, keys, status line, icons, bar, the
+  reply's refresh, the animations, notifications), does not touch the agent: it is copied into the
+  session in use and applied at once, by the same `applyUI` an idle save uses. The images setting
+  was read only at start before, so changing it did nothing until mo restarted.

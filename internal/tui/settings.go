@@ -19,6 +19,7 @@ import (
 	"github.com/jg/mo/internal/detect"
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/login"
+	"github.com/jg/mo/internal/render"
 	"github.com/jg/mo/internal/tools"
 )
 
@@ -324,10 +325,11 @@ func (m model) finishSettings(msg settingsSavedMsg) (tea.Model, tea.Cmd) {
 				m.pendingSession.discard()
 			}
 			m.pendingSession = &msg.session
-			// How often the reply is drawn is the screen's alone: it
-			// applies at once, to the reply being written too.
-			m.bridge.paceReply(paceOf(msg.session.Config.Render))
-			return m, printText(m.printer.Note("settings saved to " + where + " · they apply when the model finishes this turn; the reply refresh already does"))
+			// What is the screen's alone applies at once, to this turn
+			// too; the session, with the model, waits for its end.
+			m.session.Config.Render, m.session.Config.Notify = msg.session.Config.Render, msg.session.Config.Notify
+			applied := m.applyUI()
+			return m, tea.Batch(applied, printText(m.printer.Note("settings saved to "+where+" · the model's apply when it finishes this turn; the look, keys and notifications already do")))
 		}
 		takeOver(msg.session, m.session)
 	}
@@ -341,16 +343,26 @@ func (m model) useSession(session Session) (tea.Model, tea.Cmd) {
 	m.session = session
 	m.printer.setKind(m.toolKind)
 	m.configureJobs()
-	if enabled := m.session.Config.Render.Keys == "vim"; enabled != m.vim.enabled {
+	m.usage = m.session.Agent.LastUsage
+	// The model may take other efforts.
+	return m, tea.Batch(m.applyUI(), loadEfforts(m.session))
+}
+
+// applyUI puts in force the settings that are the screen's alone, [render]
+// and [notify], read where they are used: images, background, side panel,
+// keys, the reply's refresh and the animations; the status line, icons and
+// bar are read as they are drawn.
+func (m *model) applyUI() tea.Cmd {
+	settings := m.session.Config.Render
+	m.printer.setImages(render.Detect(settings.Images))
+	if enabled := settings.Keys == "vim"; enabled != m.vim.enabled {
 		m.vim = vimState{enabled: enabled}
 	}
-	m.usage = m.session.Agent.LastUsage
-	m.bridge.paceReply(paceOf(m.session.Config.Render))
+	m.bridge.paceReply(paceOf(settings))
 	m.paceAnimations()
-	// The side panel's setting may have changed the conversation's width,
-	// and the model the efforts it takes.
+	// The side panel's setting may have changed the conversation's width.
 	fit := m.fitWidth()
-	return m, tea.Batch(fit, m.applyScreen(m.printer.isDark()), loadEfforts(m.session))
+	return tea.Batch(fit, m.applyScreen(m.printer.isDark()))
 }
 
 func isAgentMsg(msg tea.Msg) bool {

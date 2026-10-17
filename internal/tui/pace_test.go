@@ -8,7 +8,8 @@ package tui
 // | PC-04 | Happy    | What is not the reply, and every other hook, sends what is held first, in order | P0  |
 // | PC-05 | Happy    | A batch is drawn as its pieces would be, the speeds counting each        | P0       |
 // | PC-06 | Happy    | The settings show the milliseconds or the tokens as the way chosen needs, and save them | P1 |
-// | PC-07 | Happy    | Saved while the model works, the refresh applies at once, to the reply being written | P0 |
+// | PC-07 | Happy    | Saved while the model works, the refresh and the animations apply at once  | P0       |
+// | PC-09 | Happy    | Saved while the model works, all that is the screen's applies at once; the model's waits | P0 |
 // | PC-08 | Happy    | The live speeds are taken again at the reply's pace; at its end, the final ones at once | P1 |
 
 import (
@@ -22,6 +23,7 @@ import (
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/render"
 )
 
 // pacedSends records what a pacer sends, as the kinds of message it is.
@@ -184,11 +186,13 @@ func TestPace(t *testing.T) {
 		m.running, m.cancel = true, func() {}
 		fresh := m.session
 		fresh.Config.Render.ReplyRefresh, fresh.Config.Render.ReplyEveryMS = config.RefreshTime, 250
+		fresh.Config.Render.RunningMS = 60
 
 		updated, _ := m.finishSettings(settingsSavedMsg{session: fresh, saved: []string{"config.toml"}, waiting: true})
 
 		pace := updated.(model).bridge.pacer.pace
-		if updated.(model).pendingSession == nil || pace.mode != config.RefreshTime || pace.every != 250*time.Millisecond {
+		defer setAnimations(config.Defaults().Render)
+		if updated.(model).pendingSession == nil || pace.mode != config.RefreshTime || pace.every != 250*time.Millisecond || paces.Load().running != 60*time.Millisecond {
 			t.Errorf("pending %v pace %+v", updated.(model).pendingSession != nil, pace)
 		}
 	})
@@ -229,6 +233,29 @@ func TestPace(t *testing.T) {
 		}
 		if ended := byTime.speeds(); ended.generation != 42 || ended.generationLive != "" {
 			t.Errorf("at the end: %+v", ended)
+		}
+	})
+
+	t.Run("PC-09 saved while the model works, all that is the screen's applies at once; the model's waits", func(t *testing.T) {
+		m := conversationModel()
+		m.bridge = &bridge{pacer: &pacer{send: (&pacedSends{}).send}}
+		m.running, m.cancel = true, func() {}
+		m.width = 150
+		fresh := m.session
+		fresh.Model = "another-model"
+		fresh.Config.Render.Sidebar, fresh.Config.Render.Keys, fresh.Config.Render.Status = sidebarOff, "vim", statusPlain
+		fresh.Config.Render.Images = render.ModeOff
+		finish := false
+		fresh.Config.Notify.Finish = &finish
+
+		updated, _ := m.finishSettings(settingsSavedMsg{session: fresh, saved: []string{"config.toml"}, waiting: true})
+		after := updated.(model)
+
+		if after.sidebarShown() || !after.vim.enabled || after.statusStyle() != statusPlain || after.printer.images != render.ModeOff || *after.session.Config.Notify.Finish {
+			t.Errorf("sidebar %v vim %v status %s images %v", after.sidebarShown(), after.vim.enabled, after.statusStyle(), after.printer.images)
+		}
+		if after.session.Model == "another-model" || after.pendingSession == nil {
+			t.Errorf("the model's settings did not wait: model %q pending %v", after.session.Model, after.pendingSession != nil)
 		}
 	})
 }
