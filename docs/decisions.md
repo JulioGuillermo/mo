@@ -1345,3 +1345,11 @@
   reply's refresh, the animations, notifications), does not touch the agent: it is copied into the
   session in use and applied at once, by the same `applyUI` an idle save uses. The images setting
   was read only at start before, so changing it did nothing until mo restarted.
+
+## Clearing llama-server's cache
+
+- `/cache clear` erases what llama-server holds in every slot (`GET /slots`, then `POST
+  /slots/N?action=erase` for each), for measures that do not depend on what was cached before. It
+  checks it is llama-server through `/props` first, sends the provider's headers, and says to start
+  llama-server with `--slots` when it does not list them. Ollama and LM Studio have nothing
+  alike short of unloading the model (`ollama stop`, `lms unload`), which it names instead.

@@ -561,6 +561,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.agentEnded()
 	case queuedReadMsg:
 		return m.queuedRead(int(msg))
+	case cacheClearedMsg:
+		return m.cacheCleared(msg)
 	case usageMsg:
 		m.usage = llm.Usage(msg)
 		m.metrics = liveMetrics{}
@@ -925,6 +927,11 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		return m.openFile(argument)
 	case "agents":
 		return m.pickAgent(argument)
+	case "cache":
+		if argument != "clear" {
+			return m.emit(m.printer.Note("usage: /cache clear · erases what llama-server holds in its slots"))
+		}
+		return m, clearCache(m.session.Agent.Provider)
 	case "plugins":
 		return m, printText(m.printer.Note(pluginReport(m.session.Plugins)))
 	case "mcp":
@@ -1437,4 +1444,42 @@ func formatTokens(count int) string {
 		return fmt.Sprint(count)
 	}
 	return fmt.Sprintf("%.1fk", float64(count)/1000)
+}
+
+// slotClearer is a provider that can erase its server's slots: llama-server.
+type slotClearer interface {
+	ClearSlots(ctx context.Context) (int, error)
+}
+
+// cacheClearedMsg is how erasing the server's cache went.
+type cacheClearedMsg struct {
+	erased int
+	err    error
+}
+
+// clearCache erases what llama-server holds in its slots, off the UI's
+// goroutine.
+func clearCache(provider llm.Provider) tea.Cmd {
+	return func() tea.Msg {
+		clearer, ok := provider.(slotClearer)
+		if !ok {
+			return cacheClearedMsg{err: llm.ErrNotLlamaServer}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), cacheClearTimeout)
+		defer cancel()
+		erased, err := clearer.ClearSlots(ctx)
+		return cacheClearedMsg{erased: erased, err: err}
+	}
+}
+
+const cacheClearTimeout = 30 * time.Second
+
+func (m model) cacheCleared(msg cacheClearedMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case errors.Is(msg.err, llm.ErrNotLlamaServer):
+		return m.emit(m.printer.Note("/cache clear works with llama-server; with Ollama, ollama stop <model> unloads it, with LM Studio, lms unload"))
+	case msg.err != nil:
+		return m.emitError(fmt.Errorf("the cache was not cleared: %w", msg.err))
+	}
+	return m.emit(m.printer.Note(fmt.Sprintf("cache cleared: %d slots of llama-server erased · the next prompt is read whole", msg.erased)))
 }

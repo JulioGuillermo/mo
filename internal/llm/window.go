@@ -225,3 +225,56 @@ func (p *OpenAI) geminiWindow(ctx context.Context, model string) int {
 	}
 	return info.InputTokenLimit
 }
+
+// ErrNotLlamaServer is returned by what only llama-server does.
+var ErrNotLlamaServer = fmt.Errorf("the server is not llama-server")
+
+// ClearSlots erases what llama-server holds in every slot: the context of
+// the conversations it served, its KV cache. It says how many it erased.
+func (p *OpenAI) ClearSlots(ctx context.Context) (int, error) {
+	if _, ok := p.Props(ctx); !ok {
+		return 0, ErrNotLlamaServer
+	}
+	root := strings.TrimSuffix(strings.TrimRight(p.BaseURL, "/"), "/v1")
+	call := func(method, path string) (*http.Response, error) {
+		req, err := http.NewRequestWithContext(ctx, method, root+path, nil)
+		if err != nil {
+			return nil, err
+		}
+		headers, err := p.headers(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for name, value := range headers {
+			req.Header.Set(name, value)
+		}
+		return clientOrDefault(p.Client).Do(req)
+	}
+	resp, err := call(http.MethodGet, "/slots")
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("llama-server's /slots answered %s: start it with --slots to let its slots be listed and erased", resp.Status)
+	}
+	var slots []struct {
+		ID int `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&slots); err != nil {
+		return 0, fmt.Errorf("reading llama-server's slots: %w", err)
+	}
+	erased := 0
+	for _, slot := range slots {
+		resp, err := call(http.MethodPost, "/slots/"+url.PathEscape(fmt.Sprint(slot.ID))+"?action=erase")
+		if err != nil {
+			return erased, err
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return erased, fmt.Errorf("erasing slot %d: llama-server answered %s", slot.ID, resp.Status)
+		}
+		erased++
+	}
+	return erased, nil
+}

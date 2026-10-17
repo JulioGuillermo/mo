@@ -8,13 +8,17 @@ package llm
 // | WN-04 | Happy    | Gemini's own model API gives the input limit, with the key as key=            | P0       |
 // | WN-05 | Happy    | Anthropic's Models API gives max_input_tokens                                 | P1       |
 // | WN-06 | Edge     | A server that says nothing gives 0                                            | P1       |
+// | WN-07 | Happy    | ClearSlots erases every slot llama-server lists                               | P0       |
+// | WN-08 | Error    | Without /slots it says to start llama-server with --slots; another server is no llama-server | P1 |
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -105,6 +109,40 @@ func TestModelWindow(t *testing.T) {
 
 		if size != 0 || from != "" {
 			t.Errorf("size %d from %q", size, from)
+		}
+	})
+}
+
+func TestClearSlots(t *testing.T) {
+	props := `{"default_generation_settings":{"n_ctx":8192}}`
+
+	t.Run("WN-07 ClearSlots erases every slot llama-server lists", func(t *testing.T) {
+		server, seen := windowServer(t, map[string]string{"GET /props": props, "GET /slots": `[{"id":0},{"id":1}]`,
+			"POST /slots/0": `{}`, "POST /slots/1": `{}`})
+		provider := &OpenAI{BaseURL: server.URL + "/v1", APIKey: "k"}
+
+		erased, err := provider.ClearSlots(context.Background())
+
+		var erases []string
+		for _, r := range *seen {
+			if r.Method == http.MethodPost {
+				erases = append(erases, r.URL.Path+"?"+r.URL.RawQuery)
+			}
+		}
+		if err != nil || erased != 2 || len(erases) != 2 || erases[0] != "/slots/0?action=erase" || (*seen)[0].Header.Get("Authorization") != "Bearer k" {
+			t.Errorf("err %v erased %d posts %v", err, erased, erases)
+		}
+	})
+
+	t.Run("WN-08 without /slots it says to start llama-server with --slots; another server is no llama-server", func(t *testing.T) {
+		withoutSlots, _ := windowServer(t, map[string]string{"GET /props": props})
+		other, _ := windowServer(t, map[string]string{})
+
+		_, off := (&OpenAI{BaseURL: withoutSlots.URL + "/v1"}).ClearSlots(context.Background())
+		_, notLlama := (&OpenAI{BaseURL: other.URL + "/v1"}).ClearSlots(context.Background())
+
+		if off == nil || !strings.Contains(off.Error(), "--slots") || !errors.Is(notLlama, ErrNotLlamaServer) {
+			t.Errorf("off %v other %v", off, notLlama)
 		}
 	})
 }
