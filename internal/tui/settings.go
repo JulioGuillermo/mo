@@ -324,7 +324,10 @@ func (m model) finishSettings(msg settingsSavedMsg) (tea.Model, tea.Cmd) {
 				m.pendingSession.discard()
 			}
 			m.pendingSession = &msg.session
-			return m, printText(m.printer.Note("settings saved to " + where + " · they apply when the model finishes this turn"))
+			// How often the reply is drawn is the screen's alone: it
+			// applies at once, to the reply being written too.
+			m.bridge.paceReply(paceOf(msg.session.Config.Render))
+			return m, printText(m.printer.Note("settings saved to " + where + " · they apply when the model finishes this turn; the reply refresh already does"))
 		}
 		takeOver(msg.session, m.session)
 	}

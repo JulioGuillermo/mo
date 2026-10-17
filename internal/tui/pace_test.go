@@ -8,6 +8,7 @@ package tui
 // | PC-04 | Happy    | What is not the reply, and every other hook, sends what is held first, in order | P0  |
 // | PC-05 | Happy    | A batch is drawn as its pieces would be, the speeds counting each        | P0       |
 // | PC-06 | Happy    | The settings show the milliseconds or the tokens as the way chosen needs, and save them | P1 |
+// | PC-07 | Happy    | Saved while the model works, the refresh applies at once, to the reply being written | P0 |
 
 import (
 	"strings"
@@ -172,6 +173,22 @@ func TestPace(t *testing.T) {
 		}
 		if err != nil || layer.Render.ReplyRefresh != "tokens" || layer.Render.ReplyEveryTokens != 25 || layer.Render.ReplyEveryMS != 0 || tooFast == nil {
 			t.Errorf("err %v render %+v too fast %v", err, layer.Render, tooFast)
+		}
+	})
+
+	t.Run("PC-07 saved while the model works, the refresh applies at once, to the reply being written", func(t *testing.T) {
+		m := conversationModel()
+		record := &pacedSends{}
+		m.bridge = &bridge{pacer: &pacer{send: record.send}}
+		m.running, m.cancel = true, func() {}
+		fresh := m.session
+		fresh.Config.Render.ReplyRefresh, fresh.Config.Render.ReplyEveryMS = config.RefreshTime, 250
+
+		updated, _ := m.finishSettings(settingsSavedMsg{session: fresh, saved: []string{"config.toml"}, waiting: true})
+
+		pace := updated.(model).bridge.pacer.pace
+		if updated.(model).pendingSession == nil || pace.mode != config.RefreshTime || pace.every != 250*time.Millisecond {
+			t.Errorf("pending %v pace %+v", updated.(model).pendingSession != nil, pace)
 		}
 	})
 }
