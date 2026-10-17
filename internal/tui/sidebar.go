@@ -241,7 +241,7 @@ func (m model) sidebarLines() ([]string, []region) {
 		case tools.JobDone:
 			mark, tint, state = markDone, colors.done, "done · "+status.Ended.Sub(status.Started).Round(time.Second).String()
 		case tools.JobFailed:
-			mark, tint, state = markFailed(m.icons() == iconsNerd), colors.failed, fmt.Sprintf("exit %d · %s", status.ExitCode, status.Ended.Sub(status.Started).Round(time.Second))
+			mark, tint, state = markFailed, colors.failed, fmt.Sprintf("exit %d · %s", status.ExitCode, status.Ended.Sub(status.Started).Round(time.Second))
 		case tools.JobKilled:
 			mark, tint, state = markStopped, colors.dim, "killed"
 		}

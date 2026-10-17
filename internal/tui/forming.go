@@ -129,7 +129,7 @@ func (m model) formingView() string {
 		}
 		// The calls of a reply run one at a time: while one runs, the
 		// later ones wait for it; while the user is asked, for them.
-		sign := arc()
+		sign := forming()
 		switch {
 		case m.asks(call):
 			sign = askingSign()

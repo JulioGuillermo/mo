@@ -1320,11 +1320,13 @@
 
 ## Round signs of how things stand
 
-- Calls, jobs and subagents share one set of signs, all round so they read alike, their colours
-  as before (a call's says what it does): `◌` waiting its turn, an arc turning on the corners
-  `◜◝◞◟` while it runs, `⊙ ◎` beating while it waits for the user, `●` done, a cross when it
-  failed (a Nerd Font's filled circle with a cross, as a close button, with `render.icons = "nerd"`,
-  else `⊗`), `⊘` stopped, cancelled or denied.
+- Calls, jobs and subagents share one set of signs, round where it reads well, their colours as
+  before (a call's says what it does): a bubble breathing `· ∘ ○ ∘` while a call is written, `◌`
+  waiting its turn, an arc turning on the corners `◜◝◞◟` while it runs, `⊙ ◎` beating while it
+  waits for the user, `●` done, `✗` when it failed, `⊘` stopped, cancelled or denied. The round
+  crosses were tried and left: a Nerd Font's filled one is too big, the others depend on the font.
+- The model's reasoning, while it comes, has a spark fading in and out, `✦ ✧ ⊹ · ⊹ ✧`, before
+  "thinking…". They were picked from a script that showed the choices animated side by side.
 - A call's block is drawn once; while it runs its sign is a place that the conversation's window,
   and what is copied, fill with the arc as it turns at that moment, so a running call turns
   without its block being drawn again.

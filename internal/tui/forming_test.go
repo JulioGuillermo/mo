@@ -63,7 +63,7 @@ func TestFormingCalls(t *testing.T) {
 		named := streaming(m, piece(0, "bash", ""))
 		forming := streaming(named, piece(0, "", `{"command":"go test ./`), piece(0, "", `.. && echo ok`))
 
-		if !strings.Contains(steady(shown2(named)), "◜ bash") || !strings.Contains(shown2(forming), "go test ./.. && echo ok") {
+		if !strings.Contains(breathing(shown2(named)), "· bash") || !strings.Contains(shown2(forming), "go test ./.. && echo ok") {
 			t.Errorf("named:\n%s\nforming:\n%s", shown2(named), shown2(forming))
 		}
 	})
@@ -79,11 +79,11 @@ func TestFormingCalls(t *testing.T) {
 		writing := streaming(m, piece(0, "write", `{"path":"notes.md","content":"`+body.String()+`last line`))
 		wrapped := streaming(m, piece(0, "tool_call", `{"name":"edit","args":{"path":"a.go","new":"x := 1`))
 
-		view := steady(shown2(writing))
-		if !strings.Contains(view, "◜ write notes.md") || !strings.Contains(view, "writing · 31 lines") || !strings.Contains(view, "last line") || strings.Contains(view, "line a\n") && strings.Count(view, "line ") > 13 {
+		view := breathing(shown2(writing))
+		if !strings.Contains(view, "· write notes.md") || !strings.Contains(view, "writing · 31 lines") || !strings.Contains(view, "last line") || strings.Contains(view, "line a\n") && strings.Count(view, "line ") > 13 {
 			t.Errorf("writing:\n%s", view)
 		}
-		if !strings.Contains(steady(shown2(wrapped)), "◜ edit a.go") || !strings.Contains(shown2(wrapped), "x := 1") {
+		if !strings.Contains(breathing(shown2(wrapped)), "· edit a.go") || !strings.Contains(shown2(wrapped), "x := 1") {
 			t.Errorf("wrapped:\n%s", shown2(wrapped))
 		}
 	})
@@ -200,4 +200,12 @@ func TestStates(t *testing.T) {
 			t.Errorf("reading %q answering %q", reading.detail, answering.word)
 		}
 	})
+}
+
+// breathing draws every breath of a call being written as its first.
+func breathing(text string) string {
+	for _, frame := range formingFrames {
+		text = strings.ReplaceAll(text, frame+" ", formingFrames[0]+" ")
+	}
+	return text
 }

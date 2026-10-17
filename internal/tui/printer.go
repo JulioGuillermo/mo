@@ -69,8 +69,6 @@ type printer struct {
 	drawingIndex map[string]int
 	// kind tells what a tool call does, for the colour of its mark.
 	kind func(call llm.ToolCall) toolKind
-	// nerd draws the signs a Nerd Font has.
-	nerd bool
 }
 
 func newPrinter() *printer {
@@ -577,26 +575,16 @@ func (p *printer) toolHeaderAs(name string, args json.RawMessage, sign string) s
 	return mark + toolName.Render(" "+name)
 }
 
-// setNerd draws the signs a Nerd Font has, as the icons setting says.
-func (p *printer) setNerd(nerd bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.nerd = nerd
-}
-
 // runSign is a call's sign of how it stands: turning while it runs,
 // filled once done, a cross when it failed, a bar when it was stopped.
 func (p *printer) runSign(run toolRun) string {
-	p.mu.Lock()
-	nerd := p.nerd
-	p.mu.Unlock()
 	switch {
 	case !run.done:
 		return markRunning
 	case run.isError && agent.Stopped(strings.TrimSpace(run.output)):
 		return markStopped
 	case run.isError:
-		return markFailed(nerd)
+		return markFailed
 	}
 	return markDone
 }

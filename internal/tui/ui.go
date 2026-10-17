@@ -244,7 +244,6 @@ func Run(session Session) error {
 		svgs:        &svgFrames{kitty: printer.images == render.ModeKitty, ready: func() { bridge.send(svgReadyMsg{}) }},
 	}
 	printer.setKind(m.toolKind)
-	printer.setNerd(m.icons() == iconsNerd)
 	m.configureJobs()
 	program := tea.NewProgram(m)
 	bridge.program = program

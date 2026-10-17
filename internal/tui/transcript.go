@@ -193,7 +193,7 @@ func (p *printer) fold(title, text string, open, live bool) string {
 	var header string
 	switch {
 	case live:
-		header = "  ∴ thinking…"
+		header = "  " + spark() + " thinking…"
 	case open:
 		header = "  ▾ " + title + " · ctrl+o or click to fold"
 	default:

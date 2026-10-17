@@ -3,7 +3,7 @@ package tui
 // Test Traceability Table
 // | ID    | Category | Description                                                              | Priority |
 // | MK-01 | Happy    | A call's sign says how it stands: an arc turning while it runs, filled when done, a cross when it failed, a bar when stopped | P0 |
-// | MK-02 | Happy    | The cross is a Nerd Font's filled one when the icons are, else a plain one | P1     |
+// | MK-02 | Happy    | A call being written breathes; reasoning twinkles                        | P1       |
 // | MK-03 | Happy    | A call written and not run is dotted while another runs, beating while the user is asked | P1 |
 // | MK-04 | Edge     | The arc's place in a block never reaches the screen or what is copied       | P0       |
 
@@ -30,10 +30,10 @@ func TestMarks(t *testing.T) {
 
 	t.Run("MK-01 a call's sign says how it stands", func(t *testing.T) {
 		cases := map[string]toolRun{
-			markRunning:    {name: "bash", summary: "sleep 9"},
-			markDone:       {name: "bash", summary: "ls", done: true, output: "a.go"},
-			markFailedText: {name: "bash", summary: "false", done: true, isError: true, output: "exit 1"},
-			markStopped:    {name: "bash", summary: "rm x", done: true, isError: true, output: "The user denied this call. Ask them how to proceed."},
+			markRunning: {name: "bash", summary: "sleep 9"},
+			markDone:    {name: "bash", summary: "ls", done: true, output: "a.go"},
+			markFailed:  {name: "bash", summary: "false", done: true, isError: true, output: "exit 1"},
+			markStopped: {name: "bash", summary: "rm x", done: true, isError: true, output: "The user denied this call. Ask them how to proceed."},
 		}
 		for want, run := range cases {
 			if got := signOf(t, p.Tool(run, false)); got != want {
@@ -45,14 +45,19 @@ func TestMarks(t *testing.T) {
 		}
 	})
 
-	t.Run("MK-02 the cross is a Nerd Font's filled one when the icons are, else a plain one", func(t *testing.T) {
-		nerd := newPrinter()
-		nerd.setNerd(true)
+	t.Run("MK-02 a call being written breathes; reasoning twinkles", func(t *testing.T) {
+		m := conversationModel()
+		m.running = true
+		thinking := streaming(m, llm.Event{Kind: llm.EventReasoning, Text: "let me see"})
+		m = streaming(m, llm.Event{Kind: llm.EventToolCall, Call: 0, ID: "c1", Name: "bash", Text: `{"command":"ls"}`})
 
-		got := signOf(t, nerd.Tool(toolRun{name: "bash", summary: "false", done: true, isError: true, output: "exit 1"}, false))
+		forming, live := ansi.Strip(m.formingView()), thinking.liveText()
 
-		if got != markFailedNerd {
-			t.Errorf("%q", got)
+		if !slices.ContainsFunc(formingFrames, func(frame string) bool { return strings.Contains(forming, frame+" bash") }) {
+			t.Errorf("forming:\n%s", forming)
+		}
+		if !slices.ContainsFunc(sparkFrames, func(frame string) bool { return strings.Contains(ansi.Strip(live), frame+" thinking…") }) {
+			t.Errorf("reasoning:\n%s", live)
 		}
 	})
 

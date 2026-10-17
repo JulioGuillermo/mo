@@ -5,18 +5,17 @@ import (
 	"time"
 )
 
-// The signs of how a call, a job or a subagent stands, all round so they
-// read alike: dotted while it waits its turn, an arc going round while it
-// runs, a dot in a ring while it waits for the user, filled once done, a
-// cross when it failed and a bar when it was stopped.
+// The signs of how a call, a job or a subagent stands, round so they read
+// alike: a bubble breathing while a call is written, dotted while it waits
+// its turn, an arc going round while it runs, beating while it waits for
+// the user, filled once done, a cross when it failed, a bar when stopped.
 const (
 	markQueued  = "◌"
 	markDone    = "●"
 	markStopped = "⊘"
-	// markFailedText is the cross without a Nerd Font; with one, the filled
-	// circle with a cross closing buttons have.
-	markFailedText = "⊗"
-	markFailedNerd = ""
+	// markFailed is a ballot cross: the same in every font, where the
+	// round ones were too big in some.
+	markFailed = "✗"
 	// markRunning stands in a block drawn once for the arc, which turns
 	// where the block is shown.
 	markRunning = "\U0010FFFD"
@@ -49,10 +48,22 @@ func turning(text string) string {
 	return strings.ReplaceAll(text, markRunning, arc())
 }
 
-// markFailed is the sign of a failure, as the icons set allows.
-func markFailed(nerd bool) string {
-	if nerd {
-		return markFailedNerd
-	}
-	return markFailedText
+// formingFrames are a call being written: a bubble breathing.
+var formingFrames = []string{"·", "∘", "○", "∘"}
+
+const formingBreath = 220 * time.Millisecond
+
+// forming is the sign of a call being written, as it breathes now.
+func forming() string {
+	return formingFrames[int(time.Now().UnixMilli()/formingBreath.Milliseconds())%len(formingFrames)]
+}
+
+// sparkFrames are the model reasoning: a spark fading in and out.
+var sparkFrames = []string{"✦", "✧", "⊹", "·", "⊹", "✧"}
+
+const sparkFrame = 160 * time.Millisecond
+
+// spark is the sign of reasoning, as it twinkles now.
+func spark() string {
+	return sparkFrames[int(time.Now().UnixMilli()/sparkFrame.Milliseconds())%len(sparkFrames)]
 }

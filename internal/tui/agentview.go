@@ -180,7 +180,7 @@ func (m model) lens() model {
 // yellow when one under it waits for the user; an arc while it works;
 // beating while it asks; filled when done, a cross when it failed and a bar
 // when it was stopped.
-func agentMark(info team.Info, dark, nerd bool) (string, color.Color) {
+func agentMark(info team.Info, dark bool) (string, color.Color) {
 	pick := func(onDark, onLight string) color.Color {
 		if dark {
 			return lipgloss.Color(onDark)
@@ -205,7 +205,7 @@ func agentMark(info team.Info, dark, nerd bool) (string, color.Color) {
 	case team.Stopped:
 		return markStopped, pick("#f7768e", "#f52a65")
 	}
-	return markFailed(nerd), pick("#f7768e", "#f52a65")
+	return markFailed, pick("#f7768e", "#f52a65")
 }
 
 // agentRows are the rows of a tree of subagents, indented by level from
@@ -215,7 +215,7 @@ func (m model) agentRows(infos []team.Info, below int, width int, base lipgloss.
 	var lines []string
 	var regions []region
 	for _, info := range infos {
-		mark, tint := agentMark(info, dark, m.icons() == iconsNerd)
+		mark, tint := agentMark(info, dark)
 		indent := strings.Repeat("  ", max(info.Depth-below-1, 0))
 		note, noteStyle := " · "+string(info.State), base.Foreground(colors.dim)
 		if info.AskingBelow > 0 && info.State != team.Asking {
@@ -286,7 +286,7 @@ func (m model) agentViewLayout() (string, []region) {
 	view := m.agentView
 	info, _ := m.agentInfo(view.id)
 	dark := m.printer == nil || m.printer.isDark()
-	mark, tint := agentMark(info, dark, m.icons() == iconsNerd)
+	mark, tint := agentMark(info, dark)
 	bar := lipgloss.NewStyle().Background(accent).Foreground(lipgloss.Color("#1a1b26"))
 	if !dark {
 		bar = lipgloss.NewStyle().Background(lipgloss.Color("#2e7de9")).Foreground(lipgloss.Color("#ffffff"))
@@ -446,7 +446,7 @@ func (m model) pickAgent(argument string) (tea.Model, tea.Cmd) {
 	}
 	var options []huh.Option[string]
 	for _, info := range m.team().List() {
-		mark, _ := agentMark(info, true, m.icons() == iconsNerd)
+		mark, _ := agentMark(info, true)
 		label := fmt.Sprintf("%s%s %d %s · %s", strings.Repeat("  ", info.Depth-1), mark, info.ID, info.Name, info.State)
 		options = append(options, huh.NewOption(label, fmt.Sprint(info.ID)))
 	}

@@ -408,7 +408,7 @@ parent reads only that report, so long searches or test runs stay out of its con
 - The side panel lists them under **Agents** as a tree, each with a sign of how it does: `◌` grey
   waiting for a place, `◌` purple waiting for its own subagents (yellow, with `· N asks`, when one
   under it waits for you), `◜◝◞◟` blue turning while it works, `⊙ ◎` yellow beating while it asks
-  you, `●` green done, a red cross when it failed, `⊘` red when stopped, and on the right the context it used of its window, as `4.5k/1M`. A click opens its view;
+  you, `●` green done, `✗` red when it failed, `⊘` red when stopped, and on the right the context it used of its window, as `4.5k/1M`. A click opens its view;
   a right click stops it, removes it from the list or opens it.
   `/agents` lists them to pick one, `/agents N` opens one.
 - Its view is the main screen drawn from the subagent's: its conversation live, the calls it runs as
