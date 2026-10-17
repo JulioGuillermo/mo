@@ -9,6 +9,7 @@ package tui
 // | PC-05 | Happy    | A batch is drawn as its pieces would be, the speeds counting each        | P0       |
 // | PC-06 | Happy    | The settings show the milliseconds or the tokens as the way chosen needs, and save them | P1 |
 // | PC-07 | Happy    | Saved while the model works, the refresh applies at once, to the reply being written | P0 |
+// | PC-08 | Happy    | The live speeds are taken again at the reply's pace; at its end, the final ones at once | P1 |
 
 import (
 	"strings"
@@ -189,6 +190,45 @@ func TestPace(t *testing.T) {
 		pace := updated.(model).bridge.pacer.pace
 		if updated.(model).pendingSession == nil || pace.mode != config.RefreshTime || pace.every != 250*time.Millisecond {
 			t.Errorf("pending %v pace %+v", updated.(model).pendingSession != nil, pace)
+		}
+	})
+
+	t.Run("PC-08 the live speeds are taken again at the reply's pace; at its end, the final ones at once", func(t *testing.T) {
+		writing := func(refresh string) model {
+			m := conversationModel()
+			m.running, m.shownSpeeds = true, &shownSpeeds{}
+			m.session.Config.Render.ReplyRefresh, m.session.Config.Render.ReplyEveryMS, m.session.Config.Render.ReplyEveryTokens = refresh, 3_600_000, 3
+			start := time.Now().Add(-3 * time.Second)
+			m.metrics.add(text("a"), start)
+			m.metrics.add(text("b"), start.Add(1500*time.Millisecond))
+			return m
+		}
+		more := func(m *model, count int) {
+			for i := range count {
+				m.metrics.add(text("c"), time.Now().Add(time.Duration(i)*time.Millisecond))
+			}
+		}
+
+		byTime := writing(config.RefreshTime)
+		first := byTime.speeds()
+		more(&byTime, 5)
+		held := byTime.speeds()
+		live := writing(config.RefreshLive)
+		liveFirst := live.speeds()
+		more(&live, 5)
+		byTokens := writing(config.RefreshTokens)
+		tokensFirst := byTokens.speeds()
+		more(&byTokens, 3)
+		byTime.running, byTime.speed = false, llm.Usage{GenerationRate: 42}
+
+		if first.generation == 0 || held != first {
+			t.Errorf("by time: first %+v then %+v", first, held)
+		}
+		if live.speeds().generation == liveFirst.generation || byTokens.speeds().generation == tokensFirst.generation {
+			t.Error("live or by tokens did not take the speeds again")
+		}
+		if ended := byTime.speeds(); ended.generation != 42 || ended.generationLive != "" {
+			t.Errorf("at the end: %+v", ended)
 		}
 	})
 }

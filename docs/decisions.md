@@ -1288,3 +1288,7 @@
 - A new prompt, or anything but `/continue`, answers a cut call as stopped. A call without a result
   that is not resumable, as one a crash left between a reply and its results, is answered as
   interrupted and never run again unasked.
+- The live speeds (`~pp`, `~tg`) were taken again at every frame, and the spinner draws ten a
+  second. They now follow the reply's pace too: kept as last shown until the interval passes, or so
+  many more pieces came (a second at most); `live` takes them every frame, and once the reply ends
+  the final ones show at once.

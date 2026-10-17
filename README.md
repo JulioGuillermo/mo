@@ -227,7 +227,8 @@ status = "powerline"       # segments on backgrounds with arrows (needs a Nerd F
 bar = "shapes"             # context bar: shapes ▰▱, braille, circles, half-circles, squares, half-squares, dots, rings, dashes, shade, blocks, halves, line
 reply_refresh = "live"     # how often what the model writes is drawn: live (every piece), time or tokens;
 reply_every_ms = 100       # ... with time; drawing less leaves a local model's GPU to it
-reply_every_tokens = 10    # ... with tokens, a second apart at most. What asks, starts or ends is drawn at once
+reply_every_tokens = 10    # ... with tokens, a second apart at most. What asks, starts or ends is drawn at once;
+                           # the live pp and tg speeds are taken again at the same pace
 icons = "nerd"             # Nerd Font icons for the branch and its changes; "text": + ~ - » ? ! ✓
 
 [permissions]

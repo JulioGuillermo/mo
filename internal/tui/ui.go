@@ -215,6 +215,9 @@ type model struct {
 	// top is the first line of the conversation in view, once scrolled.
 	top      int
 	scrolled bool
+	// shownSpeeds are the live speeds as last shown, kept to the pace the
+	// reply is drawn at; nil shows them as they are.
+	shownSpeeds *shownSpeeds
 }
 
 const agentShutdownWait = 3 * time.Second
@@ -228,16 +231,17 @@ func Run(session Session) error {
 	printer.workDir = session.WorkDir
 	bridge := &bridge{printer: printer, exited: make(chan struct{})}
 	m := model{
-		session: session,
-		bridge:  bridge,
-		printer: printer,
-		input:   newInput(),
-		spinner: spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(workingStyle)),
-		focused: true,
-		history: loadHistory(),
-		vim:     vimState{enabled: session.Config.Render.Keys == "vim"},
-		files:   &fileIndex{},
-		svgs:    &svgFrames{kitty: printer.images == render.ModeKitty, ready: func() { bridge.send(svgReadyMsg{}) }},
+		session:     session,
+		bridge:      bridge,
+		printer:     printer,
+		input:       newInput(),
+		spinner:     spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(workingStyle)),
+		focused:     true,
+		history:     loadHistory(),
+		vim:         vimState{enabled: session.Config.Render.Keys == "vim"},
+		files:       &fileIndex{},
+		shownSpeeds: &shownSpeeds{},
+		svgs:        &svgFrames{kitty: printer.images == render.ModeKitty, ready: func() { bridge.send(svgReadyMsg{}) }},
 	}
 	printer.setKind(m.toolKind)
 	m.configureJobs()

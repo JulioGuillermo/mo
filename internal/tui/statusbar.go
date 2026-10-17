@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/gitops"
 )
 
@@ -437,19 +438,56 @@ func (m model) about() string {
 
 // speedPart is how fast the last reply read the prompt and wrote, or, while
 // one is written, how fast it goes, marked ~.
+// shownSpeeds are the speeds shown, and when and at how many pieces of
+// the reply they were taken.
+type shownSpeeds struct {
+	prompt, generation         float64
+	promptLive, generationLive string
+	at                         time.Time
+	pieces                     int
+	set                        bool
+}
+
+// speeds are the prompt and generation speeds to show, a ~ before those
+// measured while the reply comes. While it does they are taken again only
+// at the pace the reply is drawn at.
+func (m model) speeds() shownSpeeds {
+	now := time.Now()
+	fresh := shownSpeeds{prompt: m.speed.PromptRate, generation: m.speed.GenerationRate, at: now, pieces: m.metrics.pieces, set: true}
+	if m.running {
+		if rate := m.metrics.promptRate(now); rate > 0 && m.metrics.pieces == 0 {
+			fresh.prompt, fresh.promptLive = rate, "~"
+		}
+		if rate := m.metrics.generation(); rate > 0 {
+			fresh.generation, fresh.generationLive = rate, "~"
+		}
+	}
+	shown := m.shownSpeeds
+	pace := paceOf(m.session.Config.Render)
+	if shown == nil || !m.running || pace.mode == config.RefreshLive || pace.mode == "" {
+		if shown != nil {
+			*shown = fresh
+		}
+		return fresh
+	}
+	due := !shown.set || fresh.pieces < shown.pieces
+	switch pace.mode {
+	case config.RefreshTime:
+		due = due || now.Sub(shown.at) >= pace.every
+	case config.RefreshTokens:
+		due = due || fresh.pieces-shown.pieces >= pace.tokens || now.Sub(shown.at) >= tokensAtMost
+	}
+	if due {
+		*shown = fresh
+	}
+	return *shown
+}
+
 func (m model) speedPart(show statusParts, colors statusColors) string {
 	paint := func(c color.Color, text string) string { return lipgloss.NewStyle().Foreground(c).Render(text) }
 	var speeds []string
-	prompt, generation := m.speed.PromptRate, m.speed.GenerationRate
-	promptLive, generationLive := "", ""
-	if m.running {
-		if rate := m.metrics.promptRate(time.Now()); rate > 0 && m.metrics.pieces == 0 {
-			prompt, promptLive = rate, "~"
-		}
-		if rate := m.metrics.generation(); rate > 0 {
-			generation, generationLive = rate, "~"
-		}
-	}
+	taken := m.speeds()
+	prompt, generation, promptLive, generationLive := taken.prompt, taken.generation, taken.promptLive, taken.generationLive
 	if show.prompt && prompt > 0 {
 		speeds = append(speeds, paint(colors.label, "pp ")+paint(colors.prompt, fmt.Sprintf("%s%.0f", promptLive, prompt)))
 	}
