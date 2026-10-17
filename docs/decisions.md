@@ -440,31 +440,53 @@
 ## Loop guard
 
 - **A tool loop is the same call with the same result**, not the same call alone. Only a call
-  whose arguments (keys sorted) and output both match earlier ones counts, and a different call
-  that may change something (anything but read, ls, grep, fetch, web_search, tool_search) ends
-  the count: running the tests again after an edit is progress even when they fail the same way.
-  A read-only call in between does not, so an A, B, A, B cycle of lookups is still caught; a cycle
-  of two bash commands is not, and is left to the stream guard and `warnings`. The
-  blocked call gets an error result saying so, which keeps the history valid for every provider
-  and needs no extra message. Results pair with calls by position, since local servers reuse ids.
+  whose arguments and output both match earlier ones counts. The arguments are read in one form
+  (keys sorted, empty or zero ones left out, a path cleaned); the output is compared to the
+  letter, so a time or a duration in it is a result that moved: a false negative costs steps, a
+  false positive stops work that was going well. Only the last results alike count: a call that
+  gave new results and then stays the same is a loop, one that keeps changing is a look at some
+  state. Polling a background job (`bash` with a job id) is never stopped: a job that shows
+  nothing new is waited for, not looped on; a model that only polls ends at the steps.
+- **A different call that may change something ends the count**: running the tests again after an
+  edit is progress even when they fail the same way. What may change something is not a fixed
+  list but what the registry says (`Changes` for git, memory and bash by their action; read, ls,
+  grep, fetch and the search tools never; any other tool does). Such a call ends the count unless
+  it is itself written over and over in the window with the same results, which is how cycles
+  are told from progress: A, B, A, B or A, B, C, D, A, B, C, D are loops; A, B, A with A's
+  result changing is not. A cycle is caught once its calls were each written twice.
+- **A shell command may be run `repeats` + 2 times** with the same result (5 by default): it is
+  how the model often looks at something that moves outside, which a loop cannot be told from.
+- **Errors are no exception, and no other loop**: the same error from another call or another
+  tool is not a loop; only the same call with the same result is. A model retrying an edit with an
+  `old` that is never found is left to the steps.
 - **Only the current turn counts.** The look-back stops at the user's last prompt: when the user
   asks to run something again, that is not the model looping. `replies` bounds it further, so a
   long turn that comes back to the same file much later is not punished.
-- **A stream loop is one piece written `stream_repeats` times back to back** at the end of the
-  stream: a phrase, a line or a paragraph, 16 to 2000 bytes, starting on a whole character, with
-  at least 8 different letters. A piece with only 2 to 7, such as `Wait, ` or `ha ha `, needs four
-  times the copies; one with fewer never counts, so rules (ASCII or `═`), table borders, blank
-  lines, zero-filled arrays and base64 padding are left alone. The piece is quoted from where
-  its run of copies begins, the way it reads. Scattered repeats are not loops; a model that
-  writes the same line between other lines is not stuck. Text and reasoning are watched apart.
-  Each delta checks every piece size against the last copies; mismatches exit on the first
-  bytes and a letters-from-the-end table skips the rest, so it stays cheap per token.
+- **A stream loop is the end of one stream, text or reasoning, that is one piece written again
+  and again**, as far as it can be seen: the last 8 bytes are looked up where they were written
+  before, as compressors do, and the distance to each is a period; the end is a loop when it holds
+  the same piece over it. Only the stream of one reply is looked at (up to 1 MB), never an earlier
+  reply. A piece with at least 8 different letters is a loop after `stream_repeats` copies, of any
+  length. A poorer one, such as `a`, `Wait, ` or `0, `, is text that legitimate output repeats
+  too, rules, borders, zeros, base64, so it needs 1000 characters in a row: `aaaa…` is caught,
+  a rule of 80 columns is not. The piece is quoted from where its run of copies begins, the way it
+  reads. Scattered repeats are not loops: the same words in several places, or in several replies,
+  are what a model that works through a batch writes. Up to 4096 earlier places are tried for each
+  delta; a reply of 270 KB made of lines that all end alike costs about 45 µs a delta, usual text
+  a few.
 - **A cut reply is dropped whole** and the model gets a user message, prefixed `[mo loop guard]`,
   quoting what it repeated. A system message is not used: Anthropic has no system messages mid
   conversation and several llama.cpp chat templates reject one that is not first. When the last
   message is already the user's, the note is appended to it, since some templates also refuse
   two user messages in a row; after tool results it goes as its own user message, the same shape
   as a prompt sent after a cancel.
+- **The main agent has a step limit too**, `loop.steps` replies a turn (300; 0 for none), as the
+  subagents have `agents.max_steps`: a model that changes its arguments each time is no exact
+  loop and would run for ever. The turn stops with the step limit error and goes on when the user
+  does. The window is 30 replies, the one being answered among them, so a cycle of up to 10 or so
+  is seen.
+- A compaction starts the count again, since the model no longer holds what it read and reading it
+  again is no loop; the summary compaction itself is cut when it repeats. Jobs that end do not reset the loops told: only the user does.
 - **`warnings` loops are told to the model per turn, the next one stops the turn** with
   `ErrLooping`, so a model that cannot get out does not burn the context. Every pending tool call
   still gets a result, as after a cancel.
@@ -476,8 +498,10 @@
   stderr. The TUI clears it, since streamed text is only drawn live until the reply ends.
 - Ceiling: identical rows of code, five in a row, shown in a reply are cut too; `stream_repeats`
   raises the bar. A user who asks for repeated text on purpose needs it raised or the guard off.
-- Ceiling: exact repeats only. A model that loops with a changing counter or reworded sentences
-  is not caught; fuzzy matching would be the way out, at the price of false positives.
+- Ceiling: near repeats only by the rules above. A model that loops with a changing counter or
+  reworded sentences is not caught by the stream guard (only by the steps); fuzzy matching would be
+  the way out, at the price of false positives. Titles and permission judgements are short and
+  have a timeout, so they have no guard.
 
 ## Conversations
 
@@ -726,7 +750,9 @@
   it stands for. When the call is whole the view gives way to the usual block.
 - The arguments are JSON not finished yet, so a field is read as far as it came: the string being
   written is taken without its closing quote, escapes decoded, a cut escape left out.
-- The loop guard leaves the pieces of tool calls alone: a file with repeated lines is no loop.
+- The loop guard leaves the pieces of tool calls alone: a file with repeated lines, or a command
+  with the same flag again and again, is no loop. A call that never ends is cut off by the token
+  limit.
 - The spinner says what the agent waits on besides the reply: compacting the conversation, or the
   model judging a command in auto mode.
 - While the agent works, the spinner says what it does in a word

@@ -148,8 +148,12 @@ func (a *Agent) Run(ctx context.Context, prompt string, hooks Hooks) error {
 
 // turn asks the model and answers its tool calls until it ends.
 func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
+	limit := a.MaxSteps
+	if limit == 0 && a.Loop.Enabled {
+		limit = a.Loop.Steps
+	}
 	for steps := 0; ; steps++ {
-		if a.MaxSteps > 0 && steps >= a.MaxSteps {
+		if limit > 0 && steps >= limit {
 			return ErrStepLimit
 		}
 		a.tellEndedJobs()

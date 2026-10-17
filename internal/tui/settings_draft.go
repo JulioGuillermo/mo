@@ -89,6 +89,7 @@ type settingsDraft struct {
 	loopRepeats       string
 	loopStreamRepeats string
 	loopWarnings      string
+	loopSteps         string
 
 	initialProvider string
 	initialModel    string
@@ -185,6 +186,7 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		loopRepeats:       strconv.Itoa(cfg.Loop.Repeats),
 		loopStreamRepeats: strconv.Itoa(cfg.Loop.StreamRepeats),
 		loopWarnings:      strconv.Itoa(*cfg.Loop.Warnings),
+		loopSteps:         strconv.Itoa(*cfg.Loop.Steps),
 
 		initialProvider: provider,
 		initialModel:    model,
@@ -500,6 +502,10 @@ func (d *settingsDraft) loop() (config.Loop, error) {
 	if err != nil {
 		return config.Loop{}, fmt.Errorf("loop warnings: %w", err)
 	}
+	steps, err := parseAtLeast(d.loopSteps, 0)
+	if err != nil {
+		return config.Loop{}, fmt.Errorf("loop steps: %w", err)
+	}
 	loop := config.Loop{
 		Replies:       unlessDefault(replies, defaults.Replies),
 		Repeats:       unlessDefault(repeats, defaults.Repeats),
@@ -510,6 +516,9 @@ func (d *settingsDraft) loop() (config.Loop, error) {
 	}
 	if warnings != *defaults.Warnings {
 		loop.Warnings = &warnings
+	}
+	if steps != *defaults.Steps {
+		loop.Steps = &steps
 	}
 	return loop, nil
 }

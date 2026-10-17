@@ -166,6 +166,8 @@ type Loop struct {
 	Repeats       int   `toml:"repeats,omitzero"`
 	StreamRepeats int   `toml:"stream_repeats,omitzero"`
 	Warnings      *int  `toml:"warnings,omitempty"`
+	// Steps is how many replies a turn of the main agent may take; 0 for no limit.
+	Steps *int `toml:"steps,omitempty"`
 }
 
 type Web struct {
@@ -366,7 +368,7 @@ func Defaults() Config {
 		Render: Render{Images: render.ModeAuto, Background: "#00081a", Sidebar: "auto", Status: "powerline", Icons: "nerd", Keys: "default", Bar: "shapes",
 			ReplyRefresh: RefreshLive, ReplyEveryMS: 100, ReplyEveryTokens: 10,
 			SpinnerMS: 80, RunningMS: 150, WritingMS: 220, ReasoningMS: 160, AskingMS: 500},
-		Loop:        Loop{Enabled: ptr(true), Replies: 10, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2)},
+		Loop:        Loop{Enabled: ptr(true), Replies: 30, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2), Steps: ptr(300)},
 		Agents:      Agents{Enabled: ptr(false), Depth: 1, MaxParallel: 3, MaxAgents: 20, MaxSteps: 50},
 		Permissions: Permissions{Mode: "edits", Allow: DefaultAllow},
 		Notify:      Notify{Finish: ptr(true), Approval: ptr(true), Method: "auto", Focused: ptr(false)},
@@ -547,6 +549,9 @@ func validateLoop(loop Loop) error {
 	}
 	if *loop.Warnings < 0 {
 		return fmt.Errorf("loop.warnings %d: use 0 or more", *loop.Warnings)
+	}
+	if *loop.Steps < 0 {
+		return fmt.Errorf("loop.steps %d: use 0 or more", *loop.Steps)
 	}
 	return nil
 }
@@ -775,6 +780,9 @@ func mergeLoop(base, layer Loop) Loop {
 	base.StreamRepeats = override(base.StreamRepeats, layer.StreamRepeats)
 	if layer.Warnings != nil {
 		base.Warnings = layer.Warnings
+	}
+	if layer.Steps != nil {
+		base.Steps = layer.Steps
 	}
 	return base
 }

@@ -320,6 +320,7 @@ func newAgent(cfg config.Config, chosen chosenProvider, registry *tools.Registry
 			Repeats:       cfg.Loop.Repeats,
 			StreamRepeats: cfg.Loop.StreamRepeats,
 			Warnings:      *cfg.Loop.Warnings,
+			Steps:         *cfg.Loop.Steps,
 		},
 	}
 }

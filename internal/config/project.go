@@ -186,7 +186,7 @@ var ProjectKeys = []string{
 	"tools.mode", "tools.load", "tools.always_loaded", "tools.confirm", "tools.disabled", "tools.mcp_disabled", "tools.max_output", "tools.read_max_size",
 	"skills.mode", "skills.disabled", "instructions.enabled", "instructions.files",
 	"context.window", "context.compact_at", "context.compact_prompt", "context.strategy", "context.keep_reasoning",
-	"loop.enabled", "loop.replies", "loop.repeats", "loop.stream_repeats", "loop.warnings",
+	"loop.enabled", "loop.replies", "loop.repeats", "loop.stream_repeats", "loop.warnings", "loop.steps",
 }
 
 // projectField points at the field a project key names.
@@ -201,7 +201,7 @@ func projectField(cfg *Config, key string) reflect.Value {
 		"context.compact_prompt": &cfg.Context.CompactPrompt, "context.strategy": &cfg.Context.Strategy,
 		"context.keep_reasoning": &cfg.Context.KeepReasoning,
 		"loop.enabled":           &cfg.Loop.Enabled, "loop.replies": &cfg.Loop.Replies, "loop.repeats": &cfg.Loop.Repeats,
-		"loop.stream_repeats": &cfg.Loop.StreamRepeats, "loop.warnings": &cfg.Loop.Warnings,
+		"loop.stream_repeats": &cfg.Loop.StreamRepeats, "loop.warnings": &cfg.Loop.Warnings, "loop.steps": &cfg.Loop.Steps,
 	}
 	return reflect.ValueOf(fields[key]).Elem()
 }

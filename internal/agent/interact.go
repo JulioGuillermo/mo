@@ -91,8 +91,8 @@ func (a *Agent) prepareCall(ctx context.Context, outer llm.ToolCall, hooks Hooks
 	if a.looping() {
 		return settled(outer, stoppedCallResult)
 	}
-	if earlier, repeated := a.repeatedCall(call); repeated {
-		return settled(outer, a.blockRepeatedCall(call, earlier, hooks))
+	if result, repeated := a.repeatedCall(call); repeated {
+		return settled(outer, a.blockRepeatedCall(call, result, hooks))
 	}
 	if a.BlockToolCall != nil {
 		if reason := a.BlockToolCall(ctx, call); reason != "" {
@@ -176,8 +176,8 @@ func (a *Agent) decideCall(ctx context.Context, pending pendingCall, reply Reply
 	case a.looping():
 		return stoppedCallResult, true, false
 	}
-	if earlier, repeated := a.repeatedCall(pending.call); repeated {
-		return a.blockRepeatedCall(pending.call, earlier, hooks), true, false
+	if result, repeated := a.repeatedCall(pending.call); repeated {
+		return a.blockRepeatedCall(pending.call, result, hooks), true, false
 	}
 	if pending.approval >= 0 {
 		decision := reply.Decisions[pending.approval]

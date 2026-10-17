@@ -490,6 +490,7 @@ func loopItems(model, *settingsMenu) []settingItem {
 		count("Loop: within the last replies", "replies of the model in this turn", 1, func(d *settingsDraft) *string { return &d.loopReplies }),
 		count("Loop: same text in a row", "times before the reply is cut", 2, func(d *settingsDraft) *string { return &d.loopStreamRepeats }),
 		count("Loop: warnings to the model", "per turn; the next loop stops the turn", 0, func(d *settingsDraft) *string { return &d.loopWarnings }),
+		count("Loop: steps in a turn", "replies of the model before the turn stops; 0 for no limit", 0, func(d *settingsDraft) *string { return &d.loopSteps }),
 	}
 }
 

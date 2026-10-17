@@ -167,7 +167,23 @@ func (a *Agent) summarize(ctx context.Context, history []llm.Message, instructio
 		Messages:  []llm.Message{{Role: llm.RoleUser, Text: transcript + "\n\n" + writeSummaryNow}},
 		MaxTokens: a.MaxTokens,
 	}
-	response, err := a.Provider.Stream(ctx, request, func(llm.Event) {})
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var watch *repeatWatch
+	if a.Loop.Enabled {
+		watch = newRepeatWatch(a.Loop.StreamRepeats)
+	}
+	repeated := ""
+	response, err := a.Provider.Stream(streamCtx, request, func(event llm.Event) {
+		if watch != nil && repeated == "" {
+			if repeated = watch.add(event); repeated != "" {
+				cancel()
+			}
+		}
+	})
+	if repeated != "" && ctx.Err() == nil {
+		return "", fmt.Errorf("the summary kept repeating itself: %s", Quote(repeated))
+	}
 	if err != nil {
 		return "", err
 	}

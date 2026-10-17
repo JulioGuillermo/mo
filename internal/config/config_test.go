@@ -399,7 +399,7 @@ func TestLoopSettings(t *testing.T) {
 		if !*cfg.Loop.Enabled || cfg.Loop.Repeats != 3 || *cfg.Loop.Warnings != 2 {
 			t.Errorf("defaults = %+v", cfg.Loop)
 		}
-		if err != nil || *tuned.Loop.Enabled || tuned.Loop.Repeats != 4 || *tuned.Loop.Warnings != 0 || tuned.Loop.Replies != 10 {
+		if err != nil || *tuned.Loop.Enabled || tuned.Loop.Repeats != 4 || *tuned.Loop.Warnings != 0 || tuned.Loop.Replies != 30 || *tuned.Loop.Steps != 300 {
 			t.Errorf("tuned = %+v err = %v", tuned.Loop, err)
 		}
 	})

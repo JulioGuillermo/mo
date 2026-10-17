@@ -66,6 +66,7 @@ var projectFields = map[string]projectField{
 	"Loop: within the last replies":        {"loop.replies", func(d *settingsDraft) any { return &d.loopReplies }},
 	"Loop: same text in a row":             {"loop.stream_repeats", func(d *settingsDraft) any { return &d.loopStreamRepeats }},
 	"Loop: warnings to the model":          {"loop.warnings", func(d *settingsDraft) any { return &d.loopWarnings }},
+	"Loop: steps in a turn":                {"loop.steps", func(d *settingsDraft) any { return &d.loopSteps }},
 }
 
 // projectSectionKeys are the sections of the project screen, besides its
