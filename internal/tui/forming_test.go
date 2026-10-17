@@ -9,9 +9,11 @@ package tui
 // | LT-08 | Edge     | A call that ends streaming after the first started shows whole, waiting; the next reply starts anew | P0 |
 // | LT-05 | Happy    | The spinner says what the agent waits on, compacting, and goes back to working | P1 |
 // | LT-06 | Happy    | Each thing the agent does has its word and colour, in the spinner only | P1      |
+// | LT-09 | Happy    | Each tool says what it does and on what: the file, the pattern, the programs a command runs, once each | P1 |
 // | LT-07 | Happy    | While llama-server reads the prompt, the state says how far, cache left out | P1   |
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -162,10 +164,10 @@ func TestStates(t *testing.T) {
 		}{
 			{"waiting", func(m model) model { return m }, "waiting", colors.waiting},
 			{"reasoning", func(m model) model { return streaming(m, llm.Event{Kind: llm.EventReasoning, Text: "hmm"}) }, "reasoning", colors.reasoning},
-			{"writing", func(m model) model { return streaming(m, llm.Event{Kind: llm.EventText, Text: "Sure"}) }, "writing", colors.writing},
+			{"talking", func(m model) model { return streaming(m, llm.Event{Kind: llm.EventText, Text: "Sure"}) }, "talking", colors.writing},
 			{"reading", func(m model) model { return streaming(m, piece(0, "read", `{"path":"a.go"}`)) }, "reading", colors.reading},
-			{"changing", func(m model) model { return streaming(m, piece(0, "edit", `{"path":"a.go"}`)) }, "changing", colors.changing},
-			{"bash", func(m model) model { return streaming(m, piece(0, "bash", `{"command":"ls"}`)) }, "changing", colors.changing},
+			{"editing", func(m model) model { return streaming(m, piece(0, "edit", `{"path":"a.go"}`)) }, "editing", colors.changing},
+			{"bash", func(m model) model { return streaming(m, piece(0, "bash", `{"command":"nmap -sV x"}`)) }, "running", colors.changing},
 			{"prompt", func(m model) model {
 				return streaming(m, llm.Event{Kind: llm.EventPromptProgress, Progress: llm.PromptProgress{Done: 600, Total: 1000}})
 			}, "prompt", colors.prompt},
@@ -189,6 +191,32 @@ func TestStates(t *testing.T) {
 		}
 	})
 
+	t.Run("LT-09 each tool says what it does and on what: the file, the pattern, the programs a command runs, once each", func(t *testing.T) {
+		m := conversationModel()
+		m.running, m.cancel = true, func() {}
+		cases := map[string]string{
+			`{"name":"edit","args":{"path":"main.go"}}`:                                               "editing · main.go",
+			`{"name":"grep","args":{"pattern":"TODO"}}`:                                               "scanning · TODO",
+			`{"name":"bash","args":{"command":"docker build . && docker push x && docker run -d x"}}`: "running · docker",
+			`{"name":"bash","args":{"command":"cd x && go test ./... | tail -5"}}`:                    "running · go, tail",
+			`{"name":"bash","args":{"command":"cd x; make; curl -s y; jq . z"}}`:                      "running · make, curl +1",
+			`{"name":"bash","args":{"command":"sleep 30 && echo done"}}`:                              "running · sleep",
+			`{"name":"git","args":{"action":"commit","message":"x"}}`:                                 "versioning · commit",
+			`{"name":"mcp__playwright__browser_click","args":{}}`:                                     "calling · playwright › browser_click",
+		}
+		for raw, want := range cases {
+			var call struct {
+				Name string          `json:"name"`
+				Args json.RawMessage `json:"args"`
+			}
+			_ = json.Unmarshal([]byte(raw), &call)
+			got := m.toolState(call.Name, string(call.Args), statePalette(true))
+			if got.word+" · "+got.detail != want {
+				t.Errorf("%s: %q · %q, want %q", raw, got.word, got.detail, want)
+			}
+		}
+	})
+
 	t.Run("LT-07 while llama-server reads the prompt, the state says how far, cache left out", func(t *testing.T) {
 		m := conversationModel()
 		m.running, m.cancel = true, func() {}
@@ -196,7 +224,7 @@ func TestStates(t *testing.T) {
 		reading := streaming(m, llm.Event{Kind: llm.EventPromptProgress, Progress: llm.PromptProgress{Done: 5000, Total: 9000, Cached: 1000}}).currentState()
 		answering := streaming(streaming(m, llm.Event{Kind: llm.EventPromptProgress, Progress: llm.PromptProgress{Done: 9000, Total: 9000}}), llm.Event{Kind: llm.EventText, Text: "Hi"}).currentState()
 
-		if reading.detail != "50% · 4.0k/8.0k · 1.0k cached" || answering.word != "writing" {
+		if reading.detail != "50% · 4.0k/8.0k · 1.0k cached" || answering.word != "talking" {
 			t.Errorf("reading %q answering %q", reading.detail, answering.word)
 		}
 	})

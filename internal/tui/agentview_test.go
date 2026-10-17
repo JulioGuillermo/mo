@@ -248,7 +248,7 @@ func TestAgentView(t *testing.T) {
 
 		updated, _ := m.openAgentView(1)
 
-		if view := screenOf(updated.(model)); !strings.Contains(view, "partial words") || !strings.Contains(view, "main › h  ·  running") || !strings.Contains(view, "writing") || !strings.Contains(view, "fake-model") {
+		if view := screenOf(updated.(model)); !strings.Contains(view, "partial words") || !strings.Contains(view, "main › h  ·  running") || !strings.Contains(view, "talking") || !strings.Contains(view, "fake-model") {
 			t.Errorf("view:\n%s", view)
 		}
 	})

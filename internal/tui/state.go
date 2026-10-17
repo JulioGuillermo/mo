@@ -3,11 +3,15 @@ package tui
 import (
 	"fmt"
 	"image/color"
+	"path"
+	"slices"
+	"strings"
 
 	"charm.land/lipgloss/v2"
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/permissions"
 	"github.com/jg/mo/internal/tools"
 )
 
@@ -61,7 +65,7 @@ func (m model) currentState() state {
 	case m.lastEvent == llm.EventReasoning && m.reasoning != "":
 		return state{word: "reasoning", tint: colors.reasoning}
 	case m.lastEvent == llm.EventText && m.stream != "":
-		return state{word: "writing", tint: colors.writing}
+		return state{word: "talking", tint: colors.writing}
 	}
 	return state{word: "waiting", detail: "for the model", tint: colors.waiting}
 }
@@ -75,10 +79,97 @@ func (m model) toolState(name, args string, colors stateColors) state {
 	if m.session.Agent != nil && m.session.Agent.Tools != nil {
 		changes = changes || m.session.Agent.Tools.Changes(call) || m.session.Agent.Tools.Warning(call) != ""
 	}
+	tint, word := colors.reading, "reading"
 	if changes {
-		return state{word: "changing", detail: call.Name, tint: colors.changing}
+		tint, word = colors.changing, "changing"
 	}
-	return state{word: "reading", detail: call.Name, tint: colors.reading}
+	if verb, ok := toolVerbs[call.Name]; ok {
+		word = verb
+	}
+	args = string(call.Args)
+	field := func(name string) string {
+		value, _ := partialString(args, name)
+		return oneLine(value, stateDetailWidth)
+	}
+	detail := call.Name
+	switch call.Name {
+	case "read", "write", "edit", "ls", "mkdir", "rm":
+		detail = orDefault(field("path"), call.Name)
+	case "grep":
+		detail = field("pattern")
+	case "fetch":
+		detail = field("url")
+	case "web_search":
+		detail = field("query")
+	case "git":
+		word, detail = "versioning", field("action")
+	case tools.AgentName:
+		detail = field("name")
+	case "bash":
+		command, _ := partialString(args, "command")
+		detail = programs(command)
+	}
+	if server, tool, ok := mcpTool(call.Name); ok {
+		word, detail = "calling", server+" › "+tool
+	}
+	return state{word: word, detail: detail, tint: tint}
+}
+
+// stateDetailWidth is how much of a call's detail the status line shows.
+const stateDetailWidth = 40
+
+// toolVerbs are what the status line says each tool does; the others read
+// or change, as they do.
+var toolVerbs = map[string]string{
+	"read": "reading", "grep": "scanning", "ls": "listing", "write": "writing", "edit": "editing",
+	"rm": "removing", "mkdir": "creating", "bash": "running", "fetch": "fetching", "web_search": "searching",
+	"memory": "remembering", "todo": "planning", tools.AgentName: "delegating", "ui": "drawing",
+}
+
+// trivialPrograms say nothing of what a command does, beside others.
+var trivialPrograms = map[string]bool{"cd": true, "echo": true, "export": true, "true": true, "false": true,
+	"sleep": true, "printf": true, "set": true, ":": true, "pwd": true}
+
+// programs are the programs a command runs, once each, without arguments:
+// the first two that say what it does, and how many more.
+func programs(command string) string {
+	var names []string
+	if commands, err := permissions.Commands(command); err == nil {
+		for _, each := range commands {
+			if fields := strings.Fields(each.Text); len(fields) > 0 {
+				names = append(names, path.Base(fields[0]))
+			}
+		}
+	} else if fields := strings.Fields(command); len(fields) > 0 {
+		// Still being written: its first word.
+		names = append(names, path.Base(fields[0]))
+	}
+	var shown []string
+	for _, name := range names {
+		if !trivialPrograms[name] && !slices.Contains(shown, name) {
+			shown = append(shown, name)
+		}
+	}
+	if len(shown) == 0 && len(names) > 0 {
+		shown = names[:1]
+	}
+	switch {
+	case len(shown) == 0:
+		return "bash"
+	case len(shown) > 2:
+		return strings.Join(shown[:2], ", ") + fmt.Sprintf(" +%d", len(shown)-2)
+	}
+	return strings.Join(shown, ", ")
+}
+
+// mcpTool splits an MCP tool's name, mcp__server__tool.
+func mcpTool(name string) (string, string, bool) {
+	rest, ok := strings.CutPrefix(name, "mcp__")
+	if !ok {
+		return "", "", false
+	}
+	server, tool, ok := strings.Cut(rest, "__")
+	return server, tool, ok
 }
 
 // stateLabel is the word in its colour, and the detail after it.

@@ -1353,3 +1353,15 @@
   checks it is llama-server through `/props` first, sends the provider's headers, and says to start
   llama-server with `--slots` when it does not list them. Ollama and LM Studio have nothing
   alike short of unloading the model (`ollama stop`, `lms unload`), which it names instead.
+
+## What the status line says a tool does
+
+- Calls said "reading" or "changing" and the tool's name, and bash, which mo cannot tell, nearly
+  always "changing", even for a scan that changes nothing. Each tool now has its verb and says on
+  what: `reading`, `scanning` (grep), `searching` (the web), `listing`, `writing`, `editing`, `removing`, `creating`,
+  `fetching`, `remembering`, `planning`, `delegating`, `drawing` with the file, pattern, folder,
+  URL, query or subagent; `versioning` with git's action; `calling server › tool` for MCP. The colour still
+  says whether it reads or changes. The model's own reply is `talking`.
+- `bash` is `running` with the programs it runs: once each however often, without their
+  arguments or subcommands, the trivial ones (`cd`, `echo`, `sleep`…) left out beside others, the
+  first two and how many more, as `running · go, tail` or `running · docker`.
