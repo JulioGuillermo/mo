@@ -16,6 +16,7 @@ package agent
 // | CP-12 | Edge     | Two full compactions in one turn do not nest their summaries           | P0       |
 // | CP-13 | Error    | A full window compacts again even right after a failed attempt         | P0       |
 // | CP-14 | Happy    | Budget lists the system prompt, then each tool the model sees          | P2       |
+// | CP-15 | Happy    | An instruction goes under the summary prompt, which stays as it is; without one nothing is added | P0 |
 // | CP-90 | Happy    | Compacting says so while the summary is asked, and stops saying it after | P1    |
 
 import (
@@ -114,6 +115,28 @@ func TestCompaction(t *testing.T) {
 
 		if err == nil || len(agent.History) != 4 {
 			t.Errorf("err = %v history = %d", err, len(agent.History))
+		}
+	})
+
+	t.Run("CP-15 an instruction goes under the summary prompt, which stays as it is; without one nothing is added", func(t *testing.T) {
+		systems := func(instruction string) string {
+			provider := &scriptedProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Text: "- s"}}}
+			agent := newAgent(t, provider)
+			agent.History = longHistory()
+			if err := agent.CompactWith(context.Background(), Hooks{}, instruction); err != nil {
+				t.Fatal(err)
+			}
+			return provider.requests[0].System
+		}
+
+		with := systems("  keep the parser bug above all  ")
+		without := systems("   ")
+
+		if with != DefaultCompactPrompt+"\n\nThe user added the following instruction:\nkeep the parser bug above all" {
+			t.Errorf("with:\n%s", with)
+		}
+		if without != DefaultCompactPrompt {
+			t.Errorf("without:\n%s", without)
 		}
 	})
 

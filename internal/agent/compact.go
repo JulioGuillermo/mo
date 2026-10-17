@@ -70,6 +70,12 @@ func (a *Agent) fixedPartTokens() int {
 // in progress, from the last user message on, is kept as it is when it takes
 // less than keptTurnShare of the window.
 func (a *Agent) Compact(ctx context.Context, hooks Hooks) error {
+	return a.CompactWith(ctx, hooks, "")
+}
+
+// CompactWith compacts with an instruction of the user's for this summary,
+// as /compact takes one.
+func (a *Agent) CompactWith(ctx context.Context, hooks Hooks, instruction string) error {
 	if len(a.History) == 0 {
 		return nil
 	}
@@ -81,7 +87,7 @@ func (a *Agent) Compact(ctx context.Context, hooks Hooks) error {
 	}
 
 	hooks.activity(CompactingActivity)
-	summary, err := a.summarize(ctx, a.History[:cut])
+	summary, err := a.summarize(ctx, a.History[:cut], instruction)
 	hooks.activity("")
 	if err != nil {
 		return err
@@ -99,11 +105,8 @@ func (a *Agent) Compact(ctx context.Context, hooks Hooks) error {
 
 // summarize sends the history as a plain-text transcript, without tools, so
 // the model can only answer in text and the request fits in the window.
-func (a *Agent) summarize(ctx context.Context, history []llm.Message) (string, error) {
-	prompt := a.CompactPrompt
-	if prompt == "" {
-		prompt = DefaultCompactPrompt
-	}
+func (a *Agent) summarize(ctx context.Context, history []llm.Message, instruction string) (string, error) {
+	prompt := a.compactSystem(instruction)
 	transcript := transcriptOf(history)
 	if a.Window > 0 {
 		transcript = tools.Truncate(transcript, int(float64(a.Window)*transcriptShare)*bytesPerTokenGuess)
@@ -123,6 +126,19 @@ func (a *Agent) summarize(ctx context.Context, history []llm.Message) (string, e
 		return "", errors.New("the model returned an empty summary")
 	}
 	return summary, nil
+}
+
+// compactSystem is the summary's system prompt as it is and, only when the
+// user gave one, their instruction under it.
+func (a *Agent) compactSystem(instruction string) string {
+	prompt := a.CompactPrompt
+	if prompt == "" {
+		prompt = DefaultCompactPrompt
+	}
+	if instruction = strings.TrimSpace(instruction); instruction == "" {
+		return prompt
+	}
+	return prompt + "\n\nThe user added the following instruction:\n" + instruction
 }
 
 func transcriptOf(history []llm.Message) string {

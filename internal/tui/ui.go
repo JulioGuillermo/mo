@@ -894,7 +894,13 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		m.settingsInFlight = true
 		return m, tea.Sequence(printText(m.printer.Note(mcpReport(m.session.MCP, m.session.Config))), loadSettings(m.session, mcpSettings))
 	case "compact":
-		return m.start(printText(m.printer.Note("compacting…")), m.session.Agent.Compact)
+		note := "compacting…"
+		if argument != "" {
+			note = "compacting, with your instruction…"
+		}
+		return m.start(printText(m.printer.Note(note)), func(ctx context.Context, hooks agent.Hooks) error {
+			return m.session.Agent.CompactWith(ctx, hooks, argument)
+		})
 	}
 	run, found := m.session.Plugins.Command(name)
 	if !found {

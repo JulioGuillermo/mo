@@ -1257,3 +1257,10 @@
   at once and after the text that came before it; the order is kept by one lock that both the hooks
   and the timer send under, never taken on the UI's goroutine.
 - A batch is drawn as its pieces would be, each with the time it came, so the live speeds stay true.
+
+## An instruction for one compaction
+
+- `/compact <instruction>` adds the user's instruction under the summary's system prompt, which
+  stays as it is, as "The user added the following instruction:", for that compaction only: to
+  say what to keep, or anything else. Without one the request is the same as before, the line too
+  left out; there is no setting for it, as compact_prompt already changes every summary.

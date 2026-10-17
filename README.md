@@ -198,7 +198,7 @@ window = 0                 # 0: the model's own, as its server says (llama-serve
                            # Ollama, LM Studio, Gemini, Anthropic); else 32768 / 200000
 compact_at = 0.75          # make room at this share of the window; 0 = never
 strategy = "compact"       # compact: summarize older messages · drop: remove the oldest turns
-compact_prompt = ""        # empty: built-in summary prompt
+compact_prompt = ""        # empty: built-in summary prompt; /compact <instruction> adds yours under it, that time only
 
 [loop]
 enabled = true             # watch for a model going round in circles
@@ -620,5 +620,5 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | click on the branch | the files changed, each with its kind |
 | right click | a small menu by the pointer, over the screen (↑↓ or j k, enter or a click, esc or a click outside closes it): the mode: all modes to pick · a task: change its state or delete it · a job in the panel, or a bash call still running: watch its output live, its last lines, send it to the background, kill it |
 | wheel over the side panel | scroll its tasks and jobs |
-| `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact` `/settings` `/providers` `/mcp` `/plugins` `/agents` `/view <file>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
+| `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact [instruction]` `/settings` `/providers` `/mcp` `/plugins` `/agents` `/view <file>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
 | `/<name> text` | a plugin command |
