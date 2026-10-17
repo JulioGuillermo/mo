@@ -403,9 +403,10 @@ parent reads only that report, so long searches or test runs stay out of its con
   stopped, and on the right the context it used of its window, as `4.5k/1M`. A click opens its view;
   a right click stops it, removes it from the list or opens it.
   `/agents` lists them to pick one, `/agents N` opens one.
-- Its view is a conversation over the whole screen, live while it works: a title bar with its sign,
-  name, level, where it is (`main › lead › scout`, each name opens that one) and `✕`; those under it
-  beside; its context and model under. Enter sends it a message: queued while it works, else it goes
+- Its view is the main screen drawn from the subagent's: its conversation live, the calls it runs as
+  they go, its spinner, an input of its own, its status line with its model and context bar, and the
+  side panel with its tasks, the subagents under it and its context; over them a title bar with its
+  sign, where it is (`main › lead › scout`, each name opens that one), its state and `ctrl+x ✕`. Enter sends it a message: queued while it works, else it goes
   on, its parent not told. Esc stops it and those under it, not the main agent; ctrl+x or `✕` closes.
 - Before it reports, a subagent reads what it was sent during its last step and waits for those it
   left working in the background, to hear them. Answering once (`mo "…"`), subagents work too: what

@@ -11,6 +11,7 @@ package tui
 // | AV-07 | Happy    | What it is writing shows in its view as it comes                          | P1       |
 // | AV-08 | Edge     | /agents without subagents says how to have them                           | P2       |
 // | AV-09 | Happy    | Each row says the context it used of its window, the name giving way when there is no room | P1 |
+// | AV-10 | Happy    | The view is drawn as the main screen: its calls in progress, spinner, input, status line and panel | P0 |
 
 import (
 	"context"
@@ -138,10 +139,10 @@ func TestAgentView(t *testing.T) {
 		view := screenOf(m)
 		lines := strings.Split(view, "\n")
 
-		if m.agentView == nil || !strings.Contains(lines[0], "lead · level 1 · main › lead · done") || !strings.HasSuffix(strings.TrimRight(lines[0], " "), "✕") {
+		if m.agentView == nil || !strings.Contains(lines[0], "main › lead  ·  done  ·  level 1") || !strings.HasSuffix(strings.TrimRight(lines[0], " "), "✕") {
 			t.Fatalf("title %q", lines[0])
 		}
-		for _, want := range []string{"Under it", "⚠ scout · failed", "lead the way", "led it", "message for lead"} {
+		for _, want := range []string{"Agents", "⚠ scout · failed", "lead the way", "led it", "message for lead"} {
 			if !strings.Contains(view, want) {
 				t.Errorf("%q not in:\n%s", want, view)
 			}
@@ -243,7 +244,7 @@ func TestAgentView(t *testing.T) {
 
 		updated, _ := m.openAgentView(1)
 
-		if view := screenOf(updated.(model)); !strings.Contains(view, "partial words") || !strings.Contains(view, "● h · level 1") {
+		if view := screenOf(updated.(model)); !strings.Contains(view, "partial words") || !strings.Contains(view, "main › h  ·  running") || !strings.Contains(view, "writing") || !strings.Contains(view, "fake-model") {
 			t.Errorf("view:\n%s", view)
 		}
 	})
@@ -279,6 +280,56 @@ func TestAgentTokens(t *testing.T) {
 		}
 		if shortTokens(999) != "999" || shortTokens(1000) != "1k" || shortTokens(200000) != "200k" || shortTokens(1500000) != "1.5M" {
 			t.Errorf("short %s %s %s %s", shortTokens(999), shortTokens(1000), shortTokens(200000), shortTokens(1500000))
+		}
+	})
+}
+
+// callingModel calls ls and holds until released, then answers.
+type callingModel struct {
+	release chan struct{}
+}
+
+func (c *callingModel) Stream(ctx context.Context, req llm.Request, _ func(llm.Event)) (llm.Response, error) {
+	last := req.Messages[len(req.Messages)-1]
+	if last.Role == llm.RoleUser {
+		return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+			{ID: "l1", Name: "ls", Args: []byte(`{"path":"."}`)},
+			{ID: "a1", Name: tools.AgentName, Args: []byte(`{"task":"hold","name":"deep"}`)},
+		}}}, nil
+	}
+	if req.Messages[0].Text == "hold" {
+		select {
+		case <-c.release:
+		case <-ctx.Done():
+			return llm.Response{}, ctx.Err()
+		}
+	}
+	return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, Text: "all done"}}, nil
+}
+
+func TestAgentLens(t *testing.T) {
+	t.Run("AV-10 the view is drawn as the main screen: its calls in progress, spinner, input, status line and panel", func(t *testing.T) {
+		m, _ := teamModel(t)
+		provider := &callingModel{release: make(chan struct{})}
+		defer close(provider.release)
+		workDir := t.TempDir()
+		m.session.Team.Configure(team.Settings{Depth: 2, MaxParallel: 3, MaxAgents: 20}, func(info team.Info, below tools.Subagents, parent tools.Parent) (*agent.Agent, error) {
+			return &agent.Agent{Provider: provider, Tools: tools.NewRegistry(tools.Env{WorkDir: workDir, Agents: below, Parent: parent}, tools.Options{}), Model: "fake-model", Window: 1000}, nil
+		})
+		_, _ = m.session.Team.Main().Run(context.Background(), []tools.SubTask{{Task: "go", Name: "lead"}}, true)
+		waitAgent(t, m, 1, team.Waiting)
+		waitAgent(t, m, 2, team.Running)
+
+		updated, _ := m.openAgentView(1)
+		view := screenOf(updated.(model))
+
+		for _, want := range []string{"● ls", "(empty directory)", "● agent", "running…", "waiting · for its subagents", "message for lead", "fake-model", "Agents", "deep · running"} {
+			if !strings.Contains(view, want) {
+				t.Errorf("%q not in:\n%s", want, view)
+			}
+		}
+		if calls := m.session.Team.Calls(1); len(calls) != 2 || !calls[0].Done || calls[1].Done {
+			t.Errorf("calls %+v", calls)
 		}
 	})
 }

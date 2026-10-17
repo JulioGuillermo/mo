@@ -10,6 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/jg/mo/internal/team"
 	"github.com/jg/mo/internal/tools"
 )
 
@@ -198,9 +199,23 @@ func (m model) sidebarLines() ([]string, []region) {
 		}
 	}
 	if m.team() != nil {
-		if infos := m.team().List(); len(infos) > 0 {
+		infos, below := m.team().List(), 0
+		if m.lensOf != 0 {
+			// A subagent's panel: only those under it.
+			var under []team.Info
+			for _, info := range infos {
+				if info.ID == m.lensOf {
+					below = info.Depth
+				}
+				if m.below(info.ID, m.lensOf) {
+					under = append(under, info)
+				}
+			}
+			infos = under
+		}
+		if len(infos) > 0 {
 			section(paint(colors.title).Bold(true).Render("Agents"))
-			rows, rowRegions := m.agentRows(infos, 0, width, base, colors, len(lines))
+			rows, rowRegions := m.agentRows(infos, below, width, base, colors, len(lines))
 			regions = append(regions, rowRegions...)
 			lines = append(lines, rows...)
 		}

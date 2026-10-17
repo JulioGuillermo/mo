@@ -3,31 +3,40 @@ package tui
 import (
 	"fmt"
 	"image/color"
+	"slices"
 	"strings"
+	"time"
 
-	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/jg/mo/internal/agent"
+	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/team"
+	"github.com/jg/mo/internal/tools"
 )
 
-const agentViewHelp = "enter sends it a message · esc stops it · ctrl+x or ✕ closes · pgup pgdn scroll"
+const agentViewHelp = "message for %s · enter sends · esc stops it · ctrl+x closes"
 
-// agentView is a subagent's conversation over the whole screen, as the
-// main one is shown: live while it works, with a title bar naming it and
-// where it is in the tree, the subagents under it beside it, and an input
-// to talk to it.
+// agentView is a subagent over the whole screen, drawn as the main
+// conversation is, from the subagent's own: its conversation live, its
+// spinner, its input, its status line and context, and the side panel with
+// its tasks and the subagents under it; over them a title bar says where it
+// is in the tree.
 type agentView struct {
-	id     int
-	top    int
-	follow bool
-	input  textinput.Model
-	notice string
-	// drawn is its conversation drawn at width, from history messages.
-	drawn   []string
+	id    int
+	input textarea.Model
+	// top and scrolled are where its conversation is scrolled to.
+	top      int
+	scrolled bool
+	notice   string
+	// blocks are its conversation drawn, from history messages at width;
+	// todos its task list.
+	blocks  []block
+	todos   []tools.Todo
 	history int
 	width   int
 }
@@ -50,16 +59,23 @@ func (m model) agentInfo(id int) (team.Info, bool) {
 }
 
 func (m model) openAgentView(id int) (tea.Model, tea.Cmd) {
-	if _, ok := m.agentInfo(id); !ok {
+	info, ok := m.agentInfo(id)
+	if !ok {
 		return m.emit(m.printer.Note(fmt.Sprintf("no subagent %d", id)))
 	}
-	input := textinput.New()
-	input.Prompt = "› "
-	input.Focus()
-	m.agentView = &agentView{id: id, follow: true, input: input, history: -1}
+	input := newInput()
+	input.Placeholder = fmt.Sprintf(agentViewHelp, info.Name)
+	input.SetWidth(max(m.mainWidth(), 10))
+	focus := input.Focus()
+	m.agentView = &agentView{id: id, input: input, history: -1}
 	m.popup = nil
 	m.refreshAgentView()
-	return m, textinput.Blink
+	cmds := []tea.Cmd{focus}
+	if !m.running && !info.State.Ended() {
+		// Its spinner turns while it works, though the main agent does not.
+		cmds = append(cmds, m.spinner.Tick)
+	}
+	return m, tea.Batch(cmds...)
 }
 
 func (m *model) closeAgentView() {
@@ -67,7 +83,8 @@ func (m *model) closeAgentView() {
 }
 
 // refreshAgentView draws the subagent's conversation again when it has
-// more of it or the width changed; closes the view when it is gone.
+// more of it or the width changed, folds kept; closes the view when it is
+// gone.
 func (m *model) refreshAgentView() {
 	view := m.agentView
 	if view == nil {
@@ -79,26 +96,81 @@ func (m *model) refreshAgentView() {
 	}
 	history := m.team().History(view.id)
 	width := m.mainWidth()
-	if len(history) != view.history || width != view.width {
-		drawn := *m
-		drawn.blocks = nil
-		drawn.replay(history)
-		text, _ := drawn.transcript()
-		view.drawn = strings.Split(strings.TrimRight(text, "\n"), "\n")
-		view.history, view.width = len(history), width
+	if len(history) == view.history && width == view.width {
+		return
 	}
+	drawn := *m
+	drawn.blocks = nil
+	drawn.replay(history)
+	for i := range drawn.blocks {
+		if i < len(view.blocks) && drawn.blocks[i].foldable && view.blocks[i].foldable && view.blocks[i].open != drawn.blocks[i].open {
+			drawn.blocks[i].open = view.blocks[i].open
+			drawn.blocks[i].text = drawn.blocks[i].draw(drawn.blocks[i].open)
+		}
+	}
+	view.blocks, view.todos = drawn.blocks, drawn.todos
+	view.history, view.width = len(history), width
 }
 
-// agentBody is every line of the view's conversation: what was drawn and
-// the reply being written.
-func (m model) agentBody() []string {
-	view := m.agentView
-	lines := view.drawn
-	if live := strings.TrimSpace(m.team().Live(view.id)); live != "" {
-		lines = append(append([]string(nil), lines...), "")
-		lines = append(lines, strings.Split(m.printer.Markdown(live), "\n")...)
+// agentWorking tells whether the subagent in view works.
+func (m model) agentWorking() bool {
+	if m.agentView == nil {
+		return false
 	}
-	return lines
+	info, ok := m.agentInfo(m.agentView.id)
+	return ok && !info.State.Ended()
+}
+
+// lens is the model as the subagent in view would draw it: its
+// conversation, input, usage, window, model, tasks and state in place of
+// the main agent's, one row shorter for the title bar.
+func (m model) lens() model {
+	view := m.agentView
+	info, _ := m.agentInfo(view.id)
+	v := m
+	v.agentView, v.lensOf, v.popup = nil, view.id, nil
+	v.height = max(m.height-1, 3)
+	v.blocks, v.todos = view.blocks, view.todos
+	v.top, v.scrolled = view.top, view.scrolled
+	v.input = view.input
+	v.queued = nil
+	v.thread.title = info.Name
+	v.usage, v.speed, v.metrics = info.Usage, info.Usage, liveMetrics{}
+	v.running = !info.State.Ended()
+	v.worked, v.runStarted = 0, time.Time{}
+	v.forming, v.reasoning, v.promptRead = nil, "", llm.PromptProgress{}
+	v.runningTool, v.activity, v.lastEvent = info.Tool, "", llm.EventText
+	switch info.State {
+	case team.Waiting:
+		v.waitingFor = "for its subagents"
+	case team.Queued:
+		v.waitingFor = "for a free place to work"
+	}
+	// The calls of the reply in progress, which its history does not hold
+	// yet, as the main conversation shows them.
+	v.blocks = slices.Clone(view.blocks)
+	for _, call := range m.team().Calls(view.id) {
+		shown := slices.ContainsFunc(v.blocks, func(b block) bool { return b.tool != nil && b.tool.id == call.Call.ID })
+		if !shown {
+			// Summed up by its own tools, which the main agent may not have.
+			v.addTool(call.Call, call.Summary)
+		}
+		if call.Done {
+			v.finishTool(call.Call.ID, call.Output, call.IsError)
+		}
+	}
+	v.stream = m.team().Live(view.id)
+	v.streamCut, v.streamDone = 0, ""
+	v.renderStream(true)
+	session := m.session
+	session.Model = orDefault(info.Model, session.Model)
+	if provider, _, ok := strings.Cut(session.Config.Agents.Model, "/"); ok {
+		session.Provider = provider
+	}
+	main := m.session.Agent
+	session.Agent = &agent.Agent{Window: info.Window, Permissions: main.Permissions}
+	v.session = session
+	return v
 }
 
 // agentMark is the sign and colour of a subagent's state: a clock while it
@@ -191,37 +263,39 @@ func (m model) agentMenu(id int) (tea.Model, tea.Cmd) {
 	})
 }
 
-// agentViewHeight is the rows of the view's conversation.
-func (m model) agentViewHeight() int {
-	used := 4 // title, blank, input, status
-	if m.dialog != nil {
-		dialog, _ := m.dialogLayout()
-		used += lipgloss.Height(dialog)
+// below tells whether id is under ancestor in the tree.
+func (m model) below(id, ancestor int) bool {
+	for _, step := range m.team().Path(id) {
+		if step.ID == ancestor && step.ID != id {
+			return true
+		}
 	}
-	return max(m.height-used, 3)
+	return false
 }
 
-// agentViewLayout draws the view and what can be clicked in it.
+// agentViewLayout draws the view: a title bar, then the subagent's screen
+// as the main one is drawn; and what can be clicked in it.
 func (m model) agentViewLayout() (string, []region) {
 	view := m.agentView
 	info, _ := m.agentInfo(view.id)
 	dark := m.printer == nil || m.printer.isDark()
-	var regions []region
-
-	// The title bar: its sign, name, where it is and the ✕ that closes.
-	bar := lipgloss.NewStyle().Background(lipgloss.Color("#1f2335")).Foreground(lipgloss.Color("#c0caf5"))
-	if !dark {
-		bar = lipgloss.NewStyle().Background(lipgloss.Color("#d5d6db")).Foreground(lipgloss.Color("#343b58"))
-	}
 	mark, tint := agentMark(info, dark)
-	title := bar.Foreground(tint).Render(" "+mark+" ") + bar.Bold(true).Render(info.Name) + bar.Render(fmt.Sprintf(" · level %d · ", info.Depth))
+	bar := lipgloss.NewStyle().Background(accent).Foreground(lipgloss.Color("#1a1b26"))
+	if !dark {
+		bar = lipgloss.NewStyle().Background(lipgloss.Color("#2e7de9")).Foreground(lipgloss.Color("#ffffff"))
+	}
+	var regions []region
+	title := bar.Render(" ") + bar.Foreground(tint).Background(lipgloss.Color("#1a1b26")).Bold(true).Render(" "+mark+" ") + bar.Render(" ")
 	x := ansi.StringWidth(title)
 	crumb := func(text string, do func(m model) (tea.Model, tea.Cmd)) {
-		part := bar.Underline(do != nil).Render(text)
-		if do != nil {
+		style := bar
+		if do == nil {
+			style = style.Bold(true)
+		} else {
+			style = style.Underline(true)
 			regions = append(regions, region{y: 0, x0: x, x1: x + ansi.StringWidth(text), do: do})
 		}
-		title += part
+		title += style.Render(text)
 		x += ansi.StringWidth(text)
 	}
 	crumb("main", func(m model) (tea.Model, tea.Cmd) { m.closeAgentView(); return m, nil })
@@ -235,12 +309,11 @@ func (m model) agentViewLayout() (string, []region) {
 		id := step.ID
 		crumb(step.Name, func(m model) (tea.Model, tea.Cmd) { return m.openAgentView(id) })
 	}
-	state := fmt.Sprintf(" · %s · %d steps", info.State, info.Steps)
-	if info.Model != "" {
-		state += " · " + shortModelName(info.Model)
+	title += bar.Render(fmt.Sprintf("  ·  %s  ·  level %d  ·  %d steps", info.State, info.Depth, info.Steps))
+	closer := " ctrl+x ✕ "
+	if view.notice != "" {
+		closer = " " + view.notice + "  ·" + closer
 	}
-	title += bar.Render(state)
-	closer := " ✕ "
 	room := m.width - ansi.StringWidth(closer)
 	if ansi.StringWidth(title) > room {
 		title = ansi.Truncate(title, room, "…")
@@ -249,81 +322,8 @@ func (m model) agentViewLayout() (string, []region) {
 	regions = append(regions, region{y: 0, x0: room, x1: m.width, do: func(m model) (tea.Model, tea.Cmd) { m.closeAgentView(); return m, nil }})
 	title += bar.Bold(true).Render(closer)
 
-	// Its conversation, following the end until scrolled up.
-	height := m.agentViewHeight()
-	body := m.agentBody()
-	top := view.top
-	if view.follow {
-		top = max(len(body)-height, 0)
-	}
-	pane := conversationPane{width: m.mainWidth(), height: height, total: len(body), offset: min(top, max(len(body)-height, 0))}
-	pane.window = func(from, to int) []string { return body[from:to] }
-	left := pane.View()
-
-	// Beside it, the subagents under it.
-	if m.sidebarShown() {
-		colors := sidebarPalette(dark)
-		base := lipgloss.NewStyle().Background(colors.background).Foreground(colors.text)
-		width := sidebarWidth - 2
-		lines := []string{"", base.Foreground(colors.title).Bold(true).Render("Under it")}
-		var under []team.Info
-		for _, other := range m.team().List() {
-			if m.below(other.ID, view.id) {
-				under = append(under, other)
-			}
-		}
-		rows, rowRegions := m.agentRows(under, info.Depth, width, base, colors, len(lines)+1)
-		if len(rows) == 0 {
-			rows = []string{base.Foreground(colors.dim).Render("no subagents of its own")}
-		}
-		lines = append(lines, rows...)
-		for len(lines) < height {
-			lines = append(lines, "")
-		}
-		pad := base.Render(" ")
-		for i, line := range lines[:height] {
-			lines[i] = pad + line + base.Render(strings.Repeat(" ", max(width-ansi.StringWidth(line), 0))) + pad
-		}
-		left = lipgloss.JoinHorizontal(lipgloss.Top, left, " ", strings.Join(lines[:height], "\n"))
-		for _, r := range rowRegions {
-			r.y, r.x0, r.x1 = r.y+1, m.mainWidth()+1, m.width
-			regions = append(regions, r)
-		}
-	}
-
-	screen := []string{title, left}
-	if m.dialog != nil {
-		dialog, dialogRegions := m.dialogLayout()
-		regions = append(regions, shifted(dialogRegions, 1+height)...)
-		screen = append(screen, dialog)
-	}
-	notice := view.notice
-	if notice == "" {
-		notice = agentViewHelp
-	}
-	view.input.Placeholder = "message for " + info.Name
-	view.input.SetWidth(max(m.width-4, 10))
-	screen = append(screen, "", view.input.View(), dimStyle.Render(m.agentStatus(info)+" · "+notice))
-	return strings.Join(screen, "\n"), regions
-}
-
-// agentStatus is the line under the view: how much of its window it uses.
-func (m model) agentStatus(info team.Info) string {
-	used := fmt.Sprintf("ctx %s", formatTokens(info.Usage.InputTokens+info.Usage.OutputTokens))
-	if info.Window > 0 {
-		used += " / " + formatTokens(info.Window)
-	}
-	return used
-}
-
-// below tells whether id is under ancestor in the tree.
-func (m model) below(id, ancestor int) bool {
-	for _, step := range m.team().Path(id) {
-		if step.ID == ancestor && step.ID != id {
-			return true
-		}
-	}
-	return false
+	screen, screenRegions := m.lens().screenLayout()
+	return title + "\n" + screen, append(regions, shifted(screenRegions, 1)...)
 }
 
 func (m model) agentViewScreen() string {
@@ -332,6 +332,13 @@ func (m model) agentViewScreen() string {
 		screen = m.overPopup(screen)
 	}
 	return screen
+}
+
+// keepLens takes back what the view's own model changed: its input, where
+// it is scrolled and its folds.
+func (m *model) keepLens(v model) {
+	view := m.agentView
+	view.input, view.top, view.scrolled, view.blocks = v.input, v.top, v.scrolled, v.blocks
 }
 
 // updateAgentView handles what the user does in the view.
@@ -348,15 +355,15 @@ func (m model) updateAgentView(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleDialogKey(msg)
 		}
 		view.notice = ""
+		v := m.lens()
 		switch msg.String() {
 		case "esc":
-			info, _ := m.agentInfo(view.id)
-			if info.State.Ended() {
-				view.notice = "it is not working · ctrl+x closes"
+			if !v.running {
+				view.notice = "it is not working"
 				return m, nil
 			}
 			m.team().Stop(view.id)
-			view.notice = "stopping it and those under it"
+			view.notice = "stopping it"
 			return m, nil
 		case "enter":
 			text := strings.TrimSpace(view.input.Value())
@@ -369,19 +376,15 @@ func (m model) updateAgentView(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			view.input.Reset()
-			view.notice, view.follow = said, true
-			return m, nil
-		case "pgup", "shift+up", "ctrl+up":
-			m.scrollAgentView(true, m.agentPage(msg.String()))
-			return m, nil
-		case "pgdown", "shift+down", "ctrl+down":
-			m.scrollAgentView(false, m.agentPage(msg.String()))
-			return m, nil
-		case "home":
-			view.top, view.follow = 0, false
-			return m, nil
-		case "end":
-			view.follow = true
+			view.notice, view.scrolled = said, false
+			var tick tea.Cmd
+			if !m.running {
+				tick = m.spinner.Tick
+			}
+			return m, tick
+		case "pgup", "shift+up", "ctrl+up", "pgdown", "shift+down", "ctrl+down":
+			v.scroll(strings.HasSuffix(msg.String(), "up"), v.pageSize(msg.String()))
+			m.keepLens(v)
 			return m, nil
 		}
 		var cmd tea.Cmd
@@ -395,7 +398,9 @@ func (m model) updateAgentView(msg tea.Msg) (tea.Model, tea.Cmd) {
 		view.input, cmd = view.input.Update(msg)
 		return m, cmd
 	case tea.MouseWheelMsg:
-		m.scrollAgentView(msg.Button == tea.MouseWheelUp, 3)
+		v := m.lens()
+		v.scroll(msg.Button == tea.MouseWheelUp, 3)
+		m.keepLens(v)
 		return m, nil
 	case tea.MouseClickMsg:
 		_, regions := m.agentViewLayout()
@@ -410,33 +415,14 @@ func (m model) updateAgentView(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return r.do(m)
 			}
 		}
+		// A click on its conversation opens or folds what is there.
+		v := m.lens()
+		if msg.Button == tea.MouseLeft && msg.Y >= 1 && msg.Y <= v.conversationHeight() && msg.X < v.mainWidth() && v.clickDetails(msg.Y-1) {
+			m.keepLens(v)
+		}
 		return m, nil
 	}
 	return m, nil
-}
-
-func (m model) agentPage(key string) int {
-	if strings.HasPrefix(key, "shift") || strings.HasPrefix(key, "ctrl") {
-		return 3
-	}
-	return max(m.agentViewHeight()-2, 1)
-}
-
-func (m *model) scrollAgentView(up bool, lines int) {
-	view := m.agentView
-	height := m.agentViewHeight()
-	total := len(m.agentBody())
-	top := view.top
-	if view.follow {
-		top = max(total-height, 0)
-	}
-	if up {
-		top -= lines
-	} else {
-		top += lines
-	}
-	view.top = min(max(top, 0), max(total-height, 0))
-	view.follow = view.top >= total-height
 }
 
 // pickAgent opens subagent n's view, or lists them to pick one.

@@ -89,6 +89,10 @@ func (m model) commands() []command {
 // "/", while the first word is being written; after /login or /logout and a
 // space, the providers it takes.
 func (m model) suggestions() []command {
+	// A subagent's input is a message for it: no commands.
+	if m.lensOf != 0 {
+		return nil
+	}
 	if m.suggestionsClosed && m.suggestionsClosedOn == m.input.Value() {
 		return nil
 	}

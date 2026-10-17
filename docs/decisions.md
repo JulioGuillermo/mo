@@ -1264,3 +1264,9 @@
   stays as it is, as "The user added the following instruction:", for that compaction only: to
   say what to keep, or anything else. Without one the request is the same as before, the line too
   left out; there is no setting for it, as compact_prompt already changes every summary.
+- A subagent's view was a screen of its own, plainer than the main one. It is now the main screen's
+  own layout drawn from a copy of the model with the subagent's in place of the main agent's: its
+  blocks, the reply it writes, the calls of its reply in progress (which the team keeps as they start
+  and end, since its history holds a reply only once all its calls are answered), its usage, window,
+  model and tasks, its input; the panel lists only those under it and the input offers no commands.
+  What the user does there goes back to the view: the input, where it is scrolled, its folds.

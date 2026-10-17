@@ -67,6 +67,8 @@ type Info struct {
 	// Model and Window are what it runs on, once it was made.
 	Model  string
 	Window int
+	// Tool is the call it runs now, if any.
+	Tool *llm.ToolCall
 }
 
 // Label is how a subagent is named to the user.
@@ -110,6 +112,9 @@ type member struct {
 	// read from elsewhere, the agent's own would race.
 	history []llm.Message
 	result  string
+	// calls are the calls of the reply in progress, as they start and
+	// end, until its history holds their results.
+	calls []Call
 	// live is the reply it is writing now, shown before it is whole.
 	live     string
 	liveSent time.Time
@@ -183,6 +188,26 @@ func (t *Team) History(id int) []llm.Message {
 	defer t.mu.Unlock()
 	if m := t.find(id); m != nil {
 		return slices.Clone(m.history)
+	}
+	return nil
+}
+
+// Call is a call of a subagent's, shown before its history holds it.
+type Call struct {
+	Call    llm.ToolCall
+	Summary string
+	Output  string
+	IsError bool
+	Done    bool
+}
+
+// Calls are the calls of a subagent's reply in progress, its history not
+// holding them yet.
+func (t *Team) Calls(id int) []Call {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if m := t.find(id); m != nil {
+		return slices.Clone(m.calls)
 	}
 	return nil
 }
@@ -418,6 +443,14 @@ func (t *Team) snapshot(m *member) {
 	defer t.mu.Unlock()
 	m.history = history
 	m.Steps = steps(history)
+	// The calls its history holds results of are shown from it now.
+	answered := map[string]bool{}
+	for _, message := range history {
+		if message.Role == llm.RoleTool {
+			answered[message.ToolCallID] = true
+		}
+	}
+	m.calls = slices.DeleteFunc(m.calls, func(c Call) bool { return answered[c.Call.ID] })
 }
 
 func steps(history []llm.Message) int {
@@ -492,7 +525,7 @@ func (t *Team) finish(m *member, err error) {
 	default:
 		m.State, m.Err = Failed, err.Error()
 	}
-	m.cancel, m.live = nil, ""
+	m.cancel, m.live, m.Tool, m.calls = nil, "", nil, nil
 	m.untold = m.background
 	onEnd := t.onEnd
 	toMain := m.background && m.Parent == 0
@@ -553,7 +586,28 @@ func (t *Team) memberHooks(m *member) agent.Hooks {
 			onUsage(usage)
 		}
 	}
+	onToolStart := hooks.OnToolStart
+	hooks.OnToolStart = func(call llm.ToolCall, summary string) {
+		t.mu.Lock()
+		running := call
+		m.Tool = &running
+		m.calls = append(m.calls, Call{Call: call, Summary: summary})
+		t.changed()
+		t.mu.Unlock()
+		if onToolStart != nil {
+			onToolStart(call, summary)
+		}
+	}
 	hooks.OnToolDone = func(call llm.ToolCall, output string, isError bool) {
+		t.mu.Lock()
+		m.Tool = nil
+		for i := range m.calls {
+			if m.calls[i].Call.ID == call.ID && !m.calls[i].Done {
+				m.calls[i].Output, m.calls[i].IsError, m.calls[i].Done = output, isError, true
+			}
+		}
+		t.changed()
+		t.mu.Unlock()
 		t.snapshot(m)
 		if onToolDone != nil {
 			onToolDone(call, output, isError)

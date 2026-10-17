@@ -163,8 +163,12 @@ type model struct {
 	clickedAt        point
 	clicked          bool
 	settingsInFlight bool
-	// agentView, when set, shows a subagent over the whole screen.
+	// agentView, when set, shows a subagent over the whole screen;
+	// lensOf is set on the model drawn for it, to that subagent.
 	agentView *agentView
+	lensOf    int
+	// waitingFor says, on that model, what the subagent waits for.
+	waitingFor string
 
 	suggestion int
 	// queued are the messages written while the model works, as typed,
@@ -555,7 +559,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		read := done.readRepo()
 		return done, tea.Batch(cmd, read)
 	case spinner.TickMsg:
-		if !m.running && m.titling == nil {
+		if !m.running && m.titling == nil && !m.agentWorking() {
 			return m, nil
 		}
 		var cmd tea.Cmd

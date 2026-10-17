@@ -44,6 +44,8 @@ func (m model) currentState() state {
 	switch {
 	case m.dialog != nil:
 		return state{word: "your turn", detail: "answer above", tint: colors.yours}
+	case m.waitingFor != "":
+		return state{word: "waiting", detail: m.waitingFor, tint: colors.waiting}
 	case m.activity != "":
 		if m.activity == agent.CompactingActivity {
 			return state{word: "compacting", tint: colors.compacting}
