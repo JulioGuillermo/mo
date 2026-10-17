@@ -55,12 +55,15 @@ func (m model) currentState() state {
 			return state{word: "compacting", tint: colors.compacting}
 		}
 		return state{word: "checking", detail: m.activity, tint: colors.compacting}
-	case m.formingNow() != nil:
-		// A call being written: those that ran stay listed meanwhile.
-		last := m.formingNow()
-		return m.toolState(last.name, last.args, colors)
+	case m.writingNow() != nil:
+		// A call being written: the model is at it still.
+		writing := m.writingNow()
+		return m.toolState(writing.name, writing.args, colors)
 	case m.runningTool != nil:
 		return m.toolState(m.runningTool.Name, string(m.runningTool.Args), colors)
+	case m.waitingForTools():
+		// The model is done writing: it waits for its calls, not at the last.
+		return state{word: "waiting", detail: "for the tools", tint: colors.waiting}
 	case m.lastEvent == llm.EventPromptProgress && m.promptRead.Total > 0:
 		return state{word: "prompt", detail: promptDetail(m.promptRead), tint: colors.prompt}
 	case m.lastEvent == llm.EventReasoning && m.reasoning != "":

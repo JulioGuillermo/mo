@@ -759,6 +759,9 @@
   with its colour: reasoning (blue), writing (yellow), reading with a tool (green), changing with
   one (red: write, edit, mkdir, rm, bash, and what the registry counts as a change or a warning),
   compacting (purple), reading the prompt with how far it is (teal, llama-server only), waiting for the model (grey), and your turn when a dialog waits on the user.
+  A call is followed only while the model writes it; a call that runs is what the spinner says
+  meanwhile; once the model is done writing and its calls wait their turn, it says waiting for
+  the tools, not the last call written.
 - Images and diagrams start where the text beside them does, two columns in for an answer, four
   for a tool result after its ⎿, and are drawn in the width left. They are lines of placeholder
   cells or colour blocks, so the indent is spaces before each line; a kitty upload at the start of

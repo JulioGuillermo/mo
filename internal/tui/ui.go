@@ -98,8 +98,10 @@ type model struct {
 	finished  chan struct{}
 	stream    string
 	streamCut int
-	// forming are the tool calls the model is writing now.
-	forming []formingCall
+	// forming are the tool calls the model is writing now; callsOpen while
+	// the reply still streams a call, the last of them being written.
+	forming   []formingCall
+	callsOpen bool
 	// activity is what the agent waits on, said by the spinner.
 	activity string
 	// pendingSession is built from settings saved while a turn ran, to take
@@ -348,6 +350,7 @@ func (m model) openingConversation() tea.Cmd {
 func (m *model) takeEvent(event llm.Event, at time.Time) {
 	m.metrics.add(event, at)
 	m.lastEvent = event.Kind
+	m.callsOpen = event.Kind == llm.EventToolCall
 	switch event.Kind {
 	case llm.EventToolCall:
 		m.growCall(event.Call, event.ID, event.Name, event.Text)
@@ -1275,7 +1278,7 @@ func (m *model) renderStream(again bool) {
 
 func (m *model) clearStream() {
 	m.stream, m.streamCut, m.streamDone = "", 0, ""
-	m.forming = nil
+	m.forming, m.callsOpen = nil, false
 	m.reasoning = ""
 }
 

@@ -11,6 +11,8 @@ package tui
 // | LT-06 | Happy    | Each thing the agent does has its word and colour, in the spinner only | P1      |
 // | LT-10 | Edge     | Once a call ran, the state follows the model again, reasoning or talking, not the call | P0 |
 // | LT-09 | Happy    | Each tool says what it does and on what: the file, the pattern, the programs a command runs, once each | P1 |
+// | LT-11 | Happy    | While the model writes a call the state is that call; once done, it waits for the tools | P0 |
+// | LT-12 | Edge     | A running call is what the state says, and the calls behind it do not change that | P1 |
 // | LT-07 | Happy    | While llama-server reads the prompt, the state says how far, cache left out | P1   |
 
 import (
@@ -229,6 +231,38 @@ func TestStates(t *testing.T) {
 
 		if got := thinking.currentState(); got.word != "reasoning" {
 			t.Errorf("state %q · %q", got.word, got.detail)
+		}
+	})
+
+	t.Run("LT-11 while the model writes a call the state is that call; once done, it waits for the tools", func(t *testing.T) {
+		m := conversationModel()
+		m.running, m.cancel = true, func() {}
+		m = streaming(m,
+			llm.Event{Kind: llm.EventToolCall, Call: 0, ID: "c1", Name: "read", Text: `{"path":"a.go"}`},
+			llm.Event{Kind: llm.EventToolCall, Call: 1, ID: "c2", Name: "edit", Text: `{"path":"b.go"`})
+		writing := m.currentState()
+		ended, _ := m.Update(streamEndMsg{})
+		done := ended.(model).currentState()
+
+		if writing.word != "editing" || done.word != "waiting" || done.detail != "for the tools" {
+			t.Errorf("writing %q · %q, done %q · %q", writing.word, writing.detail, done.word, done.detail)
+		}
+	})
+
+	t.Run("LT-12 a running call is what the state says, and the calls behind it do not change that", func(t *testing.T) {
+		m := conversationModel()
+		m.running, m.cancel = true, func() {}
+		m = streaming(m,
+			llm.Event{Kind: llm.EventToolCall, Call: 0, ID: "c1", Name: "bash", Text: `{"command":"make"}`},
+			llm.Event{Kind: llm.EventToolCall, Call: 1, ID: "c2", Name: "edit", Text: `{"path":"b.go"}`})
+		started, _ := m.Update(toolStartMsg{call: llm.ToolCall{ID: "c1", Name: "bash", Args: []byte(`{"command":"make"}`)}})
+		ended, _ := started.(model).Update(streamEndMsg{})
+		running := ended.(model).currentState()
+		finished, _ := ended.(model).Update(toolDoneMsg{id: "c1", output: "ok"})
+		after := finished.(model).currentState()
+
+		if running.word != "running" || after.word != "waiting" {
+			t.Errorf("running %q · %q, after %q · %q", running.word, running.detail, after.word, after.detail)
 		}
 	})
 

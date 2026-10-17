@@ -140,7 +140,7 @@ func (m model) lens() model {
 	v.usage, v.speed, v.metrics = info.Usage, info.Usage, liveMetrics{}
 	v.running = !info.State.Ended()
 	v.worked, v.runStarted = 0, time.Time{}
-	v.forming, v.reasoning, v.promptRead = nil, "", llm.PromptProgress{}
+	v.forming, v.callsOpen, v.reasoning, v.promptRead = nil, false, "", llm.PromptProgress{}
 	v.runningTool, v.activity, v.lastEvent = info.Tool, "", llm.EventText
 	switch info.State {
 	case team.Waiting:

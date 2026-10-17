@@ -233,13 +233,27 @@ func (m model) asks(call formingCall) bool {
 	return false
 }
 
-// formingNow is the last call the model is writing that did not run yet:
-// the calls of its reply that ran stay listed until the next one.
-func (m model) formingNow() *formingCall {
-	for i := len(m.forming) - 1; i >= 0; i-- {
-		if call := m.forming[i]; call.name != "" && !call.started {
-			return &call
+// writingNow is the call the model is writing at this moment: the last of
+// its reply, only while the reply still streams. Once the reply ends none is
+// being written.
+func (m model) writingNow() *formingCall {
+	if !m.callsOpen || len(m.forming) == 0 {
+		return nil
+	}
+	call := m.forming[len(m.forming)-1]
+	if call.name == "" || call.started {
+		return nil
+	}
+	return &call
+}
+
+// waitingForTools tells whether the model wrote calls that did not run yet
+// and is not writing any now: it waits for the tools.
+func (m model) waitingForTools() bool {
+	for i, call := range m.forming {
+		if call.name != "" && !call.started && !(m.callsOpen && i == len(m.forming)-1) {
+			return true
 		}
 	}
-	return nil
+	return false
 }
