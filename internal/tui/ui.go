@@ -57,8 +57,10 @@ type Session struct {
 
 	ToolDescriptions map[string]string
 
-	// Continue resumes the latest conversation of the working directory.
+	// Continue resumes the latest conversation of the working directory;
+	// Resume opens on the list of them, to pick one.
 	Continue bool
+	Resume   bool
 
 	Activate func()
 	Discard  func()
@@ -302,10 +304,22 @@ func (m model) Init() tea.Cmd {
 		}
 	}
 	start := printText(banner)
-	if m.session.Continue {
-		start = tea.Sequence(start, listConversations(m.session.WorkDir, true))
+	if opening := m.openingConversation(); opening != nil {
+		start = tea.Sequence(start, opening)
 	}
 	return tea.Batch(start, tea.RequestBackgroundColor, textarea.Blink, m.readRepo(), loadEfforts(m.session))
+}
+
+// openingConversation is what mo opens on besides a new conversation: the
+// latest one with -c, the list of them with -r.
+func (m model) openingConversation() tea.Cmd {
+	switch {
+	case m.session.Continue:
+		return listConversations(m.session.WorkDir, true)
+	case m.session.Resume:
+		return listConversations(m.session.WorkDir, false)
+	}
+	return nil
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {

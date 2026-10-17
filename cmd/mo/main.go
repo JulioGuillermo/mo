@@ -52,8 +52,10 @@ func run() error {
 	yesFlag := flag.Bool("y", false, "run tools without asking, except changes outside the working directory")
 	detectFlag := flag.Bool("detect", false, "list the providers mo can find and exit")
 	continueFlag := flag.Bool("c", false, "continue the latest conversation of this folder")
+	resumeFlag := flag.Bool("resume", false, "open on the list of this folder's conversations, to pick one; -r too")
+	flag.BoolVar(resumeFlag, "r", false, "the same as -resume")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: mo [-p provider] [-m model] [-y] [-c] [-detect] [prompt]")
+		fmt.Fprintln(os.Stderr, "usage: mo [-p provider] [-m model] [-y] [-c | -r] [-detect] [prompt]")
 		fmt.Fprintln(os.Stderr, "With a prompt, or with input on stdin, mo answers once and exits.")
 		flag.PrintDefaults()
 	}
@@ -106,6 +108,7 @@ func run() error {
 	}
 	stop()
 	session.Continue = *continueFlag
+	session.Resume = *resumeFlag && !*continueFlag
 	return tui.Run(session)
 }
 

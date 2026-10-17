@@ -13,6 +13,7 @@ package tui
 // | CV-07 | Happy    | ctrl+x in /resume asks before deleting; no keeps it, yes deletes it   | P0       |
 // | CV-08 | Happy    | /clean deletes, after asking, what was last used before a date or an age | P1    |
 // | CV-09 | Edge     | A fork starts with the output of the commands of the one it came from | P1       |
+// | CV-10 | Happy    | mo -r opens on the list of the folder's conversations; -c on the latest; neither, on none | P1 |
 
 import (
 	"fmt"
@@ -126,6 +127,26 @@ func TestConversations(t *testing.T) {
 			if !strings.Contains(drawn, want) {
 				t.Errorf("missing %q in:\n%s", want, drawn)
 			}
+		}
+	})
+
+	t.Run("CV-10 mo -r opens on the list of the folder's conversations; -c on the latest; neither, on none", func(t *testing.T) {
+		m := savedModel(t)
+		m.session.Agent.History = chat
+		m.running, m.cancel = true, func() {}
+		updated, save := m.finishRun(nil)
+		m = run(t, updated.(model), save)
+
+		resume, latest, plain := m, m, m
+		resume.session.Resume, latest.session.Continue = true, true
+		listed := resume.openingConversation()().(resumeListMsg)
+		picked, _ := resume.pickConversation(listed)
+
+		if len(listed.infos) != 1 || listed.latest || picked.(model).popup == nil && picked.(model).settings == nil {
+			t.Errorf("listed %+v", listed)
+		}
+		if !latest.openingConversation()().(resumeListMsg).latest || plain.openingConversation() != nil {
+			t.Error("-c does not open the latest, or no flag opens something")
 		}
 	})
 

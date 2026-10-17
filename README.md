@@ -439,7 +439,8 @@ tool is sent. `/settings › Skills` turns skills off and picks the mode, global
 
 Every conversation is saved after each turn in `~/.local/share/mo/sessions/`, readable by you only.
 
-- `/resume` lists the conversations of this folder, the latest first; `mo -c` continues the latest.
+- `/resume` lists the conversations of this folder, the latest first; `mo -r` (or `mo --resume`)
+  opens on that list, and `mo -c` continues the latest.
 - `/rewind`, or esc twice with an empty input, lists your prompts: the one you pick comes back into
   the input to edit and send, and the conversation goes on from before it, in a fork. The
   conversation as it was stays in `/resume`.
