@@ -55,8 +55,9 @@ func (m model) currentState() state {
 			return state{word: "compacting", tint: colors.compacting}
 		}
 		return state{word: "checking", detail: m.activity, tint: colors.compacting}
-	case len(m.forming) > 0 && m.forming[len(m.forming)-1].name != "":
-		last := m.forming[len(m.forming)-1]
+	case m.formingNow() != nil:
+		// A call being written: those that ran stay listed meanwhile.
+		last := m.formingNow()
 		return m.toolState(last.name, last.args, colors)
 	case m.runningTool != nil:
 		return m.toolState(m.runningTool.Name, string(m.runningTool.Args), colors)

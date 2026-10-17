@@ -9,6 +9,7 @@ package tui
 // | LT-08 | Edge     | A call that ends streaming after the first started shows whole, waiting; the next reply starts anew | P0 |
 // | LT-05 | Happy    | The spinner says what the agent waits on, compacting, and goes back to working | P1 |
 // | LT-06 | Happy    | Each thing the agent does has its word and colour, in the spinner only | P1      |
+// | LT-10 | Edge     | Once a call ran, the state follows the model again, reasoning or talking, not the call | P0 |
 // | LT-09 | Happy    | Each tool says what it does and on what: the file, the pattern, the programs a command runs, once each | P1 |
 // | LT-07 | Happy    | While llama-server reads the prompt, the state says how far, cache left out | P1   |
 
@@ -214,6 +215,20 @@ func TestStates(t *testing.T) {
 			if got.word+" · "+got.detail != want {
 				t.Errorf("%s: %q · %q, want %q", raw, got.word, got.detail, want)
 			}
+		}
+	})
+
+	t.Run("LT-10 once a call ran, the state follows the model again, reasoning or talking, not the call", func(t *testing.T) {
+		m := conversationModel()
+		m.running, m.cancel = true, func() {}
+		m = streaming(m, llm.Event{Kind: llm.EventToolCall, Call: 0, ID: "w1", Name: "web_search", Text: `{"query":"tv off"}`})
+		started, _ := m.Update(toolStartMsg{call: llm.ToolCall{ID: "w1", Name: "web_search"}})
+		ended, _ := started.(model).Update(streamEndMsg{})
+		done, _ := ended.(model).Update(toolDoneMsg{id: "w1", output: "results"})
+		thinking := streaming(done.(model), llm.Event{Kind: llm.EventReasoning, Text: "nothing there"})
+
+		if got := thinking.currentState(); got.word != "reasoning" {
+			t.Errorf("state %q · %q", got.word, got.detail)
 		}
 	})
 

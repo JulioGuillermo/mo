@@ -232,3 +232,14 @@ func (m model) asks(call formingCall) bool {
 	}
 	return false
 }
+
+// formingNow is the last call the model is writing that did not run yet:
+// the calls of its reply that ran stay listed until the next one.
+func (m model) formingNow() *formingCall {
+	for i := len(m.forming) - 1; i >= 0; i-- {
+		if call := m.forming[i]; call.name != "" && !call.started {
+			return &call
+		}
+	}
+	return nil
+}
