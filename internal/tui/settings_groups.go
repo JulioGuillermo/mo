@@ -26,6 +26,7 @@ var settingsGroups = []settingsGroup{
 	{key: groupPrefix + "conversation", title: "Conversation", sections: []string{"context", "instructions", "memory"}},
 	{key: groupPrefix + "tools", title: "Tools", sections: []string{"tools", "toolmodes", "descriptions", "web"}, extras: []string{menuMCP}},
 	{key: groupPrefix + "skills", title: "Skills", sections: []string{"skills", "skillmodes"}},
+	{key: groupPrefix + "agents", title: "Agents", sections: []string{"agents"}},
 	{key: groupPrefix + "safety", title: "Safety", sections: []string{"permissions", "loop"}},
 	{key: groupPrefix + "interface", title: "Interface", sections: []string{"appearance", "notify"}},
 }

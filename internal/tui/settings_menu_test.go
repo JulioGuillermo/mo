@@ -11,6 +11,7 @@ package tui
 // | SM-07 | Edge     | Esc in a setting puts its old value back; enter keeps the new one    | P0       |
 // | SM-09 | Happy    | An MCP server is one row of the tool modes; its list has its mode, and its tools unless it is a group | P0 |
 // | SM-10 | Happy    | A choice opens in a box over the list it came from; a click outside it cancels | P1 |
+// | SM-11 | Edge     | Every section with items of its own is in a group of the menu, Subagents too | P0  |
 // | SM-08 | Happy    | The menu opens groups; a group lists its sections; esc goes back a level at a time | P0 |
 
 import (
@@ -201,6 +202,24 @@ func TestSettingsMenu(t *testing.T) {
 		closed, _ := opened.Update(tea.MouseClickMsg(tea.Mouse{X: 1, Y: 1, Button: tea.MouseLeft}))
 		if after := closed.(model); after.settings == nil || after.settings.floating || menu.draft.keys != before {
 			t.Errorf("a click outside should cancel back to the list: keys = %q", menu.draft.keys)
+		}
+	})
+}
+
+func TestSettingsGroups(t *testing.T) {
+	t.Run("SM-11 every section with items of its own is in a group of the menu, Subagents too", func(t *testing.T) {
+		for _, section := range settingsSections {
+			if section.parent != "" {
+				continue
+			}
+			if _, ok := groupOf(section); !ok {
+				t.Errorf("section %q is in no group, so the menu never shows it", section.key)
+			}
+		}
+		m, menu := menuModel()
+		updated, _ := m.openMenuChoice(menu, groupPrefix+"agents")
+		if view := ansi.Strip(updated.(model).settings.form.View()); !strings.Contains(view, "Subagents") || !strings.Contains(view, "Levels") {
+			t.Errorf("agents group:\n%s", view)
 		}
 	})
 }
