@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -45,13 +46,68 @@ type resumedMsg struct {
 // goroutine, from a copy of the history so the next turn cannot change it
 // while it is written.
 func (m *model) saveConversation() tea.Cmd {
-	history := slices.Clone(m.session.Agent.History)
-	if len(history) == 0 {
+	record, ok := m.conversationRecord(m.currentHistory())
+	if !ok {
 		return nil
+	}
+	m.saves++
+	number := m.saves
+	return func() tea.Msg { return savedMsg{err: saveInOrder(number, record)} }
+}
+
+// currentHistory is the main agent's history: as it is when it is idle,
+// else as its last step left it, since its goroutine changes it meanwhile.
+func (m model) currentHistory() []llm.Message {
+	if m.running {
+		return slices.Clone(m.stepHistory)
+	}
+	return slices.Clone(m.session.Agent.History)
+}
+
+var (
+	savingMu sync.Mutex
+	// lastSaves are the numbers of the last saves written, by conversation.
+	lastSaves = map[string]int{}
+)
+
+// saveInOrder writes saves one at a time, a save of a conversation older
+// than one written already left out, so a late one never undoes a newer.
+func saveInOrder(number int, record sessions.Record) error {
+	savingMu.Lock()
+	defer savingMu.Unlock()
+	if number < lastSaves[record.ID] {
+		return nil
+	}
+	lastSaves[record.ID] = number
+	return sessions.Save(config.SessionDir(), record)
+}
+
+// saveEvery is how often a turn's steps are saved at most.
+const saveEvery = time.Second
+
+type saveTickMsg struct{}
+
+// historyMsg is the main agent's history after a step of its turn.
+type historyMsg []llm.Message
+
+// scheduleSave saves soon, once for the steps that come meanwhile.
+func (m *model) scheduleSave() tea.Cmd {
+	if m.saveTicking {
+		return nil
+	}
+	m.saveTicking = true
+	return tea.Tick(saveEvery, func(time.Time) tea.Msg { return saveTickMsg{} })
+}
+
+// conversationRecord is the conversation to save, with history as its
+// main agent's; nothing for an empty one.
+func (m *model) conversationRecord(history []llm.Message) (sessions.Record, bool) {
+	if len(history) == 0 {
+		return sessions.Record{}, false
 	}
 	now := time.Now()
 	m.ensureThread()
-	prompts := m.session.Agent.Prompts()
+	prompts := agent.PromptsIn(history)
 	if len(prompts) > 0 && m.thread.title == "" {
 		m.thread.title = sessions.Title(prompts[0].Text)
 	}
@@ -65,8 +121,29 @@ func (m *model) saveConversation() tea.Cmd {
 		Created: m.thread.created, Updated: now, Usage: m.session.Agent.LastUsage,
 	}}
 	m.trackThread()
-	return func() tea.Msg { return savedMsg{err: sessions.Save(config.SessionDir(), record)} }
+	return record, true
 }
+
+// saveOnExit saves the conversation as mo exits: its subagents stopped and
+// given a moment to end, the main agent's history as it ended, or as its
+// last step left it when it did not end in time.
+func (m model) saveOnExit(finished bool) {
+	if m.session.Team != nil {
+		m.session.Team.StopAll()
+		m.session.Team.WaitIdle(exitWait)
+	}
+	history := slices.Clone(m.stepHistory)
+	if finished {
+		history = slices.Clone(m.session.Agent.History)
+	}
+	if record, ok := m.conversationRecord(history); ok {
+		m.saves++
+		_ = saveInOrder(m.saves, record)
+	}
+}
+
+// exitWait is how long mo waits on exit for its subagents to end.
+const exitWait = 2 * time.Second
 
 // ensureThread names a conversation before its first turn, so the commands
 // it runs keep their output in its folder; a fork starts with the output of

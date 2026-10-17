@@ -21,6 +21,9 @@ package team
 // | TM-17 | Happy    | A subagent tells the main agent, which hears it once and is woken          | P0       |
 // | TM-18 | Happy    | A subagent tells its parent subagent, which reads it at its next step      | P0       |
 // | TM-19 | Happy    | Told by one of its own, a parent that ended, or was stopped, goes on to read it | P0  |
+// | TM-20 | Happy    | A run call resumed goes on with the subagents it started, from where they were, none new | P0 |
+// | TM-21 | Happy    | Those started in the background go on when everything stopped them, not when stopped on their own | P0 |
+// | TM-22 | Happy    | Saved and restored, a resumed call still finds its subagents and goes on with them | P0 |
 
 import (
 	"context"
@@ -452,6 +455,72 @@ func TestTeam(t *testing.T) {
 			if err != nil || said != "it goes on" || !strings.Contains(lastText(team.History(1)), "news for you") || team.Main().HasEnded() {
 				t.Errorf("stopped %v: err %v said %q parent ended with %q", stopped, err, said, lastText(team.History(1)))
 			}
+		}
+	})
+
+	t.Run("TM-20 a run call resumed goes on with the subagents it started, from where they were, none new", func(t *testing.T) {
+		team, model := newTeam(t, wide)
+		registry := tools.NewRegistry(tools.Env{WorkDir: t.TempDir(), Agents: team.Main()}, tools.Options{})
+		call := llm.ToolCall{ID: "call-7", Name: tools.AgentName, Args: json.RawMessage(`{"task":"slow","name":"s"}`)}
+		stopping, stop := context.WithCancel(ctx)
+		go func() {
+			waitState(t, team, 1, Running)
+			team.StopAll()
+			stop()
+		}()
+
+		_, _ = registry.Run(stopping, call)
+		waitState(t, team, 1, Stopped)
+		close(model.release)
+		var report string
+		within(t, "the resumed call", func() { report, _ = registry.Run(tools.WithResume(ctx), call) })
+
+		if !strings.Contains(report, "slow is done") || len(team.List()) != 1 {
+			t.Errorf("agents %+v report:\n%s", team.List(), report)
+		}
+	})
+
+	t.Run("TM-21 those started in the background go on when everything stopped them, not when stopped on their own", func(t *testing.T) {
+		team, model := newTeam(t, wide)
+		_, _ = team.Main().Run(ctx, []tools.SubTask{{Task: "slow", Name: "all"}, {Task: "slow", Name: "own"}}, true)
+		waitState(t, team, 1, Running)
+		waitState(t, team, 2, Running)
+		team.Stop(2)
+		waitState(t, team, 2, Stopped)
+		team.StopAll()
+		waitState(t, team, 1, Stopped)
+
+		close(model.release)
+		team.GoOn(0)
+		waitState(t, team, 1, Done)
+
+		if info := team.List()[1]; info.State != Stopped {
+			t.Errorf("the one stopped on its own went on: %+v", info)
+		}
+	})
+
+	t.Run("TM-22 saved and restored, a resumed call still finds its subagents and goes on with them", func(t *testing.T) {
+		team, _ := newTeam(t, wide)
+		registry := tools.NewRegistry(tools.Env{WorkDir: t.TempDir(), Agents: team.Main()}, tools.Options{})
+		call := llm.ToolCall{ID: "call-9", Name: tools.AgentName, Args: json.RawMessage(`{"task":"slow","name":"s"}`)}
+		stopping, stop := context.WithCancel(ctx)
+		go func() {
+			waitState(t, team, 1, Running)
+			stop()
+		}()
+		_, _ = registry.Run(stopping, call)
+		waitState(t, team, 1, Stopped)
+		records := team.Records()
+
+		restored, model := newTeam(t, wide)
+		restored.Restore(records)
+		close(model.release)
+		again := tools.NewRegistry(tools.Env{WorkDir: t.TempDir(), Agents: restored.Main()}, tools.Options{})
+		var report string
+		within(t, "the resumed call", func() { report, _ = again.Run(tools.WithResume(ctx), call) })
+
+		if records[0].StartedBy != "call-9" || len(restored.List()) != 1 || !strings.Contains(report, "## agent 1 · s · done") {
+			t.Errorf("started by %q agents %d report:\n%s", records[0].StartedBy, len(restored.List()), report)
 		}
 	})
 }

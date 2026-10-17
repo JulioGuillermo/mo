@@ -122,6 +122,9 @@ func (b *bridge) hooks() agent.Hooks {
 			b.print(b.printer.Note(fmt.Sprintf("context compacted: %s → %s tokens", formatTokens(before), formatTokens(after))))
 		},
 		Interact: b.interact,
+		OnStep: func(history []llm.Message) {
+			b.send(historyMsg(history))
+		},
 	}
 	return b.flushingFirst(hooks)
 }
@@ -138,6 +141,9 @@ func (b *bridge) flushingFirst(hooks agent.Hooks) agent.Hooks {
 	}
 	onAssistant, onToolStart, onToolDone := hooks.OnAssistant, hooks.OnToolStart, hooks.OnToolDone
 	onActivity, onUsage, onNotice, onLoopCut, onCompact, onQueued, interact := hooks.OnActivity, hooks.OnUsage, hooks.OnNotice, hooks.OnLoopCut, hooks.OnCompact, hooks.OnQueued, hooks.Interact
+	if onStep := hooks.OnStep; onStep != nil {
+		hooks.OnStep = func(history []llm.Message) { first(func() { onStep(history) })() }
+	}
 	hooks.OnAssistant = func(message llm.Message) { first(func() { onAssistant(message) })() }
 	hooks.OnToolStart = func(call llm.ToolCall, summary string) { first(func() { onToolStart(call, summary) })() }
 	hooks.OnToolDone = func(call llm.ToolCall, output string, isError bool) {

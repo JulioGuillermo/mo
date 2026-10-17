@@ -1270,3 +1270,21 @@
   and end, since its history holds a reply only once all its calls are answered), its usage, window,
   model and tasks, its input; the panel lists only those under it and the input offers no commands.
   What the user does there goes back to the view: the input, where it is scrolled, its folds.
+
+## Continuing as if nothing had stopped
+
+- Saving: a turn used to be saved only at its end, so a crash, or exiting while the model worked,
+  lost all of it. The agent now gives a copy of its history after each reply and each round of
+  results (`Hooks.OnStep`, on its own goroutine, as reading its history from the UI would race);
+  the UI saves the latest a second apart at most, saves one at a time per conversation with older
+  ones dropped, and saves once more on exit, after stopping the agent and the subagents and giving
+  them a moment to end.
+- A call of a resumable tool (`agent`) that a stop cuts is kept in the history without its result.
+  `/continue` runs it again as resumed (`tools.WithResume`, the call's id in its context): the team
+  finds the subagents that call started (`startedBy`, saved) and runs the stopped ones on with their
+  own `Continue`, which resumes their own cut calls the same way, then waits for their reports. The
+  model is not told: for it the call went on. Subagents started in the background go on when they
+  stopped because everything did (`interrupted`), not when stopped on their own.
+- A new prompt, or anything but `/continue`, answers a cut call as stopped. A call without a result
+  that is not resumable, as one a crash left between a reply and its results, is answered as
+  interrupted and never run again unasked.

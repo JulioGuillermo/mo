@@ -396,7 +396,11 @@ parent reads only that report, so long searches or test runs stay out of its con
   asks. Esc stops the main agent and every subagent; with the main agent idle, it stops the subagents
   still working.
 - Subagents are saved with the conversation, all they did, and come back with `/resume`: those that
-  were working, stopped, ready to go on.
+  were working, stopped, ready to go on. `/continue` goes on as if nothing had stopped, also after
+  mo exited: an `agent` call cut short is kept, unanswered, and run again as resumed, so the
+  subagents it started go on from where they were (and theirs, in turn) instead of starting anew;
+  those started in the background go on too, unless you stopped them yourself. A new message
+  instead of `/continue` answers the call as stopped.
 - The side panel lists them under **Agents** as a tree, each with a sign of how it does: `⧗` grey
   waiting for a place, `⧗` purple waiting for its own subagents (yellow, with `· N asks`, when one
   under it waits for you), `●` blue working, `?` yellow asking you, `✓` green done, `⚠` red failed or
@@ -441,7 +445,9 @@ tool is sent. `/settings › Skills` turns skills off and picks the mode, global
 
 ## Conversations
 
-Every conversation is saved after each turn in `~/.local/share/mo/sessions/`, readable by you only.
+Every conversation is saved in `~/.local/share/mo/sessions/`, readable by you only: after each step
+of a turn (a second apart at most), at its end, and whenever mo exits, also mid-turn, so a crash
+loses a step at most.
 
 - `/resume` lists the conversations of this folder, the latest first; `mo -r` (or `mo --resume`)
   opens on that list, and `mo -c` continues the latest.

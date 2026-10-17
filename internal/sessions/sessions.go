@@ -43,6 +43,12 @@ type AgentRecord struct {
 	Usage   llm.Usage     `json:"usage"`
 	Model   string        `json:"model,omitempty"`
 	Window  int           `json:"window,omitempty"`
+	// StartedBy is the id of the parent's call that started it.
+	StartedBy string `json:"started_by,omitempty"`
+	// Background is set when it was started in the background, and
+	// Interrupted when it stopped because everything did.
+	Background  bool `json:"background,omitempty"`
+	Interrupted bool `json:"interrupted,omitempty"`
 }
 
 // Info is what a list shows of a conversation, without its messages.

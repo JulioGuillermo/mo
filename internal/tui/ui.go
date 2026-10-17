@@ -169,6 +169,12 @@ type model struct {
 	lensOf    int
 	// waitingFor says, on that model, what the subagent waits for.
 	waitingFor string
+	// stepHistory is the main agent's history as its last step left it,
+	// to save while it works; saves numbers the saves, saveTicking is set
+	// while one is due.
+	stepHistory []llm.Message
+	saves       int
+	saveTicking bool
 
 	suggestion int
 	// queued are the messages written while the model works, as typed,
@@ -254,12 +260,18 @@ func Run(session Session) error {
 	}
 	final, err := program.Run()
 	close(bridge.exited)
-	if last, ok := final.(model); ok && last.running {
-		last.stop()
-		select {
-		case <-last.finished:
-		case <-time.After(agentShutdownWait):
+	if last, ok := final.(model); ok {
+		finished := !last.running
+		if last.running {
+			last.stop()
+			select {
+			case <-last.finished:
+				finished = true
+			case <-time.After(agentShutdownWait):
+			}
 		}
+		// Whatever way mo exits, the conversation is kept as it stands.
+		last.saveOnExit(finished)
 	}
 	return err
 }
@@ -529,7 +541,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case agentsChangedMsg:
 		m.refreshAgentView()
-		return m, nil
+		return m, m.scheduleSave()
+	case historyMsg:
+		m.stepHistory = msg
+		return m, m.scheduleSave()
+	case saveTickMsg:
+		m.saveTicking = false
+		return m, m.saveConversation()
 	case agentEndedMsg:
 		return m.agentEnded()
 	case queuedReadMsg:
@@ -779,6 +797,8 @@ func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 // ends or is stopped.
 func (m model) start(first tea.Cmd, work func(context.Context, agent.Hooks) error) (tea.Model, tea.Cmd) {
 	m.ensureThread()
+	// The agent is idle yet: its history is safe to copy.
+	m.stepHistory = slices.Clone(m.session.Agent.History)
 	m.runStarted = time.Now()
 	m.trackTurn(m.newPrompt)
 	m.newPrompt = false
@@ -837,6 +857,10 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 	case "continue":
 		if m.running {
 			return m.emit(m.printer.Note("the model is working already"))
+		}
+		if m.session.Team != nil {
+			// The subagents it left working in the background go on too.
+			m.session.Team.GoOn(0)
 		}
 		return m.start(printText(m.printer.Note("continuing…")), m.session.Agent.Continue)
 	case "vim":

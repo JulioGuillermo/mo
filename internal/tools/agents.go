@@ -58,8 +58,9 @@ func agentTool() Tool {
 "task":{"type":"string"},"name":{"type":"string"},
 "tasks":{"type":"array","items":{"type":"object","properties":{"task":{"type":"string"},"name":{"type":"string"}},"required":["task"]}},
 "background":{"type":"boolean"},"wait":{"type":"boolean"},"id":{"type":"integer"},"ids":{"type":"array","items":{"type":"integer"}},"message":{"type":"string"}}}`),
-		Run:  runAgent,
-		View: true,
+		Run:       runAgent,
+		View:      true,
+		Resumable: true,
 		Summary: func(args json.RawMessage) string {
 			var fields struct {
 				Action, Task, Name, Message string

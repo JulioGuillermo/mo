@@ -39,6 +39,36 @@ type Tool struct {
 	View      bool
 	ViewLimit int
 	ViewSelf  bool
+	// Resumable calls, stopped before they ended, are kept unanswered in
+	// the history, to be run again as resumed when the agent continues.
+	Resumable bool
+}
+
+type callKey struct{}
+type resumeKey struct{}
+
+// CallID is the id of the call a tool runs for.
+func CallID(ctx context.Context) string {
+	id, _ := ctx.Value(callKey{}).(string)
+	return id
+}
+
+// WithResume runs a call as resumed: a resumable tool goes on with what
+// the call started instead of starting it again.
+func WithResume(ctx context.Context) context.Context {
+	return context.WithValue(ctx, resumeKey{}, true)
+}
+
+// Resuming tells whether a call is resumed.
+func Resuming(ctx context.Context) bool {
+	resumed, _ := ctx.Value(resumeKey{}).(bool)
+	return resumed
+}
+
+// Resumable tells whether a tool's calls are kept to be resumed.
+func (r *Registry) Resumable(name string) bool {
+	tool, ok := r.find(name)
+	return ok && tool.Resumable
 }
 
 const truncateHeadPercent = 60
@@ -232,6 +262,7 @@ func (r *Registry) AlreadyConfirmed(call llm.ToolCall) bool {
 // Run executes a call and returns what goes back to the model, cut to the
 // configured size. An error result is still text for the model to read.
 func (r *Registry) Run(ctx context.Context, call llm.ToolCall) (output string, isError bool) {
+	ctx = context.WithValue(ctx, callKey{}, call.ID)
 	tool, ok := r.find(call.Name)
 	if !ok {
 		return fmt.Sprintf("unknown tool %q", call.Name), true

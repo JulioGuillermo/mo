@@ -14,6 +14,8 @@ package tui
 // | CV-08 | Happy    | /clean deletes, after asking, what was last used before a date or an age | P1    |
 // | CV-09 | Edge     | A fork starts with the output of the commands of the one it came from | P1       |
 // | CV-10 | Happy    | mo -r opens on the list of the folder's conversations; -c on the latest; neither, on none | P1 |
+// | CV-11 | Happy    | While the model works, each step is saved, from the copy its step gave  | P0       |
+// | CV-12 | Happy    | Exiting saves the conversation as it stands, its subagents with it      | P0       |
 
 import (
 	"fmt"
@@ -30,6 +32,7 @@ import (
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/sessions"
+	"github.com/jg/mo/internal/team"
 )
 
 func savedModel(t *testing.T) model {
@@ -147,6 +150,38 @@ func TestConversations(t *testing.T) {
 		}
 		if !latest.openingConversation()().(resumeListMsg).latest || plain.openingConversation() != nil {
 			t.Error("-c does not open the latest, or no flag opens something")
+		}
+	})
+
+	t.Run("CV-11 while the model works, each step is saved, from the copy its step gave", func(t *testing.T) {
+		m := savedModel(t)
+		m.running, m.cancel = true, func() {}
+		m.session.Agent.History = []llm.Message{{Role: llm.RoleUser, Text: "not this"}}
+
+		updated, tick := m.Update(historyMsg(chat[:3]))
+		m = updated.(model)
+		updated, save := m.Update(saveTickMsg{})
+		m = run(t, updated.(model), save)
+		record, err := sessions.Load(config.SessionDir(), m.thread.id)
+
+		if tick == nil || err != nil || len(record.History) != 3 || record.Title != "list the files" {
+			t.Errorf("tick %v err %v history %d title %q", tick != nil, err, len(record.History), record.Title)
+		}
+	})
+
+	t.Run("CV-12 exiting saves the conversation as it stands, its subagents with it", func(t *testing.T) {
+		m := savedModel(t)
+		m.ensureThread()
+		m.stepHistory = chat[:3]
+		m.session.Team = team.New()
+		defer m.session.Team.Close()
+		m.session.Team.Restore([]sessions.AgentRecord{{ID: 1, Depth: 1, Name: "scout", State: "running"}})
+
+		m.saveOnExit(false)
+		record, err := sessions.Load(config.SessionDir(), m.thread.id)
+
+		if err != nil || len(record.History) != 3 || len(record.Agents) != 1 || record.Agents[0].State != "stopped" || !record.Agents[0].Interrupted {
+			t.Errorf("err %v record %+v", err, record)
 		}
 	})
 

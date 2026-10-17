@@ -35,6 +35,11 @@ func (c caller) mine(id int) (*member, error) {
 
 func (c caller) Run(ctx context.Context, tasks []tools.SubTask, background bool) (string, error) {
 	t := c.team
+	if tools.Resuming(ctx) {
+		if started := c.startedBy(tools.CallID(ctx)); len(started) > 0 {
+			return c.resume(ctx, started)
+		}
+	}
 	t.mu.Lock()
 	depth := c.depth() + 1
 	switch {
@@ -55,7 +60,7 @@ func (c caller) Run(ctx context.Context, tasks []tools.SubTask, background bool)
 		if name == "" {
 			name = fmt.Sprintf("agent-%d", id)
 		}
-		m := &member{Info: Info{ID: id, Parent: c.id, Depth: depth, Name: name, Task: task.Task}}
+		m := &member{Info: Info{ID: id, Parent: c.id, Depth: depth, Name: name, Task: task.Task}, startedBy: tools.CallID(ctx)}
 		agent, err := t.makeAgent(m.Info)
 		if err != nil {
 			t.mu.Unlock()
@@ -83,6 +88,38 @@ func (c caller) Run(ctx context.Context, tasks []tools.SubTask, background bool)
 		return "started in the background: " + strings.Join(names, ", ") + ". You hear when each ends; agent wait gives their reports sooner.", nil
 	}
 	return c.reports(ctx, started)
+}
+
+// startedBy are the subagents a call of the caller's started.
+func (c caller) startedBy(call string) []*member {
+	t := c.team
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var started []*member
+	for _, m := range t.members {
+		if call != "" && m.Parent == c.id && m.startedBy == call {
+			started = append(started, m)
+		}
+	}
+	return started
+}
+
+// resume goes on with a call a stop cut, as if it had not: those it waited
+// for that stopped go on from where they were, and it waits for them again.
+func (c caller) resume(ctx context.Context, members []*member) (string, error) {
+	t := c.team
+	t.mu.Lock()
+	var stopped []*member
+	for _, m := range members {
+		if m.State == Stopped && t.ensureAgent(m) == nil {
+			stopped = append(stopped, m)
+		}
+	}
+	t.mu.Unlock()
+	for _, m := range stopped {
+		t.goOn(ctx, m, false)
+	}
+	return c.reports(ctx, members)
 }
 
 // reports waits for the runs and gives how each ended.
@@ -120,6 +157,10 @@ func (c caller) Send(ctx context.Context, id int, message string, background boo
 		return "", err
 	}
 	t.mu.Unlock()
+	if tools.Resuming(ctx) && m.State == Stopped {
+		// The message was taken in before the stop: it goes on with it.
+		return c.resume(ctx, []*member{m})
+	}
 	base := ctx
 	if background {
 		base = t.root
@@ -137,7 +178,7 @@ func (c caller) Wait(ctx context.Context, ids []int) (string, error) {
 	var members []*member
 	if len(ids) == 0 {
 		for _, m := range t.members {
-			if m.Parent == c.id && m.background && (!m.State.Ended() || m.untold) {
+			if m.Parent == c.id && m.background && (!m.State.Ended() || m.untold || tools.Resuming(ctx) && m.State == Stopped && m.interrupted) {
 				members = append(members, m)
 			}
 		}
@@ -150,9 +191,20 @@ func (c caller) Wait(ctx context.Context, ids []int) (string, error) {
 		}
 		members = append(members, m)
 	}
+	var stopped []*member
+	if tools.Resuming(ctx) {
+		for _, m := range members {
+			if m.State == Stopped && m.interrupted && t.ensureAgent(m) == nil {
+				stopped = append(stopped, m)
+			}
+		}
+	}
 	t.mu.Unlock()
 	if len(members) == 0 {
 		return "no subagent of yours is working in the background", nil
+	}
+	for _, m := range stopped {
+		t.goOn(t.root, m, m.background)
 	}
 	return c.reports(ctx, members)
 }

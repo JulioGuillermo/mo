@@ -6,14 +6,20 @@ package agent
 // | RE-02 | Happy    | Stopped before any answer, continue answers the prompt waiting, with no note | P1  |
 // | RE-03 | Edge     | Continue on an empty conversation says there is nothing to continue  | P2       |
 // | RE-04 | Happy    | A stop amid tool calls keeps those that ran and the text, drops the rest | P0    |
+// | RE-05 | Happy    | A resumable call a stop cut stays unanswered; continue runs it as resumed and goes on | P0 |
+// | RE-06 | Security | A call left without a result that is not resumable is answered as interrupted, never run again | P0 |
+// | RE-07 | Happy    | A new prompt instead of continue answers the call left as stopped        | P0       |
+// | RE-08 | Happy    | Each step gives a copy of the history                                    | P1       |
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/tools"
 )
 
 // stoppingProvider writes the start of an answer, then the user stops it;
@@ -93,6 +99,91 @@ func TestStopInToolCalls(t *testing.T) {
 		reply := agent.History[1]
 		if len(agent.History) != 3 || reply.Text != "Checking both." || len(reply.ToolCalls) != 1 || reply.ToolCalls[0].ID != "ran" || agent.History[2].ToolCallID != "ran" {
 			t.Errorf("history = %+v", agent.History)
+		}
+	})
+}
+
+func resumableAgent(t *testing.T, provider llm.Provider, runs *[]bool, started chan struct{}) *Agent {
+	t.Helper()
+	job := tools.Tool{Name: "long", Resumable: true, Schema: []byte(`{"type":"object","properties":{}}`),
+		Run: func(ctx context.Context, _ tools.Env, _ json.RawMessage) (string, error) {
+			*runs = append(*runs, tools.Resuming(ctx))
+			if tools.Resuming(ctx) {
+				return "went on and ended", nil
+			}
+			close(started)
+			<-ctx.Done()
+			return "stopped", nil
+		}}
+	agent := newAgent(t, provider)
+	agent.Tools = tools.NewRegistry(tools.Env{WorkDir: t.TempDir()}, tools.Options{Extra: []tools.Tool{job}})
+	return agent
+}
+
+func TestResumable(t *testing.T) {
+	t.Run("RE-05 a resumable call a stop cut stays, unanswered; continue runs it as resumed and the turn goes on", func(t *testing.T) {
+		provider := &scriptedProvider{replies: []llm.Message{
+			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("c1", "long", `{}`)}},
+			{Role: llm.RoleAssistant, Text: "all done"},
+		}}
+		var runs []bool
+		started := make(chan struct{})
+		agent := resumableAgent(t, provider, &runs, started)
+		ctx, stop := context.WithCancel(context.Background())
+		go func() {
+			<-started
+			stop()
+		}()
+
+		stopped := agent.Run(ctx, "go", Hooks{})
+		unanswered := agent.unanswered()
+		err := agent.Continue(context.Background(), Hooks{})
+
+		if !errors.Is(stopped, context.Canceled) || len(unanswered) != 1 || unanswered[0].ID != "c1" {
+			t.Fatalf("stopped %v unanswered %+v", stopped, unanswered)
+		}
+		last := agent.History[len(agent.History)-1]
+		if err != nil || len(runs) != 2 || runs[0] || !runs[1] || last.Text != "all done" || strings.Contains(provider.requests[1].Messages[len(provider.requests[1].Messages)-1].Text, "stopped you") {
+			t.Errorf("err %v runs %v history %+v", err, runs, agent.History)
+		}
+	})
+
+	t.Run("RE-06 a call left without a result that is not resumable is answered as interrupted, never run again", func(t *testing.T) {
+		provider := &scriptedProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Text: "noted"}}}
+		agent := newAgent(t, provider)
+		agent.History = []llm.Message{{Role: llm.RoleUser, Text: "go"}, {Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("b1", "bash", `{"command":"rm -rf x"}`)}}}
+
+		err := agent.Continue(context.Background(), Hooks{})
+
+		if err != nil || agent.History[2].ToolCallID != "b1" || agent.History[2].Text != interruptedCall {
+			t.Errorf("err %v history %+v", err, agent.History)
+		}
+	})
+
+	t.Run("RE-07 a new prompt instead of continue answers the call left as stopped", func(t *testing.T) {
+		provider := &scriptedProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Text: "ok"}}}
+		agent := newAgent(t, provider)
+		agent.History = []llm.Message{{Role: llm.RoleUser, Text: "go"}, {Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("a1", "agent", `{"task":"x"}`)}}}
+
+		err := agent.Run(context.Background(), "something else", Hooks{})
+
+		if err != nil || agent.History[2].ToolCallID != "a1" || agent.History[2].Text != stoppedCall || agent.History[3].Text != "something else" {
+			t.Errorf("err %v history %+v", err, agent.History)
+		}
+	})
+
+	t.Run("RE-08 each step gives a copy of the history", func(t *testing.T) {
+		provider := &scriptedProvider{replies: []llm.Message{
+			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("r1", "read", `{"path":"a.txt"}`)}},
+			{Role: llm.RoleAssistant, Text: "read it"},
+		}}
+		agent := newAgent(t, provider)
+		var steps []int
+
+		_ = agent.Run(context.Background(), "read a.txt", Hooks{OnStep: func(history []llm.Message) { steps = append(steps, len(history)) }})
+
+		if len(steps) != 3 || steps[0] != 2 || steps[1] != 3 || steps[2] != 4 {
+			t.Errorf("steps %v", steps)
 		}
 	})
 }

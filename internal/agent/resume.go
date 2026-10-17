@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/tools"
 )
 
 const (
@@ -33,7 +34,8 @@ func (a *Agent) keepPartial() {
 // dropUnfinished takes out of the history the tool calls a stop cut short,
 // not run or stopped running, with their results, as if the model had not
 // made them: the reply at asked keeps its text and the calls that ran.
-// A reply left with nothing goes too.
+// A reply left with nothing goes too. A resumable call stays, without its
+// result, for Continue to run again as resumed.
 func (a *Agent) dropUnfinished(asked int, unfinished map[string]bool) {
 	if len(unfinished) == 0 || asked < 0 || asked >= len(a.History) {
 		return
@@ -41,7 +43,7 @@ func (a *Agent) dropUnfinished(asked int, unfinished map[string]bool) {
 	reply := a.History[asked]
 	var kept []llm.ToolCall
 	for _, call := range reply.ToolCalls {
-		if !unfinished[call.ID] {
+		if !unfinished[call.ID] || a.Tools.Resumable(call.Name) {
 			kept = append(kept, call)
 		}
 	}
@@ -59,12 +61,83 @@ func (a *Agent) dropUnfinished(asked int, unfinished map[string]bool) {
 	a.History = history
 }
 
+// stoppedCall answers a resumable call a stop left when the conversation
+// goes on otherwise than by continuing it.
+const stoppedCall = "Stopped by the user before it ended; what it started was left as it stood."
+
+// interruptedCall answers a call that was not resumable and had no result,
+// as when mo stopped between a reply and its calls' results.
+const interruptedCall = "Interrupted: mo stopped before this call ended. It was not run again."
+
+// unanswered are the calls of the last reply with no result: resumable
+// ones a stop left to go on with.
+func (a *Agent) unanswered() []llm.ToolCall {
+	last := -1
+	for i := len(a.History) - 1; i >= 0; i-- {
+		if a.History[i].Role == llm.RoleAssistant {
+			last = i
+			break
+		}
+	}
+	if last < 0 {
+		return nil
+	}
+	answered := map[string]bool{}
+	for _, message := range a.History[last+1:] {
+		if message.Role == llm.RoleTool {
+			answered[message.ToolCallID] = true
+		}
+	}
+	var calls []llm.ToolCall
+	for _, call := range a.History[last].ToolCalls {
+		if !answered[call.ID] {
+			calls = append(calls, call)
+		}
+	}
+	return calls
+}
+
+// settleUnanswered answers the calls a stop left, when the conversation
+// goes on otherwise than by continuing them.
+func (a *Agent) settleUnanswered() {
+	for _, call := range a.unanswered() {
+		a.History = append(a.History, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Text: stoppedCall, IsError: true})
+	}
+}
+
 // Continue goes on with a turn the user stopped, without a new prompt.
 // Stopped before any answer, the model answers the prompt waiting; stopped
-// later, it is told to go on from where it was.
+// later, it is told to go on from where it was. Calls a stop left are run
+// again as resumed, going on with what they started, and the turn goes on
+// after them as if it had not stopped.
 func (a *Agent) Continue(ctx context.Context, hooks Hooks) error {
 	if len(a.History) == 0 {
 		return ErrNothingToContinue
+	}
+	if calls := a.unanswered(); len(calls) > 0 {
+		for _, call := range calls {
+			if !a.Tools.Resumable(call.Name) {
+				// Left by mo stopping mid-call: never run again unasked.
+				a.History = append(a.History, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Text: interruptedCall, IsError: true})
+				continue
+			}
+			summary := a.Tools.Summary(call)
+			if hooks.OnToolStart != nil {
+				hooks.OnToolStart(call, summary)
+			}
+			output, isError := a.Tools.Run(tools.WithResume(ctx), call)
+			if hooks.OnToolDone != nil {
+				hooks.OnToolDone(call, output, isError)
+			}
+			if ctx.Err() != nil {
+				// Stopped again: still to go on with.
+				return ctx.Err()
+			}
+			a.History = append(a.History, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Text: output, IsError: isError})
+			a.step(hooks)
+		}
+		a.loops = 0
+		return a.turn(ctx, hooks)
 	}
 	last := len(a.History) - 1
 	switch message := a.History[last]; {

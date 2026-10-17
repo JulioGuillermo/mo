@@ -121,7 +121,10 @@ type Hooks struct {
 	OnNotice   func(text string)
 	// OnQueued says the model now reads that many of the messages queued
 	// while it worked, the oldest first.
-	OnQueued  func(count int)
+	OnQueued func(count int)
+	// OnStep gives a copy of the history after each reply and each round
+	// of results, to save as the turn goes.
+	OnStep    func(history []llm.Message)
 	OnLoopCut func(repeated string)
 	Approve   func(ctx context.Context, request ApprovalRequest) Decision
 	// Interact asks the user everything the calls of a reply need at once;
@@ -130,6 +133,7 @@ type Hooks struct {
 }
 
 func (a *Agent) Run(ctx context.Context, prompt string, hooks Hooks) error {
+	a.settleUnanswered()
 	if a.RewritePrompt != nil {
 		prompt = a.RewritePrompt(ctx, prompt)
 	}
@@ -201,6 +205,7 @@ func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
 		if hooks.OnUsage != nil {
 			hooks.OnUsage(response.Usage)
 		}
+		a.step(hooks)
 		if early == nil && hooks.OnAssistant != nil {
 			hooks.OnAssistant(response.Message)
 		}
@@ -222,9 +227,17 @@ func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
 		if note, found := toolImages(response.Message.ToolCalls, results); found {
 			a.History = append(a.History, note)
 		}
+		a.step(hooks)
 		if a.looping() {
 			return ErrLooping
 		}
+	}
+}
+
+// step gives the history as it is now to OnStep.
+func (a *Agent) step(hooks Hooks) {
+	if hooks.OnStep != nil {
+		hooks.OnStep(slices.Clone(a.History))
 	}
 }
 

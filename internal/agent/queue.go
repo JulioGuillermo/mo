@@ -63,6 +63,7 @@ func (a *Agent) RunQueued(ctx context.Context, hooks Hooks) error {
 	if !a.HasQueued() {
 		return nil
 	}
+	a.settleUnanswered()
 	a.loops = 0
 	return a.turn(ctx, hooks)
 }

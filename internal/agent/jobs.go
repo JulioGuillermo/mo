@@ -55,6 +55,7 @@ func (a *Agent) RunEndedJobs(ctx context.Context, hooks Hooks) error {
 	if !a.HasEndedJobs() {
 		return nil
 	}
+	a.settleUnanswered()
 	a.loops = 0
 	return a.turn(ctx, hooks)
 }

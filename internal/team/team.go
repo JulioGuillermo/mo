@@ -121,6 +121,12 @@ type member struct {
 	cancel   context.CancelFunc
 	// done is closed when the run in progress ends.
 	done chan struct{}
+	// startedBy is the call of its parent's that started it, to go on with
+	// when that call is resumed.
+	startedBy string
+	// interrupted is set when it stopped because everything did, not on
+	// its own: it goes on when its parent continues.
+	interrupted bool
 	// background runs are told to the parent when they end; untold is
 	// set until they are.
 	background bool
@@ -271,6 +277,25 @@ func (t *Team) StopAll() {
 	t.stopAllLocked()
 }
 
+// GoOn runs on, as if they had not stopped, the subagents parent started in
+// the background that stopped when everything did; those under them go
+// on as they do.
+func (t *Team) GoOn(parent int) {
+	t.mu.Lock()
+	var stopped []*member
+	for _, m := range t.members {
+		if m.Parent == parent && m.background && m.State == Stopped && m.interrupted {
+			if t.ensureAgent(m) == nil {
+				stopped = append(stopped, m)
+			}
+		}
+	}
+	t.mu.Unlock()
+	for _, m := range stopped {
+		t.goOn(t.root, m, true)
+	}
+}
+
 // Working tells whether a subagent is working, or waits to.
 func (t *Team) Working() bool {
 	t.mu.Lock()
@@ -281,6 +306,14 @@ func (t *Team) Working() bool {
 		}
 	}
 	return false
+}
+
+// WaitIdle waits, at most for a while, until no subagent works.
+func (t *Team) WaitIdle(within time.Duration) {
+	deadline := time.Now().Add(within)
+	for t.Working() && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 // Remove takes an ended subagent and those under it off the list.
@@ -317,6 +350,7 @@ func (t *Team) Records() []sessions.AgentRecord {
 		records = append(records, sessions.AgentRecord{
 			ID: m.ID, Parent: m.Parent, Depth: m.Depth, Name: m.Name, Task: m.Task, State: string(m.State),
 			Error: m.Err, Result: m.result, History: slices.Clone(m.history), Usage: m.Usage, Model: m.Model, Window: m.Window,
+			StartedBy: m.startedBy, Interrupted: m.interrupted, Background: m.background,
 		})
 	}
 	return records
@@ -336,9 +370,10 @@ func (t *Team) Restore(records []sessions.AgentRecord) {
 			state = Stopped
 		}
 		t.members = append(t.members, &member{
+			interrupted: record.Interrupted || !State(record.State).Ended(), background: record.Background,
 			Info: Info{ID: record.ID, Parent: record.Parent, Depth: record.Depth, Name: record.Name, Task: record.Task,
 				State: state, Err: record.Error, Steps: steps(record.History), Usage: record.Usage, Model: record.Model, Window: record.Window},
-			history: record.History, result: record.Result,
+			history: record.History, result: record.Result, startedBy: record.StartedBy,
 		})
 	}
 	t.changed()
@@ -348,6 +383,7 @@ func (t *Team) Restore(records []sessions.AgentRecord) {
 func (t *Team) stopAllLocked() {
 	for _, m := range t.members {
 		if m.cancel != nil {
+			m.interrupted = true
 			m.cancel()
 		}
 	}
@@ -385,6 +421,7 @@ func (t *Team) askingBelow(id int) int {
 func (t *Team) stopTree(id int) {
 	for _, m := range t.members {
 		if (m.ID == id || t.under(m.ID, id)) && m.cancel != nil {
+			m.interrupted = false
 			m.cancel()
 		}
 	}
@@ -467,10 +504,20 @@ func steps(history []llm.Message) int {
 // started it: ctx stops it, and so does stopping it or everything. Without
 // a message it goes on from the notes left for it.
 func (t *Team) start(ctx context.Context, m *member, message string, background bool) {
+	t.startWith(ctx, m, message, background, false)
+}
+
+// goOn runs a stopped subagent on from where it stopped, as if it had not:
+// what it was doing, its own subagents too.
+func (t *Team) goOn(ctx context.Context, m *member, background bool) {
+	t.startWith(ctx, m, "", background, true)
+}
+
+func (t *Team) startWith(ctx context.Context, m *member, message string, background, resume bool) {
 	runCtx, cancel := context.WithCancel(ctx)
 	stopWithAll := context.AfterFunc(t.root, cancel)
 	t.mu.Lock()
-	m.State, m.Err, m.cancel, m.background, m.untold = Queued, "", cancel, background, false
+	m.State, m.Err, m.cancel, m.background, m.untold, m.interrupted = Queued, "", cancel, background, false, false
 	// What it was asked shows and is saved before its agent takes it in.
 	if message != "" {
 		m.history = append(slices.Clone(m.history), llm.Message{Role: llm.RoleUser, Text: message})
@@ -487,9 +534,16 @@ func (t *Team) start(ctx context.Context, m *member, message string, background 
 		err := t.acquire(runCtx)
 		if err == nil {
 			t.setState(m, Running)
-			if message != "" {
+			switch {
+			case resume:
+				// Those it left working in the background go on too.
+				t.GoOn(m.ID)
+				if err = m.agent.Continue(runCtx, hooks); errors.Is(err, agent.ErrNothingToContinue) {
+					err = nil
+				}
+			case message != "":
 				err = m.agent.Run(runCtx, message, hooks)
-			} else {
+			default:
 				err = m.agent.RunEndedJobs(runCtx, hooks)
 			}
 			for err == nil {

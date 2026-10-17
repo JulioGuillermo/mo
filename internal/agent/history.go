@@ -16,8 +16,13 @@ type Prompt struct {
 // Prompts lists the user's prompts, oldest first, as they typed them. The
 // one holding a compaction summary is left out: what it replaced is gone.
 func (a *Agent) Prompts() []Prompt {
+	return PromptsIn(a.History)
+}
+
+// PromptsIn are the prompts of a history.
+func PromptsIn(history []llm.Message) []Prompt {
 	var prompts []Prompt
-	for i, message := range a.History {
+	for i, message := range history {
 		if IsPrompt(message) && !IsSummary(message) {
 			prompts = append(prompts, Prompt{Index: i, Text: PromptText(message)})
 		}
