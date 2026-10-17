@@ -1244,3 +1244,16 @@
   main agent, idle, is woken for it, as for a background subagent that ended, and so is a parent
   subagent that ended, failed or was stopped, stopped by the user too: what a subagent tells is meant
   to matter. Nobody waits for that run; it goes up the tree only as far as each level tells its own.
+
+## Drawing the reply less often
+
+- Every piece of a reply was a message, and every message a frame: tens a second from a fast local
+  model, each drawn by the terminal, on the same GPU as the model. `render.reply_refresh` holds the
+  pieces the model writes (text, reasoning, the calls it forms) in the bridge and sends them as one
+  message every `reply_every_ms`, or every `reply_every_tokens` and at least once a second; `live`,
+  the default, sends each as before.
+- Only the reply waits. Every other hook of the agent (a call starting or ending, a question or an
+  approval, usage, notices, the end of a reply or of the run) first sends what is held, so it is drawn
+  at once and after the text that came before it; the order is kept by one lock that both the hooks
+  and the timer send under, never taken on the UI's goroutine.
+- A batch is drawn as its pieces would be, each with the time it came, so the live speeds stay true.

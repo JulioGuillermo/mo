@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -28,6 +29,26 @@ type bridge struct {
 	program *tea.Program
 	printer *printer
 	exited  chan struct{}
+	// pacer holds what the model writes as render.reply_refresh says.
+	pacer *pacer
+}
+
+// paceReply draws what the model writes at the pace given.
+func (b *bridge) paceReply(pace replyPace) {
+	if b == nil {
+		return
+	}
+	if b.pacer == nil {
+		b.pacer = &pacer{send: func(msg tea.Msg) { b.program.Send(msg) }}
+	}
+	b.pacer.setPace(pace)
+}
+
+// flush sends what the pacer holds, before what the agent tells next.
+func (b *bridge) flush() {
+	if b != nil && b.pacer != nil {
+		b.pacer.flush()
+	}
 }
 
 // print adds lines to the scrollback in order, and gives up once the
@@ -54,8 +75,12 @@ func (b *bridge) send(msg tea.Msg) {
 }
 
 func (b *bridge) hooks() agent.Hooks {
-	return agent.Hooks{
+	hooks := agent.Hooks{
 		OnEvent: func(event llm.Event) {
+			if b.pacer != nil {
+				b.pacer.event(event)
+				return
+			}
 			b.program.Send(streamMsg(event))
 		},
 		OnAssistant: func(message llm.Message) {
@@ -98,6 +123,37 @@ func (b *bridge) hooks() agent.Hooks {
 		},
 		Interact: b.interact,
 	}
+	return b.flushingFirst(hooks)
+}
+
+// flushingFirst makes every hook but OnEvent send what the pacer holds
+// before its own: what asks, starts or ends is drawn at once, after the
+// reply that came before it.
+func (b *bridge) flushingFirst(hooks agent.Hooks) agent.Hooks {
+	first := func(do func()) func() {
+		return func() {
+			b.flush()
+			do()
+		}
+	}
+	onAssistant, onToolStart, onToolDone := hooks.OnAssistant, hooks.OnToolStart, hooks.OnToolDone
+	onActivity, onUsage, onNotice, onLoopCut, onCompact, onQueued, interact := hooks.OnActivity, hooks.OnUsage, hooks.OnNotice, hooks.OnLoopCut, hooks.OnCompact, hooks.OnQueued, hooks.Interact
+	hooks.OnAssistant = func(message llm.Message) { first(func() { onAssistant(message) })() }
+	hooks.OnToolStart = func(call llm.ToolCall, summary string) { first(func() { onToolStart(call, summary) })() }
+	hooks.OnToolDone = func(call llm.ToolCall, output string, isError bool) {
+		first(func() { onToolDone(call, output, isError) })()
+	}
+	hooks.OnActivity = func(text string) { first(func() { onActivity(text) })() }
+	hooks.OnUsage = func(usage llm.Usage) { first(func() { onUsage(usage) })() }
+	hooks.OnNotice = func(text string) { first(func() { onNotice(text) })() }
+	hooks.OnLoopCut = func(repeated string) { first(func() { onLoopCut(repeated) })() }
+	hooks.OnCompact = func(before, after int) { first(func() { onCompact(before, after) })() }
+	hooks.OnQueued = func(count int) { first(func() { onQueued(count) })() }
+	hooks.Interact = func(ctx context.Context, interaction agent.Interaction) agent.Reply {
+		b.flush()
+		return interact(ctx, interaction)
+	}
+	return hooks
 }
 
 // agentsChangedMsg says a subagent changed; agentEndedMsg that one the main

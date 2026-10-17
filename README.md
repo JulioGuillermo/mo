@@ -225,6 +225,9 @@ sidebar = "auto"           # side panel of tasks and jobs when wide enough; "off
 keys = "default"           # "vim" for vim keys: modes, and ctrl+h/j/k/l between the panes
 status = "powerline"       # segments on backgrounds with arrows (needs a Nerd Font); "plain" for any font
 bar = "shapes"             # context bar: shapes ▰▱, braille, circles, half-circles, squares, half-squares, dots, rings, dashes, shade, blocks, halves, line
+reply_refresh = "live"     # how often what the model writes is drawn: live (every piece), time or tokens;
+reply_every_ms = 100       # ... with time; drawing less leaves a local model's GPU to it
+reply_every_tokens = 10    # ... with tokens, a second apart at most. What asks, starts or ends is drawn at once
 icons = "nerd"             # Nerd Font icons for the branch and its changes; "text": + ~ - » ? ! ✓
 
 [permissions]

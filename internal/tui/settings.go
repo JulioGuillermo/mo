@@ -342,6 +342,7 @@ func (m model) useSession(session Session) (tea.Model, tea.Cmd) {
 		m.vim = vimState{enabled: enabled}
 	}
 	m.usage = m.session.Agent.LastUsage
+	m.bridge.paceReply(paceOf(m.session.Config.Render))
 	// The side panel's setting may have changed the conversation's width,
 	// and the model the efforts it takes.
 	fit := m.fitWidth()
@@ -350,7 +351,7 @@ func (m model) useSession(session Session) (tea.Model, tea.Cmd) {
 
 func isAgentMsg(msg tea.Msg) bool {
 	switch msg.(type) {
-	case streamMsg, streamEndMsg, usageMsg, interactionMsg, runDoneMsg, spinner.TickMsg, printMsg, reasoningMsg, drawMsg, redrawMsg, rulesSavedMsg, toolStartMsg, toolDoneMsg, savedMsg, jobEndedMsg, jobTickMsg, jobStartedMsg, uiChangedMsg, flashDoneMsg, activityMsg, titledMsg, titleEventMsg, titleSetMsg, repoMsg, loginMsg, queuedReadMsg, agentsChangedMsg, agentEndedMsg, tea.FocusMsg, tea.BlurMsg:
+	case streamMsg, streamBatchMsg, streamEndMsg, usageMsg, interactionMsg, runDoneMsg, spinner.TickMsg, printMsg, reasoningMsg, drawMsg, redrawMsg, rulesSavedMsg, toolStartMsg, toolDoneMsg, savedMsg, jobEndedMsg, jobTickMsg, jobStartedMsg, uiChangedMsg, flashDoneMsg, activityMsg, titledMsg, titleEventMsg, titleSetMsg, repoMsg, loginMsg, queuedReadMsg, agentsChangedMsg, agentEndedMsg, tea.FocusMsg, tea.BlurMsg:
 		return true
 	}
 	return false

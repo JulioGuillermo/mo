@@ -215,7 +215,21 @@ type Render struct {
 	Keys string `toml:"keys,omitempty"`
 	// Bar is how the context bar is drawn, one of BarStyles.
 	Bar string `toml:"bar,omitempty"`
+	// ReplyRefresh is how often what the model writes is drawn: at every
+	// piece ("live"), every ReplyEveryMS milliseconds ("time") or every
+	// ReplyEveryTokens pieces ("tokens"). What asks or ends is drawn at
+	// once; drawing less leaves a local model's GPU to it.
+	ReplyRefresh     string `toml:"reply_refresh,omitempty"`
+	ReplyEveryMS     int    `toml:"reply_every_ms,omitzero"`
+	ReplyEveryTokens int    `toml:"reply_every_tokens,omitzero"`
 }
+
+// Reply refreshes.
+const (
+	RefreshLive   = "live"
+	RefreshTime   = "time"
+	RefreshTokens = "tokens"
+)
 
 type Memory struct {
 	Dir string `toml:"dir,omitempty"`
@@ -338,12 +352,13 @@ func Defaults() Config {
 		Skills:       Skills{Mode: tools.ModeFull},
 		Instructions: Instructions{Enabled: ptr(true), Files: []string{"AGENTS.md", "AGENT.md"}},
 		Web:          Web{Search: web.SearchDuckDuckGo},
-		Render:       Render{Images: render.ModeAuto, Background: "#00081a", Sidebar: "auto", Status: "powerline", Icons: "nerd", Keys: "default", Bar: "shapes"},
-		Loop:         Loop{Enabled: ptr(true), Replies: 10, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2)},
-		Agents:       Agents{Enabled: ptr(false), Depth: 1, MaxParallel: 3, MaxAgents: 20, MaxSteps: 50},
-		Permissions:  Permissions{Mode: "edits", Allow: DefaultAllow},
-		Notify:       Notify{Finish: ptr(true), Approval: ptr(true), Method: "auto", Focused: ptr(false)},
-		Providers:    presets(),
+		Render: Render{Images: render.ModeAuto, Background: "#00081a", Sidebar: "auto", Status: "powerline", Icons: "nerd", Keys: "default", Bar: "shapes",
+			ReplyRefresh: RefreshLive, ReplyEveryMS: 100, ReplyEveryTokens: 10},
+		Loop:        Loop{Enabled: ptr(true), Replies: 10, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2)},
+		Agents:      Agents{Enabled: ptr(false), Depth: 1, MaxParallel: 3, MaxAgents: 20, MaxSteps: 50},
+		Permissions: Permissions{Mode: "edits", Allow: DefaultAllow},
+		Notify:      Notify{Finish: ptr(true), Approval: ptr(true), Method: "auto", Focused: ptr(false)},
+		Providers:   presets(),
 	}
 }
 
@@ -415,6 +430,12 @@ func validate(cfg Config) error {
 	}
 	if cfg.Render.Status != "powerline" && cfg.Render.Status != "plain" {
 		return fmt.Errorf("render.status %q: use powerline or plain", cfg.Render.Status)
+	}
+	if !slices.Contains([]string{RefreshLive, RefreshTime, RefreshTokens}, cfg.Render.ReplyRefresh) {
+		return fmt.Errorf("render.reply_refresh %q: use live, time or tokens", cfg.Render.ReplyRefresh)
+	}
+	if cfg.Render.ReplyEveryMS < 10 || cfg.Render.ReplyEveryTokens < 1 {
+		return fmt.Errorf("render.reply_every_ms is 10 or more, render.reply_every_tokens 1 or more")
 	}
 	if _, err := ParseSize(cfg.Tools.ReadMaxSize); err != nil {
 		return fmt.Errorf("tools.read_max_size: %w", err)
@@ -687,6 +708,9 @@ func mergeHarmless(base, layer Config) Config {
 	base.Render.Keys = override(base.Render.Keys, layer.Render.Keys)
 	base.Render.Status = override(base.Render.Status, layer.Render.Status)
 	base.Render.Bar = override(base.Render.Bar, layer.Render.Bar)
+	base.Render.ReplyRefresh = override(base.Render.ReplyRefresh, layer.Render.ReplyRefresh)
+	base.Render.ReplyEveryMS = override(base.Render.ReplyEveryMS, layer.Render.ReplyEveryMS)
+	base.Render.ReplyEveryTokens = override(base.Render.ReplyEveryTokens, layer.Render.ReplyEveryTokens)
 	base.Render.Icons = override(base.Render.Icons, layer.Render.Icons)
 	base.Loop = mergeLoop(base.Loop, layer.Loop)
 	return base

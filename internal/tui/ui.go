@@ -233,6 +233,7 @@ func Run(session Session) error {
 	m.configureJobs()
 	program := tea.NewProgram(m)
 	bridge.program = program
+	bridge.paceReply(paceOf(session.Config.Render))
 	if titles := session.Agent.Tools.Titles(); titles != nil {
 		titles.OnSet(func(title string) { bridge.send(titleSetMsg(title)) })
 	}
@@ -320,6 +321,22 @@ func (m model) openingConversation() tea.Cmd {
 		return listConversations(m.session.WorkDir, false)
 	}
 	return nil
+}
+
+// takeEvent adds a piece of the reply, which came at a time.
+func (m *model) takeEvent(event llm.Event, at time.Time) {
+	m.metrics.add(event, at)
+	m.lastEvent = event.Kind
+	switch event.Kind {
+	case llm.EventToolCall:
+		m.growCall(event.Call, event.ID, event.Name, event.Text)
+	case llm.EventPromptProgress:
+		m.promptRead = event.Progress
+	case llm.EventReasoning:
+		m.reasoning += event.Text
+	default:
+		m.stream += event.Text
+	}
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -491,19 +508,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focused = true
 		return m.handleKey(msg)
 	case streamMsg:
-		m.metrics.add(llm.Event(msg), time.Now())
-		m.lastEvent = msg.Kind
-		switch msg.Kind {
-		case llm.EventToolCall:
-			m.growCall(msg.Call, msg.ID, msg.Name, msg.Text)
-		case llm.EventPromptProgress:
-			m.promptRead = msg.Progress
-		case llm.EventReasoning:
-			m.reasoning += msg.Text
-		default:
-			m.stream += msg.Text
-			m.renderStream(false)
+		m.takeEvent(llm.Event(msg), time.Now())
+		m.renderStream(false)
+		return m, nil
+	case streamBatchMsg:
+		for _, each := range msg {
+			m.takeEvent(each.event, each.at)
 		}
+		m.renderStream(false)
 		return m, nil
 	case streamEndMsg:
 		m.clearStream()
@@ -772,9 +784,13 @@ func (m model) start(first tea.Cmd, work func(context.Context, agent.Hooks) erro
 	m.cancel = cancel
 	m.finished = finished
 	hooks := m.bridge.hooks()
+	bridge := m.bridge
 	runAgent := func() tea.Msg {
 		defer close(finished)
-		return runDoneMsg{err: work(ctx, hooks)}
+		err := work(ctx, hooks)
+		// The end of the reply is drawn before the run is over.
+		bridge.flush()
+		return runDoneMsg{err: err}
 	}
 	return m, tea.Batch(tea.Sequence(first, runAgent), m.spinner.Tick)
 }

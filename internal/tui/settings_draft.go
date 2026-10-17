@@ -60,9 +60,14 @@ type settingsDraft struct {
 	sidebar      string
 	statusStyle  string
 	bar          string
-	icons        string
-	keys         string
-	memoryDir    string
+	// replyRefresh is how often what the model writes is drawn, with
+	// its milliseconds or tokens.
+	replyRefresh     string
+	replyEveryMS     string
+	replyEveryTokens string
+	icons            string
+	keys             string
+	memoryDir        string
 
 	instructionsOn    bool
 	instructionsFiles string
@@ -137,20 +142,23 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		descriptions:  map[string]*string{},
 		memoryDir:     cfg.Memory.Dir,
 
-		compactPrompt: cfg.Context.CompactPrompt,
-		maxTokens:     strconv.Itoa(cfg.MaxTokens),
-		effort:        cfg.Effort,
-		search:        cfg.Web.Search,
-		searchURL:     cfg.Web.SearchURL,
-		searchKeyEnv:  cfg.Web.SearchKeyEnv,
-		savedKey:      cfg.Web.SearchKey != "",
-		images:        string(cfg.Render.Images),
-		background:    cfg.Render.Background,
-		sidebar:       cfg.Render.Sidebar,
-		statusStyle:   cfg.Render.Status,
-		bar:           cfg.Render.Bar,
-		icons:         cfg.Render.Icons,
-		keys:          cfg.Render.Keys,
+		compactPrompt:    cfg.Context.CompactPrompt,
+		maxTokens:        strconv.Itoa(cfg.MaxTokens),
+		effort:           cfg.Effort,
+		search:           cfg.Web.Search,
+		searchURL:        cfg.Web.SearchURL,
+		searchKeyEnv:     cfg.Web.SearchKeyEnv,
+		savedKey:         cfg.Web.SearchKey != "",
+		images:           string(cfg.Render.Images),
+		background:       cfg.Render.Background,
+		sidebar:          cfg.Render.Sidebar,
+		statusStyle:      cfg.Render.Status,
+		bar:              cfg.Render.Bar,
+		replyRefresh:     cfg.Render.ReplyRefresh,
+		replyEveryMS:     strconv.Itoa(cfg.Render.ReplyEveryMS),
+		replyEveryTokens: strconv.Itoa(cfg.Render.ReplyEveryTokens),
+		icons:            cfg.Render.Icons,
+		keys:             cfg.Render.Keys,
 
 		instructionsOn:    cfg.Instructions.Enabled == nil || *cfg.Instructions.Enabled,
 		instructionsFiles: strings.Join(cfg.Instructions.Files, "\n"),
@@ -305,6 +313,17 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	layer.Render.Sidebar = unlessDefault(d.sidebar, defaults.Render.Sidebar)
 	layer.Render.Status = unlessDefault(d.statusStyle, defaults.Render.Status)
 	layer.Render.Bar = unlessDefault(d.bar, defaults.Render.Bar)
+	everyMS, err := parseAtLeast(d.replyEveryMS, 10)
+	if err != nil {
+		return layer, fmt.Errorf("reply refresh milliseconds: %w", err)
+	}
+	everyTokens, err := parseAtLeast(d.replyEveryTokens, 1)
+	if err != nil {
+		return layer, fmt.Errorf("reply refresh tokens: %w", err)
+	}
+	layer.Render.ReplyRefresh = unlessDefault(d.replyRefresh, defaults.Render.ReplyRefresh)
+	layer.Render.ReplyEveryMS = unlessDefault(everyMS, defaults.Render.ReplyEveryMS)
+	layer.Render.ReplyEveryTokens = unlessDefault(everyTokens, defaults.Render.ReplyEveryTokens)
 	layer.Render.Icons = unlessDefault(d.icons, defaults.Render.Icons)
 	layer.Render.Keys = unlessDefault(d.keys, defaults.Render.Keys)
 	layer.Notify = config.Notify{

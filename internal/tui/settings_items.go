@@ -582,8 +582,8 @@ func memoryItems(model, *settingsMenu) []settingItem {
 	}
 }
 
-func appearanceItems(model, *settingsMenu) []settingItem {
-	return []settingItem{
+func appearanceItems(_ model, menu *settingsMenu) []settingItem {
+	return append([]settingItem{
 		{"Keys", func(d *settingsDraft) string { return d.keys }, func(d *settingsDraft) huh.Field {
 			return huh.NewSelect[string]().Title("Keys").Options(
 				huh.NewOption("default: type and send, as in a chat", "default"),
@@ -635,7 +635,35 @@ func appearanceItems(model, *settingsMenu) []settingItem {
 				huh.NewOption("off: only the file path", string(render.ModeOff)),
 			).Value(&d.images)
 		}},
+	}, replyItems(menu)...)
+}
+
+// replyItems are how often what the model writes is drawn, and how many
+// milliseconds or tokens apart as the way chosen needs.
+func replyItems(menu *settingsMenu) []settingItem {
+	items := []settingItem{{"Reply refresh", func(d *settingsDraft) string { return d.replyRefresh }, func(d *settingsDraft) huh.Field {
+		return huh.NewSelect[string]().Title("Reply refresh").
+			Description("how often what the model writes is drawn; what asks, starts or ends is drawn at once. Drawing less leaves a local model's GPU to it").
+			Options(
+				huh.NewOption("live: every piece as it comes", config.RefreshLive),
+				huh.NewOption("by time: every so many milliseconds", config.RefreshTime),
+				huh.NewOption("by tokens: every so many pieces, a second apart at most", config.RefreshTokens),
+			).Value(&d.replyRefresh)
+	}}}
+	if menu == nil || menu.draft == nil {
+		return items
 	}
+	switch menu.draft.replyRefresh {
+	case config.RefreshTime:
+		items = append(items, settingItem{"Refresh every (ms)", func(d *settingsDraft) string { return d.replyEveryMS }, func(d *settingsDraft) huh.Field {
+			return huh.NewInput().Title("Refresh every (ms)").Description("e.g. 100; 10 or more").Validate(atLeast(10)).Value(&d.replyEveryMS)
+		}})
+	case config.RefreshTokens:
+		items = append(items, settingItem{"Refresh every (tokens)", func(d *settingsDraft) string { return d.replyEveryTokens }, func(d *settingsDraft) huh.Field {
+			return huh.NewInput().Title("Refresh every (tokens)").Description("e.g. 10; 1 or more").Validate(atLeast(1)).Value(&d.replyEveryTokens)
+		}})
+	}
+	return items
 }
 
 func modelValue(d *settingsDraft) string {
