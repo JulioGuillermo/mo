@@ -12,6 +12,7 @@ package tui
 // | AV-08 | Edge     | /agents without subagents says how to have them                           | P2       |
 // | AV-09 | Happy    | Each row says the context it used of its window, the name giving way when there is no room | P1 |
 // | AV-10 | Happy    | The view is drawn as the main screen: its calls in progress, spinner, input, status line and panel | P0 |
+// | AV-11 | Edge     | Its input takes the whole width, as the main one, also after a resize     | P1       |
 
 import (
 	"context"
@@ -330,6 +331,21 @@ func TestAgentLens(t *testing.T) {
 		}
 		if calls := m.session.Team.Calls(1); len(calls) != 2 || !calls[0].Done || calls[1].Done {
 			t.Errorf("calls %+v", calls)
+		}
+	})
+}
+
+func TestAgentInput(t *testing.T) {
+	t.Run("AV-11 its input takes the whole width, as the main one, also after a resize", func(t *testing.T) {
+		m, _ := teamModel(t)
+		m.session.Team.Restore(restoredTree())
+		updated, _ := m.openAgentView(1)
+		opened := updated.(model)
+		resized, _ := opened.Update(tea.WindowSizeMsg{Width: 170, Height: 40})
+
+		after := resized.(model)
+		if after.agentView.input.Width() != after.input.Width() {
+			t.Errorf("subagent's %d, main's %d", after.agentView.input.Width(), after.input.Width())
 		}
 	})
 }

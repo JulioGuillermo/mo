@@ -65,7 +65,8 @@ func (m model) openAgentView(id int) (tea.Model, tea.Cmd) {
 	}
 	input := newInput()
 	input.Placeholder = fmt.Sprintf(agentViewHelp, info.Name)
-	input.SetWidth(max(m.mainWidth(), 10))
+	// The whole width, as the main input, under the side panel too.
+	input.SetWidth(max(m.width, 10))
 	focus := input.Focus()
 	m.agentView = &agentView{id: id, input: input, history: -1}
 	m.popup = nil
@@ -94,6 +95,7 @@ func (m *model) refreshAgentView() {
 		m.agentView = nil
 		return
 	}
+	view.input.SetWidth(max(m.width, 10))
 	history := m.team().History(view.id)
 	width := m.mainWidth()
 	if len(history) == view.history && width == view.width {
