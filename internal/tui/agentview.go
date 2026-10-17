@@ -175,9 +175,12 @@ func (m model) lens() model {
 	return v
 }
 
-// agentMark is the sign and colour of a subagent's state: a clock while it
-// waits, yellow when someone under it waits for the user.
-func agentMark(info team.Info, dark bool) (string, color.Color) {
+// agentMark is the sign and colour of a subagent's state, round as the
+// calls' are: dotted while it waits, purple for its own subagents and
+// yellow when one under it waits for the user; an arc while it works;
+// beating while it asks; filled when done, a cross when it failed and a bar
+// when it was stopped.
+func agentMark(info team.Info, dark, nerd bool) (string, color.Color) {
 	pick := func(onDark, onLight string) color.Color {
 		if dark {
 			return lipgloss.Color(onDark)
@@ -187,20 +190,22 @@ func agentMark(info team.Info, dark bool) (string, color.Color) {
 	yellow := pick("#e0af68", "#8c6c00")
 	switch info.State {
 	case team.Queued:
-		return "⧗", pick("#737aa2", "#8990b3")
+		return markQueued, pick("#737aa2", "#8990b3")
 	case team.Waiting:
 		if info.AskingBelow > 0 {
-			return "⧗", yellow
+			return markQueued, yellow
 		}
-		return "⧗", pick("#bb9af7", "#7847bd")
+		return markQueued, pick("#bb9af7", "#7847bd")
 	case team.Running:
-		return "●", pick("#7aa2f7", "#2e7de9")
+		return arc(), pick("#7aa2f7", "#2e7de9")
 	case team.Asking:
-		return "?", yellow
+		return askingSign(), yellow
 	case team.Done:
-		return "✓", pick("#9ece6a", "#587539")
+		return markDone, pick("#9ece6a", "#587539")
+	case team.Stopped:
+		return markStopped, pick("#f7768e", "#f52a65")
 	}
-	return "⚠", pick("#f7768e", "#f52a65")
+	return markFailed(nerd), pick("#f7768e", "#f52a65")
 }
 
 // agentRows are the rows of a tree of subagents, indented by level from
@@ -210,7 +215,7 @@ func (m model) agentRows(infos []team.Info, below int, width int, base lipgloss.
 	var lines []string
 	var regions []region
 	for _, info := range infos {
-		mark, tint := agentMark(info, dark)
+		mark, tint := agentMark(info, dark, m.icons() == iconsNerd)
 		indent := strings.Repeat("  ", max(info.Depth-below-1, 0))
 		note, noteStyle := " · "+string(info.State), base.Foreground(colors.dim)
 		if info.AskingBelow > 0 && info.State != team.Asking {
@@ -281,7 +286,7 @@ func (m model) agentViewLayout() (string, []region) {
 	view := m.agentView
 	info, _ := m.agentInfo(view.id)
 	dark := m.printer == nil || m.printer.isDark()
-	mark, tint := agentMark(info, dark)
+	mark, tint := agentMark(info, dark, m.icons() == iconsNerd)
 	bar := lipgloss.NewStyle().Background(accent).Foreground(lipgloss.Color("#1a1b26"))
 	if !dark {
 		bar = lipgloss.NewStyle().Background(lipgloss.Color("#2e7de9")).Foreground(lipgloss.Color("#ffffff"))
@@ -441,7 +446,7 @@ func (m model) pickAgent(argument string) (tea.Model, tea.Cmd) {
 	}
 	var options []huh.Option[string]
 	for _, info := range m.team().List() {
-		mark, _ := agentMark(info, true)
+		mark, _ := agentMark(info, true, m.icons() == iconsNerd)
 		label := fmt.Sprintf("%s%s %d %s · %s", strings.Repeat("  ", info.Depth-1), mark, info.ID, info.Name, info.State)
 		options = append(options, huh.NewOption(label, fmt.Sprint(info.ID)))
 	}

@@ -233,17 +233,17 @@ func (m model) sidebarLines() ([]string, []region) {
 			add(paint(colors.dim).Render(fmt.Sprintf("… +%d older", len(statuses)-shownJobs)))
 			break
 		}
-		mark, tint, state := "●", toolKindColors[kindBackground], "running "+time.Since(status.Started).Round(time.Second).String()
+		mark, tint, state := arc(), toolKindColors[kindBackground], "running "+time.Since(status.Started).Round(time.Second).String()
 		if status.Foreground {
 			tint = toolKindColors[kindExec]
 		}
 		switch status.State {
 		case tools.JobDone:
-			mark, tint, state = "✓", colors.done, "done · "+status.Ended.Sub(status.Started).Round(time.Second).String()
+			mark, tint, state = markDone, colors.done, "done · "+status.Ended.Sub(status.Started).Round(time.Second).String()
 		case tools.JobFailed:
-			mark, tint, state = "✗", colors.failed, fmt.Sprintf("exit %d · %s", status.ExitCode, status.Ended.Sub(status.Started).Round(time.Second))
+			mark, tint, state = markFailed(m.icons() == iconsNerd), colors.failed, fmt.Sprintf("exit %d · %s", status.ExitCode, status.Ended.Sub(status.Started).Round(time.Second))
 		case tools.JobKilled:
-			mark, tint, state = "⊘", colors.dim, "killed"
+			mark, tint, state = markStopped, colors.dim, "killed"
 		}
 		id := status.ID
 		show := func(m model) (tea.Model, tea.Cmd) { return m.showJob(id) }

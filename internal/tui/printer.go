@@ -15,6 +15,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/render"
 	"github.com/jg/mo/internal/tools"
@@ -68,6 +69,8 @@ type printer struct {
 	drawingIndex map[string]int
 	// kind tells what a tool call does, for the colour of its mark.
 	kind func(call llm.ToolCall) toolKind
+	// nerd draws the signs a Nerd Font has.
+	nerd bool
 }
 
 func newPrinter() *printer {
@@ -540,7 +543,16 @@ func (p *printer) User(text string) string {
 // ToolStart names the tool and shows what it is about to do, a command on
 // its own shaded lines, after a blank line.
 func (p *printer) ToolStart(name string, args json.RawMessage, summary string) string {
-	header := "\n" + p.toolHeader(name, args)
+	return p.toolLine(name, args, summary, markDone)
+}
+
+// ToolDenied is a call the user denied, its sign a bar.
+func (p *printer) ToolDenied(name string, args json.RawMessage, summary string) string {
+	return p.toolLine(name, args, summary, markStopped)
+}
+
+func (p *printer) toolLine(name string, args json.RawMessage, summary, sign string) string {
+	header := "\n" + p.toolHeaderAs(name, args, sign)
 	if !strings.Contains(summary, "\n") && len(summary) < 60 && name != "bash" {
 		return header + " " + summary
 	}
@@ -549,15 +561,44 @@ func (p *printer) ToolStart(name string, args json.RawMessage, summary string) s
 
 // toolHeader is a tool's name after a mark coloured by what the call does.
 func (p *printer) toolHeader(name string, args json.RawMessage) string {
+	return p.toolHeaderAs(name, args, markDone)
+}
+
+// toolHeaderAs is a tool's name after its sign of how the call stands.
+func (p *printer) toolHeaderAs(name string, args json.RawMessage, sign string) string {
 	p.mu.Lock()
 	kind := p.kind
 	p.mu.Unlock()
 	call := llm.ToolCall{Name: name, Args: args}
-	mark := toolMark(toolKindOf(call, nil))
+	mark := toolMarkAs(toolKindOf(call, nil), sign)
 	if kind != nil {
-		mark = toolMark(kind(call))
+		mark = toolMarkAs(kind(call), sign)
 	}
 	return mark + toolName.Render(" "+name)
+}
+
+// setNerd draws the signs a Nerd Font has, as the icons setting says.
+func (p *printer) setNerd(nerd bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.nerd = nerd
+}
+
+// runSign is a call's sign of how it stands: turning while it runs,
+// filled once done, a cross when it failed, a bar when it was stopped.
+func (p *printer) runSign(run toolRun) string {
+	p.mu.Lock()
+	nerd := p.nerd
+	p.mu.Unlock()
+	switch {
+	case !run.done:
+		return markRunning
+	case run.isError && agent.Stopped(strings.TrimSpace(run.output)):
+		return markStopped
+	case run.isError:
+		return markFailed(nerd)
+	}
+	return markDone
 }
 
 func (p *printer) setKind(kind func(call llm.ToolCall) toolKind) {
@@ -613,18 +654,19 @@ func (p *printer) wrapped(line string, margin int) []string {
 func (p *printer) Tool(run toolRun, open bool) string {
 	var parts []string
 	change, changed := fileChangeOf(run.name, run.args)
+	sign := p.runSign(run)
 	switch {
 	case open && changed:
-		parts = append(parts, "\n"+p.toolHeader(run.name, run.args)+" "+run.summary+dimStyle.Render("  "+change.summary())+"\n"+p.fileChangeLines(change))
+		parts = append(parts, "\n"+p.toolHeaderAs(run.name, run.args, sign)+" "+run.summary+dimStyle.Render("  "+change.summary())+"\n"+p.fileChangeLines(change))
 	case open:
-		parts = append(parts, "\n"+p.toolHeader(run.name, run.args)+"\n"+p.commandLines(run.summary, true))
+		parts = append(parts, "\n"+p.toolHeaderAs(run.name, run.args, sign)+"\n"+p.commandLines(run.summary, true))
 		if run.name == "ui" {
 			parts = append(parts, p.uiCall(run.args)...)
 		}
 	case changed:
-		parts = append(parts, p.ToolStart(run.name, run.args, run.summary+dimStyle.Render("  "+change.summary())))
+		parts = append(parts, p.toolLine(run.name, run.args, run.summary+dimStyle.Render("  "+change.summary()), sign))
 	default:
-		parts = append(parts, p.ToolStart(run.name, run.args, run.summary))
+		parts = append(parts, p.toolLine(run.name, run.args, run.summary, sign))
 	}
 	switch {
 	case !run.done:

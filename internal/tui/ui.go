@@ -244,6 +244,7 @@ func Run(session Session) error {
 		svgs:        &svgFrames{kitty: printer.images == render.ModeKitty, ready: func() { bridge.send(svgReadyMsg{}) }},
 	}
 	printer.setKind(m.toolKind)
+	printer.setNerd(m.icons() == iconsNerd)
 	m.configureJobs()
 	program := tea.NewProgram(m)
 	bridge.program = program
@@ -494,7 +495,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case toolStartMsg:
 		m.followTodos(msg.call)
-		m.formingStarted(msg.call.ID)
+		m.formingStarted(msg.call.ID, msg.call.Name)
 		m.addTool(msg.call, msg.summary)
 		running := msg.call
 		m.runningTool = &running
@@ -538,7 +539,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.renderStream(false)
 		return m, nil
 	case streamEndMsg:
+		// The text is drawn as the answer; the calls stay in view until
+		// they run, the later ones waiting for those before them.
+		forming := m.forming
 		m.clearStream()
+		m.forming = forming
 		return m, nil
 	case activityMsg:
 		m.activity = string(msg)

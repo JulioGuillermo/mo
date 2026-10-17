@@ -3,6 +3,7 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/jg/mo/internal/tools"
 	"slices"
 	"strconv"
 	"strings"
@@ -31,6 +32,10 @@ type formingCall struct {
 
 // growCall adds a piece of a tool call as it streams in.
 func (m *model) growCall(index int, id, name, args string) {
+	// A call of the next reply: those of the last all ran.
+	if index < len(m.forming) && m.forming[index].started {
+		m.forming = nil
+	}
 	m.forming = slices.Clone(m.forming)
 	for len(m.forming) <= index {
 		m.forming = append(m.forming, formingCall{id: fmt.Sprintf("call_%d", len(m.forming))})
@@ -42,13 +47,22 @@ func (m *model) growCall(index int, id, name, args string) {
 	m.forming[index].args += args
 }
 
-// formingStarted stops showing a call being written once it runs.
-func (m *model) formingStarted(id string) {
+// formingStarted stops showing a call being written, or waiting its turn,
+// once it runs: by its id, or the first waiting of its name when the
+// provider gave none while it streamed.
+func (m *model) formingStarted(id, name string) {
 	for i := range m.forming {
 		if m.forming[i].id == id {
 			m.forming = slices.Clone(m.forming)
 			m.forming[i].started = true
 		}
+	}
+	if slices.ContainsFunc(m.forming, func(call formingCall) bool { return call.id == id }) {
+		return
+	}
+	if at := slices.IndexFunc(m.forming, func(call formingCall) bool { return !call.started && innerName(call) == name }); at >= 0 {
+		m.forming = slices.Clone(m.forming)
+		m.forming[at].started = true
 	}
 }
 
@@ -113,23 +127,44 @@ func (m model) formingView() string {
 		if call.name == "" || call.started {
 			continue
 		}
-		name := call.name
-		if name == callWrapper {
-			if inner, found := partialString(call.args, "name"); found && inner != "" {
-				name = inner
-			}
+		// The calls of a reply run one at a time: while one runs, the
+		// later ones wait for it; while the user is asked, for them.
+		sign := arc()
+		switch {
+		case m.asks(call):
+			sign = askingSign()
+		case m.runningTool != nil && m.runningTool.ID != call.id:
+			sign = markQueued
 		}
-		parts = append(parts, m.formingCallView(name, call.args))
+		parts = append(parts, m.formingCallView(innerName(call), call.args, sign))
 	}
 	return strings.Join(parts, "\n")
 }
 
-func (m model) formingCallView(name, args string) string {
-	mark := m.printer.toolHeader(name, json.RawMessage(args))
-	header := "\n" + mark + " " + m.spinner.View()
+// innerName is the tool a call names, the one inside tool_call too.
+func innerName(call formingCall) string {
+	if call.name == callWrapper {
+		if inner, found := partialString(call.args, "name"); found && inner != "" {
+			return inner
+		}
+	}
+	return call.name
+}
+
+// formingCallView is a call being written, its arc turning; one whole that
+// waits for the calls before it, dotted and saying so.
+func (m model) formingCallView(name, args, sign string) string {
+	mark := m.printer.toolHeaderAs(name, json.RawMessage(args), sign)
+	header := "\n" + mark
+	if sign == markQueued {
+		header += dimStyle.Render("  waits for the call before it")
+	}
 	path, _ := partialString(args, "path")
 	if path != "" {
-		header = "\n" + mark + " " + path + " " + m.spinner.View()
+		header = "\n" + mark + " " + path
+		if sign == markQueued {
+			header += dimStyle.Render("  waits for the call before it")
+		}
 	}
 	switch name {
 	case "bash":
@@ -177,4 +212,23 @@ func (m model) formingWindow(path, text string) string {
 		out = append(out, commandEdge.Render("  ▌")+block.Render(" ")+line+fill)
 	}
 	return strings.Join(out, "\n")
+}
+
+// asks tells whether the dialog open asks about a call: approving it, or
+// the questions of an ask.
+func (m model) asks(call formingCall) bool {
+	if m.dialog == nil {
+		return false
+	}
+	if innerName(call) == tools.AskName {
+		return true
+	}
+	for _, group := range m.dialog.groups {
+		for _, request := range group.interaction.Approvals {
+			if request.Call.ID == call.id {
+				return true
+			}
+		}
+	}
+	return false
 }

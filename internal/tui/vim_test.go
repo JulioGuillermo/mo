@@ -83,10 +83,10 @@ func TestVim(t *testing.T) {
 
 	t.Run("VM-03 ctrl+l goes to the panel; j moves between items; l opens the item's menu", func(t *testing.T) {
 		m := vimKeys(t, vimModel(t), "esc", "ctrl+l", "j", "j")
-		marked := m.sidebar(30)
+		marked := steady(m.sidebar(30))
 		m = vimKeys(t, m, "l")
 
-		if m.vim.pane != paneSidebar || m.vim.item != 2 || !strings.Contains(marked, vimPicked.Render("● 1 sleep 30")) {
+		if m.vim.pane != paneSidebar || m.vim.item != 2 || !strings.Contains(marked, vimPicked.Render("◜ 1 sleep 30")) {
 			t.Errorf("pane = %d item = %d", m.vim.pane, m.vim.item)
 		}
 		if !strings.Contains(menuView(m), "Job 1") {

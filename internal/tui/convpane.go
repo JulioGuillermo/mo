@@ -113,8 +113,17 @@ func (c conversationLines) blockAt(row int) (int, bool) {
 	return i, i < len(c.parts)-1
 }
 
-// window is the lines from one line to before another.
+// window is the lines from one line to before another, the calls that run
+// with their arc as it turns now.
 func (c conversationLines) window(from, to int) []string {
+	lines := c.lines(from, to)
+	for i, line := range lines {
+		lines[i] = turning(line)
+	}
+	return lines
+}
+
+func (c conversationLines) lines(from, to int) []string {
 	var out []string
 	for i, part := range c.parts {
 		start := c.starts[i]

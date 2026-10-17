@@ -39,9 +39,9 @@ func TestSidebar(t *testing.T) {
 	t.Run("SB-01 a wide terminal shows tasks and jobs beside the conversation, narrower", func(t *testing.T) {
 		m := sidebarModel(t, 140)
 
-		view := ansi.Strip(m.View().Content)
+		view := steady(ansi.Strip(m.View().Content))
 
-		for _, want := range []string{"Tasks  1/2", "✓ read the code", "◐ write the sidebar", "that wraps", "Jobs", "● 1 sleep 30", "running"} {
+		for _, want := range []string{"Tasks  1/2", "✓ read the code", "◐ write the sidebar", "that wraps", "Jobs", "◜ 1 sleep 30", "running"} {
 			if !strings.Contains(view, want) {
 				t.Errorf("missing %q", want)
 			}

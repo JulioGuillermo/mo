@@ -340,6 +340,7 @@ func (m model) finishSettings(msg settingsSavedMsg) (tea.Model, tea.Cmd) {
 func (m model) useSession(session Session) (tea.Model, tea.Cmd) {
 	m.session = session
 	m.printer.setKind(m.toolKind)
+	m.printer.setNerd(m.icons() == iconsNerd)
 	m.configureJobs()
 	if enabled := m.session.Config.Render.Keys == "vim"; enabled != m.vim.enabled {
 		m.vim = vimState{enabled: enabled}

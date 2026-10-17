@@ -405,10 +405,10 @@ parent reads only that report, so long searches or test runs stay out of its con
   subagents it started go on from where they were (and theirs, in turn) instead of starting anew;
   those started in the background go on too, unless you stopped them yourself. A new message
   instead of `/continue` answers the call as stopped.
-- The side panel lists them under **Agents** as a tree, each with a sign of how it does: `⧗` grey
-  waiting for a place, `⧗` purple waiting for its own subagents (yellow, with `· N asks`, when one
-  under it waits for you), `●` blue working, `?` yellow asking you, `✓` green done, `⚠` red failed or
-  stopped, and on the right the context it used of its window, as `4.5k/1M`. A click opens its view;
+- The side panel lists them under **Agents** as a tree, each with a sign of how it does: `◌` grey
+  waiting for a place, `◌` purple waiting for its own subagents (yellow, with `· N asks`, when one
+  under it waits for you), `◜◝◞◟` blue turning while it works, `⊙ ◎` yellow beating while it asks
+  you, `●` green done, a red cross when it failed, `⊘` red when stopped, and on the right the context it used of its window, as `4.5k/1M`. A click opens its view;
   a right click stops it, removes it from the list or opens it.
   `/agents` lists them to pick one, `/agents N` opens one.
 - Its view is the main screen drawn from the subagent's: its conversation live, the calls it runs as

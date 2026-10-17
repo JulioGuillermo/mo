@@ -232,3 +232,12 @@ func TestPace(t *testing.T) {
 		}
 	})
 }
+
+// steady draws every frame of the turning arc as its first, to compare
+// screens whatever the time.
+func steady(text string) string {
+	for _, frame := range arcFrames {
+		text = strings.ReplaceAll(text, frame, arcFrames[0])
+	}
+	return text
+}

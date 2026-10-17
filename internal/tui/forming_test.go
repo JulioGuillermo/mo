@@ -5,7 +5,8 @@ package tui
 // | LT-01 | Happy    | A field is read from JSON cut short, escapes decoded, as far as it came | P0    |
 // | LT-02 | Happy    | A call shows its name as soon as it comes, then its command forming  | P0       |
 // | LT-03 | Happy    | A file being written shows its path, line count and last lines; tool_call shows the tool | P1 |
-// | LT-04 | Edge     | The forming view goes when the call is whole                         | P1       |
+// | LT-04 | Edge     | A whole call the reply ended with waits in view until it runs, then goes | P0    |
+// | LT-08 | Edge     | A call that ends streaming after the first started shows whole, waiting; the next reply starts anew | P0 |
 // | LT-05 | Happy    | The spinner says what the agent waits on, compacting, and goes back to working | P1 |
 // | LT-06 | Happy    | Each thing the agent does has its word and colour, in the spinner only | P1      |
 // | LT-07 | Happy    | While llama-server reads the prompt, the state says how far, cache left out | P1   |
@@ -62,7 +63,7 @@ func TestFormingCalls(t *testing.T) {
 		named := streaming(m, piece(0, "bash", ""))
 		forming := streaming(named, piece(0, "", `{"command":"go test ./`), piece(0, "", `.. && echo ok`))
 
-		if !strings.Contains(shown2(named), "● bash") || !strings.Contains(shown2(forming), "go test ./.. && echo ok") {
+		if !strings.Contains(steady(shown2(named)), "◜ bash") || !strings.Contains(shown2(forming), "go test ./.. && echo ok") {
 			t.Errorf("named:\n%s\nforming:\n%s", shown2(named), shown2(forming))
 		}
 	})
@@ -78,22 +79,52 @@ func TestFormingCalls(t *testing.T) {
 		writing := streaming(m, piece(0, "write", `{"path":"notes.md","content":"`+body.String()+`last line`))
 		wrapped := streaming(m, piece(0, "tool_call", `{"name":"edit","args":{"path":"a.go","new":"x := 1`))
 
-		view := shown2(writing)
-		if !strings.Contains(view, "● write notes.md") || !strings.Contains(view, "writing · 31 lines") || !strings.Contains(view, "last line") || strings.Contains(view, "line a\n") && strings.Count(view, "line ") > 13 {
+		view := steady(shown2(writing))
+		if !strings.Contains(view, "◜ write notes.md") || !strings.Contains(view, "writing · 31 lines") || !strings.Contains(view, "last line") || strings.Contains(view, "line a\n") && strings.Count(view, "line ") > 13 {
 			t.Errorf("writing:\n%s", view)
 		}
-		if !strings.Contains(shown2(wrapped), "● edit a.go") || !strings.Contains(shown2(wrapped), "x := 1") {
+		if !strings.Contains(steady(shown2(wrapped)), "◜ edit a.go") || !strings.Contains(shown2(wrapped), "x := 1") {
 			t.Errorf("wrapped:\n%s", shown2(wrapped))
 		}
 	})
 
-	t.Run("LT-04 the forming view goes when the call is whole", func(t *testing.T) {
-		m := streaming(conversationModel(), piece(0, "bash", `{"command":"ls"}`))
+	t.Run("LT-08 a call that ends streaming after the first started shows whole, waiting; the next reply starts anew", func(t *testing.T) {
+		m := conversationModel()
+		m.running, m.cancel = true, func() {}
+		m = streaming(m, llm.Event{Kind: llm.EventToolCall, Call: 0, ID: "c1", Name: "bash", Text: `{"command":"sleep 12"}`},
+			llm.Event{Kind: llm.EventToolCall, Call: 1, ID: "c2", Name: "bash", Text: `{"comm`})
+		started, _ := m.Update(toolStartMsg{call: llm.ToolCall{ID: "c1", Name: "bash"}})
+		shown, _ := started.(model).Update(streamEndMsg{})
+		m = streaming(shown.(model), llm.Event{Kind: llm.EventToolCall, Call: 1, Text: `and":"echo SECOND"}`})
+		waiting := shown2(m)
+		second, _ := m.Update(toolStartMsg{call: llm.ToolCall{ID: "c2", Name: "bash"}})
+		next := streaming(second.(model), llm.Event{Kind: llm.EventToolCall, Call: 0, ID: "d1", Name: "read", Text: `{"path":"x"}`})
 
-		updated, _ := m.Update(streamEndMsg{})
+		if !strings.Contains(waiting, "echo SECOND") || !strings.Contains(waiting, "waits for the call before it") {
+			t.Errorf("waiting:\n%s", waiting)
+		}
+		if len(next.forming) != 1 || next.forming[0].name != "read" {
+			t.Errorf("next reply's calls %+v", next.forming)
+		}
+	})
 
-		if strings.Contains(shown2(updated.(model)), "● bash") {
-			t.Error("the forming call stayed")
+	t.Run("LT-04 a whole call the reply ended with waits in view until it runs, then goes", func(t *testing.T) {
+		m := conversationModel()
+		m.running, m.cancel = true, func() {}
+		m = streaming(m, llm.Event{Kind: llm.EventToolCall, Call: 0, ID: "c1", Name: "bash", Text: `{"command":"sleep 12"}`},
+			llm.Event{Kind: llm.EventToolCall, Call: 1, ID: "c2", Name: "bash", Text: `{"command":"echo SECOND"}`})
+		started, _ := m.Update(toolStartMsg{call: llm.ToolCall{ID: "c1", Name: "bash"}})
+
+		ended, _ := started.(model).Update(streamEndMsg{})
+		waiting := shown2(ended.(model))
+		second, _ := ended.(model).Update(toolStartMsg{call: llm.ToolCall{ID: "c2", Name: "bash"}})
+		finished, _ := second.(model).finishRun(nil)
+
+		if !strings.Contains(waiting, "echo SECOND") || !strings.Contains(waiting, "waits for the call before it") {
+			t.Errorf("while the first runs:\n%s", waiting)
+		}
+		if strings.Contains(shown2(second.(model)), "waits for the call before it") || len(finished.(model).forming) != 0 {
+			t.Errorf("once it runs:\n%s", shown2(second.(model)))
 		}
 	})
 }

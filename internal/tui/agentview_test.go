@@ -16,6 +16,7 @@ package tui
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -102,7 +103,7 @@ func TestAgentView(t *testing.T) {
 
 		view := screenOf(m)
 
-		for _, row := range []string{"Agents", "✓ lead · done", "  ⚠ scout · failed", "✓ other · done"} {
+		for _, row := range []string{"Agents", "● lead · done", "  " + markFailedNerd + " scout · failed", "● other · done"} {
 			if !strings.Contains(view, row) {
 				t.Errorf("%q not in:\n%s", row, view)
 			}
@@ -111,21 +112,26 @@ func TestAgentView(t *testing.T) {
 
 	t.Run("AV-02 each state has its sign", func(t *testing.T) {
 		cases := []struct {
-			info team.Info
-			mark string
+			info  team.Info
+			signs []string
 		}{
-			{team.Info{State: team.Queued}, "⧗"}, {team.Info{State: team.Waiting}, "⧗"}, {team.Info{State: team.Running}, "●"},
-			{team.Info{State: team.Asking}, "?"}, {team.Info{State: team.Done}, "✓"}, {team.Info{State: team.Failed}, "⚠"}, {team.Info{State: team.Stopped}, "⚠"},
+			{team.Info{State: team.Queued}, []string{markQueued}}, {team.Info{State: team.Waiting}, []string{markQueued}},
+			{team.Info{State: team.Running}, arcFrames}, {team.Info{State: team.Asking}, askingFrames},
+			{team.Info{State: team.Done}, []string{markDone}}, {team.Info{State: team.Failed}, []string{markFailedText}},
+			{team.Info{State: team.Stopped}, []string{markStopped}},
 		}
 		for _, c := range cases {
-			if mark, _ := agentMark(c.info, true); mark != c.mark {
+			if mark, _ := agentMark(c.info, true, false); !slices.Contains(c.signs, mark) {
 				t.Errorf("%s: %q", c.info.State, mark)
 			}
 		}
-		_, waiting := agentMark(team.Info{State: team.Waiting}, true)
-		_, queued := agentMark(team.Info{State: team.Queued}, true)
-		_, waitingOnAsk := agentMark(team.Info{State: team.Waiting, AskingBelow: 1}, true)
-		_, asking := agentMark(team.Info{State: team.Asking}, true)
+		if mark, _ := agentMark(team.Info{State: team.Failed}, true, true); mark != markFailedNerd {
+			t.Errorf("failed with a Nerd Font: %q", mark)
+		}
+		_, waiting := agentMark(team.Info{State: team.Waiting}, true, false)
+		_, queued := agentMark(team.Info{State: team.Queued}, true, false)
+		_, waitingOnAsk := agentMark(team.Info{State: team.Waiting, AskingBelow: 1}, true, false)
+		_, asking := agentMark(team.Info{State: team.Asking}, true, false)
 		if waiting == queued || waitingOnAsk != asking {
 			t.Errorf("waiting %v queued %v waiting on an ask %v asking %v", waiting, queued, waitingOnAsk, asking)
 		}
@@ -143,7 +149,7 @@ func TestAgentView(t *testing.T) {
 		if m.agentView == nil || !strings.Contains(lines[0], "main › lead  ·  done  ·  level 1") || !strings.HasSuffix(strings.TrimRight(lines[0], " "), "✕") {
 			t.Fatalf("title %q", lines[0])
 		}
-		for _, want := range []string{"Agents", "⚠ scout · failed", "lead the way", "led it", "message for lead"} {
+		for _, want := range []string{"Agents", markFailedNerd + " scout · failed", "lead the way", "led it", "message for lead"} {
 			if !strings.Contains(view, want) {
 				t.Errorf("%q not in:\n%s", want, view)
 			}
@@ -271,7 +277,7 @@ func TestAgentTokens(t *testing.T) {
 
 		view := screenOf(m)
 
-		if !strings.Contains(view, "✓ lead · done") || !strings.Contains(view, "4.5k/1M") || !strings.Contains(view, "950/32.8k") {
+		if !strings.Contains(view, "● lead · done") || !strings.Contains(view, "4.5k/1M") || !strings.Contains(view, "950/32.8k") {
 			t.Errorf("view:\n%s", view)
 		}
 		for _, line := range strings.Split(view, "\n") {
@@ -322,9 +328,9 @@ func TestAgentLens(t *testing.T) {
 		waitAgent(t, m, 2, team.Running)
 
 		updated, _ := m.openAgentView(1)
-		view := screenOf(updated.(model))
+		view := steady(screenOf(updated.(model)))
 
-		for _, want := range []string{"● ls", "(empty directory)", "● agent", "running…", "waiting · for its subagents", "message for lead", "fake-model", "Agents", "deep · running"} {
+		for _, want := range []string{"● ls", "(empty directory)", "◜ agent", "running…", "waiting · for its subagents", "message for lead", "fake-model", "Agents", "deep · running"} {
 			if !strings.Contains(view, want) {
 				t.Errorf("%q not in:\n%s", want, view)
 			}

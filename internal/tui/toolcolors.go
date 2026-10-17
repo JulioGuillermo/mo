@@ -33,7 +33,12 @@ var toolKindColors = map[toolKind]color.Color{
 
 // toolMark is the coloured dot before a tool call.
 func toolMark(kind toolKind) string {
-	return lipgloss.NewStyle().Foreground(toolKindColors[kind]).Bold(true).Render("●")
+	return toolMarkAs(kind, markDone)
+}
+
+// toolMarkAs is a call's sign of how it stands, coloured by what it does.
+func toolMarkAs(kind toolKind, sign string) string {
+	return lipgloss.NewStyle().Foreground(toolKindColors[kind]).Bold(true).Render(sign)
 }
 
 // toolKindOf tells what a call does; changes says whether the registry

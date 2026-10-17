@@ -568,7 +568,7 @@ func (m model) copyLines(from, to int) (tea.Model, tea.Cmd) {
 // conversationContent is what the conversation pane holds, every line.
 func (m model) conversationContent() string {
 	transcript, _ := m.transcript()
-	return strings.TrimRight(transcript+m.liveText(), "\n")
+	return turning(strings.TrimRight(transcript+m.liveText(), "\n"))
 }
 
 // markLines shows the cursor line, or the lines selected, when the

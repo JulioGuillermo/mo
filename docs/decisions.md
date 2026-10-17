@@ -1308,3 +1308,24 @@
 - After a compaction the provider's prompt cache no longer matches, so the next request is read
   whole: compacting a local model's conversation costs one full read, worth it only when it frees
   much.
+
+## Calls that wait their turn
+
+- The calls of a reply run one at a time, in order. A call written whole while an earlier one ran was
+  shown nowhere: the forming view was cleared when the reply's text was drawn, which, with calls
+  run as they are written, happens as the first starts, and the call had no block until it ran.
+  A long first call hid the rest until it ended. The forming calls now stay in view until they run;
+  while another runs, they say they wait for it instead of turning. Those of the next reply start a
+  new list, as all of the last ran before it.
+
+## Round signs of how things stand
+
+- Calls, jobs and subagents share one set of signs, all round so they read alike, their colours
+  as before (a call's says what it does): `◌` waiting its turn, an arc turning on the corners
+  `◜◝◞◟` while it runs, `⊙ ◎` beating while it waits for the user, `●` done, a cross when it
+  failed (a Nerd Font's filled circle with a cross, as a close button, with `render.icons = "nerd"`,
+  else `⊗`), `⊘` stopped, cancelled or denied.
+- A call's block is drawn once; while it runs its sign is a place that the conversation's window,
+  and what is copied, fill with the arc as it turns at that moment, so a running call turns
+  without its block being drawn again.
+- Only the calls the open dialog asks about beat; the others of the reply wait dotted.

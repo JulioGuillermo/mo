@@ -150,3 +150,13 @@ func (a *Agent) Continue(ctx context.Context, hooks Hooks) error {
 	a.loops = 0
 	return a.turn(ctx, hooks)
 }
+
+// Stopped tells a call's result that says it was stopped, cancelled or
+// denied rather than that it failed.
+func Stopped(result string) bool {
+	switch result {
+	case deniedResult, cancelledResult, stoppedCallResult, stoppedCall, interruptedCall:
+		return true
+	}
+	return false
+}
