@@ -70,6 +70,9 @@ type Agent struct {
 	// EarlyCalls runs each call of a reply as soon as it is written, asking
 	// what it needs while the reply goes on, instead of once it ends.
 	EarlyCalls bool
+	// measuredBytesPerToken is what the provider's last count said a token
+	// takes, for the estimates; 0 before any.
+	measuredBytesPerToken float64
 	// MaxSteps is how many replies a run may ask the model for; 0 for no
 	// limit. Subagents have one.
 	MaxSteps int
@@ -202,6 +205,7 @@ func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
 		a.History = append(a.History, response.Message)
 		a.LastUsage = response.Usage
 		a.historyAtUsage = len(a.History)
+		a.measure(response.Usage)
 		if hooks.OnUsage != nil {
 			hooks.OnUsage(response.Usage)
 		}

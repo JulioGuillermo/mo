@@ -17,6 +17,8 @@ package agent
 // | CP-13 | Error    | A full window compacts again even right after a failed attempt         | P0       |
 // | CP-14 | Happy    | Budget lists the system prompt, then each tool the model sees          | P2       |
 // | CP-15 | Happy    | An instruction goes under the summary prompt, which stays as it is; without one nothing is added | P0 |
+// | CP-16 | Happy    | /compact between turns sums everything up, the last turn too, and leaves only the summary | P0 |
+// | CP-17 | Happy    | Estimates take the bytes a token takes from the provider's last count; a count out of range is not taken | P0 |
 // | CP-90 | Happy    | Compacting says so while the summary is asked, and stops saying it after | P1    |
 
 import (
@@ -25,6 +27,7 @@ import (
 	"testing"
 
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/tools"
 )
 
 func longHistory() []llm.Message {
@@ -137,6 +140,37 @@ func TestCompaction(t *testing.T) {
 		}
 		if without != DefaultCompactPrompt {
 			t.Errorf("without:\n%s", without)
+		}
+	})
+
+	t.Run("CP-16 /compact between turns sums everything up, the last turn too, and leaves only the summary", func(t *testing.T) {
+		provider := &scriptedProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Text: "- all of it"}}}
+		agent := newAgent(t, provider)
+		agent.Window = 100000
+		agent.History = append(longHistory(), llm.Message{Role: llm.RoleUser, Text: "small last turn"}, llm.Message{Role: llm.RoleAssistant, Text: "done"})
+
+		err := agent.CompactWith(context.Background(), Hooks{}, "")
+
+		transcript := provider.requests[0].Messages[0].Text
+		if err != nil || len(agent.History) != 1 || !strings.Contains(agent.History[0].Text, "- all of it") || strings.Contains(agent.History[0].Text, continueWork) || !strings.Contains(transcript, "small last turn") {
+			t.Errorf("err %v history %+v", err, agent.History)
+		}
+	})
+
+	t.Run("CP-17 estimates take the bytes a token takes from the provider's last count; a count out of range is not taken", func(t *testing.T) {
+		agent := newAgent(t, &scriptedProvider{})
+		agent.System = strings.Repeat("s", 400)
+		agent.Tools = tools.NewRegistry(tools.Env{WorkDir: t.TempDir()}, tools.Options{Disabled: allBuiltins()})
+		agent.History = []llm.Message{{Role: llm.RoleUser, Text: strings.Repeat("u", 600)}, {Role: llm.RoleAssistant, Text: "reply"}}
+		guessed := agent.estimate(agent.History[:1])
+
+		agent.measure(llm.Usage{InputTokens: 500})
+		measured := agent.estimate(agent.History[:1])
+		agent.measure(llm.Usage{InputTokens: 10})
+		ignored := agent.estimate(agent.History[:1])
+
+		if guessed != 150 || measured != 300 || ignored != 300 {
+			t.Errorf("guessed %d measured %d ignored %d", guessed, measured, ignored)
 		}
 	})
 
@@ -319,4 +353,13 @@ func TestCompactActivity(t *testing.T) {
 			t.Errorf("said = %q err = %v", said, err)
 		}
 	})
+}
+
+// allBuiltins are every built-in tool, to leave a registry without tools.
+func allBuiltins() []string {
+	var names []string
+	for _, spec := range tools.NewRegistry(tools.Env{}, tools.Options{}).Specs(nil) {
+		names = append(names, spec.Name)
+	}
+	return names
 }

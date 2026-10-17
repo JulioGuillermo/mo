@@ -1292,3 +1292,19 @@
   second. They now follow the reply's pace too: kept as last shown until the interval passes, or so
   many more pieces came (a second at most); `live` takes them every frame, and once the reply ends
   the final ones show at once.
+
+## Compacting between turns, and estimating sizes
+
+- A compaction kept the turn in progress whole when it took under 30% of the window, so the model
+  does not lose the thread of what it is doing. `/compact` runs between turns, where that turn is
+  the last one done: it was kept whole, tool outputs and all, and little was freed. `/compact` now
+  sums everything up and leaves only the summary, without the note to go on with a request; the
+  compaction mo does on its own, mid-turn, keeps the rule.
+- Sizes not counted by the provider (what came after its last count, everything right after a
+  compaction) were estimated at four bytes a token. Logs, addresses, hex and JSON take far fewer, so
+  "compacted to 35k" could be 60k. The bytes a token takes are now measured from each count: what
+  the request sent (system prompt, tools, history) over the tokens counted, between 1 and 8 bytes,
+  else the count is taken for a partial one and not used.
+- After a compaction the provider's prompt cache no longer matches, so the next request is read
+  whole: compacting a local model's conversation costs one full read, worth it only when it frees
+  much.

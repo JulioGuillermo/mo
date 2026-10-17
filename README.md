@@ -198,7 +198,10 @@ window = 0                 # 0: the model's own, as its server says (llama-serve
                            # Ollama, LM Studio, Gemini, Anthropic); else 32768 / 200000
 compact_at = 0.75          # make room at this share of the window; 0 = never
 strategy = "compact"       # compact: summarize older messages · drop: remove the oldest turns
-compact_prompt = ""        # empty: built-in summary prompt; /compact <instruction> adds yours under it, that time only
+compact_prompt = ""        # empty: built-in summary prompt; /compact <instruction> adds yours under it, that time only.
+                           # /compact between turns sums everything up; compacting on its own, mid-turn, keeps the
+                           # turn in progress whole when it is small. Sizes are estimated with the bytes a token
+                           # took in the provider's last count
 
 [loop]
 enabled = true             # watch for a model going round in circles
