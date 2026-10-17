@@ -62,12 +62,14 @@ type settingsDraft struct {
 	bar          string
 	// replyRefresh is how often what the model writes is drawn, with
 	// its milliseconds or tokens.
-	replyRefresh     string
-	replyEveryMS     string
-	replyEveryTokens string
-	icons            string
-	keys             string
-	memoryDir        string
+	replyRefresh string
+	// The milliseconds between each animation's frames.
+	spinnerMS, runningMS, writingMS, reasoningMS, askingMS string
+	replyEveryMS                                           string
+	replyEveryTokens                                       string
+	icons                                                  string
+	keys                                                   string
+	memoryDir                                              string
 
 	instructionsOn    bool
 	instructionsFiles string
@@ -155,6 +157,11 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		statusStyle:      cfg.Render.Status,
 		bar:              cfg.Render.Bar,
 		replyRefresh:     cfg.Render.ReplyRefresh,
+		spinnerMS:        strconv.Itoa(cfg.Render.SpinnerMS),
+		runningMS:        strconv.Itoa(cfg.Render.RunningMS),
+		writingMS:        strconv.Itoa(cfg.Render.WritingMS),
+		reasoningMS:      strconv.Itoa(cfg.Render.ReasoningMS),
+		askingMS:         strconv.Itoa(cfg.Render.AskingMS),
 		replyEveryMS:     strconv.Itoa(cfg.Render.ReplyEveryMS),
 		replyEveryTokens: strconv.Itoa(cfg.Render.ReplyEveryTokens),
 		icons:            cfg.Render.Icons,
@@ -322,6 +329,24 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 		return layer, fmt.Errorf("reply refresh tokens: %w", err)
 	}
 	layer.Render.ReplyRefresh = unlessDefault(d.replyRefresh, defaults.Render.ReplyRefresh)
+	for _, frame := range []struct {
+		name    string
+		text    string
+		into    *int
+		initial int
+	}{
+		{"status spinner", d.spinnerMS, &layer.Render.SpinnerMS, defaults.Render.SpinnerMS},
+		{"running animation", d.runningMS, &layer.Render.RunningMS, defaults.Render.RunningMS},
+		{"writing animation", d.writingMS, &layer.Render.WritingMS, defaults.Render.WritingMS},
+		{"reasoning animation", d.reasoningMS, &layer.Render.ReasoningMS, defaults.Render.ReasoningMS},
+		{"asking animation", d.askingMS, &layer.Render.AskingMS, defaults.Render.AskingMS},
+	} {
+		value, err := parseAtLeast(frame.text, config.MinFrameMS)
+		if err != nil {
+			return layer, fmt.Errorf("%s milliseconds: %w", frame.name, err)
+		}
+		*frame.into = unlessDefault(value, frame.initial)
+	}
 	layer.Render.ReplyEveryMS = unlessDefault(everyMS, defaults.Render.ReplyEveryMS)
 	layer.Render.ReplyEveryTokens = unlessDefault(everyTokens, defaults.Render.ReplyEveryTokens)
 	layer.Render.Icons = unlessDefault(d.icons, defaults.Render.Icons)

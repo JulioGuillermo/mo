@@ -6,15 +6,19 @@ package tui
 // | MK-02 | Happy    | A call being written breathes; reasoning twinkles                        | P1       |
 // | MK-03 | Happy    | A call written and not run is dotted while another runs, beating while the user is asked | P1 |
 // | MK-04 | Edge     | The arc's place in a block never reaches the screen or what is copied       | P0       |
+// | MK-05 | Happy    | Each animation turns at the time between frames set for it; the screen is drawn as often as the quickest needs | P0 |
+// | MK-06 | Error    | Frame times are saved as they differ from the defaults; under the least they are refused | P1 |
 
 import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/agent"
+	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/llm"
 )
 
@@ -88,6 +92,38 @@ func TestMarks(t *testing.T) {
 
 		if strings.Contains(screen, markRunning) || strings.Contains(copied, markRunning) || !slices.ContainsFunc(arcFrames, func(frame string) bool { return strings.Contains(screen, frame+" bash") }) {
 			t.Errorf("screen:\n%s", screen)
+		}
+	})
+}
+
+func TestAnimations(t *testing.T) {
+	defer setAnimations(config.Defaults().Render)
+
+	t.Run("MK-05 each animation turns at the time between frames set for it; the screen is drawn as often as the quickest needs", func(t *testing.T) {
+		start := time.UnixMilli(1_000_000)
+		frames := []string{"a", "b", "c"}
+
+		if frameAtTime(frames, 100*time.Millisecond, start) != "b" || frameAtTime(frames, 100*time.Millisecond, start.Add(99*time.Millisecond)) != "b" ||
+			frameAtTime(frames, 100*time.Millisecond, start.Add(100*time.Millisecond)) != "c" {
+			t.Error("frames do not follow their time")
+		}
+		m := conversationModel()
+		m.session.Config.Render.SpinnerMS, m.session.Config.Render.RunningMS, m.session.Config.Render.AskingMS = 400, 40, 900
+		m.paceAnimations()
+		if paces.Load().running != 40*time.Millisecond || paces.Load().asking != 900*time.Millisecond || m.spinner.Spinner.FPS != 40*time.Millisecond {
+			t.Errorf("paces %+v ticks every %v", *paces.Load(), m.spinner.Spinner.FPS)
+		}
+	})
+
+	t.Run("MK-06 frame times are saved as they differ from the defaults; under the least they are refused", func(t *testing.T) {
+		draft := defaultDraft()
+		draft.runningMS = "90"
+		layer, err := draft.applyTo(config.Config{}, nil)
+		draft.askingMS = "5"
+		_, tooQuick := draft.applyTo(config.Config{}, nil)
+
+		if err != nil || layer.Render.RunningMS != 90 || layer.Render.SpinnerMS != 0 || tooQuick == nil {
+			t.Errorf("err %v render %+v too quick %v", err, layer.Render, tooQuick)
 		}
 	})
 }

@@ -346,6 +346,7 @@ func (m model) useSession(session Session) (tea.Model, tea.Cmd) {
 	}
 	m.usage = m.session.Agent.LastUsage
 	m.bridge.paceReply(paceOf(m.session.Config.Render))
+	m.paceAnimations()
 	// The side panel's setting may have changed the conversation's width,
 	// and the model the efforts it takes.
 	fit := m.fitWidth()

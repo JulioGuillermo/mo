@@ -245,6 +245,7 @@ func Run(session Session) error {
 	}
 	printer.setKind(m.toolKind)
 	m.configureJobs()
+	m.paceAnimations()
 	program := tea.NewProgram(m)
 	bridge.program = program
 	bridge.paceReply(paceOf(session.Config.Render))
@@ -1139,7 +1140,7 @@ func (m model) upperLayout() (string, []region) {
 		if !m.runStarted.IsZero() {
 			elapsed = " · " + formatElapsed(time.Since(m.runStarted))
 		}
-		add(m.spinner.View()+" "+m.currentState().label(true)+dimStyle.Render(elapsed+queued+" · esc to stop"), nil)
+		add(m.spinnerView()+" "+m.currentState().label(true)+dimStyle.Render(elapsed+queued+" · esc to stop"), nil)
 	case m.worked > 0 && m.titling == nil:
 		add(dimStyle.Render("  idle · worked "+formatElapsed(m.worked)), nil)
 	}
@@ -1148,7 +1149,7 @@ func (m model) upperLayout() (string, []region) {
 		if !m.running && m.dialog == nil {
 			stop = " · esc to stop"
 		}
-		add(m.spinner.View()+" "+m.titleState().label(true)+dimStyle.Render(stop), nil)
+		add(m.spinnerView()+" "+m.titleState().label(true)+dimStyle.Render(stop), nil)
 		if said := m.saidLines(); said != "" {
 			add(said, nil)
 		}

@@ -232,6 +232,11 @@ reply_refresh = "live"     # how often what the model writes is drawn: live (eve
 reply_every_ms = 100       # ... with time; drawing less leaves a local model's GPU to it
 reply_every_tokens = 10    # ... with tokens, a second apart at most. What asks, starts or ends is drawn at once;
                            # the live pp and tg speeds are taken again at the same pace
+spinner_ms = 80            # ms between frames: the status line's spinner; /settings › Interface › Animations
+running_ms = 150           # ... the arc of a call, job or subagent at work
+writing_ms = 220           # ... the bubble of a call being written
+reasoning_ms = 160         # ... the spark of the reasoning as it comes
+asking_ms = 500            # ... the beat of what waits for your answer
 icons = "nerd"             # Nerd Font icons for the branch and its changes; "text": + ~ - » ? ! ✓
 
 [permissions]

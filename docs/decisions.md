@@ -1331,3 +1331,8 @@
   and what is copied, fill with the arc as it turns at that moment, so a running call turns
   without its block being drawn again.
 - Only the calls the open dialog asks about beat; the others of the reply wait dotted.
+- Each animation has its own time between frames, in `[render]` and `/settings › Interface ›
+  Animations` (20 ms at least). Every sign takes its frame from the time, so they turn at their own
+  pace whatever draws the screen; the spinner's ticks, which draw it again while something moves,
+  come as often as the quickest needs. The status line's spinner is drawn the same way, its frames
+  those of bubbles' MiniDot.

@@ -4,6 +4,7 @@ package config
 // | ID    | Category | Description                                                   | Priority |
 // | SZ-01 | Edge     | Sizes read as 10MB, 512kb, 1.5GB or bytes; 0 is no limit      | P1       |
 // | SZ-02 | Error    | A read_max_size that is no size is refused when loading       | P1       |
+// | SZ-03 | Error    | An animation's frame time under the least is refused          | P1       |
 
 import "testing"
 
@@ -26,6 +27,15 @@ func TestSizes(t *testing.T) {
 
 		if err := validate(cfg); err == nil {
 			t.Error("big accepted")
+		}
+	})
+
+	t.Run("SZ-03 an animation's frame time under the least is refused", func(t *testing.T) {
+		cfg := Defaults()
+		cfg.Render.WritingMS = 3
+
+		if err := validate(cfg); err == nil || validate(Defaults()) != nil {
+			t.Errorf("3 ms: %v", err)
 		}
 	})
 }

@@ -222,7 +222,18 @@ type Render struct {
 	ReplyRefresh     string `toml:"reply_refresh,omitempty"`
 	ReplyEveryMS     int    `toml:"reply_every_ms,omitzero"`
 	ReplyEveryTokens int    `toml:"reply_every_tokens,omitzero"`
+	// The milliseconds between the frames of each animation: the status
+	// line's spinner, the arc of what runs, the bubble of a call being
+	// written, the spark of reasoning and the beat of what asks.
+	SpinnerMS   int `toml:"spinner_ms,omitzero"`
+	RunningMS   int `toml:"running_ms,omitzero"`
+	WritingMS   int `toml:"writing_ms,omitzero"`
+	ReasoningMS int `toml:"reasoning_ms,omitzero"`
+	AskingMS    int `toml:"asking_ms,omitzero"`
 }
+
+// MinFrameMS is the shortest time between an animation's frames.
+const MinFrameMS = 20
 
 // Reply refreshes.
 const (
@@ -353,7 +364,8 @@ func Defaults() Config {
 		Instructions: Instructions{Enabled: ptr(true), Files: []string{"AGENTS.md", "AGENT.md"}},
 		Web:          Web{Search: web.SearchDuckDuckGo},
 		Render: Render{Images: render.ModeAuto, Background: "#00081a", Sidebar: "auto", Status: "powerline", Icons: "nerd", Keys: "default", Bar: "shapes",
-			ReplyRefresh: RefreshLive, ReplyEveryMS: 100, ReplyEveryTokens: 10},
+			ReplyRefresh: RefreshLive, ReplyEveryMS: 100, ReplyEveryTokens: 10,
+			SpinnerMS: 80, RunningMS: 150, WritingMS: 220, ReasoningMS: 160, AskingMS: 500},
 		Loop:        Loop{Enabled: ptr(true), Replies: 10, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2)},
 		Agents:      Agents{Enabled: ptr(false), Depth: 1, MaxParallel: 3, MaxAgents: 20, MaxSteps: 50},
 		Permissions: Permissions{Mode: "edits", Allow: DefaultAllow},
@@ -433,6 +445,12 @@ func validate(cfg Config) error {
 	}
 	if !slices.Contains([]string{RefreshLive, RefreshTime, RefreshTokens}, cfg.Render.ReplyRefresh) {
 		return fmt.Errorf("render.reply_refresh %q: use live, time or tokens", cfg.Render.ReplyRefresh)
+	}
+	for name, ms := range map[string]int{"spinner_ms": cfg.Render.SpinnerMS, "running_ms": cfg.Render.RunningMS,
+		"writing_ms": cfg.Render.WritingMS, "reasoning_ms": cfg.Render.ReasoningMS, "asking_ms": cfg.Render.AskingMS} {
+		if ms < MinFrameMS {
+			return fmt.Errorf("render.%s %d: use %d or more", name, ms, MinFrameMS)
+		}
 	}
 	if cfg.Render.ReplyEveryMS < 10 || cfg.Render.ReplyEveryTokens < 1 {
 		return fmt.Errorf("render.reply_every_ms is 10 or more, render.reply_every_tokens 1 or more")
@@ -711,6 +729,11 @@ func mergeHarmless(base, layer Config) Config {
 	base.Render.ReplyRefresh = override(base.Render.ReplyRefresh, layer.Render.ReplyRefresh)
 	base.Render.ReplyEveryMS = override(base.Render.ReplyEveryMS, layer.Render.ReplyEveryMS)
 	base.Render.ReplyEveryTokens = override(base.Render.ReplyEveryTokens, layer.Render.ReplyEveryTokens)
+	base.Render.SpinnerMS = override(base.Render.SpinnerMS, layer.Render.SpinnerMS)
+	base.Render.RunningMS = override(base.Render.RunningMS, layer.Render.RunningMS)
+	base.Render.WritingMS = override(base.Render.WritingMS, layer.Render.WritingMS)
+	base.Render.ReasoningMS = override(base.Render.ReasoningMS, layer.Render.ReasoningMS)
+	base.Render.AskingMS = override(base.Render.AskingMS, layer.Render.AskingMS)
 	base.Render.Icons = override(base.Render.Icons, layer.Render.Icons)
 	base.Loop = mergeLoop(base.Loop, layer.Loop)
 	return base

@@ -119,6 +119,11 @@ var settingsSections = []settingsSection{
 	{key: "appearance", title: "Look and keys", summary: func(d *settingsDraft) string {
 		return fmt.Sprintf("keys %s · panel %s · status %s", d.keys, d.sidebar, d.statusStyle)
 	}, items: appearanceItems},
+	{key: "animations", title: "Animations", summary: func(d *settingsDraft) string {
+		return fmt.Sprintf("spinner %s · running %s · writing %s ms", d.spinnerMS, d.runningMS, d.writingMS)
+	}, note: func(model, *settingsMenu) string {
+		return "milliseconds between the frames of each animation; the screen is drawn as often as the quickest needs"
+	}, items: animationItems},
 	{key: "memory", title: "Memory", summary: func(d *settingsDraft) string { return d.memoryDir }, items: memoryItems},
 }
 
@@ -636,6 +641,23 @@ func appearanceItems(_ model, menu *settingsMenu) []settingItem {
 			).Value(&d.images)
 		}},
 	}, replyItems(menu)...)
+}
+
+// animationItems are the times between the frames of each animation.
+func animationItems(model, *settingsMenu) []settingItem {
+	frame := func(title, about, sample string, value func(d *settingsDraft) *string) settingItem {
+		return settingItem{title, func(d *settingsDraft) string { return *value(d) + " ms  " + sample }, func(d *settingsDraft) huh.Field {
+			return huh.NewInput().Title(title).Description(fmt.Sprintf("%s: %s · ms between frames, %d or more", about, sample, config.MinFrameMS)).
+				Validate(atLeast(config.MinFrameMS)).Value(value(d))
+		}}
+	}
+	return []settingItem{
+		frame("Status spinner", "the status line while the model works", "⠋⠙⠹", func(d *settingsDraft) *string { return &d.spinnerMS }),
+		frame("Running", "a call, job or subagent at work", strings.Join(arcFrames, ""), func(d *settingsDraft) *string { return &d.runningMS }),
+		frame("Writing a call", "a call the model is writing", strings.Join(formingFrames, ""), func(d *settingsDraft) *string { return &d.writingMS }),
+		frame("Reasoning", "the model's reasoning as it comes", strings.Join(sparkFrames, ""), func(d *settingsDraft) *string { return &d.reasoningMS }),
+		frame("Asking you", "what waits for your answer", strings.Join(askingFrames, ""), func(d *settingsDraft) *string { return &d.askingMS }),
+	}
 }
 
 // replyItems are how often what the model writes is drawn, and how many

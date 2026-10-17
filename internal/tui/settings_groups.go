@@ -28,7 +28,7 @@ var settingsGroups = []settingsGroup{
 	{key: groupPrefix + "skills", title: "Skills", sections: []string{"skills", "skillmodes"}},
 	{key: groupPrefix + "agents", title: "Agents", sections: []string{"agents"}},
 	{key: groupPrefix + "safety", title: "Safety", sections: []string{"permissions", "loop"}},
-	{key: groupPrefix + "interface", title: "Interface", sections: []string{"appearance", "notify"}},
+	{key: groupPrefix + "interface", title: "Interface", sections: []string{"appearance", "animations", "notify"}},
 }
 
 func sectionByKey(key string) (settingsSection, bool) {
