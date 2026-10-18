@@ -632,9 +632,10 @@ func appearanceItems(_ model, menu *settingsMenu) []settingItem {
 			return huh.NewSelect[string]().Title("Context bar").Description("how full the context is, as each looks at 65%").Options(options...).Value(&d.bar)
 		}},
 		{"Icons", func(d *settingsDraft) string { return d.icons }, func(d *settingsDraft) huh.Field {
-			return huh.NewSelect[string]().Title("Icons").Description("in the status line: the branch and its changes").Options(
-				huh.NewOption("nerd: Nerd Font icons \ue0a0 \U000f0752 \U000f11e7 \U000f1aa1 \U000f086f", iconsNerd),
-				huh.NewOption("text: + ~ - » ? ! ✓, for any font", iconsText),
+			return huh.NewSelect[string]().Title("Icons").Description("in the status line, the branch and its changes, and the file tree of /view").Options(
+				huh.NewOption("nerd: Nerd Font icons \ue0a0 \U000f0752 \U000f11e7 \U000f1aa1 \U000f086f, and for files \ue627 \ue606 \ue609 \uf07b", iconsNerd),
+				huh.NewOption("emoji: in the tree 📁 📂 🐹 🐍 📘 🔒, any terminal; the status line has plain marks", iconsEmoji),
+				huh.NewOption("text: + ~ - » ? ! ✓ and ▸ ▾, for any font", iconsText),
 			).Value(&d.icons)
 		}},
 		{"Images, SVG and Mermaid", func(d *settingsDraft) string { return d.images }, func(d *settingsDraft) huh.Field {

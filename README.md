@@ -237,7 +237,7 @@ running_ms = 150           # ... the arc of a call, job or subagent at work
 writing_ms = 220           # ... the bubble of a call being written
 reasoning_ms = 160         # ... the spark of the reasoning as it comes
 asking_ms = 500            # ... the beat of what waits for your answer
-icons = "nerd"             # Nerd Font icons for the branch and its changes; "text": + ~ - » ? ! ✓
+icons = "nerd"             # Nerd Font icons for the branch and its changes and for the files of the /view tree; "emoji": emoji for the tree (the status line has plain marks); "text": + ~ - » ? ! ✓ and ▸ ▾
 
 [permissions]
 mode = "edits"             # ask | edits | auto | all; shift+tab changes it and it is kept
@@ -560,8 +560,13 @@ there, folders first; tab on a folder goes into it. A file is also found by what
 first, then those that hold it, then those with its letters in order), a word that is no path
 here does the same, and a pattern names files: `*.go` any `.go` at any depth, `**/*mifile.*` or
 `src/**/*.md` by path (`**` crosses folders, `*` stays in one, `?` is one character, capitals do
-not matter). One match opens, several are listed to pick from. `/view` alone, or on a folder, lists
-the folder to browse: `..` goes up, a folder lists that, a file opens, `/` filters.
+not matter). One match opens, several are listed to pick from. `/view` alone, or on a folder, opens
+the viewer with a tree of the folder on its left, as an editor has: ↑↓ move, → or enter open a
+folder, ← closes it or goes to the one over a file, → shows a file and enter opens it and moves to
+it, `/` narrows the tree to the files that hold what you type (a pattern with `*` too), tab goes
+between the tree and the file, esc clears the search and then closes, a click on a row does what
+enter does. In a file `/view` opened, `t` opens the tree on that file, and again hides it. A
+terminal narrower than 60 columns has no room for both and lists the folder to pick from instead.
 
 In a file `/view` opened, ↑↓ move a cursor, and `c` comments its line, or the lines you dragged
 over; the file is not touched. `c` on a comment edits it, `d` deletes it. `a` closes the viewer and

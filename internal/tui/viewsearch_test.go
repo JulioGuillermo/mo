@@ -7,7 +7,7 @@ package tui
 // | VS-03 | Edge     | A pattern with no / is matched on names at any depth; capitals do not matter | P1    |
 // | VS-04 | Happy    | A word that is no path in the folder offers the files with it in their name | P0     |
 // | VS-05 | Happy    | /view of a search shows the one file it finds, or lists the files to pick from | P0  |
-// | VS-06 | Happy    | /view with no argument, or a folder, lists the folder to browse         | P0       |
+// | VS-06 | Happy    | /view with no argument, or a folder, opens its tree; a narrow screen lists it | P0 |
 // | VS-07 | Edge     | Hidden folders and dependencies are left out of searches                | P1       |
 // | VS-08 | Happy    | Browsing: .. goes up, a folder lists that, a file is viewed             | P0       |
 // | VS-09 | Edge     | A search that finds nothing says so                                     | P1       |
@@ -31,6 +31,7 @@ func searchModel(t *testing.T) model {
 	t.Helper()
 	m := conversationModel()
 	m.width, m.height = 100, 30
+	m.session.Config.Render.Icons = iconsText
 	m.session.WorkDir = t.TempDir()
 	for name, content := range map[string]string{
 		"src/pkg/mi_file.txt":         "text",
@@ -136,20 +137,25 @@ func TestViewSearch(t *testing.T) {
 		}
 	})
 
-	t.Run("VS-06 /view with no argument, or a folder, lists the folder to browse", func(t *testing.T) {
+	t.Run("VS-06 /view with no argument, or a folder, opens the tree of the folder", func(t *testing.T) {
 		m := searchModel(t)
 
 		none, _ := m.runCommand("/view")
 		folder, _ := m.runCommand("/view src")
 
-		if none.(model).settings == nil || none.(model).viewer != nil || folder.(model).settings == nil || folder.(model).viewer != nil {
-			t.Error("a list to browse should open")
+		for name, opened := range map[string]tea.Model{"no argument": none, "a folder": folder} {
+			if viewer := opened.(model).viewer; viewer == nil || viewer.tree == nil || !viewer.placeholder || !viewer.treeFocus {
+				t.Errorf("%s: viewer %+v", name, viewer)
+			}
 		}
-		if listed := ansi.Strip(none.(model).settings.form.View()); !strings.Contains(listed, "▸ src/") || !strings.Contains(listed, "mi_file.go") || !strings.Contains(listed, "folders ·") {
-			t.Errorf("list:\n%s", listed)
+		if root := folder.(model).viewer.tree.root; root != filepath.Join(m.session.WorkDir, "src") {
+			t.Errorf("the tree is of %s", root)
 		}
-		if listed := ansi.Strip(folder.(model).settings.form.View()); !strings.Contains(listed, "▸ pkg/") || !strings.Contains(listed, "▸ ..") {
-			t.Errorf("src:\n%s", listed)
+		narrow := m
+		narrow.width = 50
+		picker, _ := narrow.runCommand("/view")
+		if picker.(model).settings == nil || picker.(model).viewer != nil {
+			t.Error("a terminal too narrow for the tree lists the folder to pick from")
 		}
 	})
 

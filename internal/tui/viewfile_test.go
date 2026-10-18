@@ -77,8 +77,8 @@ func TestViewFile(t *testing.T) {
 		folder, _ := m.runCommand("/view internal")
 		binary, _ := m.runCommand("/view blob.bin")
 
-		if folder.(model).viewer != nil || folder.(model).settings == nil {
-			t.Error("a folder is browsed, not opened as text")
+		if viewer := folder.(model).viewer; viewer == nil || !viewer.placeholder || viewer.tree == nil || viewer.file != "" {
+			t.Errorf("a folder is browsed in a tree, not opened as text: %+v", viewer)
 		}
 		if binary.(model).viewer != nil || !strings.Contains(shown(binary.(model)), "is not text") {
 			t.Error("a binary file should be refused")

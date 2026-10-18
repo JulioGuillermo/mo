@@ -24,7 +24,7 @@ const (
 	viewerRefresh = 300 * time.Millisecond
 	viewerShift   = 8
 	viewerHelp    = "↑↓ pgup pgdn home end scroll · ←→ long lines · / search · n N next · drag or y copy · b background · x kill · esc close"
-	fileHelp      = "↑↓ move · c comment the line or what you dragged over · d delete it · a attach to your message · / search · y copy · esc close"
+	fileHelp      = "↑↓ move · c comment the line or what you dragged over · d delete it · a attach to your message · / search · y copy · t tree · esc close"
 	drawingHelp   = "drag, ↑↓ ←→ hjkl or the wheel pan · s code or drawing · / search · y copy · esc close"
 	viewMaxBytes  = 8 << 20
 )
@@ -64,6 +64,12 @@ type outputViewer struct {
 	// code, for a file, is its lines as the screen paints them: only those in
 	// view, when it asks, so a file of any size opens at once.
 	code *codeText
+	// tree, when shown, lists the folders beside the text; treeFocus says it
+	// has the keys; placeholder is the viewer of a tree with no file chosen
+	// yet.
+	tree        *fileTree
+	treeFocus   bool
+	placeholder bool
 	// drawing, when set, names a diagram shown whole, as it was drawn;
 	// dragging pans it, from where the drag started and the view then.
 	drawing  string
@@ -154,7 +160,7 @@ func (m model) openFile(path string) (tea.Model, tea.Cmd) {
 	case err != nil:
 		return m.emitError(err)
 	case info.IsDir():
-		return m.browse(full)
+		return m.openExplorer(full)
 	case info.Size() > viewMaxBytes:
 		return m.emit(m.printer.Note(fmt.Sprintf("%s is %s, over the %s /view shows", path, humanBytes(info.Size()), humanBytes(viewMaxBytes))))
 	}
@@ -222,7 +228,7 @@ func humanBytes(size int64) string {
 // reloadViewer reads the job's output again, keeping the place unless the
 // view follows the end; a file stays as it was opened.
 func (m model) reloadViewer() error {
-	if m.viewer.file != "" || m.viewer.drawing != "" {
+	if m.viewer.file != "" || m.viewer.drawing != "" || m.viewer.placeholder {
 		return nil
 	}
 	jobs := m.jobs()
@@ -298,7 +304,7 @@ func (m model) panViewer(by int) {
 	for _, line := range v.lines {
 		widest = max(widest, ansi.StringWidth(line))
 	}
-	v.left = min(v.left, max(widest-max(m.width, 20), 0))
+	v.left = min(v.left, max(widest-m.viewerWidth(), 0))
 }
 
 // showMatch puts the current match in view.
@@ -338,6 +344,14 @@ func (m model) updateViewer(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, redraw
 	case tea.MouseWheelMsg:
+		if m.treeShown() && msg.X <= m.treeWidth() && (msg.Button == tea.MouseWheelUp || msg.Button == tea.MouseWheelDown) {
+			by := 3
+			if msg.Button == tea.MouseWheelUp {
+				by = -3
+			}
+			v.tree.move(by, m.treeHeight())
+			return m, nil
+		}
 		sideways := msg.Button == tea.MouseWheelLeft || msg.Button == tea.MouseWheelRight || msg.Mod.Contains(tea.ModShift)
 		switch {
 		case sideways && (msg.Button == tea.MouseWheelLeft || msg.Button == tea.MouseWheelUp):
@@ -351,6 +365,12 @@ func (m model) updateViewer(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.MouseClickMsg:
+		if m.treeShown() && msg.Button == tea.MouseLeft {
+			if msg.X <= m.treeWidth() {
+				return m.treeClick(msg.Y)
+			}
+			v.treeFocus = false
+		}
 		if v.drawing != "" && msg.Button == tea.MouseLeft {
 			v.panning, v.panFrom, v.panStart = true, point{msg.X, msg.Y}, point{v.left, v.top}
 			return m, nil
@@ -405,6 +425,8 @@ func (m model) updateViewer(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.typeComment(msg)
 		case v.typing:
 			return m.typeQuery(msg)
+		case m.treeShown() && v.treeFocus:
+			return m.treeKey(msg)
 		}
 		return m.viewerKey(msg.String())
 	}
@@ -446,7 +468,29 @@ func (m model) typeQuery(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 	v := m.viewer
 	rows := m.viewerRows()
+	if v.placeholder {
+		// No file yet: the tree is what there is to use.
+		switch pressed {
+		case "esc", "q", "ctrl+c":
+			m.viewer = nil
+		case "tab", "t":
+			if v.tree == nil {
+				m.toggleTree()
+			} else {
+				v.treeFocus = true
+			}
+		}
+		return m, nil
+	}
 	switch pressed {
+	case "tab":
+		if v.tree != nil {
+			v.treeFocus = true
+		}
+	case "t":
+		if v.file != "" {
+			m.toggleTree()
+		}
 	case "esc", "q", "ctrl+c":
 		if pressed == "esc" && v.query != "" {
 			v.query, v.matches, v.notice = "", nil, ""
@@ -508,7 +552,7 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 	case "y":
 		return m, m.copyViewer(strings.Join(v.lines, "\n"), fmt.Sprintf("copied all %d lines", len(v.lines)))
 	case "b":
-		if v.file != "" || v.drawing != "" {
+		if v.file != "" || v.drawing != "" || v.placeholder {
 			return m, nil
 		}
 		if err := m.jobs().DetachJob(v.id); err != nil {
@@ -517,7 +561,7 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 		}
 		v.notice = "goes on in the background; the model was let go on"
 	case "x":
-		if v.file != "" || v.drawing != "" {
+		if v.file != "" || v.drawing != "" || v.placeholder {
 			return m, nil
 		}
 		jobs, id := m.jobs(), v.id
@@ -537,14 +581,27 @@ func (m model) copyViewer(text, done string) tea.Cmd {
 	return tea.Batch(tea.SetClipboard(text), copyToSystem(text))
 }
 
-// viewerView is the header, the lines in view and the help or the search
-// being typed.
+// viewerView is the viewer as the screen shows it: its text, and the tree
+// beside it when there is one.
 func (m model) viewerView() string {
+	body := m.viewerBody(m.viewerWidth())
+	if !m.treeShown() {
+		return body
+	}
+	return m.treeLayout(body)
+}
+
+// viewerBody is the header, the lines in view and the help or the search
+// being typed, width columns wide.
+func (m model) viewerBody(width int) string {
 	v := m.viewer
-	width := max(m.width, 20)
 	rows := m.viewerRows()
 	header := toolName.Render(fmt.Sprintf("Job %d", v.id)) + " " + dimStyle.Render(oneLine(v.status.Describe(), width-8))
 	help := viewerHelp
+	if v.placeholder {
+		header = toolName.Render("Files") + " " + dimStyle.Render("choose one in the tree · only you see it")
+		help = "tab tree · t hide it · esc close"
+	}
 	gutter := 0
 	if v.file != "" {
 		about := fmt.Sprintf("%d lines", len(v.lines))
@@ -572,7 +629,7 @@ func (m model) viewerView() string {
 		help = drawingHelp
 	}
 	var out []string
-	out = append(out, header)
+	out = append(out, ansi.Truncate(header, width, "…"))
 	var re *regexp.Regexp
 	if v.query != "" {
 		re = v.queryRegexp()
@@ -586,7 +643,9 @@ func (m model) viewerView() string {
 	dark := m.printer == nil || m.printer.isDark()
 	for i := v.top; i < v.top+rows; i++ {
 		if i >= len(v.lines) {
-			if i == 0 {
+			if i == 0 && v.placeholder {
+				out = append(out, dimStyle.Render("choose a file in the tree"))
+			} else if i == 0 {
 				out = append(out, dimStyle.Render("(empty)"))
 			} else {
 				out = append(out, "")

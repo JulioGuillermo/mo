@@ -54,7 +54,7 @@ var builtinCommands = []command{
 	{name: "kill", argument: "<n>", description: "stop a background job"},
 	{name: "agents", argument: "[n]", description: "subagents: pick one, or n, to see what it does and talk to it"},
 	{name: "diagrams", description: "show every diagram as its code, or drawn again"},
-	{name: "view", argument: "[file]", description: "show a file to you only: images, SVG and Mermaid here, text and code in a viewer; @name, a *.go or **/*name* pattern search for it, no argument or a folder browses"},
+	{name: "view", argument: "[file]", description: "show a file to you only: images, SVG and Mermaid here, text and code in a viewer; @name, a *.go or **/*name* pattern search for it, no argument or a folder opens a tree of its files"},
 	{name: "help", description: "commands and keys"},
 	{name: "quit", description: "exit mo"},
 }

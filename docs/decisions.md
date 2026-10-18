@@ -1172,8 +1172,24 @@
   folders, matched on the name at any depth when it has no `/`, on the whole path when it has one,
   capitals not mattering. The search ranking lives in `fuzzyFiles`, shared with `@`. One match
   opens at once and several are listed to pick from, as does the highlighted suggestion on enter.
-  `/view` with no argument or a folder lists it (`..`, folders, files, `/` to filter, hidden ones
-  included, since here nothing is searched), choosing a folder lists that.
+  `/view` with no argument or a folder opens the viewer with the tree of that folder on its left
+  (`viewtree.go`): folders first, all of them, hidden ones too, read when a folder opens, not before;
+  keys as an editor's (↑↓, → opens a folder or shows a file, ← closes or goes up, enter opens a file
+  and moves to it, `/` narrows it to the files of the search, tab between tree and file, `t` shows
+  it beside any file and hides it), the mouse too. It is a column of its own: the viewer is drawn at
+  the width left and the two are put side by side, so what the viewer does with its width (cursor,
+  comments, search, wrapping of the footer) is unchanged. Without a file the viewer is a
+  placeholder, a state of its own so the keys of a job (kill, background) do nothing on it. Below 60
+  columns the tree is not drawn, kept as it is, and opening it from nothing lists the folder to
+  pick from, as `/view` did before the tree. A picture picked in the tree is not drawn there: it
+  says to use `/view` on it.
+- The tree has icons (`treeicons.go`) by what `render.icons` says: `nerd` (default) Font Awesome's for
+  folders (closed, open) and generic files, Seti's and Devicons' for some twenty languages and
+  kinds, each in the colour of its language; `emoji`, for terminals with no Nerd Font, which
+  have colours of their own, wide, so a row is measured by its width, not its characters; `text`,
+  none: ▸ ▾ and a / after a folder. A file is of a kind by its name (extension, or whole name:
+  Dockerfile, Makefile, .gitignore, lock files); one that is of none known has the generic icon. The
+  status line has no emoji for its marks, so with `emoji` it draws plain ones.
 - The viewer colours a file as the code blocks are: only the lines in view, from chunks recognised
   and kept (see the colouring of code in pieces), so a file of 8 MB opens at once; it used to colour it
   all, which took seconds.

@@ -42,9 +42,10 @@ var changeIcons = map[string]map[rune]string{
 	},
 }
 
-// icons are the icons in use, Nerd Font's unless set to text.
+// icons are the icons the status line uses, Nerd Font's unless set to text or
+// emoji: it has no emoji for its marks, so those are plain characters.
 func (m model) icons() string {
-	if m.session.Config.Render.Icons == iconsText {
+	if icons := m.session.Config.Render.Icons; icons == iconsText || icons == iconsEmoji {
 		return iconsText
 	}
 	return iconsNerd

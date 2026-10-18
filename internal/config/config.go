@@ -241,8 +241,9 @@ type Render struct {
 	// Status draws the status line as powerline segments, which need a
 	// font with their arrows, or "plain".
 	Status string `toml:"status,omitempty"`
-	// Icons are Nerd Font icons in the status line, or "text" for plain
-	// characters.
+	// Icons are Nerd Font icons in the status line and the file tree, or
+	// "emoji" for the tree to have emoji (the status line then has plain
+	// characters), or "text" for plain characters in both.
 	Icons string `toml:"icons,omitempty"`
 	// Keys are the usual keys, or "vim": modes to write, move and select,
 	// and ctrl+h/j/k/l between the panes.
@@ -468,8 +469,8 @@ func validate(cfg Config) error {
 	if cfg.Context.Strategy != "compact" && cfg.Context.Strategy != "drop" {
 		return fmt.Errorf("context.strategy %q: use compact or drop", cfg.Context.Strategy)
 	}
-	if cfg.Render.Icons != "nerd" && cfg.Render.Icons != "text" {
-		return fmt.Errorf("render.icons %q: use nerd or text", cfg.Render.Icons)
+	if cfg.Render.Icons != "nerd" && cfg.Render.Icons != "emoji" && cfg.Render.Icons != "text" {
+		return fmt.Errorf("render.icons %q: use nerd, emoji or text", cfg.Render.Icons)
 	}
 	if !slices.Contains(BarStyles, cfg.Render.Bar) {
 		return fmt.Errorf("render.bar %q: use %s", cfg.Render.Bar, strings.Join(BarStyles, ", "))

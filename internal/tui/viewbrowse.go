@@ -44,7 +44,7 @@ func (m model) viewTargets(argument string) ([]string, bool) {
 func (m model) viewArgument(argument string) (tea.Model, tea.Cmd) {
 	argument = strings.TrimSpace(argument)
 	if argument == "" {
-		return m.browse(m.session.WorkDir)
+		return m.openExplorer(m.session.WorkDir)
 	}
 	if paths, search := m.viewTargets(argument); search {
 		return m.viewFound(argument, paths)
@@ -61,7 +61,7 @@ func (m model) viewArgument(argument string) (tea.Model, tea.Cmd) {
 	info, err := os.Stat(full)
 	switch {
 	case err == nil && info.IsDir():
-		return m.browse(full)
+		return m.openExplorer(full)
 	case err == nil:
 		return m.viewPath(argument)
 	case !strings.ContainsAny(argument, `/\`):

@@ -34,6 +34,7 @@ package config
 // | CF-31 | Error    | A choice that is none of them, or a number, is refused               | P1       |
 // | CF-32 | Happy    | A file written with fetch, the tool's old name, gets web_fetch in every list and map | P0 |
 // | CF-33 | Edge     | Set under both names, the new one's is kept                          | P1       |
+// | CF-34 | Happy    | render.icons takes nerd, emoji or text, and refuses another         | P1       |
 
 import (
 	"fmt"
@@ -604,6 +605,24 @@ fetch = "Open a page."
 
 		if err != nil || cfg.Tools.Modes["web_fetch"] != "compact" {
 			t.Errorf("modes = %v err = %v", cfg.Tools.Modes, err)
+		}
+	})
+}
+
+func TestIconSets(t *testing.T) {
+	t.Run("CF-34 render.icons takes nerd, emoji or text, and refuses another", func(t *testing.T) {
+		for _, set := range []string{"nerd", "emoji", "text"} {
+			configHome := isolatedHome(t)
+			writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), "[render]\nicons = \""+set+"\"\n")
+			cfg, err := Load(t.TempDir())
+			if err != nil || cfg.Render.Icons != set {
+				t.Errorf("%s: icons %q err %v", set, cfg.Render.Icons, err)
+			}
+		}
+		configHome := isolatedHome(t)
+		writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), "[render]\nicons = \"unicorns\"\n")
+		if _, err := Load(t.TempDir()); err == nil || !strings.Contains(err.Error(), "nerd, emoji or text") {
+			t.Errorf("an unknown set was taken: %v", err)
 		}
 	})
 }
