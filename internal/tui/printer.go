@@ -701,9 +701,12 @@ func (p *printer) Tool(run toolRun, open bool) string {
 	default:
 		parts = append(parts, p.toolLine(run.name, run.args, run.summary, sign))
 	}
+	code, isCode := p.readCode(run, open)
 	switch {
 	case !run.done:
 		parts = append(parts, dimStyle.Render("  ⎿ running…"))
+	case isCode:
+		parts = append(parts, code)
 	case open:
 		parts = append(parts, p.fullResult(run.output, run.isError))
 	default:

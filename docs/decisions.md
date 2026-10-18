@@ -225,6 +225,13 @@
   An `edit` open shows what each change took out and put in, the `edits` of several as the `old` and
   `new` of one: red lines for what goes, green for what comes, each coloured by the file's language,
   and a `write` its content; folded, `+N −M` or the lines written.
+- What `read` gave of a file whose language is known (by its name, as for a write) is coloured too,
+  on the shade of a file: the first four lines folded, all of it open up to 3000, the rest
+  counted. The numbers of the lines, when read gives them, are a column apart from the code, so
+  the colouring does not take them for it, and the line that says where a part ended stays dim.
+  A long line wraps into rows, the number on the first, and the rows are coloured as one text so a
+  string or comment across them is. An error, an empty file, a file whose language is not known
+  and what read says of a part that is not there are shown as any result.
 - Attached files are found in the prompt itself (paths, quoted or with escaped spaces, that exist
   as regular files), so pasting and dropping work in any terminal. Images (png, jpeg, gif, webp, up
   to 8 MB) go with the message; images marked in read and MCP results follow the tool results as a
