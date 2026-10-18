@@ -47,6 +47,14 @@ var (
 
 // panel is the background of the user's messages and of commands, a shade
 // off the terminal's own.
+// panelBackground is the shade behind a command.
+func panelBackground(dark bool) color.Color {
+	if dark {
+		return lipgloss.Color("#24283b")
+	}
+	return lipgloss.Color("#e1e2e7")
+}
+
 func panel(dark bool) lipgloss.Style {
 	if dark {
 		return lipgloss.NewStyle().Background(lipgloss.Color("#24283b")).Foreground(lipgloss.Color("#c0caf5"))
@@ -554,7 +562,17 @@ func (p *printer) toolLine(name string, args json.RawMessage, summary, sign stri
 	if !strings.Contains(summary, "\n") && len(summary) < 60 && name != "bash" {
 		return header + " " + summary
 	}
-	return header + "\n" + p.command(summary)
+	return header + "\n" + p.commandLines(summary, false, commandLanguage(name, args))
+}
+
+// commandLanguage is the language the command of a call is written in, to
+// highlight: a shell command of bash. What else bash shows, a job's output
+// or help, is not a command.
+func commandLanguage(name string, args json.RawMessage) string {
+	if name == "bash" && tools.BashAction(args) == "run" {
+		return "bash"
+	}
+	return ""
 }
 
 // toolHeader is a tool's name after a mark coloured by what the call does.
@@ -596,12 +614,12 @@ func (p *printer) setKind(kind func(call llm.ToolCall) toolKind) {
 }
 
 func (p *printer) command(text string) string {
-	return p.commandLines(text, false)
+	return p.commandLines(text, false, "")
 }
 
 // commandLines shades a command, its first lines cut to the width, or all
-// of it wrapped.
-func (p *printer) commandLines(text string, all bool) string {
+// of it wrapped; in a language, coloured as its code is.
+func (p *printer) commandLines(text string, all bool, language string) string {
 	p.mu.Lock()
 	width, dark := p.width, p.dark
 	p.mu.Unlock()
@@ -612,7 +630,13 @@ func (p *printer) commandLines(text string, all bool) string {
 	}
 	shade := panel(dark).Width(max(width-4, 16)).Padding(0, 1)
 	var out []string
+	if language != "" {
+		out = p.highlightedCommand(lines, all, language, width, dark)
+	}
 	for _, line := range lines {
+		if language != "" {
+			break
+		}
 		pieces := []string{p.clip(line)}
 		if all {
 			pieces = p.wrapped(line, 8)
@@ -625,6 +649,27 @@ func (p *printer) commandLines(text string, all bool) string {
 		out = append(out, dimStyle.Render(fmt.Sprintf("    … +%d lines", hidden)))
 	}
 	return strings.Join(out, "\n")
+}
+
+// highlightedCommand is the lines of a command coloured by its language on the
+// shade of a command: cut to the width as they are, or wrapped.
+func (p *printer) highlightedCommand(lines []string, all bool, language string, width int, dark bool) []string {
+	total := max(width-4, 16)
+	inner := max(width-8, 10)
+	background := panelBackground(dark)
+	if !all {
+		for i, line := range lines {
+			lines[i] = p.clip(line)
+		}
+		inner = 1 << 20
+	}
+	shade := lipgloss.NewStyle().Background(background)
+	var out []string
+	for _, line := range highlightLines(strings.Join(lines, "\n"), language, inner, background, dark) {
+		fill := shade.Render(strings.Repeat(" ", max(total-1-ansi.StringWidth(line), 0)))
+		out = append(out, commandEdge.Render("  ▌")+shade.Render(" ")+line+fill)
+	}
+	return out
 }
 
 // wrapped splits a line, without its styles, into pieces that fit the width
@@ -647,7 +692,7 @@ func (p *printer) Tool(run toolRun, open bool) string {
 	case open && changed:
 		parts = append(parts, "\n"+p.toolHeaderAs(run.name, run.args, sign)+" "+run.summary+dimStyle.Render("  "+change.summary())+"\n"+p.fileChangeLines(change))
 	case open:
-		parts = append(parts, "\n"+p.toolHeaderAs(run.name, run.args, sign)+"\n"+p.commandLines(run.summary, true))
+		parts = append(parts, "\n"+p.toolHeaderAs(run.name, run.args, sign)+"\n"+p.commandLines(run.summary, true, commandLanguage(run.name, run.args)))
 		if run.name == "ui" {
 			parts = append(parts, p.uiCall(run.args)...)
 		}

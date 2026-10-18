@@ -219,6 +219,12 @@
 
 - The user's messages print as a full-width shaded band; commands and approvals show their command
   on shaded lines, and an approval is a framed question with its keys in colour.
+- The command of a `bash` call is coloured as shell code on its shade, as the approval's is: folded
+  (the first lines, a long one cut), open (all, wrapped) and while the model writes it. Only a command:
+  what bash shows for a job's output or help, and the long summary of another tool, stay plain.
+  An `edit` open shows what each change took out and put in, the `edits` of several as the `old` and
+  `new` of one: red lines for what goes, green for what comes, each coloured by the file's language,
+  and a `write` its content; folded, `+N −M` or the lines written.
 - Attached files are found in the prompt itself (paths, quoted or with escaped spaces, that exist
   as regular files), so pasting and dropping work in any terminal. Images (png, jpeg, gif, webp, up
   to 8 MB) go with the message; images marked in read and MCP results follow the tool results as a

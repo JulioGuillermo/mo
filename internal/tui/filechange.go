@@ -14,21 +14,35 @@ import (
 	"github.com/jg/mo/internal/gitops"
 )
 
-// fileChange is what a write or an edit did to a file, from its arguments.
+// fileChange is what a write or an edit did to a file, from its arguments:
+// what a write wrote, or the pairs of old and new text of an edit, one for the
+// old and new arguments, several for edits.
 type fileChange struct {
-	path, content, old, new string
-	edit                    bool
+	path, content string
+	edits         []fileEdit
+	edit          bool
 }
+
+type fileEdit struct{ old, new string }
 
 func fileChangeOf(name string, args json.RawMessage) (fileChange, bool) {
 	var fields struct {
 		Path, Content, Old, New string
+		Edits                   []struct{ Old, New string }
 	}
 	if (name != "write" && name != "edit") || json.Unmarshal(args, &fields) != nil {
 		return fileChange{}, false
 	}
-	change := fileChange{path: fields.Path, content: fields.Content, old: fields.Old, new: fields.New, edit: name == "edit"}
-	return change, change.content != "" || change.old != "" || change.new != ""
+	change := fileChange{path: fields.Path, content: fields.Content, edit: name == "edit"}
+	if change.edit {
+		if fields.Old != "" || fields.New != "" {
+			change.edits = append(change.edits, fileEdit{old: fields.Old, new: fields.New})
+		}
+		for _, each := range fields.Edits {
+			change.edits = append(change.edits, fileEdit{old: each.Old, new: each.New})
+		}
+	}
+	return change, change.content != "" || len(change.edits) > 0
 }
 
 // summary counts the lines a change writes, adds and removes.
@@ -37,13 +51,15 @@ func (c fileChange) summary() string {
 		return fmt.Sprintf("%d lines", strings.Count(strings.TrimRight(c.content, "\n"), "\n")+1)
 	}
 	added, removed := 0, 0
-	for _, line := range strings.Split(gitops.Unified("", c.old, c.new), "\n") {
-		switch {
-		case strings.HasPrefix(line, "+++"), strings.HasPrefix(line, "---"):
-		case strings.HasPrefix(line, "+"):
-			added++
-		case strings.HasPrefix(line, "-"):
-			removed++
+	for _, each := range c.edits {
+		for _, line := range strings.Split(gitops.Unified("", each.old, each.new), "\n") {
+			switch {
+			case strings.HasPrefix(line, "+++"), strings.HasPrefix(line, "---"):
+			case strings.HasPrefix(line, "+"):
+				added++
+			case strings.HasPrefix(line, "-"):
+				removed++
+			}
 		}
 	}
 	return fmt.Sprintf("+%d −%d", added, removed)
@@ -94,7 +110,11 @@ func (p *printer) fileChangeLines(change fileChange) string {
 		}
 		return strings.Join(out, "\n")
 	}
-	for _, line := range strings.Split(strings.TrimRight(gitops.Unified("", change.old, change.new), "\n"), "\n") {
+	var diff []string
+	for _, each := range change.edits {
+		diff = append(diff, strings.Split(strings.TrimRight(gitops.Unified("", each.old, each.new), "\n"), "\n")...)
+	}
+	for _, line := range diff {
 		switch {
 		case line == "", strings.HasPrefix(line, "---"), strings.HasPrefix(line, "+++"), strings.HasPrefix(line, `\`):
 			continue

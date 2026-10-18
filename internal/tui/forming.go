@@ -176,7 +176,7 @@ func (m model) formingCallView(name, args, sign string) string {
 		if len(shown) > formingCommand {
 			shown = shown[len(shown)-formingCommand:]
 		}
-		return header + "\n" + m.printer.commandLines(strings.Join(shown, "\n"), true)
+		return header + "\n" + m.printer.commandLines(strings.Join(shown, "\n"), true, "bash")
 	case "write", "edit":
 		field := "content"
 		if name == "edit" {
