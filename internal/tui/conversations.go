@@ -459,6 +459,23 @@ func (m model) queue(prompt string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// sendNow stops the model where it is so that it answers what is queued, and
+// what is typed, now. With nothing queued or typed it does nothing.
+func (m model) sendNow() (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	if strings.TrimSpace(m.input.Value()) != "" {
+		var next tea.Model
+		next, cmd = m.submit()
+		m = next.(model)
+	}
+	if len(m.queued) == 0 || !m.running {
+		return m, cmd
+	}
+	m.sendingNow = true
+	m.stop()
+	return m, cmd
+}
+
 // queuedRead puts the queued messages the model now reads into the
 // conversation, after what it did before reading them.
 func (m model) queuedRead(count int) (tea.Model, tea.Cmd) {
@@ -486,9 +503,18 @@ const queuedRows = 8
 // what the user wrote so the two are told apart.
 func queuedBackground(dark bool) color.Color {
 	if dark {
-		return lipgloss.Color("#3b3224")
+		return lipgloss.Color("#2f2819")
 	}
 	return lipgloss.Color("#f3e5c4")
+}
+
+// queuedDim is the colour of the last line's counts and hint, which are
+// said softly without Faint: some terminals take it from the background too.
+func queuedDim(dark bool) color.Color {
+	if dark {
+		return lipgloss.Color("#9a8f78")
+	}
+	return lipgloss.Color("#7a6a4a")
 }
 
 // queuedIcon is the mark of a message waiting, of the icon set: a speech
@@ -512,19 +538,26 @@ func (m model) queuedView() string {
 		return ""
 	}
 	dark := m.printer == nil || m.printer.isDark()
-	shade := queuedBackground(dark)
-	edge := lipgloss.NewStyle().Background(shade).Foreground(warning).Render("▌")
-	sign := edge + " " + queuedIcon(m.treeIconSet()) + " "
-	indent := edge + strings.Repeat(" ", ansi.StringWidth(sign)-1)
+	paint := lipgloss.NewStyle().Background(queuedBackground(dark))
+	edge := paint.Foreground(warning).Render("▌")
+	sign := " " + queuedIcon(m.treeIconSet()) + " "
+	indent := strings.Repeat(" ", ansi.StringWidth(sign))
 	width := max(m.mainWidth(), 20)
-	body := max(width-ansi.StringWidth(sign)-1, 10)
+	body := max(width-1-ansi.StringWidth(sign)-1, 10)
+
+	// Each piece carries the shade itself: the edge ends with a reset, which
+	// would take it from what follows.
+	row := func(content string) string {
+		fill := max(width-1-ansi.StringWidth(content), 0)
+		return edge + paint.Render(content+strings.Repeat(" ", fill))
+	}
 
 	var rows []string
 	for _, prompt := range m.queued {
 		lead := sign
 		for _, line := range strings.Split(strings.TrimSpace(prompt), "\n") {
 			for _, part := range strings.Split(ansi.Wrap(strings.TrimRight(line, " \t\r"), body, ""), "\n") {
-				rows = append(rows, lead+part)
+				rows = append(rows, row(lead+part))
 				lead = indent
 			}
 		}
@@ -539,15 +572,16 @@ func (m model) queuedView() string {
 		rest += fmt.Sprintf(" · … +%d lines", hidden)
 	}
 	rest += " · ↑ edit"
-
-	band := lipgloss.NewStyle().Background(shade).Width(width)
-	for i, row := range rows {
-		rows[i] = band.Render(row)
+	if ansi.StringWidth(" ⧗ queued"+rest+" · ctrl+s send now")+1 <= width {
+		rest += " · ctrl+s send now"
+	} else if ansi.StringWidth(" ⧗ queued"+rest+" · ^s now")+1 <= width {
+		rest += " · ^s now"
 	}
-	label := edge + lipgloss.NewStyle().Background(shade).Foreground(warning).Bold(true).Render(" ⧗ queued")
-	tail := lipgloss.NewStyle().Background(shade).Faint(true).Render(rest)
-	fill := lipgloss.NewStyle().Background(shade).Render(strings.Repeat(" ", max(width-ansi.StringWidth(label)-ansi.StringWidth(tail), 0)))
-	rows = append(rows, label+tail+fill)
+
+	label := paint.Foreground(warning).Bold(true).Render(" ⧗ queued")
+	tail := paint.Foreground(queuedDim(dark)).Render(rest)
+	fill := paint.Render(strings.Repeat(" ", max(width-1-ansi.StringWidth(" ⧗ queued"+rest), 0)))
+	rows = append(rows, edge+label+tail+fill)
 	return strings.Join(rows, "\n")
 }
 

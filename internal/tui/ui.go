@@ -182,6 +182,9 @@ type model struct {
 	// queued are the messages written while the model works, as typed,
 	// until it reads them.
 	queued []string
+	// sendingNow is set when ctrl+s stops the model to hand it what is queued:
+	// the stop then runs those messages instead of giving them back.
+	sendingNow bool
 	// suggestionsClosedOn is what the input held when esc closed its
 	// suggestions: they stay closed until it changes.
 	suggestionsClosedOn string
@@ -696,6 +699,13 @@ func (m model) plainKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "pgdown", "shift+down":
 		m.scroll(false, m.pageSize(msg.String()))
 		return m, nil
+	case "ctrl+s":
+		// Sends now what is queued, and what is typed with it: the model
+		// stops where it is and answers them, instead of reading them at its
+		// next step.
+		if m.running && m.session.Agent != nil {
+			return m.sendNow()
+		}
 	case "ctrl+x":
 		// Clears what is typed, the model's run going on.
 		if m.input.Value() != "" {
@@ -979,6 +989,8 @@ func (m *model) stop() {
 }
 
 func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
+	sendingNow := m.sendingNow
+	m.sendingNow = false
 	m.running = false
 	if !m.runStarted.IsZero() {
 		m.worked = time.Since(m.runStarted)
@@ -999,6 +1011,8 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 	var folded error
 	foldAt := 0
 	switch {
+	case errors.Is(err, context.Canceled) && sendingNow:
+		lines = append(lines, m.printer.Note("stopped to send what you queued"))
 	case errors.Is(err, context.Canceled):
 		lines = append(lines, m.printer.Note("stopped · /continue goes on"))
 	case errors.Is(err, agent.ErrNothingToContinue):
@@ -1013,7 +1027,7 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 	if !stopped {
 		save = tea.Batch(save, m.turnEnded(err))
 	}
-	if stopped && m.session.Agent != nil {
+	if stopped && !sendingNow && m.session.Agent != nil {
 		if queued := m.session.Agent.TakeQueued(); len(queued) > 0 {
 			if typed := strings.TrimSpace(m.input.Value()); typed != "" {
 				queued = append(queued, typed)
@@ -1032,7 +1046,7 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 		lines = append(lines, m.printer.Note("the settings saved during the turn apply now"))
 		save = tea.Batch(save, use)
 	}
-	if !stopped && m.session.Agent != nil && m.session.Agent.HasQueued() {
+	if (!stopped || sendingNow) && m.session.Agent != nil && m.session.Agent.HasQueued() {
 		next, run := m.start(nil, m.session.Agent.RunQueued)
 		m = next.(model)
 		save = tea.Batch(save, run)

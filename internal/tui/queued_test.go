@@ -14,6 +14,9 @@ package tui
 // | QM-10 | Edge     | A long queued message wraps inside the main panel, never under the sidebar | P0     |
 // | QM-12 | Happy    | The queue is shaded, in a colour neither the user's panel nor the chat has | P1      |
 // | QM-13 | Happy    | The mark of a message follows the icon set, and an amber edge runs down the queue | P1 |
+// | QM-14 | Edge     | Every cell of the queue has its shade, text included, and each row fills the panel | P0 |
+// | QM-15 | Happy    | ctrl+s while the model works stops it to answer what is queued, and what is typed with it | P0 |
+// | QM-16 | Edge     | ctrl+s with nothing queued or typed, or with the model idle, does nothing | P1       |
 // | QM-11 | Edge     | A queued message of many lines is cut with a count of those not shown    | P1       |
 
 import (
@@ -171,7 +174,7 @@ func TestQueuedMessages(t *testing.T) {
 
 		rows := strings.Split(ansi.Strip(m.queuedView()), "\n")
 
-		if len(rows) < 3 || !strings.HasPrefix(rows[0], "▌ 💬 word") || !strings.HasPrefix(rows[1], "▌    word") || !strings.Contains(rows[len(rows)-1], "⧗ queued · 1 · ↑ edit") {
+		if len(rows) < 3 || !strings.HasPrefix(rows[0], "▌ 💬 word") || !strings.HasPrefix(rows[1], "▌    word") || !strings.Contains(rows[len(rows)-1], "⧗ queued · 1 · ↑ edit · ctrl+s send now") {
 			t.Fatalf("rows %q", rows)
 		}
 		for _, row := range rows {
@@ -197,7 +200,7 @@ func TestQueuedMessages(t *testing.T) {
 
 		drawn := m.queuedView()
 
-		if queuedBackground(true) == panelBackground(true) || queuedBackground(false) == panelBackground(false) || !strings.Contains(drawn, "48;2;59;50;36") {
+		if queuedBackground(true) == panelBackground(true) || queuedBackground(false) == panelBackground(false) || !strings.Contains(drawn, "48;2;47;40;25") {
 			t.Errorf("%q", drawn)
 		}
 	})
@@ -215,6 +218,59 @@ func TestQueuedMessages(t *testing.T) {
 					t.Errorf("%s: no amber edge in %q", set, row)
 				}
 			}
+		}
+	})
+
+	t.Run("QM-14 every cell of the queue has its shade, the text and the end of each row too", func(t *testing.T) {
+		m := queuedModel(t)
+		m.width = 80
+
+		for _, row := range strings.Split(m.queuedView(), "\n") {
+			// Each run of text or spaces after a reset must be painted again.
+			for _, piece := range strings.Split(row, "\x1b[m")[1:] {
+				if strings.TrimSpace(ansi.Strip(piece)) != "" && !strings.Contains(piece, "48;2;47;40;25") {
+					t.Errorf("text without the shade in %q", row)
+				}
+			}
+			if ansi.StringWidth(row) != m.mainWidth() {
+				t.Errorf("%d columns, want %d: %q", ansi.StringWidth(row), m.mainWidth(), ansi.Strip(row))
+			}
+		}
+	})
+
+	t.Run("QM-15 ctrl+s while the model works stops it to answer what is queued, and what is typed with it", func(t *testing.T) {
+		m := queuedModel(t)
+		stopped := false
+		m.cancel = func() { stopped = true }
+		m.input.SetValue("and be quick")
+
+		sent := keys(t, m, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+		updated, _ := sent.finishRun(context.Canceled)
+		after := updated.(model)
+
+		if !stopped || !sent.sendingNow || len(sent.queued) != 2 || sent.input.Value() != "" {
+			t.Errorf("stopped %v sendingNow %v queued %v input %q", stopped, sent.sendingNow, sent.queued, sent.input.Value())
+		}
+		// Not given back to the input: the model answers them.
+		if after.input.Value() != "" || !after.running || after.sendingNow {
+			t.Errorf("input %q running %v sendingNow %v", after.input.Value(), after.running, after.sendingNow)
+		}
+	})
+
+	t.Run("QM-16 ctrl+s with nothing queued or typed, or with the model idle, does nothing", func(t *testing.T) {
+		quiet := conversationModel()
+		quiet.running = true
+		stopped := false
+		quiet.cancel = func() { stopped = true }
+		quiet.session.Agent = &agent.Agent{}
+		quiet = keys(t, quiet, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+
+		idle := queuedModel(t)
+		idle.running = false
+		idle = keys(t, idle, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+
+		if stopped || quiet.sendingNow || idle.sendingNow {
+			t.Errorf("stopped %v, sendingNow %v / %v", stopped, quiet.sendingNow, idle.sendingNow)
 		}
 	})
 }

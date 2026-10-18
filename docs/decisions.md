@@ -1355,6 +1355,11 @@
 - **The queue wraps inside the main panel**, not the screen: it used to be one line cut at the
   screen's width, which ran under the side panel when that was open. Each message takes the lines
   it needs, up to eight, then `… +M lines` in the last line.
+- **ctrl+s sends now.** The model reads a queued message at its next step; ctrl+s stops it where
+  it is (as esc does) and runs the queue as a turn of its own, what is typed going with it. The
+  stop that follows does not give the queue back to the input, as an esc's does (`sendingNow`).
+  It does nothing with the model idle or with nothing queued or typed. The queue's last line
+  names the key, shortened when the panel is narrow.
 - **Up with nothing typed brings all that is queued back to the input**, joined as the model
   would read them, to edit and send again; the model is not stopped, unlike esc. It takes the
   queue as the agent's lock allows, so a message the model already read cannot come back, and up
