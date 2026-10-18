@@ -44,8 +44,8 @@ func TestKeywords(t *testing.T) {
 			"replace text in file":    "edit",
 			"create new file":         "write",
 			"save to disk":            "write",
-			"download a page":         "fetch",
-			"get url":                 "fetch",
+			"download a page":         "web_fetch",
+			"get url":                 "web_fetch",
 			"google something":        "web_search",
 			"latest news":             "web_search",
 			"find text in files":      "grep",
@@ -76,7 +76,7 @@ func TestKeywords(t *testing.T) {
 		topics := map[string][]string{
 			"file":     {"read", "write", "edit", "ls", "rm", "grep"},
 			"folder":   {"ls", "mkdir", "rm"},
-			"internet": {"fetch", "web_search"},
+			"internet": {"web_fetch", "web_search"},
 		}
 		for word, want := range topics {
 			listed := registry.list(word)
@@ -117,9 +117,9 @@ func TestKeywords(t *testing.T) {
 	t.Run("KW-05 a word in a tool's name counts more than one in its keywords", func(t *testing.T) {
 		registry := keywordRegistry(t, Options{})
 
-		for _, name := range []string{"read", "grep", "fetch", "memory", "git"} {
-			if names := foundNames(registry, name); len(names) == 0 || names[0] != name {
-				t.Errorf("%q found %v", name, names)
+		for query, want := range map[string]string{"read": "read", "grep": "grep", "fetch": "web_fetch", "web_fetch": "web_fetch", "memory": "memory", "git": "git"} {
+			if names := foundNames(registry, query); len(names) == 0 || names[0] != want {
+				t.Errorf("%q found %v", query, names)
 			}
 		}
 	})

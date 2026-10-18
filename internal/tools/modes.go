@@ -40,6 +40,11 @@ const (
 	keywordWeight = 2
 )
 
+// stopWords are the words of a query that say nothing of the tool wanted, and
+// that a name or a keyword holds by chance: "a" is in half of them.
+var stopWords = map[string]bool{"a": true, "an": true, "the": true, "to": true, "of": true, "in": true, "on": true, "for": true,
+	"and": true, "or": true, "with": true, "my": true, "it": true, "is": true, "i": true, "some": true}
+
 // Load says what finding a tool with tool_search does in search mode.
 type Load string
 
@@ -253,7 +258,7 @@ func (r *Registry) Unwrap(call llm.ToolCall) (llm.ToolCall, bool, error) {
 	if _, ok := r.find(args.Name); !ok || isMetaTool(args.Name) {
 		return call, true, fmt.Errorf("tool_call: no tool %q; tool_list names them", args.Name)
 	}
-	return llm.ToolCall{ID: call.ID, Name: args.Name, Args: args.Args}, true, nil
+	return llm.ToolCall{ID: call.ID, Name: Canonical(args.Name), Args: args.Args}, true, nil
 }
 
 // list names the tools left to search, not declared, whose name or
@@ -335,7 +340,7 @@ func (r *Registry) match(query string) []Tool {
 		}
 		return selected
 	}
-	words := strings.Fields(strings.ToLower(query))
+	words := slices.DeleteFunc(strings.Fields(strings.ToLower(query)), func(word string) bool { return stopWords[word] })
 	candidates := r.searchable()
 	limit := searchMaxResults
 	if len(words) > 0 {

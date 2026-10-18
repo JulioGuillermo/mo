@@ -80,6 +80,7 @@ func (m model) currentState() state {
 func (m model) toolState(name, args string, colors stateColors) state {
 	call := llm.ToolCall{Name: name, Args: []byte(args)}
 	call = m.unwrap(call)
+	call.Name = tools.Canonical(call.Name)
 	changes := alwaysChanging[call.Name] || (call.Name == "bash" && tools.BashChanges(call.Args))
 	if m.session.Agent != nil && m.session.Agent.Tools != nil {
 		changes = changes || m.session.Agent.Tools.Changes(call) || m.session.Agent.Tools.Warning(call) != ""
@@ -102,7 +103,7 @@ func (m model) toolState(name, args string, colors stateColors) state {
 		detail = orDefault(field("path"), call.Name)
 	case "grep":
 		detail = field("pattern")
-	case "fetch":
+	case "web_fetch":
 		detail = field("url")
 	case "web_search":
 		detail = field("query")
@@ -127,7 +128,7 @@ const stateDetailWidth = 40
 // or change, as they do.
 var toolVerbs = map[string]string{
 	"read": "reading", "grep": "scanning", "ls": "listing", "write": "writing", "edit": "editing",
-	"rm": "removing", "mkdir": "creating", "bash": "running", "fetch": "fetching", "web_search": "searching",
+	"rm": "removing", "mkdir": "creating", "bash": "running", "web_fetch": "fetching", "web_search": "searching",
 	"memory": "remembering", "todo": "planning", tools.AgentName: "delegating", "ui": "drawing",
 }
 

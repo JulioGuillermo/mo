@@ -386,7 +386,7 @@ func Defaults() Config {
 			Mode:         tools.ModeFull,
 			Load:         tools.LoadContext,
 			AlwaysLoaded: []string{"read", "edit", "write", "bash", "ask", "memory"},
-			Confirm:      []string{"bash", "rm", "fetch"},
+			Confirm:      []string{"bash", "rm", "web_fetch"},
 			MaxOutput:    10000,
 			ReadMaxSize:  "10MB",
 			Outputs:      "disk",
@@ -905,4 +905,46 @@ func (c Config) InstructionFiles() []string {
 // SessionDir is where conversations are saved to resume them.
 func SessionDir() string {
 	return filepath.Join(dataHome(), "mo", "sessions")
+}
+
+// normalizeToolNames gives the tools the names they have now, where a file
+// written before a tool was renamed has the old one: in the lists of tools and
+// in the maps keyed by one. A name set under both is the new one's.
+func normalizeToolNames(cfg Config) Config {
+	rename := func(names []string) []string {
+		if names == nil {
+			return nil
+		}
+		renamed := make([]string, 0, len(names))
+		for _, name := range names {
+			if name = tools.Canonical(name); !slices.Contains(renamed, name) {
+				renamed = append(renamed, name)
+			}
+		}
+		return renamed
+	}
+	cfg.Tools.AlwaysLoaded = rename(cfg.Tools.AlwaysLoaded)
+	cfg.Tools.Confirm = rename(cfg.Tools.Confirm)
+	cfg.Tools.Disabled = rename(cfg.Tools.Disabled)
+	if cfg.Tools.Modes != nil {
+		modes := make(map[string]tools.Mode, len(cfg.Tools.Modes))
+		for name, mode := range cfg.Tools.Modes {
+			if current := tools.Canonical(name); current == name || cfg.Tools.Modes[current] == "" {
+				modes[current] = mode
+			}
+		}
+		cfg.Tools.Modes = modes
+	}
+	if cfg.Tools.Descriptions != nil {
+		descriptions := make(map[string]string, len(cfg.Tools.Descriptions))
+		for name, text := range cfg.Tools.Descriptions {
+			if current := tools.Canonical(name); current == name {
+				descriptions[current] = text
+			} else if _, set := cfg.Tools.Descriptions[current]; !set {
+				descriptions[current] = text
+			}
+		}
+		cfg.Tools.Descriptions = descriptions
+	}
+	return cfg
 }

@@ -128,3 +128,32 @@ func TestCommands(t *testing.T) {
 		}
 	})
 }
+
+func TestFetchRulesAfterTheRename(t *testing.T) {
+	t.Run("PM-30 rules written as fetch <url> still decide a web_fetch, a deny one and a regex too", func(t *testing.T) {
+		policy, err := New(ModeEdits, []string{"fetch https://go.dev/*"}, []string{"fetch https://evil.example/*", "re:^fetch https://bad"})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		allowed, _ := policy.Check("web_fetch https://go.dev/doc")
+		denied, _ := policy.Check("web_fetch https://evil.example/x")
+		regex, _ := policy.Check("web_fetch https://bad.example")
+		unknown, _ := policy.Check("web_fetch https://other.example")
+
+		if allowed != Allowed || denied != Denied || regex != Denied || unknown != Unknown {
+			t.Errorf("allowed %v denied %v regex %v unknown %v", allowed, denied, regex, unknown)
+		}
+	})
+
+	t.Run("PM-31 rules written as web_fetch <url> decide too", func(t *testing.T) {
+		policy, _ := New(ModeEdits, []string{"web_fetch https://go.dev/*"}, []string{"web_fetch https://evil.example/*"})
+
+		allowed, _ := policy.Check("web_fetch https://go.dev/doc")
+		denied, _ := policy.Check("web_fetch https://evil.example/x")
+
+		if allowed != Allowed || denied != Denied {
+			t.Errorf("allowed %v denied %v", allowed, denied)
+		}
+	})
+}

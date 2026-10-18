@@ -2,7 +2,7 @@ package config
 
 // Test Traceability Table
 // | ID    | Category | Description                                                      | Priority |
-// | CF-01 | Happy    | Without files the defaults hold: presets and bash/rm/fetch confirmation | P0 |
+// | CF-01 | Happy    | Without files the defaults hold: presets and bash/rm/web_fetch confirmation | P0 |
 // | CF-02 | Happy    | The project file overrides the user file key by key              | P0       |
 // | CF-03 | Happy    | A provider layer changes only the fields it sets                  | P0       |
 // | CF-04 | Edge     | confirm = [] in the user file turns confirmation off              | P1       |
@@ -32,6 +32,8 @@ package config
 // | CF-28 | Error    | A bad mode or a broken regex rule is refused                         | P1       |
 // | CF-30 | Happy    | The default is this turn's reasoning; the three choices and the true and false of older files are read | P0 |
 // | CF-31 | Error    | A choice that is none of them, or a number, is refused               | P1       |
+// | CF-32 | Happy    | A file written with fetch, the tool's old name, gets web_fetch in every list and map | P0 |
+// | CF-33 | Edge     | Set under both names, the new one's is kept                          | P1       |
 
 import (
 	"fmt"
@@ -61,7 +63,7 @@ func isolatedHome(t *testing.T) string {
 }
 
 func TestLoad(t *testing.T) {
-	t.Run("CF-01 without files the defaults hold: presets and bash/rm/fetch confirmation", func(t *testing.T) {
+	t.Run("CF-01 without files the defaults hold: presets and bash/rm/web_fetch confirmation", func(t *testing.T) {
 		isolatedHome(t)
 
 		cfg, err := Load(t.TempDir())
@@ -72,7 +74,7 @@ func TestLoad(t *testing.T) {
 		if cfg.Providers["ollama"].BaseURL != "http://localhost:11434/v1" {
 			t.Errorf("ollama preset = %+v", cfg.Providers["ollama"])
 		}
-		if strings.Join(cfg.Tools.Confirm, ",") != "bash,rm,fetch" || cfg.Tools.MaxOutput == 0 {
+		if strings.Join(cfg.Tools.Confirm, ",") != "bash,rm,web_fetch" || cfg.Tools.MaxOutput == 0 {
 			t.Errorf("tools = %+v", cfg.Tools)
 		}
 	})
@@ -180,7 +182,7 @@ base_url = "https://evil.example"
 
 		cfg, err := Load(workDir)
 
-		if err != nil || strings.Join(cfg.Tools.Confirm, ",") != "bash,rm,fetch,write" {
+		if err != nil || strings.Join(cfg.Tools.Confirm, ",") != "bash,rm,web_fetch,write" {
 			t.Errorf("confirm = %v err = %v", cfg.Tools.Confirm, err)
 		}
 	})
@@ -566,6 +568,42 @@ func TestKeepReasoning(t *testing.T) {
 			if _, err := load(t, content); err == nil {
 				t.Errorf("%q was taken", content)
 			}
+		}
+	})
+}
+
+func TestRenamedTools(t *testing.T) {
+	t.Run("CF-32 a file written with fetch, the tool's old name, gets web_fetch in every list and map", func(t *testing.T) {
+		configHome := isolatedHome(t)
+		writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), `[tools]
+confirm = ["bash", "fetch", "web_fetch"]
+disabled = ["fetch"]
+always_loaded = ["read", "fetch"]
+
+[tools.modes]
+fetch = "search"
+
+[tools.descriptions]
+fetch = "Open a page."
+`)
+
+		cfg, err := Load(t.TempDir())
+
+		if err != nil || strings.Join(cfg.Tools.Confirm, ",") != "bash,web_fetch" || strings.Join(cfg.Tools.Disabled, ",") != "web_fetch" ||
+			strings.Join(cfg.Tools.AlwaysLoaded, ",") != "read,web_fetch" || cfg.Tools.Modes["web_fetch"] != "search" || cfg.Tools.Modes["fetch"] != "" ||
+			cfg.Tools.Descriptions["web_fetch"] != "Open a page." {
+			t.Errorf("tools = %+v err = %v", cfg.Tools, err)
+		}
+	})
+
+	t.Run("CF-33 set under both names, the new one's is kept", func(t *testing.T) {
+		configHome := isolatedHome(t)
+		writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), "[tools.modes]\nfetch = \"search\"\nweb_fetch = \"compact\"\n")
+
+		cfg, err := Load(t.TempDir())
+
+		if err != nil || cfg.Tools.Modes["web_fetch"] != "compact" {
+			t.Errorf("modes = %v err = %v", cfg.Tools.Modes, err)
 		}
 	})
 }

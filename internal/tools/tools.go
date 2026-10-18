@@ -297,6 +297,7 @@ func (r *Registry) Run(ctx context.Context, call llm.ToolCall) (output string, i
 }
 
 func (r *Registry) find(name string) (Tool, bool) {
+	name = Canonical(name)
 	for _, tool := range r.tools {
 		if tool.Name == name {
 			return tool, true

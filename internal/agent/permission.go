@@ -90,7 +90,7 @@ func (a *Agent) approvalFor(ctx context.Context, call llm.ToolCall, hooks Hooks)
 }
 
 // ruledSubjects returns what rules are checked against: the simple commands
-// of a bash script, or "fetch <url>". ruled is false for other tools.
+// of a bash script, or "web_fetch <url>". ruled is false for other tools.
 func ruledSubjects(call llm.ToolCall) (subjects []permissions.Command, ruled bool, err error) {
 	switch call.Name {
 	case "bash":
@@ -106,8 +106,8 @@ func ruledSubjects(call llm.ToolCall) (subjects []permissions.Command, ruled boo
 		}
 		subjects, err = permissions.Commands(argText(call, "command"))
 		return subjects, true, err
-	case "fetch":
-		return []permissions.Command{{Text: "fetch " + argText(call, "url")}}, true, nil
+	case "web_fetch", "fetch":
+		return []permissions.Command{{Text: "web_fetch " + argText(call, "url")}}, true, nil
 	}
 	return nil, false, nil
 }

@@ -207,6 +207,8 @@ func TestStates(t *testing.T) {
 			`{"name":"bash","args":{"command":"sleep 30 && echo done"}}`:                              "running · sleep, echo",
 			`{"name":"git","args":{"action":"commit","message":"x"}}`:                                 "versioning · commit",
 			`{"name":"mcp__playwright__browser_click","args":{}}`:                                     "calling · playwright › browser_click",
+			`{"name":"web_fetch","args":{"url":"https://go.dev/doc"}}`:                                "fetching · https://go.dev/doc",
+			`{"name":"fetch","args":{"url":"https://go.dev/doc"}}`:                                    "fetching · https://go.dev/doc",
 		}
 		for raw, want := range cases {
 			var call struct {

@@ -25,6 +25,7 @@ package agent
 // | LE-25 | Edge     | Counters and reworded text are not caught by the stream (known limit)    | P2       |
 // | LE-05 | Edge     | What a call writes in its arguments is never cut                         | P0       |
 // | LE-26 | Happy    | A loop that starts after normal text is found from where it begins       | P1       |
+// | LE-30 | Edge     | web_fetch, and fetch as it was named, never change anything              | P1       |
 // | LE-27 | Happy    | With early calls the same call is not run the third time                 | P0       |
 
 import (
@@ -335,6 +336,18 @@ func TestLoopKnownLimits(t *testing.T) {
 
 		if found != "I will read the config now.\n" {
 			t.Errorf("found %q", found)
+		}
+	})
+}
+
+func TestFetchIsQuiet(t *testing.T) {
+	t.Run("LE-30 web_fetch, and fetch as it was named, never change anything", func(t *testing.T) {
+		agent, _ := guardedAgent(t, &streamingProvider{})
+
+		for _, name := range []string{"web_fetch", "fetch", "web_search"} {
+			if agent.mayChange(toolCallOf(name, `{"url":"https://go.dev"}`)) {
+				t.Errorf("%s may change something", name)
+			}
 		}
 	})
 }

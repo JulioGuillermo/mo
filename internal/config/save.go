@@ -45,6 +45,7 @@ func combine(workDir string, user Config, project Project) (Config, error) {
 	} else {
 		cfg = mergeProject(cfg, project.Layer)
 	}
+	cfg = normalizeToolNames(cfg)
 	return cfg, validate(cfg)
 }
 

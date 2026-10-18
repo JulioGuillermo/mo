@@ -88,6 +88,7 @@ func (a *Agent) prepareCall(ctx context.Context, outer llm.ToolCall, hooks Hooks
 	if err != nil {
 		return settled(outer, err.Error())
 	}
+	call.Name = tools.Canonical(call.Name)
 	if a.looping() {
 		return settled(outer, stoppedCallResult)
 	}

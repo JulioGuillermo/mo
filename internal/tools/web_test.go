@@ -36,8 +36,8 @@ func TestFetchTool(t *testing.T) {
 		server := page(&downloads)
 		defer server.Close()
 
-		first, _ := call(t, Env{}, "fetch", map[string]any{"url": server.URL})
-		rest, _ := call(t, Env{}, "fetch", map[string]any{"url": server.URL, "offset": 200})
+		first, _ := call(t, Env{}, "web_fetch", map[string]any{"url": server.URL})
+		rest, _ := call(t, Env{}, "web_fetch", map[string]any{"url": server.URL, "offset": 200})
 
 		if !strings.HasPrefix(first, server.URL+"\n\nline 1\n") || !strings.HasSuffix(first, "[lines 1-200 of 302; offset=200 continues]\n") {
 			t.Errorf("first = %q", first[len(first)-80:])
@@ -52,7 +52,7 @@ func TestFetchTool(t *testing.T) {
 		server := page(&downloads)
 		defer server.Close()
 
-		text, _ := call(t, Env{}, "fetch", map[string]any{"url": server.URL, "offset": 999})
+		text, _ := call(t, Env{}, "web_fetch", map[string]any{"url": server.URL, "offset": 999})
 
 		if !strings.Contains(text, "past the end") {
 			t.Errorf("text = %q", text)
@@ -66,7 +66,7 @@ func TestFetchTool(t *testing.T) {
 		registry := NewRegistry(Env{}, Options{})
 
 		for _, offset := range []int{0, 200} {
-			registry.Run(context.Background(), llm.ToolCall{Name: "fetch", Args: args(t, map[string]any{"url": server.URL, "offset": offset})})
+			registry.Run(context.Background(), llm.ToolCall{Name: "web_fetch", Args: args(t, map[string]any{"url": server.URL, "offset": offset})})
 		}
 
 		if downloads != 1 {
@@ -94,10 +94,10 @@ func TestFetchConfirmation(t *testing.T) {
 		first, _ := json.Marshal(map[string]any{"url": server.URL})
 		other, _ := json.Marshal(map[string]any{"url": server.URL + "/other"})
 
-		before := registry.AlreadyConfirmed(llm.ToolCall{Name: "fetch", Args: first})
-		registry.Run(context.Background(), llm.ToolCall{Name: "fetch", Args: first})
-		after := registry.AlreadyConfirmed(llm.ToolCall{Name: "fetch", Args: first})
-		elsewhere := registry.AlreadyConfirmed(llm.ToolCall{Name: "fetch", Args: other})
+		before := registry.AlreadyConfirmed(llm.ToolCall{Name: "web_fetch", Args: first})
+		registry.Run(context.Background(), llm.ToolCall{Name: "web_fetch", Args: first})
+		after := registry.AlreadyConfirmed(llm.ToolCall{Name: "web_fetch", Args: first})
+		elsewhere := registry.AlreadyConfirmed(llm.ToolCall{Name: "web_fetch", Args: other})
 
 		if before || !after || elsewhere {
 			t.Errorf("before = %v after = %v elsewhere = %v", before, after, elsewhere)

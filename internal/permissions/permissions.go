@@ -66,7 +66,8 @@ type rule struct {
 // Compile checks a rule. A rule is a command where * stands for anything:
 // alone it is any words, or none ("ls *" also takes "ls"), inside a word any
 // characters of it ("git log*"). "re:" starts a regular expression instead.
-// Fetches are written "fetch <url>".
+// Fetches are written "web_fetch <url>", or "fetch <url>" as before the tool
+// was renamed: a rule of either kind decides for both.
 func Compile(text string) error {
 	_, err := compile(text)
 	return err
@@ -165,16 +166,26 @@ func (p *Policy) Allow(text string) error {
 // it. A deny rule wins over an allow rule.
 func (p *Policy) Check(command string) (Verdict, string) {
 	command = strings.Join(strings.Fields(command), " ")
+	// A fetch is also written as it was before the tool was renamed, so the
+	// rules of that time, a deny among them, still apply.
+	forms := []string{command}
+	if url, fetch := strings.CutPrefix(command, "web_fetch "); fetch {
+		forms = append(forms, "fetch "+url)
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for _, denied := range p.deny {
-		if denied.pattern.MatchString(command) {
-			return Denied, denied.text
+		for _, form := range forms {
+			if denied.pattern.MatchString(form) {
+				return Denied, denied.text
+			}
 		}
 	}
 	for _, allowed := range p.allow {
-		if allowed.pattern.MatchString(command) {
-			return Allowed, allowed.text
+		for _, form := range forms {
+			if allowed.pattern.MatchString(form) {
+				return Allowed, allowed.text
+			}
 		}
 	}
 	return Unknown, ""

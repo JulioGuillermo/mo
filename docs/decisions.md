@@ -17,9 +17,9 @@
   connections after streaming, and a repeated model request has no side effect.
 - No limit without a way past it. Every tool that returns text takes the same view fields, applied
   by the registry to what the tool returns: `offset` (negative from the end), `limit` (2000 lines,
-  200 for `fetch`), `col`, `width` (2000 bytes a line), `match` and `numbered`. What is left out is
+  200 for `web_fetch`), `col`, `width` (2000 bytes a line), `match` and `numbered`. What is left out is
   said with the `offset` or `col` that shows it. Seeing another part runs the tool again: listing,
-  grep, git and fetch are cheap, and a page stays cached. The fixed caps (500 entries, 200
+  grep, git and web_fetch are cheap, and a page stays cached. The fixed caps (500 entries, 200
   matches, 400 blame lines, 8 KB pages) are gone.
 - Output of other tools, MCP's, is cut to `tools.max_output` (10 KB) keeping 60 % head and 40 %
   tail: commands put their summary and errors at the end, files and listings the useful part first.
@@ -30,7 +30,7 @@
   `bash`, so a plain command call is what every model expects.
 - Nothing a command printed is lost: every `bash` call is a job whose output goes to disk in the
   conversation's folder, so it can be read later by lines or searched, also after a two-hour build
-  that would cost as much again. `fetch`, `read` and `grep` are not kept: doing them again is cheap.
+  that would cost as much again. `web_fetch`, `read` and `grep` are not kept: doing them again is cheap.
 
 ## Tool modes
 
@@ -43,7 +43,7 @@
   lists the hidden tools in its own description: that list grew with every MCP server.
 - Built-in tools are also found by keywords of their own (`internal/tools/keywords.go`): synonyms
   and the topics tools share, so "file" finds read, write, edit, ls, rm and grep, and "internet"
-  fetch and web_search; some in Spanish. The model never receives them, so descriptions stay
+  web_fetch and web_search; some in Spanish. The model never receives them, so descriptions stay
   short, and a description emptied in the config is found all the same. A query word counts once
   per tool: 4 in its name, 2 as one of its keywords, 1 inside a keyword or in the description, so
   the tool that has more of the query's words comes first and a longer list gains nothing. An MCP
@@ -180,7 +180,7 @@
 - Four modes, strictest first: `ask`, `edits`, `auto`, `all`. `edits` is the default and is what mo
   did before modes: `tools.confirm` asks, file changes in the working directory do not. `ask` adds
   file changes and memory writes; reading never asks, it is what the model needs to do anything.
-- Rules apply to the tools that run arbitrary things, `bash` and `fetch`. Other tools in `confirm`
+- Rules apply to the tools that run arbitrary things, `bash` and `web_fetch`. Other tools in `confirm`
   (`rm`, MCP tools) keep "always this session", per tool.
 - A script is split with mvdan.cc/sh, the parser of shfmt, not by hand: quotes, `$(...)`,
   backquotes, loops and heredocs are where hand splitting lets a second command slip past a rule
@@ -310,10 +310,10 @@
 
 ## Web
 
-- `fetch` keeps the article readability finds, else the whole page, converted to markdown with
+- `web_fetch` keeps the article readability finds, else the whole page, converted to markdown with
   absolute links, and shows 200 lines unless the model asks for more, so a long page costs what
   it actually reads. The last 16 pages are cached per session.
-- `fetch` asks by default: a prompt-injected model could send what it read to any URL. Reading on
+- `web_fetch` asks by default: a prompt-injected model could send what it read to any URL. Reading on
   in a page already fetched does not ask again. Redirects are followed within the same host only;
   one to another host ends the fetch with its target, which then goes through approval itself,
   so an approved public URL cannot bounce to localhost or a metadata address.
@@ -478,7 +478,7 @@
 - **A different call that may change something ends the count**: running the tests again after an
   edit is progress even when they fail the same way. What may change something is not a fixed
   list but what the registry says (`Changes` for git, memory and bash by their action; read, ls,
-  grep, fetch and the search tools never; any other tool does). Such a call ends the count unless
+  grep, web_fetch and the search tools never; any other tool does). Such a call ends the count unless
   it is itself written over and over in the window with the same results, which is how cycles
   are told from progress: A, B, A, B or A, B, C, D, A, B, C, D are loops; A, B, A with A's
   result changing is not. A cycle is caught once its calls were each written twice.
@@ -530,6 +530,21 @@
   reworded sentences is not caught by the stream guard (only by the steps); fuzzy matching would be
   the way out, at the price of false positives. Titles and permission judgements are short and
   have a timeout, so they have no guard.
+
+## The fetch tool is web_fetch
+
+- `fetch` was named so by what it does, but a model that sees a tool called `fetch` among others does
+  not tie it to opening a page, and with the tools in compact mode the name is nearly all it has;
+  `web_fetch` pairs with `web_search`, the way the other agents and the MCP fetch servers name it.
+  The description stays as it was.
+- The old name keeps working, since a rule or a list written with it would stop applying
+  without a word, a `deny` one worst: configuration (`confirm`, `disabled`, `always_loaded`, the
+  maps `modes` and `descriptions`) reads `fetch` as `web_fetch` when it loads; `Registry.find`,
+  `tool_call` and the call that conversations saved with the old name make are read the same; the
+  permission rules are checked against `web_fetch <url>` and against `fetch <url>`, deny rules
+  first, and a regular expression on `fetch` too. What the model is told, and what new rules and
+  the approval say, is `web_fetch`.
+- A query word like "a" or "to" counts for nothing in `tool_search`: it is inside half the names.
 
 ## Conversations
 

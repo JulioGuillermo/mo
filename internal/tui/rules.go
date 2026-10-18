@@ -19,7 +19,7 @@ const (
 	thisProject   = "project"
 	rulesHelp     = "enter next · shift+enter new line · esc back to the question"
 	ruleSyntax    = "one per line · * alone is any words or none, inside a word any characters · re: starts a regex"
-	ruleSyntaxTip = "e.g. ls * · ls -la * /home · git log* · re:^npm (test|run lint)$ · fetch https://github.com/*"
+	ruleSyntaxTip = "e.g. ls * · ls -la * /home · git log* · re:^npm (test|run lint)$ · web_fetch https://github.com/*"
 )
 
 type rulesSavedMsg struct {

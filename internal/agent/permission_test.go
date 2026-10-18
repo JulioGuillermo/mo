@@ -24,7 +24,7 @@ import (
 
 func ruledAgent(t *testing.T, mode permissions.Mode, allow, deny []string, provider llm.Provider) *Agent {
 	t.Helper()
-	agent := newAgent(t, provider, "bash", "rm", "fetch")
+	agent := newAgent(t, provider, "bash", "rm", "web_fetch")
 	policy, err := permissions.New(mode, allow, deny)
 	if err != nil {
 		t.Fatal(err)
@@ -119,17 +119,30 @@ func TestPermissions(t *testing.T) {
 		}
 	})
 
-	t.Run("AP-07 a fetch is checked as fetch <url>", func(t *testing.T) {
-		agent := ruledAgent(t, permissions.ModeEdits, []string{"fetch https://go.dev/*"}, nil, nil)
-		fetch := func(url string) llm.ToolCall {
-			return llm.ToolCall{Name: "fetch", Args: json.RawMessage(`{"url":"` + url + `"}`)}
+	t.Run("AP-07 a fetch is checked as web_fetch <url>, and the rules written as fetch <url> still decide", func(t *testing.T) {
+		fetch := func(name, url string) llm.ToolCall {
+			return llm.ToolCall{Name: name, Args: json.RawMessage(`{"url":"` + url + `"}`)}
 		}
+		asks := func(agent *Agent, name, url string) bool {
+			return agent.approvalFor(ctx, fetch(name, url), Hooks{}).ask
+		}
+		current := ruledAgent(t, permissions.ModeEdits, []string{"web_fetch https://go.dev/*"}, nil, nil)
+		legacy := ruledAgent(t, permissions.ModeEdits, []string{"fetch https://go.dev/*"}, nil, nil)
+		denied := ruledAgent(t, permissions.ModeAll, nil, []string{"fetch https://evil.example/*"}, nil)
+		denyRegex := ruledAgent(t, permissions.ModeAll, nil, []string{"re:^fetch https://evil"}, nil)
 
-		if agent.approvalFor(ctx, fetch("https://go.dev/doc"), Hooks{}).ask || !agent.approvalFor(ctx, fetch("https://evil.example/x"), Hooks{}).ask {
-			t.Error("fetch rules did not decide")
+		for name, agent := range map[string]*Agent{"web_fetch rule": current, "fetch rule": legacy} {
+			if asks(agent, "web_fetch", "https://go.dev/doc") || !asks(agent, "web_fetch", "https://evil.example/x") {
+				t.Errorf("%s did not decide", name)
+			}
+		}
+		if verdict, _ := denied.Permissions.Check("web_fetch https://evil.example/x"); verdict != permissions.Denied {
+			t.Error("a deny rule written as fetch stopped applying")
+		}
+		if verdict, _ := denyRegex.Permissions.Check("web_fetch https://evil.example/x"); verdict != permissions.Denied {
+			t.Error("a deny rule written as a regex on fetch stopped applying")
 		}
 	})
-
 	t.Run("AP-08 a tool reached through tool_call asks as itself; the UI sees the tool", func(t *testing.T) {
 		provider := &scriptedProvider{replies: []llm.Message{
 			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "w", Name: "tool_call", Args: json.RawMessage(`{"name":"bash","args":{"command":"git push origin main"}}`)}}},

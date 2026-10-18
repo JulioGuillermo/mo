@@ -41,7 +41,7 @@ var builtinKeywords = map[string][]string{
 		"borrar", "eliminar", "quitar", "limpiar"}),
 	"grep": slices.Concat(topic("files", "find"), []string{"regex", "regexp", "pattern", "match", "text", "contents", "occurrences", "usages", "references",
 		"string", "ripgrep", "rg", "scan", "buscar texto", "patron", "coincidencias"}),
-	"fetch": slices.Concat(topic("web"), []string{"download", "get", "html", "markdown", "read page", "scrape", "open url", "curl", "wget", "request", "api",
+	"web_fetch": slices.Concat(topic("web"), []string{"fetch", "download", "get", "html", "markdown", "read page", "scrape", "open url", "curl", "wget", "request", "api",
 		"descargar", "leer web", "enlace"}),
 	"web_search": slices.Concat(topic("web", "find"), []string{"google", "bing", "duckduckgo", "news", "documentation", "docs", "answer", "latest", "results",
 		"snippets", "buscar en internet", "noticias", "documentacion"}),

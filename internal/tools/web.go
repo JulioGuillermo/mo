@@ -58,7 +58,7 @@ func (c *pageCache) add(url string, page web.Page) {
 func fetchTool() Tool {
 	cache := &pageCache{pages: map[string]web.Page{}}
 	return Tool{
-		Name:        "fetch",
+		Name:        "web_fetch",
 		Description: "Fetch a URL as markdown, 200 lines unless limit says more.",
 		Schema:      json.RawMessage(`{"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}`),
 		Run: func(ctx context.Context, _ Env, raw json.RawMessage) (string, error) {
@@ -88,7 +88,7 @@ func fetchTool() Tool {
 func webSearchTool(searcher web.Searcher) Tool {
 	return Tool{
 		Name:        "web_search",
-		Description: "Search the web. Returns titles, URLs and snippets; read a result with fetch.",
+		Description: "Search the web. Returns titles, URLs and snippets; read a result with web_fetch.",
 		Schema:      json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}`),
 		Run: func(ctx context.Context, _ Env, raw json.RawMessage) (string, error) {
 			if searcher == nil {

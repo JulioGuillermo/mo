@@ -42,7 +42,7 @@ type LoopGuard struct {
 
 // quietTools never change anything; git, memory and bash do or not by their
 // action, and any other tool is taken to change something.
-var quietTools = map[string]bool{"read": true, "ls": true, "grep": true, "fetch": true, "web_search": true, "tool_search": true, "tool_list": true}
+var quietTools = map[string]bool{"read": true, "ls": true, "grep": true, "web_fetch": true, "web_search": true, "tool_search": true, "tool_list": true}
 
 // loopCall is a call of the recent replies with its result, as the guard
 // sees it.
@@ -65,7 +65,7 @@ func isPoll(call llm.ToolCall) bool {
 // mayChange tells whether a call can change something, which ends the count
 // of the calls before it.
 func (a *Agent) mayChange(call llm.ToolCall) bool {
-	if quietTools[call.Name] {
+	if quietTools[tools.Canonical(call.Name)] {
 		return false
 	}
 	if a.Tools != nil && (call.Name == "git" || call.Name == "memory" || call.Name == "bash") {

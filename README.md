@@ -163,8 +163,8 @@ mode = "full"              # full | compact (no descriptions) | search (find too
 load = "context"           # search mode: context (found tools stay in the conversation, called
                            # through tool_call) | declare (found tools are declared from then on)
 always_loaded = ["read", "edit", "write", "bash", "ask", "memory"]   # search mode: declared from the start
-confirm = ["bash", "rm", "fetch"]   # ask before these; [] never asks. A list of your own
-                                    # replaces this one: keep "fetch" in it to be asked
+confirm = ["bash", "rm", "web_fetch"]   # ask before these; [] never asks. A list of your own
+                                        # replaces this one: keep "web_fetch" in it to be asked
 disabled = []              # e.g. ["mkdir", "ls"] to save context
 mcp_disabled = []          # MCP servers set up but not started, e.g. ["docs"]
 max_output = 10000         # bytes of tool output sent to the model
@@ -241,7 +241,7 @@ icons = "nerd"             # Nerd Font icons for the branch and its changes; "te
 
 [permissions]
 mode = "edits"             # ask | edits | auto | all; shift+tab changes it and it is kept
-allow = ["ls *", "git status *", "re:^npm (test|run lint)$", "fetch https://go.dev/*"]
+allow = ["ls *", "git status *", "re:^npm (test|run lint)$", "web_fetch https://go.dev/*"]
 deny = ["git push *"]      # asks in every mode, also in all
 
 [notify]
@@ -268,12 +268,12 @@ model = "qwen3-coder"
 
 ## Tools
 
-`bash` `read` `write` `edit` `ls` `mkdir` `rm` `grep` `memory` `fetch` `web_search` `todo` `ask` `git` `title`, plus `tool_search` in
+`bash` `read` `write` `edit` `ls` `mkdir` `rm` `grep` `memory` `web_fetch` `web_search` `todo` `ask` `git` `title`, plus `tool_search` in
 search mode and the tools of your MCP servers.
 
 Every tool that returns text takes the same view fields, so the model never loses what is beyond a
 limit: `offset` lines to skip (from the end when negative), `limit` lines to show (2000; 200 for
-`fetch`), `col` and `width` the bytes of each line (0 and 2000, for minified files), `match` only
+`web_fetch`), `col` and `width` the bytes of each line (0 and 2000, for minified files), `match` only
 the lines matching a regexp, and `numbered` for line numbers. What is left out is said, with the
 `offset` or `col` that shows it. Other output, as an MCP tool's, is cut to `max_output`, keeping the
 head and the tail. `bash`, `git` and `memory` take an `action`, and `help` explains each.
@@ -289,7 +289,7 @@ log of gigabytes take a second or two.
 lines around them. It reads each file a line at a time, whatever its size, skips binary ones by
 their first 8 KB, stops a file at its first match when only names are asked, and esc stops it. `edit` takes several replacements at once in `edits`, all or none.
 
-`fetch` reads a URL as markdown (the article of an HTML page, indented JSON, plain text).
+`web_fetch` reads a URL as markdown (the article of an HTML page, indented JSON, plain text).
 `web_search` uses DuckDuckGo by default, with no key; see `[web]` below for the others.
 
 `todo` is the model's task list for work of several steps. On a terminal 110 columns or wider it
@@ -500,7 +500,7 @@ The status line shows the mode; shift+tab, a click on it or its menu changes it,
 
 In every mode a `bash` command runs when rules allow each of its parts: the commands joined by
 pipes, `&&` or `;`, inside loops, and inside `$(...)`. A part that writes to a file with `>` asks
-even when a rule allows it. A fetch is checked as `fetch <url>`.
+even when a rule allows it. A fetch is checked as `web_fetch <url>`; a rule written as `fetch <url>`, the tool's name before it was renamed, still applies, a `deny` one too, and so does `fetch` in `confirm`, `disabled`, `always_loaded` and `modes`.
 
 A rule is a command where `*` stands for anything: alone it is any words or none (`ls *` also
 takes `ls`, `ls * /home` takes `ls -la /home`), inside a word any characters of it (`git log*`).
