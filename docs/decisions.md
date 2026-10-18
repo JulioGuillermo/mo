@@ -67,6 +67,14 @@
 
 ## Context and compaction
 
+- **Reasoning goes back as `context.keep_reasoning` says**: `turn` (default), `off` or `all`. `turn`
+  sends the model the reasoning of the turn in progress, from the user's last prompt on, and none of
+  the turns before: between its tool calls it needs it, and Gemma 4's guide says not to cut it
+  there, while Qwen's template drops that of earlier turns anyway and tool calls lose their
+  arguments in agent loops when the current one goes missing. `off`, the only choice before, cut
+  also that of the turn in progress; `all` sends everything, which costs context. The history keeps
+  every reasoning whatever is sent. Files that have `true` read as `all`, `false` as `off`. It
+  reaches OpenAI-compatible servers as `reasoning_content`; Anthropic never gets it.
 - Context window: `context.window`, else llama-server's `/props` `n_ctx`, else 32768 for local
   servers and 200000 for Anthropic.
 - The size used is the provider's token count at the last response plus 4 bytes per token for

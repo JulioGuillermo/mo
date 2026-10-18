@@ -58,9 +58,10 @@ type Agent struct {
 	CompactPrompt string
 	Strategy      string
 
-	// KeepReasoning sends the model its own reasoning back with the
-	// conversation; without it the reasoning is only shown, saving tokens.
-	KeepReasoning bool
+	// KeepReasoning is how much of its own reasoning the model gets back
+	// with the conversation; none, which is also the zero value, only shows
+	// it and saves tokens.
+	KeepReasoning Reasoning
 
 	Loop LoopGuard
 	// inReply is the reply being written with the calls it ran so far and
@@ -426,14 +427,33 @@ func (a *Agent) request() llm.Request {
 	}
 }
 
-// sentHistory is the history as the model gets it: without reasoning,
-// unless it is kept.
+// Reasoning says how much of its own reasoning the model gets back.
+type Reasoning string
+
+const (
+	// ReasoningOff sends none: it is only shown.
+	ReasoningOff Reasoning = "off"
+	// ReasoningTurn sends that of the turn in progress, from the user's last
+	// prompt on, which the model needs between its calls, and none of the
+	// turns before, as the Gemma and Qwen templates ask.
+	ReasoningTurn Reasoning = "turn"
+	// ReasoningAll sends all of it.
+	ReasoningAll Reasoning = "all"
+)
+
+// sentHistory is the history as the model gets it: with the reasoning it is
+// kept, none, that of the turn in progress, or all.
 func (a *Agent) sentHistory() []llm.Message {
-	if a.KeepReasoning || !slices.ContainsFunc(a.History, func(message llm.Message) bool { return message.Reasoning != "" }) {
+	if a.KeepReasoning == ReasoningAll || !slices.ContainsFunc(a.History, func(message llm.Message) bool { return message.Reasoning != "" }) {
 		return a.History
 	}
+	// Reasoning goes from this message on.
+	from := len(a.History)
+	if a.KeepReasoning == ReasoningTurn {
+		from = a.lastUserMessage()
+	}
 	sent := slices.Clone(a.History)
-	for i := range sent {
+	for i := range min(from, len(sent)) {
 		sent[i].Reasoning = ""
 	}
 	return sent

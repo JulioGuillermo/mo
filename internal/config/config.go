@@ -94,12 +94,44 @@ type Skills struct {
 	Modes map[string]tools.Mode `toml:"modes,omitempty"`
 }
 
+// Reasoning is how much of its own reasoning the model gets back: "off",
+// "turn" (that of the turn in progress) or "all". Files from before it was
+// a choice have true, which is "all", and false, which is "off".
+type Reasoning string
+
+const (
+	ReasoningOff  Reasoning = "off"
+	ReasoningTurn Reasoning = "turn"
+	ReasoningAll  Reasoning = "all"
+)
+
+// UnmarshalTOML reads a choice, or the true or false of older files.
+func (r *Reasoning) UnmarshalTOML(data any) error {
+	switch value := data.(type) {
+	case bool:
+		*r = ReasoningOff
+		if value {
+			*r = ReasoningAll
+		}
+	case string:
+		*r = Reasoning(value)
+	default:
+		return fmt.Errorf("keep_reasoning %v: use off, turn or all", data)
+	}
+	return nil
+}
+
+// Valid tells whether it is one of the three choices.
+func (r Reasoning) Valid() bool {
+	return r == ReasoningOff || r == ReasoningTurn || r == ReasoningAll
+}
+
 type Context struct {
-	Window        int      `toml:"window,omitzero"`
-	CompactAt     *float64 `toml:"compact_at,omitempty"`
-	CompactPrompt string   `toml:"compact_prompt,omitempty"`
-	Strategy      string   `toml:"strategy,omitempty"`
-	KeepReasoning *bool    `toml:"keep_reasoning,omitempty"`
+	Window        int       `toml:"window,omitzero"`
+	CompactAt     *float64  `toml:"compact_at,omitempty"`
+	CompactPrompt string    `toml:"compact_prompt,omitempty"`
+	Strategy      string    `toml:"strategy,omitempty"`
+	KeepReasoning Reasoning `toml:"keep_reasoning,omitempty"`
 }
 
 // Notify says when mo calls the user back and how: at the end of a turn,
@@ -360,7 +392,7 @@ func Defaults() Config {
 			Outputs:      "disk",
 			Calls:        "streamed",
 		},
-		Context:      Context{CompactAt: ptr(0.75), Strategy: "compact", KeepReasoning: ptr(false)},
+		Context:      Context{CompactAt: ptr(0.75), Strategy: "compact", KeepReasoning: ReasoningTurn},
 		Memory:       Memory{Dir: defaultMemoryDir()},
 		Skills:       Skills{Mode: tools.ModeFull},
 		Instructions: Instructions{Enabled: ptr(true), Files: []string{"AGENTS.md", "AGENT.md"}},
@@ -486,6 +518,9 @@ func validate(cfg Config) error {
 	}
 	if compactAt := *cfg.Context.CompactAt; compactAt < 0 || compactAt >= 1 {
 		return fmt.Errorf("context.compact_at %v: use a fraction from 0 (never) to below 1", compactAt)
+	}
+	if !cfg.Context.KeepReasoning.Valid() {
+		return fmt.Errorf("context.keep_reasoning %q: use off, turn or all", cfg.Context.KeepReasoning)
 	}
 	if err := validateAgents(cfg.Agents); err != nil {
 		return err
@@ -722,9 +757,7 @@ func mergeHarmless(base, layer Config) Config {
 	}
 	base.Context.CompactPrompt = override(base.Context.CompactPrompt, layer.Context.CompactPrompt)
 	base.Context.Strategy = override(base.Context.Strategy, layer.Context.Strategy)
-	if layer.Context.KeepReasoning != nil {
-		base.Context.KeepReasoning = layer.Context.KeepReasoning
-	}
+	base.Context.KeepReasoning = override(base.Context.KeepReasoning, layer.Context.KeepReasoning)
 	base.Render.Images = override(base.Render.Images, layer.Render.Images)
 	base.Render.Background = override(base.Render.Background, layer.Render.Background)
 	base.Render.Sidebar = override(base.Render.Sidebar, layer.Render.Sidebar)

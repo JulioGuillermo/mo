@@ -30,6 +30,8 @@ package config
 // | CF-26 | Security | The project file cannot allow commands or loosen the mode, only ask more | P0  |
 // | CF-27 | Happy    | Rules the user keeps for a folder add to theirs there only          | P0       |
 // | CF-28 | Error    | A bad mode or a broken regex rule is refused                         | P1       |
+// | CF-30 | Happy    | The default is this turn's reasoning; the three choices and the true and false of older files are read | P0 |
+// | CF-31 | Error    | A choice that is none of them, or a number, is refused               | P1       |
 
 import (
 	"fmt"
@@ -532,4 +534,38 @@ func TestMorePresets(t *testing.T) {
 			t.Errorf("%s: %+v", name, preset)
 		}
 	}
+}
+
+func TestKeepReasoning(t *testing.T) {
+	load := func(t *testing.T, content string) (Config, error) {
+		t.Helper()
+		configHome := isolatedHome(t)
+		writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), content)
+		return Load(t.TempDir())
+	}
+
+	t.Run("CF-30 the default is this turn's reasoning; the three choices and the true and false of older files are read", func(t *testing.T) {
+		cases := map[string]Reasoning{
+			"":                                       "turn",
+			"[context]\nkeep_reasoning = \"off\"\n":  "off",
+			"[context]\nkeep_reasoning = \"turn\"\n": "turn",
+			"[context]\nkeep_reasoning = \"all\"\n":  "all",
+			"[context]\nkeep_reasoning = true\n":     "all",
+			"[context]\nkeep_reasoning = false\n":    "off",
+		}
+		for content, want := range cases {
+			cfg, err := load(t, content)
+			if err != nil || cfg.Context.KeepReasoning != want {
+				t.Errorf("%q: %q, err = %v, want %q", content, cfg.Context.KeepReasoning, err, want)
+			}
+		}
+	})
+
+	t.Run("CF-31 a choice that is none of them, or a number, is refused", func(t *testing.T) {
+		for _, content := range []string{"[context]\nkeep_reasoning = \"some\"\n", "[context]\nkeep_reasoning = 2\n"} {
+			if _, err := load(t, content); err == nil {
+				t.Errorf("%q was taken", content)
+			}
+		}
+	})
 }

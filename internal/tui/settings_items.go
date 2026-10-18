@@ -429,10 +429,14 @@ func contextItems(model, *settingsMenu) []settingItem {
 				huh.NewOption("drop the oldest messages", "drop"),
 			).Value(&d.strategy)
 		}},
-		{"Send reasoning back", func(d *settingsDraft) string { return yesNo(d.keepReasoning) }, func(d *settingsDraft) huh.Field {
-			return huh.NewConfirm().Title("Send the model its reasoning back").
-				Description("no: it is only shown, which saves tokens · yes: OpenAI-compatible servers get it as reasoning_content; Anthropic never does").
-				Value(&d.keepReasoning)
+		{"Send reasoning back", func(d *settingsDraft) string { return reasoningChoice(d.keepReasoning) }, func(d *settingsDraft) huh.Field {
+			return huh.NewSelect[string]().Title("Send the model its reasoning back").
+				Description("OpenAI-compatible servers get it as reasoning_content; Anthropic never does").
+				Options(
+					huh.NewOption("this turn's: what the model needs between its calls (Gemma and Qwen ask for it)", string(config.ReasoningTurn)),
+					huh.NewOption("none: it is only shown, which saves tokens", string(config.ReasoningOff)),
+					huh.NewOption("all of it", string(config.ReasoningAll)),
+				).Value(&d.keepReasoning)
 		}},
 		{"System prompt", func(d *settingsDraft) string { return textValue(d.systemPrompt) }, func(d *settingsDraft) huh.Field {
 			return huh.NewText().Title("System prompt").Lines(12).Value(&d.systemPrompt)
@@ -750,4 +754,15 @@ func yesNo(yes bool) string {
 		return "yes"
 	}
 	return "no"
+}
+
+// reasoningChoice says how much reasoning goes back, for the settings list.
+func reasoningChoice(choice string) string {
+	switch config.Reasoning(choice) {
+	case config.ReasoningOff:
+		return "none"
+	case config.ReasoningAll:
+		return "all"
+	}
+	return "this turn's"
 }

@@ -283,24 +283,34 @@ func TestPluginHooks(t *testing.T) {
 }
 
 func TestReasoningSentBack(t *testing.T) {
-	t.Run("AG-11 reasoning stays in the history but goes back only with KeepReasoning", func(t *testing.T) {
-		sentWith := func(keep bool) (string, string) {
+	t.Run("AG-11 reasoning stays in the history; what goes back is none, this turn's or all, by KeepReasoning", func(t *testing.T) {
+		// Turn one answers with a reasoning; turn two reasons, calls a tool and answers.
+		sentWith := func(keep Reasoning) (older, midTurn, inHistory string) {
 			provider := &scriptedProvider{replies: []llm.Message{
-				{Role: llm.RoleAssistant, Text: "one", Reasoning: "thought"},
+				{Role: llm.RoleAssistant, Text: "one", Reasoning: "old thought"},
+				{Role: llm.RoleAssistant, Reasoning: "mid thought", ToolCalls: []llm.ToolCall{toolCall("c1", "read", `{"path":"a.txt"}`)}},
 				{Role: llm.RoleAssistant, Text: "two"},
 			}}
 			agent := newAgent(t, provider)
 			agent.KeepReasoning = keep
 			_ = agent.Run(context.Background(), "a", Hooks{})
 			_ = agent.Run(context.Background(), "b", Hooks{})
-			return provider.requests[1].Messages[1].Reasoning, agent.History[1].Reasoning
+			// The request after the tool result: a, one, b, the call, its result.
+			last := provider.requests[2].Messages
+			return last[1].Reasoning, last[3].Reasoning, agent.History[1].Reasoning
 		}
 
-		dropped, keptInHistory := sentWith(false)
-		sent, _ := sentWith(true)
-
-		if dropped != "" || keptInHistory != "thought" || sent != "thought" {
-			t.Errorf("sent without keep = %q history = %q sent with keep = %q", dropped, keptInHistory, sent)
+		for keep, want := range map[Reasoning][2]string{
+			"":             {"", ""},
+			ReasoningOff:   {"", ""},
+			ReasoningTurn:  {"", "mid thought"},
+			ReasoningAll:   {"old thought", "mid thought"},
+			Reasoning("?"): {"", ""},
+		} {
+			older, midTurn, inHistory := sentWith(keep)
+			if older != want[0] || midTurn != want[1] || inHistory != "old thought" {
+				t.Errorf("%q: older turn %q, this turn %q, history %q; want %q", keep, older, midTurn, inHistory, want)
+			}
 		}
 	})
 }

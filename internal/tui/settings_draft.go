@@ -34,7 +34,7 @@ type settingsDraft struct {
 	window        string
 	compactAt     string
 	strategy      string
-	keepReasoning bool
+	keepReasoning string
 	systemPrompt  string
 	compactPrompt string
 	maxTokens     string
@@ -140,7 +140,7 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		window:        strconv.Itoa(cfg.Context.Window),
 		compactAt:     strconv.FormatFloat(*cfg.Context.CompactAt, 'f', -1, 64),
 		strategy:      cfg.Context.Strategy,
-		keepReasoning: *cfg.Context.KeepReasoning,
+		keepReasoning: string(cfg.Context.KeepReasoning),
 		systemPrompt:  cfg.SystemPrompt,
 		descriptions:  map[string]*string{},
 		memoryDir:     cfg.Memory.Dir,
@@ -295,9 +295,9 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 		layer.Context.CompactAt = nil
 	}
 	layer.Context.Strategy = unlessDefault(d.strategy, defaults.Context.Strategy)
-	layer.Context.KeepReasoning = nil
-	if d.keepReasoning != *defaults.Context.KeepReasoning {
-		layer.Context.KeepReasoning = &d.keepReasoning
+	layer.Context.KeepReasoning = ""
+	if d.keepReasoning != string(defaults.Context.KeepReasoning) {
+		layer.Context.KeepReasoning = config.Reasoning(d.keepReasoning)
 	}
 	layer.SystemPrompt = unlessDefault(strings.TrimSpace(d.systemPrompt), agent.DefaultSystemPrompt)
 	layer.Memory.Dir = unlessDefault(strings.TrimSpace(d.memoryDir), defaults.Memory.Dir)

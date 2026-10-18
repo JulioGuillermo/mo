@@ -312,7 +312,7 @@ func newAgent(cfg config.Config, chosen chosenProvider, registry *tools.Registry
 		CompactAt:     *cfg.Context.CompactAt,
 		CompactPrompt: cfg.Context.CompactPrompt,
 		Strategy:      cfg.Context.Strategy,
-		KeepReasoning: *cfg.Context.KeepReasoning,
+		KeepReasoning: agent.Reasoning(cfg.Context.KeepReasoning),
 		Permissions:   policy,
 		EarlyCalls:    cfg.Tools.Calls != "reply",
 		Loop: agent.LoopGuard{

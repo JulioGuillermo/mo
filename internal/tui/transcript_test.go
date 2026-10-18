@@ -88,15 +88,18 @@ func TestReasoningBlocks(t *testing.T) {
 		}
 	})
 
-	t.Run("RS-04 sending reasoning back is saved only when turned on", func(t *testing.T) {
+	t.Run("RS-04 sending reasoning back is saved only when it is not this turn's, the default", func(t *testing.T) {
 		file := config.Config{Provider: "llama-server"}
 		untouched, _ := newSettingsDraft(file).applyTo(file, nil)
-		draft := newSettingsDraft(file)
-		draft.keepReasoning = true
-		on, _ := draft.applyTo(file, nil)
+		all := newSettingsDraft(file)
+		all.keepReasoning = string(config.ReasoningAll)
+		on, _ := all.applyTo(file, nil)
+		back := newSettingsDraft(file)
+		back.keepReasoning = string(config.ReasoningTurn)
+		same, _ := back.applyTo(file, nil)
 
-		if untouched.Context.KeepReasoning != nil || on.Context.KeepReasoning == nil || !*on.Context.KeepReasoning {
-			t.Errorf("untouched = %v on = %v", untouched.Context.KeepReasoning, on.Context.KeepReasoning)
+		if untouched.Context.KeepReasoning != "" || on.Context.KeepReasoning != config.ReasoningAll || same.Context.KeepReasoning != "" {
+			t.Errorf("untouched = %q on = %q same = %q", untouched.Context.KeepReasoning, on.Context.KeepReasoning, same.Context.KeepReasoning)
 		}
 	})
 }
