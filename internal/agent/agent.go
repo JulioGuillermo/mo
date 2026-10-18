@@ -136,6 +136,10 @@ type Hooks struct {
 	// of results, to save as the turn goes.
 	OnStep    func(history []llm.Message)
 	OnLoopCut func(repeated string)
+	// OnContextCut gives the history as it was, whole, when it is cut down to
+	// make room, by a summary or by dropping the oldest turns, so the caller
+	// can keep it: it is gone from the agent's own.
+	OnContextCut func(before []llm.Message)
 	// OnWarning is a notice that must stand out, as a model the provider no
 	// longer offers; without it OnNotice says it.
 	OnWarning func(text string)

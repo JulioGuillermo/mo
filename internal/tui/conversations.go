@@ -124,6 +124,64 @@ func (m *model) conversationRecord(history []llm.Message) (sessions.Record, bool
 	return record, true
 }
 
+const (
+	forkPrefix    = "fork: "
+	compactPrefix = "compact: "
+)
+
+// baseTitle is a title without the fork: or compact: a conversation that came
+// from another carries, as many as there are.
+func baseTitle(title string) string {
+	for {
+		switch {
+		case strings.HasPrefix(title, forkPrefix):
+			title = strings.TrimPrefix(title, forkPrefix)
+		case strings.HasPrefix(title, compactPrefix):
+			title = strings.TrimPrefix(title, compactPrefix)
+		default:
+			return title
+		}
+	}
+}
+
+// derivedTitle is the title of a conversation that came from another: fork:
+// or compact: and the title the old one had, without the prefix it had. Until
+// the old one has a title it has none either, and is named by its first prompt
+// as any.
+func derivedTitle(prefix, title string) string {
+	if base := baseTitle(title); base != "" {
+		return prefix + base
+	}
+	return ""
+}
+
+// derivedFrom tells whether a title still says it came from another conversation.
+func derivedFrom(title string) bool {
+	return strings.HasPrefix(title, forkPrefix) || strings.HasPrefix(title, compactPrefix)
+}
+
+// contextCut keeps the conversation as it was when the agent cut its history
+// down to make room, summed up or dropped, and goes on in a conversation of its
+// own that names it as its parent, titled compact: and the old title: what was
+// said before is not lost, and /resume goes back to it.
+func (m model) contextCut(before contextCutMsg) (tea.Model, tea.Cmd) {
+	m.ensureThread()
+	record, kept := m.conversationRecord(before)
+	var save tea.Cmd
+	if kept {
+		m.saves++
+		number := m.saves
+		save = func() tea.Msg { return savedMsg{err: saveInOrder(number, record)} }
+	}
+	m.thread = conversation{parent: m.thread.id, title: derivedTitle(compactPrefix, m.thread.title)}
+	m.ensureThread()
+	// What the last step left is the history as it was: the next step, which
+	// follows at once, brings the cut one.
+	m.stepHistory = nil
+	updated, note := m.emit(m.printer.Note("the conversation as it was stays in /resume · you go on in a new one that names it"))
+	return updated, tea.Batch(save, note)
+}
+
 // saveOnExit saves the conversation as mo exits: its subagents stopped and
 // given a moment to end, the main agent's history as it ended, or as its
 // last step left it when it did not end in time.
@@ -233,7 +291,12 @@ func (m model) pickConversation(msg resumeListMsg) (tea.Model, tea.Cmd) {
 	for _, info := range msg.infos {
 		label := errorStyle.Render(removeMark) + " " + orDefault(info.Title, "(no prompt)")
 		if info.Parent != "" {
-			label = "↳ " + label + dimStyle.Render(" · fork of "+orDefault(titles[info.Parent], "an older one"))
+			label = "↳ " + label
+			// A title that says what it is, fork: or compact:, says it all; one
+			// the user changed says where it came from.
+			if !derivedFrom(info.Title) {
+				label += dimStyle.Render(" · fork of " + orDefault(titles[info.Parent], "an older one"))
+			}
 		}
 		label += dimStyle.Render(fmt.Sprintf(" · %d prompts · %s", info.Prompts, ago(info.Updated)))
 		if info.ID == m.thread.id {
@@ -285,7 +348,7 @@ func (m model) fork() (tea.Model, tea.Cmd) {
 	if len(m.session.Agent.History) == 0 {
 		return m.emit(m.printer.Note("nothing to fork yet"))
 	}
-	m.thread = conversation{parent: m.thread.id, title: m.thread.title}
+	m.thread = conversation{parent: m.thread.id, title: derivedTitle(forkPrefix, m.thread.title)}
 	save := m.saveConversation()
 	updated, note := m.emit(m.printer.Note("forked: you go on in a copy; the original stays in /resume"))
 	return updated, tea.Batch(save, note)
@@ -324,7 +387,7 @@ func (m model) pickPrompt() (tea.Model, tea.Cmd) {
 // rewind goes on from before a prompt, in a fork, with the prompt in the
 // input to edit. The fork is saved once its first turn ends.
 func (m model) rewind(prompt agent.Prompt) (tea.Model, tea.Cmd) {
-	m.thread = conversation{parent: m.thread.id, title: m.thread.title, forked: sessions.Title(prompt.Text)}
+	m.thread = conversation{parent: m.thread.id, title: derivedTitle(forkPrefix, m.thread.title), forked: sessions.Title(prompt.Text)}
 	m.session.Agent.Rewind(prompt.Index)
 	m.usage = llm.Usage{}
 	uploads := m.replay(m.session.Agent.History)

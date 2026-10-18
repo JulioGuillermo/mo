@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/jg/mo/internal/llm"
 )
@@ -19,6 +20,7 @@ const (
 // call, and the turn in progress is never dropped.
 func (a *Agent) dropOldest(hooks Hooks) {
 	before := a.ContextUsed()
+	whole := slices.Clone(a.History)
 	target := int(float64(a.Window) * a.CompactAt * dropTargetShare)
 	a.LastUsage = llm.Usage{}
 	a.historyAtUsage = 0
@@ -32,6 +34,12 @@ func (a *Agent) dropOldest(hooks Hooks) {
 		dropped += next
 	}
 	a.sizeAfterCompaction = a.ContextUsed()
+	if dropped > 0 {
+		if hooks.OnContextCut != nil {
+			hooks.OnContextCut(whole)
+		}
+		a.step(hooks)
+	}
 	if hooks.OnNotice == nil {
 		return
 	}

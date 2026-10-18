@@ -534,7 +534,21 @@
   each after a confirmation. Deleting stops the jobs it runs and removes its output folder.
 - Going back does not restore files. `write` and `edit` could keep copies, but `bash` changes
   (commits, installs, deletions) cannot be undone that way, and a partial undo would mislead.
-- A prompt holding a compaction summary is not offered to go back to: what came before it is gone.
+- **Cutting the context down to make room keeps what was said**: the agent hands the history as it
+  was, whole, to `OnContextCut` just as a summary or a drop replaces it, and the screen saves it
+  as the conversation it was (a copy of its own, resumable in `/resume`) and goes on in a new one
+  that names it as its parent, titled `compact: ` and the old title. The same for dropping the
+  oldest turns and for `/compact`. It costs a file with everything the old one held, which the user
+  deleted by hand before only to get the room back, so it is kept until `/delete` or `/clean`.
+  The new one shares the old one's command output as a fork does. Nothing is saved under the new
+  id until the history that follows the cut arrives (the cut gives a step of its own), so the
+  old history is never written to it.
+- **Forks are titled `fork: ` and the old title** (a fork, or going back to a prompt), compactions
+  `compact: ` and the old title, never stacked: the prefix of the old one is left out. A title the
+  user gives later, or `/title auto`, replaces it, and then `/resume` says `· fork of …` after it
+  as it did before the prefixes, so a renamed one still shows where it came from.
+- A prompt holding a compaction summary is not offered to go back to: what came before it is in the
+  conversation it was cut from.
 - Tool calls are one block, started when the call starts and filled when it ends, matched by call
   id from the end, since some servers reuse ids like `call_0` in every reply.
 

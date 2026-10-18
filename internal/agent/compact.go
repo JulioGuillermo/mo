@@ -144,13 +144,18 @@ func (a *Agent) compact(ctx context.Context, hooks Hooks, instruction string, mi
 	if !midTurn {
 		request = ""
 	}
+	whole := slices.Clone(a.History)
 	a.History = withSummary(summary, kept, request)
 	a.LastUsage = llm.Usage{}
 	a.historyAtUsage = 0
 	a.sizeAfterCompaction = a.ContextUsed()
+	if hooks.OnContextCut != nil {
+		hooks.OnContextCut(whole)
+	}
 	if hooks.OnCompact != nil {
 		hooks.OnCompact(before, a.sizeAfterCompaction)
 	}
+	a.step(hooks)
 	return nil
 }
 

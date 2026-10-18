@@ -23,6 +23,10 @@ type runDoneMsg struct{ err error }
 // queuedReadMsg says the model now reads that many queued messages.
 type queuedReadMsg int
 
+// contextCutMsg is the history as it was before the agent cut it down to
+// make room, to keep as a conversation of its own.
+type contextCutMsg []llm.Message
+
 // modelMsg says the server now serves another model or has another context
 // window than the agent went on with.
 type modelMsg struct {
@@ -130,6 +134,9 @@ func (b *bridge) hooks() agent.Hooks {
 			b.program.Send(streamEndMsg{})
 			b.print(b.printer.Note("loop: reply cut and left out, it kept repeating " + agent.Quote(repeated)))
 		},
+		OnContextCut: func(before []llm.Message) {
+			b.program.Send(contextCutMsg(before))
+		},
 		OnCompact: func(before, after int) {
 			b.program.Send(usageMsg(llm.Usage{InputTokens: after}))
 			b.print(b.printer.Note(fmt.Sprintf("context compacted: %s → %s tokens", formatTokens(before), formatTokens(after))))
@@ -165,6 +172,9 @@ func (b *bridge) flushingFirst(hooks agent.Hooks) agent.Hooks {
 	hooks.OnActivity = func(text string) { first(func() { onActivity(text) })() }
 	hooks.OnUsage = func(usage llm.Usage) { first(func() { onUsage(usage) })() }
 	hooks.OnNotice = func(text string) { first(func() { onNotice(text) })() }
+	if onCut := hooks.OnContextCut; onCut != nil {
+		hooks.OnContextCut = func(before []llm.Message) { first(func() { onCut(before) })() }
+	}
 	if onWarning := hooks.OnWarning; onWarning != nil {
 		hooks.OnWarning = func(text string) { first(func() { onWarning(text) })() }
 	}

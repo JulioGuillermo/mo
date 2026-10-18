@@ -553,6 +553,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case modelMsg:
 		return m.modelChanged(msg)
+	case contextCutMsg:
+		return m.contextCut(msg)
 	case agentsChangedMsg:
 		m.refreshAgentView()
 		return m, m.scheduleSave()

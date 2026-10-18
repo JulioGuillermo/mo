@@ -367,7 +367,7 @@ func (m *model) applyUI() tea.Cmd {
 
 func isAgentMsg(msg tea.Msg) bool {
 	switch msg.(type) {
-	case streamMsg, streamBatchMsg, streamEndMsg, usageMsg, interactionMsg, runDoneMsg, spinner.TickMsg, printMsg, reasoningMsg, drawMsg, redrawMsg, rulesSavedMsg, toolStartMsg, toolDoneMsg, savedMsg, jobEndedMsg, jobTickMsg, jobStartedMsg, uiChangedMsg, flashDoneMsg, activityMsg, titledMsg, titleEventMsg, titleSetMsg, repoMsg, loginMsg, queuedReadMsg, modelMsg, agentsChangedMsg, agentEndedMsg, cacheClearedMsg, tea.FocusMsg, tea.BlurMsg:
+	case streamMsg, streamBatchMsg, streamEndMsg, usageMsg, interactionMsg, runDoneMsg, spinner.TickMsg, printMsg, reasoningMsg, drawMsg, redrawMsg, rulesSavedMsg, toolStartMsg, toolDoneMsg, savedMsg, jobEndedMsg, jobTickMsg, jobStartedMsg, uiChangedMsg, flashDoneMsg, activityMsg, titledMsg, titleEventMsg, titleSetMsg, repoMsg, loginMsg, queuedReadMsg, modelMsg, contextCutMsg, agentsChangedMsg, agentEndedMsg, cacheClearedMsg, tea.FocusMsg, tea.BlurMsg:
 		return true
 	}
 	return false
