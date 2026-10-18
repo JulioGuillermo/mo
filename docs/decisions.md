@@ -1416,5 +1416,14 @@
   URL, query or subagent; `versioning` with git's action; `calling server › tool` for MCP. The colour still
   says whether it reads or changes. The model's own reply is `talking`.
 - `bash` is `running` with the programs it runs: once each however often, without their
-  arguments or subcommands, the trivial ones (`cd`, `echo`, `sleep`…) left out beside others, the
-  first two and how many more, as `running · go, tail` or `running · docker`.
+  arguments or subcommands, all of them, the trivial ones (`cd`, `echo`, `sleep`…) too, the first
+  three and how many more, as `running · cd, go, tail` or `running · docker`. A program that only
+  runs another says nothing of what the command does, so it is named with the command it runs in
+  parentheses, as many levels as there are: `sudo(ls)`, `timeout(curl)`, `sudo(timeout(curl))`;
+  with none after it, its name alone. They are `sudo`, `doas`, `runuser`, `nice`, `timeout`,
+  `nohup`, `env`, `xargs`, `watch`, `parallel`, `ssh`, `strace` and the like, and the ones that need
+  a subcommand to run one, `docker exec`, `docker run`, `kubectl exec`, `uv run`, `poetry run`,
+  `npx`, `pnpm exec`, `bundle exec`, shown with it: `docker exec(ls)`. `docker build` or `kubectl
+  get` run nothing, so they are `docker` and `kubectl`. The table is in `internal/tui/state.go`:
+  their flags, and the arguments of their own such as timeout's duration or ssh's host, are skipped
+  to find the command, and so are the `VAR=value` words before it.

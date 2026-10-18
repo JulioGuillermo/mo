@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -130,38 +131,175 @@ var toolVerbs = map[string]string{
 	"memory": "remembering", "todo": "planning", tools.AgentName: "delegating", "ui": "drawing",
 }
 
-// trivialPrograms say nothing of what a command does, beside others.
-var trivialPrograms = map[string]bool{"cd": true, "echo": true, "export": true, "true": true, "false": true,
-	"sleep": true, "printf": true, "set": true, ":": true, "pwd": true}
+// wrapper is a program that runs another one and says nothing of what the
+// command does itself: valued are its flags that take a value, and before is
+// how many arguments of its own come before the command, as the duration of
+// timeout or the host of ssh. Some need a subcommand to run one, "docker
+// exec" or "uv run", and are keyed with it.
+type wrapper struct {
+	valued []string
+	before int
+}
+
+var wrappers = map[string]wrapper{
+	// Run it as another user, with another priority or limits.
+	"sudo": {valued: []string{"-u", "-g", "-C", "-h", "-p", "-r", "-t", "-U", "-T", "-D", "-R", "--user", "--group", "--host", "--prompt",
+		"--role", "--type", "--other-user", "--chdir", "--chroot", "--close-from"}},
+	"doas":        {valued: []string{"-u", "-C"}},
+	"pkexec":      {valued: []string{"--user"}},
+	"runuser":     {valued: []string{"-u", "-g", "-G", "--user", "--group"}},
+	"nice":        {valued: []string{"-n", "--adjustment"}},
+	"ionice":      {valued: []string{"-c", "-n", "-p", "-P", "-u", "--class", "--classdata"}},
+	"chrt":        {valued: []string{"-p"}, before: 1},
+	"taskset":     {before: 1},
+	"numactl":     {valued: []string{"-N", "-m", "-C", "-i", "--cpunodebind", "--membind", "--physcpubind", "--interleave"}},
+	"systemd-run": {valued: []string{"-u", "-p", "-E", "-t", "--unit", "--property", "--description", "--setenv", "--slice", "--uid", "--gid", "--working-directory"}},
+	// Run it with a limit, in the background, or detached.
+	"timeout":  {valued: []string{"-s", "-k", "--signal", "--kill-after"}, before: 1},
+	"nohup":    {},
+	"setsid":   {},
+	"flock":    {before: 1},
+	"watch":    {valued: []string{"-n", "--interval"}},
+	"faketime": {before: 1},
+	// Change what it runs in or sees.
+	"env":        {valued: []string{"-u", "-C", "-S", "--unset", "--chdir", "--split-string"}},
+	"exec":       {valued: []string{"-a"}},
+	"command":    {},
+	"builtin":    {},
+	"chroot":     {before: 1},
+	"unshare":    {},
+	"nsenter":    {valued: []string{"-t", "-S", "-G", "--target"}},
+	"stdbuf":     {valued: []string{"-i", "-o", "-e", "--input", "--output", "--error"}},
+	"unbuffer":   {},
+	"caffeinate": {},
+	"xvfb-run":   {valued: []string{"-n", "-s", "-f", "-e", "-w", "--server-num", "--server-args", "--auth-file", "--error-file", "--wait"}},
+	"eatmydata":  {},
+	"rlwrap":     {},
+	// Measure or trace it.
+	"time":     {valued: []string{"-f", "-o", "--format", "--output"}},
+	"strace":   {valued: []string{"-e", "-o", "-p", "-s", "-u", "-E", "-P"}},
+	"ltrace":   {valued: []string{"-e", "-o", "-p", "-s", "-u"}},
+	"valgrind": {},
+	// Run it for each item, or somewhere else.
+	"xargs":        {valued: []string{"-n", "-P", "-I", "-L", "-d", "-a", "-E", "-s", "--max-args", "--max-procs", "--replace", "--delimiter", "--arg-file"}},
+	"parallel":     {valued: []string{"-j", "-n", "-N", "-S", "-a", "--jobs", "--max-args", "--sshlogin", "--arg-file"}},
+	"ssh":          {valued: []string{"-p", "-i", "-l", "-o", "-F", "-J", "-L", "-R", "-D", "-b", "-c", "-E", "-e", "-I", "-m", "-O", "-Q", "-S", "-W", "-w"}, before: 1},
+	"proxychains":  {valued: []string{"-f"}},
+	"proxychains4": {valued: []string{"-f"}},
+	"torsocks":     {},
+	// Subcommands that run one.
+	"docker exec": {valued: []string{"-e", "-u", "-w", "--env", "--user", "--workdir", "--env-file", "--detach-keys"}, before: 1},
+	"podman exec": {valued: []string{"-e", "-u", "-w", "--env", "--user", "--workdir", "--env-file", "--detach-keys"}, before: 1},
+	"docker run": {valued: []string{"-e", "-v", "-p", "-w", "-u", "-l", "-h", "-m", "--name", "--network", "--memory", "--cpus", "--label", "--env", "--env-file",
+		"--mount", "--hostname", "--restart", "--platform", "--pull", "--user", "--workdir", "--volume", "--publish", "--add-host", "--device", "--dns", "--entrypoint"}, before: 1},
+	"podman run": {valued: []string{"-e", "-v", "-p", "-w", "-u", "-l", "-h", "-m", "--name", "--network", "--memory", "--cpus", "--label", "--env", "--env-file",
+		"--mount", "--hostname", "--restart", "--platform", "--pull", "--user", "--workdir", "--volume", "--publish", "--add-host", "--device", "--dns", "--entrypoint"}, before: 1},
+	"kubectl exec": {valued: []string{"-n", "-c", "-f", "--namespace", "--container", "--filename", "--context", "--kubeconfig"}, before: 1},
+	"uv run":       {valued: []string{"--with", "--python", "-p", "--project", "--directory", "--env-file", "--extra"}},
+	"poetry run":   {},
+	"pdm run":      {},
+	"hatch run":    {},
+	"rye run":      {},
+	"pipx run":     {valued: []string{"--spec", "--python"}},
+	"uvx":          {valued: []string{"--from", "--with", "--python", "-p"}},
+	"npx":          {valued: []string{"-p", "--package", "-c", "--call"}},
+	"pnpm exec":    {},
+	"pnpm dlx":     {valued: []string{"-p", "--package"}},
+	"yarn exec":    {},
+	"npm exec":     {valued: []string{"-p", "--package", "-c", "--call"}},
+	"bunx":         {valued: []string{"-p", "--package"}},
+	"bundle exec":  {},
+	"nix run":      {},
+}
+
+// assignment is a VAR=value word before a command.
+var assignment = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
+
+// programName is the program a command runs, as it reads in the status line:
+// its name, or for a wrapper such as sudo or timeout the name with the
+// command it runs in parentheses, sudo(ls) or timeout(curl), docker exec(ls),
+// as many levels as there are. A wrapper with no command after it is its
+// name alone.
+func programName(fields []string) string {
+	for len(fields) > 0 && assignment.MatchString(fields[0]) {
+		fields = fields[1:]
+	}
+	if len(fields) == 0 {
+		return ""
+	}
+	name := path.Base(strings.Trim(fields[0], `'"`))
+	shown, rest := name, fields[1:]
+	wrap, wraps := wrappers[name]
+	if len(fields) > 1 {
+		if sub, ok := wrappers[name+" "+fields[1]]; ok {
+			wrap, wraps, shown, rest = sub, true, name+" "+fields[1], fields[2:]
+		}
+	}
+	if !wraps {
+		return name
+	}
+	rest = skipFlags(rest, name, wrap)
+	for range wrap.before {
+		if len(rest) == 0 {
+			break
+		}
+		rest = skipFlags(rest[1:], name, wrap)
+	}
+	if inner := programName(rest); inner != "" {
+		return shown + "(" + inner + ")"
+	}
+	return name
+}
+
+// skipFlags leaves out the flags of a wrapper, and the value of those that
+// take one, and the -- that ends them, to the command after.
+func skipFlags(words []string, name string, wrap wrapper) []string {
+	for len(words) > 0 {
+		word := words[0]
+		switch {
+		case word == "--":
+			return words[1:]
+		case assignment.MatchString(word) && name == "env":
+			words = words[1:]
+		case strings.HasPrefix(word, "-") && len(word) > 1:
+			words = words[1:]
+			if slices.Contains(wrap.valued, word) && len(words) > 0 {
+				words = words[1:]
+			}
+		default:
+			return words
+		}
+	}
+	return words
+}
+
+// programsShown is how many programs of a command the status line names
+// before saying how many more.
+const programsShown = 3
 
 // programs are the programs a command runs, once each, without arguments:
-// the first two that say what it does, and how many more.
+// the first ones, all of them whatever they are, and how many more.
 func programs(command string) string {
 	var names []string
 	if commands, err := permissions.Commands(command); err == nil {
 		for _, each := range commands {
-			if fields := strings.Fields(each.Text); len(fields) > 0 {
-				names = append(names, path.Base(fields[0]))
-			}
+			names = append(names, programName(strings.Fields(each.Text)))
 		}
-	} else if fields := strings.Fields(command); len(fields) > 0 {
-		// Still being written: its first word.
-		names = append(names, path.Base(fields[0]))
+	} else {
+		// Still being written: as far as it came.
+		names = append(names, programName(strings.Fields(command)))
 	}
 	var shown []string
 	for _, name := range names {
-		if !trivialPrograms[name] && !slices.Contains(shown, name) {
+		if name != "" && !slices.Contains(shown, name) {
 			shown = append(shown, name)
 		}
-	}
-	if len(shown) == 0 && len(names) > 0 {
-		shown = names[:1]
 	}
 	switch {
 	case len(shown) == 0:
 		return "bash"
-	case len(shown) > 2:
-		return strings.Join(shown[:2], ", ") + fmt.Sprintf(" +%d", len(shown)-2)
+	case len(shown) > programsShown:
+		return strings.Join(shown[:programsShown], ", ") + fmt.Sprintf(" +%d", len(shown)-programsShown)
 	}
 	return strings.Join(shown, ", ")
 }

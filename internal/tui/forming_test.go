@@ -13,6 +13,7 @@ package tui
 // | LT-09 | Happy    | Each tool says what it does and on what: the file, the pattern, the programs a command runs, once each | P1 |
 // | LT-11 | Happy    | While the model writes a call the state is that call; once done, it waits for the tools | P0 |
 // | LT-12 | Edge     | A running call is what the state says, and the calls behind it do not change that | P1 |
+// | LT-13 | Happy    | Every program of a command is named, the trivial ones too; sudo, timeout and the like name theirs inside () | P1 |
 // | LT-07 | Happy    | While llama-server reads the prompt, the state says how far, cache left out | P1   |
 
 import (
@@ -201,9 +202,9 @@ func TestStates(t *testing.T) {
 			`{"name":"edit","args":{"path":"main.go"}}`:                                               "editing · main.go",
 			`{"name":"grep","args":{"pattern":"TODO"}}`:                                               "scanning · TODO",
 			`{"name":"bash","args":{"command":"docker build . && docker push x && docker run -d x"}}`: "running · docker",
-			`{"name":"bash","args":{"command":"cd x && go test ./... | tail -5"}}`:                    "running · go, tail",
-			`{"name":"bash","args":{"command":"cd x; make; curl -s y; jq . z"}}`:                      "running · make, curl +1",
-			`{"name":"bash","args":{"command":"sleep 30 && echo done"}}`:                              "running · sleep",
+			`{"name":"bash","args":{"command":"cd x && go test ./... | tail -5"}}`:                    "running · cd, go, tail",
+			`{"name":"bash","args":{"command":"cd x; make; curl -s y; jq . z"}}`:                      "running · cd, make, curl +1",
+			`{"name":"bash","args":{"command":"sleep 30 && echo done"}}`:                              "running · sleep, echo",
 			`{"name":"git","args":{"action":"commit","message":"x"}}`:                                 "versioning · commit",
 			`{"name":"mcp__playwright__browser_click","args":{}}`:                                     "calling · playwright › browser_click",
 		}
@@ -216,6 +217,64 @@ func TestStates(t *testing.T) {
 			got := m.toolState(call.Name, string(call.Args), statePalette(true))
 			if got.word+" · "+got.detail != want {
 				t.Errorf("%s: %q · %q, want %q", raw, got.word, got.detail, want)
+			}
+		}
+	})
+
+	t.Run("LT-13 every program of a command is named, the trivial ones too; sudo, timeout and the like name theirs inside ()", func(t *testing.T) {
+		cases := map[string]string{
+			"sudo ls /root":                           "sudo(ls)",
+			"sudo -u postgres psql -c 'select 1'":     "sudo(psql)",
+			"timeout 5 curl -s example.com":           "timeout(curl)",
+			"timeout -s KILL 10 curl x":               "timeout(curl)",
+			"sudo timeout 5 curl x":                   "sudo(timeout(curl))",
+			"nice -n 10 make -j8":                     "nice(make)",
+			"nohup ./run.sh &":                        "nohup(run.sh)",
+			"env FOO=1 BAR=2 make":                    "env(make)",
+			"FOO=1 make":                              "make",
+			"xargs -n 1 echo":                         "xargs(echo)",
+			"watch -n 2 kubectl get pods":             "watch(kubectl)",
+			"stdbuf -oL tail -f log":                  "stdbuf(tail)",
+			"sudo":                                    "sudo",
+			"sudo -v":                                 "sudo",
+			"env":                                     "env",
+			"timeout 5":                               "timeout",
+			"/usr/bin/sudo /bin/ls":                   "sudo(ls)",
+			"cd /tmp && sudo rm -rf x; echo done":     "cd, sudo(rm), echo",
+			"sudo ls | timeout 3 grep x | wc -l":      "sudo(ls), timeout(grep), wc",
+			"echo a; echo b; pwd; true; printf x":     "echo, pwd, true +1",
+			"sudo -- ls":                              "sudo(ls)",
+			"sudo --user root ls":                     "sudo(ls)",
+			"taskset 0x3 ./bench":                     "taskset(bench)",
+			"bash -c 'sudo systemctl restart nginx'":  "sudo(systemctl)",
+			"ssh -p 2222 user@host ls -la":            "ssh(ls)",
+			"ssh host 'df -h'":                        "ssh(df)",
+			"ssh host":                                "ssh",
+			"docker exec -it web ls /app":             "docker exec(ls)",
+			"docker exec -e A=1 web sh -c 'x'":        "docker exec(sh)",
+			"docker run --rm -v a:/b ubuntu bash":     "docker run(bash)",
+			"docker run -d nginx":                     "docker",
+			"docker build . && docker push x":         "docker",
+			"kubectl exec mypod -- ls /tmp":           "kubectl exec(ls)",
+			"kubectl exec -n prod mypod -c app -- ps": "kubectl exec(ps)",
+			"kubectl get pods":                        "kubectl",
+			"uv run pytest -x":                        "uv run(pytest)",
+			"uv sync":                                 "uv",
+			"poetry run mypy .":                       "poetry run(mypy)",
+			"npx -p typescript tsc --noEmit":          "npx(tsc)",
+			"pnpm exec eslint .":                      "pnpm exec(eslint)",
+			"bundle exec rspec":                       "bundle exec(rspec)",
+			"parallel -j4 gzip ::: *.log":             "parallel(gzip)",
+			"runuser -u www-data -- php artisan x":    "runuser(php)",
+			"systemd-run --unit job make":             "systemd-run(make)",
+			"flock /tmp/lock make":                    "flock(make)",
+			"xvfb-run -a go test ./...":               "xvfb-run(go)",
+			"strace -o out ls":                        "strace(ls)",
+			"nsenter -t 1 ip a":                       "nsenter(ip)",
+		}
+		for command, want := range cases {
+			if got := programs(command); got != want {
+				t.Errorf("%q: %q, want %q", command, got, want)
 			}
 		}
 	})
