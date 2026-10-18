@@ -238,12 +238,20 @@ func programName(fields []string) string {
 	if !wraps {
 		return name
 	}
+	if name == "command" && slices.ContainsFunc(rest, func(word string) bool { return word == "-v" || word == "-V" }) {
+		// command -v only looks a program up: it runs nothing.
+		return name
+	}
 	rest = skipFlags(rest, name, wrap)
 	for range wrap.before {
 		if len(rest) == 0 {
 			break
 		}
 		rest = skipFlags(rest[1:], name, wrap)
+	}
+	// A command that is itself $(…) or `…` is a part of its own, named apart.
+	if len(rest) > 0 && (strings.HasPrefix(rest[0], "$(") || strings.HasPrefix(rest[0], "`")) {
+		return name
 	}
 	if inner := programName(rest); inner != "" {
 		return shown + "(" + inner + ")"

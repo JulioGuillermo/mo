@@ -1426,4 +1426,7 @@
   `npx`, `pnpm exec`, `bundle exec`, shown with it: `docker exec(ls)`. `docker build` or `kubectl
   get` run nothing, so they are `docker` and `kubectl`. The table is in `internal/tui/state.go`:
   their flags, and the arguments of their own such as timeout's duration or ssh's host, are skipped
-  to find the command, and so are the `VAR=value` words before it.
+  to find the command, and so are the `VAR=value` words before it. What is inside `$(…)` or
+  backquotes is a program of its own, named apart (`echo $(git rev-parse HEAD)` is `echo, git`);
+  a wrapper whose command is one, `sudo $(which docker)`, is its name alone, and `command -v`
+  only looks a program up, so it is `command`.

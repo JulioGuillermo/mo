@@ -271,6 +271,13 @@ func TestStates(t *testing.T) {
 			"xvfb-run -a go test ./...":               "xvfb-run(go)",
 			"strace -o out ls":                        "strace(ls)",
 			"nsenter -t 1 ip a":                       "nsenter(ip)",
+			"echo $(git rev-parse HEAD)":              "echo, git",
+			"cat `ls /tmp`":                           "cat, ls",
+			"sudo $(which docker) ps":                 "sudo, which",
+			"timeout 5 $(command -v curl) x":          "timeout, command",
+			"command -v curl":                         "command",
+			"FOO=$(pwd) make":                         "make, pwd",
+			"for f in $(ls *.go); do wc -l $f; done":  "ls, wc",
 		}
 		for command, want := range cases {
 			if got := programs(command); got != want {
