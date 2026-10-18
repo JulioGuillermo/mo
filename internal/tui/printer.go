@@ -734,6 +734,7 @@ func (p *printer) toolLazy(run toolRun, open bool) (string, *lazyRows) {
 		parts = append(parts, p.toolLine(run.name, run.args, run.summary, sign))
 	}
 	code, paint, rows, isCode := p.readCode(run, open)
+	grepped, isGrep := p.grepResult(run, open)
 	switch {
 	case !run.done:
 		parts = append(parts, dimStyle.Render("  ⎿ running…"))
@@ -742,6 +743,8 @@ func (p *printer) toolLazy(run toolRun, open bool) (string, *lazyRows) {
 			lazy = &lazyRows{first: strings.Count(strings.Join(parts, "\n")+"\n", "\n"), count: rows, render: paint}
 		}
 		parts = append(parts, code)
+	case isGrep:
+		parts = append(parts, grepped)
 	case open:
 		parts = append(parts, p.fullResult(run.output, run.isError))
 	default:

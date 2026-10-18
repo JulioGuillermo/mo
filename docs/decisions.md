@@ -256,7 +256,10 @@
     ends. Cost does not grow with the length of the text.
   - An edit's diff takes the colour of each line from the old text or the new one coloured as a
     whole, so what a raw string or a comment holds across lines is known.
-  The file viewer (`/view`) still colours its whole file when it opens.
+  The file viewer (`/view`) uses the same pieces.
+- A grep result is drawn with its files in colour, the numbers of the lines dim, the text the pattern
+  matches marked (the pattern as the call had it, ignore_case too) and the lines around a match dim;
+  folded the first four lines, open all of them wrapped.
 - Attached files are found in the prompt itself (paths, quoted or with escaped spaces, that exist
   as regular files), so pasting and dropping work in any terminal. Images (png, jpeg, gif, webp, up
   to 8 MB) go with the message; images marked in read and MCP results follow the tool results as a
@@ -1156,13 +1159,24 @@
 
 - `/view` is for the user alone: nothing it shows reaches the model. Pictures, SVG and Mermaid are
   drawn in the conversation as before; any other text file opens in the viewer jobs use, with
-  chroma's lexer for its name, line numbers, search and copy. Files over 8 MB, folders and
-  binary files are refused with a note.
+  chroma's lexer for its name, line numbers, search and copy. Files over 8 MB and binary files are
+  refused with a note; a folder is browsed.
 - Tab after `/view ` completes paths from the working directory (or `~/`), folders first, hidden
   ones only once a dot is typed; a folder fills in without running, so tab goes down the tree.
 - Comments on a file live in mo, by path, until the message they are attached to is sent: the
   file is never written. The model gets them after the message, each with its lines and the first
   of them quoted, so it can find the place even if the file moved on.
+- A file is found without its path. `/view @name` offers files by the search `@` uses, and so does
+  a word that is no path in the folder (a path that exists is completed as a path, so `mi_` does
+  not turn to a search if a file starts so); a word with `*` or `?` is a pattern, `**` across
+  folders, matched on the name at any depth when it has no `/`, on the whole path when it has one,
+  capitals not mattering. The search ranking lives in `fuzzyFiles`, shared with `@`. One match
+  opens at once and several are listed to pick from, as does the highlighted suggestion on enter.
+  `/view` with no argument or a folder lists it (`..`, folders, files, `/` to filter, hidden ones
+  included, since here nothing is searched), choosing a folder lists that.
+- The viewer colours a file as the code blocks are: only the lines in view, from chunks recognised
+  and kept (see the colouring of code in pieces), so a file of 8 MB opens at once; it used to colour it
+  all, which took seconds.
 - `@` searches an index of the working directory's files, read again after 15 s, hidden folders
   and those of dependencies and builds left out: names that start with what was typed come
   first, then names and paths that hold it, then paths holding its letters in order.

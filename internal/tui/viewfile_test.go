@@ -6,7 +6,7 @@ package tui
 // | VF-02 | Happy    | /view on code opens it highlighted, numbered, for the user only          | P0       |
 // | VF-04 | Happy    | A file without an extension is highlighted as its #! line says             | P1       |
 // | VF-05 | Happy    | The cursor's line keeps its highlighting under the cursor's background     | P1       |
-// | VF-03 | Edge     | A folder, a binary file or a picture are not opened as text             | P1       |
+// | VF-03 | Edge     | A folder is browsed; a binary file or a picture are not opened as text             | P1       |
 
 import (
 	"os"
@@ -61,7 +61,7 @@ func TestViewFile(t *testing.T) {
 		m = opened.(model)
 		screen := m.View().Content
 
-		if m.viewer == nil || m.viewer.colored == nil || m.viewer.language != "Go" || len(m.session.Agent.History) != history {
+		if m.viewer == nil || !m.viewer.coloured() || m.viewer.language != "Go" || len(m.session.Agent.History) != history {
 			t.Fatalf("viewer = %+v", m.viewer)
 		}
 		if plain := ansi.Strip(screen); !strings.Contains(plain, "main.go") || !strings.Contains(plain, "only you see it") || !strings.Contains(plain, "1 package main") {
@@ -77,8 +77,8 @@ func TestViewFile(t *testing.T) {
 		folder, _ := m.runCommand("/view internal")
 		binary, _ := m.runCommand("/view blob.bin")
 
-		if folder.(model).viewer != nil || !strings.Contains(shown(folder.(model)), "is a folder") {
-			t.Error("a folder should be refused")
+		if folder.(model).viewer != nil || folder.(model).settings == nil {
+			t.Error("a folder is browsed, not opened as text")
 		}
 		if binary.(model).viewer != nil || !strings.Contains(shown(binary.(model)), "is not text") {
 			t.Error("a binary file should be refused")
@@ -96,7 +96,7 @@ func TestViewFile(t *testing.T) {
 		bash, _ := m.runCommand("/view deploy")
 		python, _ := m.runCommand("/view tool")
 
-		if viewer := bash.(model).viewer; viewer == nil || viewer.language != "Bash" || viewer.colored == nil {
+		if viewer := bash.(model).viewer; viewer == nil || viewer.language != "Bash" || !viewer.coloured() {
 			t.Errorf("bash viewer = %+v", viewer)
 		}
 		if viewer := python.(model).viewer; viewer == nil || !strings.HasPrefix(viewer.language, "Python") {

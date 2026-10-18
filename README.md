@@ -555,7 +555,13 @@ images that `read` opens or an MCP tool returns, and `/view <file>`
 shows an image, SVG or Mermaid file. Any other text file `/view` opens over the whole screen,
 highlighted as its name says and numbered, to scroll, search with `/` and copy, as a job's output
 is watched; only you see it, the model never does. Tab after `/view ` offers the files and folders
-there, folders first; tab on a folder goes into it.
+there, folders first; tab on a folder goes into it. A file is also found by what its name holds:
+`/view @mifile` offers the project's files by the same search as `@` (names that start with it
+first, then those that hold it, then those with its letters in order), a word that is no path
+here does the same, and a pattern names files: `*.go` any `.go` at any depth, `**/*mifile.*` or
+`src/**/*.md` by path (`**` crosses folders, `*` stays in one, `?` is one character, capitals do
+not matter). One match opens, several are listed to pick from. `/view` alone, or on a folder, lists
+the folder to browse: `..` goes up, a folder lists that, a file opens, `/` filters.
 
 In a file `/view` opened, ↑↓ move a cursor, and `c` comments its line, or the lines you dragged
 over; the file is not touched. `c` on a comment edits it, `d` deletes it. `a` closes the viewer and
@@ -637,5 +643,5 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | click on the branch | the files changed, each with its kind |
 | right click | a small menu by the pointer, over the screen (↑↓ or j k, enter or a click, esc or a click outside closes it): the mode: all modes to pick · a task: change its state or delete it · a job in the panel, or a bash call still running: watch its output live, its last lines, send it to the background, kill it |
 | wheel over the side panel | scroll its tasks and jobs |
-| `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact [instruction]` `/cache clear` `/settings` `/providers` `/mcp` `/plugins` `/agents` `/view <file>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
+| `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact [instruction]` `/cache clear` `/settings` `/providers` `/mcp` `/plugins` `/agents` `/view [file]` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
 | `/<name> text` | a plugin command |

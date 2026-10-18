@@ -54,7 +54,7 @@ var builtinCommands = []command{
 	{name: "kill", argument: "<n>", description: "stop a background job"},
 	{name: "agents", argument: "[n]", description: "subagents: pick one, or n, to see what it does and talk to it"},
 	{name: "diagrams", description: "show every diagram as its code, or drawn again"},
-	{name: "view", argument: "<file>", description: "show a file to you only: images, SVG and Mermaid here, text and code in a viewer"},
+	{name: "view", argument: "[file]", description: "show a file to you only: images, SVG and Mermaid here, text and code in a viewer; @name, a *.go or **/*name* pattern search for it, no argument or a folder browses"},
 	{name: "help", description: "commands and keys"},
 	{name: "quit", description: "exit mo"},
 }
@@ -243,6 +243,9 @@ const maxPathSuggestions = 200
 // pathSuggestions are the files and folders after /view that start with
 // what was typed, folders first; hidden ones only when a dot is typed.
 func (m model) pathSuggestions(partial string) []command {
+	if paths, search := m.viewTargets(partial); search {
+		return viewMatches(paths)
+	}
 	dir, prefix := filepath.Split(partial)
 	base := dir
 	if !filepath.IsAbs(base) {
@@ -276,5 +279,10 @@ func (m model) pathSuggestions(partial string) []command {
 		}
 		files = append(files, command{name: full, description: "file"})
 	}
-	return append(folders, files...)[:min(len(folders)+len(files), maxPathSuggestions)]
+	found := append(folders, files...)
+	if len(found) == 0 && partial != "" && !strings.ContainsAny(partial, `/\`) {
+		// No path starts so: the project's files with that in their name.
+		return viewMatches(fuzzyFiles(m.files.list(m.session.WorkDir), partial))
+	}
+	return found[:min(len(found), maxPathSuggestions)]
 }

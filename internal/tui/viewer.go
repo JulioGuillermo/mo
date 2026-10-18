@@ -61,6 +61,9 @@ type outputViewer struct {
 	file     string
 	language string
 	colored  []string
+	// code, for a file, is its lines as the screen paints them: only those in
+	// view, when it asks, so a file of any size opens at once.
+	code *codeText
 	// drawing, when set, names a diagram shown whole, as it was drawn;
 	// dragging pans it, from where the drag started and the view then.
 	drawing  string
@@ -151,7 +154,7 @@ func (m model) openFile(path string) (tea.Model, tea.Cmd) {
 	case err != nil:
 		return m.emitError(err)
 	case info.IsDir():
-		return m.emit(m.printer.Note(path + " is a folder: tab after /view lists what is in it"))
+		return m.browse(full)
 	case info.Size() > viewMaxBytes:
 		return m.emit(m.printer.Note(fmt.Sprintf("%s is %s, over the %s /view shows", path, humanBytes(info.Size()), humanBytes(viewMaxBytes))))
 	}
@@ -175,18 +178,35 @@ func (m model) openFile(path string) (tea.Model, tea.Cmd) {
 		// Nothing in the name or the #! line: the content says, if anything.
 		lexer = lexers.Analyse(text)
 	}
-	if lexer != nil {
+	if lexer != nil && len(v.lines) > 0 {
 		v.language = lexer.Config().Name
-		colored := highlightLines(text, v.language, 1<<30, lipgloss.NoColor{}, m.printer == nil || m.printer.isDark())
-		if len(colored) == len(v.lines) {
-			v.colored = colored
+		expanded := make([]string, len(v.lines))
+		for i, line := range v.lines {
+			expanded[i] = strings.ReplaceAll(ansi.Strip(line), "\t", "    ")
 		}
+		v.code = newCodeLines(expanded, v.language, 1<<30)
+	} else if lexer != nil {
+		v.language = lexer.Config().Name
 	}
 	if m.fileComments == nil {
 		m.fileComments = map[string][]fileComment{}
 	}
 	m.viewer = v
 	return m, nil
+}
+
+// coloured tells whether the viewer has the lines of its text coloured.
+func (v *outputViewer) coloured() bool {
+	return v.colored != nil || v.code != nil
+}
+
+// colouredLine is a line as it is coloured, the file's painted as it is asked
+// for.
+func (v *outputViewer) colouredLine(i int, dark bool) string {
+	if v.code != nil {
+		return v.code.paint(i, 0, 1<<30, lipgloss.NoColor{}, dark)
+	}
+	return v.colored[i]
 }
 
 func humanBytes(size int64) string {
@@ -563,6 +583,7 @@ func (m model) viewerView() string {
 	}
 	from, to := min(v.pickFrom, v.pickTo), max(v.pickFrom, v.pickTo)
 	room := max(width-gutter, 1)
+	dark := m.printer == nil || m.printer.isDark()
 	for i := v.top; i < v.top+rows; i++ {
 		if i >= len(v.lines) {
 			if i == 0 {
@@ -584,12 +605,12 @@ func (m model) viewerView() string {
 			}
 			line = re.ReplaceAllStringFunc(line, func(found string) string { return style.Render(found) })
 		case (v.file != "" && i == v.cursor && !v.commenting) || (v.commenting && i >= v.commentFrom && i <= v.commentTo):
-			if v.colored != nil {
-				line = ansi.Cut(v.colored[i], v.left, v.left+room)
+			if v.coloured() {
+				line = ansi.Cut(v.colouredLine(i, dark), v.left, v.left+room)
 			}
 			line = cursorRow(line, room)
-		case v.colored != nil:
-			line = ansi.Cut(v.colored[i], v.left, v.left+room)
+		case v.coloured():
+			line = ansi.Cut(v.colouredLine(i, dark), v.left, v.left+room)
 		}
 		if gutter > 0 {
 			mark := " "

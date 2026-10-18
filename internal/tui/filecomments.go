@@ -242,37 +242,10 @@ func (m model) mention() (string, bool) {
 // @, those whose name does first; or, failing that, those holding its
 // letters in order.
 func (m model) mentionSuggestions(typed string) []command {
-	query := strings.ToLower(typed)
-	type found struct {
-		path  string
-		score int
-	}
-	var matches []found
-	for _, path := range m.files.list(m.session.WorkDir) {
-		lower := strings.ToLower(path)
-		base := strings.ToLower(filepath.Base(path))
-		switch {
-		case query == "":
-			matches = append(matches, found{path, 3})
-		case strings.HasPrefix(base, query):
-			matches = append(matches, found{path, 0})
-		case strings.Contains(base, query):
-			matches = append(matches, found{path, 1})
-		case strings.Contains(lower, query):
-			matches = append(matches, found{path, 2})
-		case inOrder(lower, query):
-			matches = append(matches, found{path, 3})
-		}
-	}
-	sort.SliceStable(matches, func(i, j int) bool {
-		if matches[i].score != matches[j].score {
-			return matches[i].score < matches[j].score
-		}
-		return len(matches[i].path) < len(matches[j].path)
-	})
 	var commands []command
-	for _, match := range matches[:min(len(matches), mentionShown)] {
-		commands = append(commands, command{name: match.path, description: "file", mention: true})
+	matches := fuzzyFiles(m.files.list(m.session.WorkDir), typed)
+	for _, path := range matches[:min(mentionShown, len(matches))] {
+		commands = append(commands, command{name: path, description: "file", mention: true})
 	}
 	return commands
 }

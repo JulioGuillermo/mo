@@ -933,13 +933,7 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		}
 		return m, printText(m.printer.Note("diagrams drawn"))
 	case "view":
-		if argument == "" {
-			return m, printText(m.printer.Note("usage: /view <file> · tab completes paths · images, SVG and Mermaid show here, other files in a viewer"))
-		}
-		if drawnInline(argument) {
-			return m, m.view(argument)
-		}
-		return m.openFile(argument)
+		return m.viewArgument(argument)
 	case "agents":
 		return m.pickAgent(argument)
 	case "cache":
