@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/auth"
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/detect"
@@ -211,4 +212,101 @@ func firstModel(ctx context.Context, provider *llm.OpenAI) (string, error) {
 		return "", errors.New("the server lists no models")
 	}
 	return models[0], nil
+}
+
+// modelRefresher checks the model and its context, so the agent does not go
+// on with what the server no longer has.
+//
+// llama-server may be restarted with another model or another context, so it
+// is asked at every turn, before a compaction and after a failure: when the
+// one model it lists is not the one it listed before, the agent follows it (a
+// name the user chose is kept while the server stays), and the window is the
+// server's, never more than a size set in the settings. Any other provider
+// is stable, and while the model writes it is there: it is asked for its
+// models when a conversation starts, when the list of models is opened and
+// after a request failed, a model it no
+// longer offers is told to the user once, and the window is read again where
+// the server says it.
+func modelRefresher(chosen chosenProvider, set int) func(ctx context.Context, reason agent.CheckReason, model string, window int) agent.ModelCheck {
+	var list func(context.Context) ([]string, error)
+	var windowOf func(context.Context, string) int
+	switch provider := chosen.provider.(type) {
+	case *llm.OpenAI:
+		if provider.PromptProgress {
+			return llamaRefresher(provider, set)
+		}
+		list = provider.ListModels
+		windowOf = func(ctx context.Context, model string) int {
+			size, _ := provider.ModelWindow(ctx, model)
+			return size
+		}
+	case *llm.Anthropic:
+		list, windowOf = provider.ListModels, provider.ModelWindow
+	case *llm.Responses:
+		list = provider.ListModels
+	case *llm.CloudCode:
+		list = provider.ListModels
+	default:
+		return nil
+	}
+	warned := ""
+	return func(ctx context.Context, reason agent.CheckReason, model string, window int) agent.ModelCheck {
+		check := agent.ModelCheck{Model: model, Window: window}
+		if reason != agent.CheckNew && reason != agent.CheckFailure && reason != agent.CheckModels {
+			return check
+		}
+		ctx, cancel := context.WithTimeout(ctx, windowProbeTimeout)
+		defer cancel()
+		if models, err := list(ctx); err == nil && len(models) > 0 {
+			switch {
+			case slices.ContainsFunc(models, func(id string) bool { return sameModel(id, model) }):
+				warned = ""
+			case warned != model:
+				warned = model
+				check.Notice = fmt.Sprintf("%s no longer appears in the models %s offers; pick another with /model", model, chosen.name)
+			}
+		}
+		if set == 0 && windowOf != nil {
+			if size := windowOf(ctx, model); size > 0 {
+				check.Window = size
+			}
+		}
+		return check
+	}
+}
+
+// sameModel tells a listed id from the name in use: Gemini lists models/ before
+// the name and Ollama :latest after it.
+func sameModel(id, model string) bool {
+	return id == model || strings.TrimPrefix(id, "models/") == model || id == model+":latest"
+}
+
+// llamaRefresher follows what llama-server serves between messages.
+func llamaRefresher(provider *llm.OpenAI, set int) func(ctx context.Context, reason agent.CheckReason, model string, window int) agent.ModelCheck {
+	listed := func(ctx context.Context) string {
+		if models, err := provider.ListModels(ctx); err == nil && len(models) == 1 {
+			return models[0]
+		}
+		return ""
+	}
+	seeded, cancel := context.WithTimeout(context.Background(), windowProbeTimeout)
+	seen := listed(seeded)
+	cancel()
+	return func(ctx context.Context, _ agent.CheckReason, model string, window int) agent.ModelCheck {
+		ctx, cancel := context.WithTimeout(ctx, windowProbeTimeout)
+		defer cancel()
+		if now := listed(ctx); now != "" {
+			if seen != "" && now != seen {
+				model = now
+			}
+			seen = now
+		}
+		if size, ok := provider.Props(ctx); ok {
+			window = size
+			if set > 0 {
+				window = min(set, size)
+			}
+		}
+		return agent.ModelCheck{Model: model, Window: window}
+	}
 }

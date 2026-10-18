@@ -92,6 +92,12 @@ type Agent struct {
 	currentRequest      string
 
 	loops int
+	// Refresh asks the server what it serves now, given the model and window
+	// in use, and answers the ones to go on with; nil when the server cannot
+	// change under the agent. modelMu guards Model and Window against the
+	// readers outside the agent's own goroutine.
+	Refresh func(ctx context.Context, reason CheckReason, model string, window int) ModelCheck
+	modelMu sync.RWMutex
 
 	alwaysAllowed map[string]bool
 	queued        queue
@@ -129,7 +135,14 @@ type Hooks struct {
 	// of results, to save as the turn goes.
 	OnStep    func(history []llm.Message)
 	OnLoopCut func(repeated string)
-	Approve   func(ctx context.Context, request ApprovalRequest) Decision
+	// OnWarning is a notice that must stand out, as a model the provider no
+	// longer offers; without it OnNotice says it.
+	OnWarning func(text string)
+	// OnModel says the server now serves another model or has another
+	// context window than the agent went on with, as found when a turn
+	// starts or CheckModel is called.
+	OnModel func(model string, window int)
+	Approve func(ctx context.Context, request ApprovalRequest) Decision
 	// Interact asks the user everything the calls of a reply need at once;
 	// it takes the place of Approve.
 	Interact func(ctx context.Context, interaction Interaction) Reply
@@ -146,8 +159,95 @@ func (a *Agent) Run(ctx context.Context, prompt string, hooks Hooks) error {
 	return a.turn(ctx, hooks)
 }
 
+// CheckReason says why the model is checked: a server that changes often is
+// asked at every turn, one that is stable only when something may have gone
+// wrong or the conversation starts over.
+type CheckReason int
+
+const (
+	// CheckTurn is a turn starting: a message, /continue, queued messages or
+	// jobs that ended.
+	CheckTurn CheckReason = iota
+	// CheckCompact is before a compaction, which depends on the window.
+	CheckCompact
+	// CheckNew is a new conversation.
+	CheckNew
+	// CheckFailure is a request that failed, whose cause may be the model.
+	CheckFailure
+	// CheckModels is the list of models being opened: what is in use is
+	// marked in it.
+	CheckModels
+)
+
+// ModelCheck is what Refresh found: the model and context window to go on
+// with, and a note for the user when the model is no longer offered.
+type ModelCheck struct {
+	Model  string
+	Window int
+	Notice string
+}
+
+// CheckModel asks the server what it serves now, and goes on with its model
+// and context window when they changed, telling OnModel; a model the server
+// no longer offers is told by OnWarning. It reports whether the model or the
+// window changed. Refresh says for which reasons it asks: llama-server at all
+// of them, so a server restarted with another model between messages is
+// followed before anything is sent and the window compaction depends on is
+// the server's; the others at a new conversation and after a failed request,
+// not while the model writes, which shows it is there.
+func (a *Agent) CheckModel(ctx context.Context, hooks Hooks, reason CheckReason) bool {
+	if a.Refresh == nil {
+		return false
+	}
+	a.modelMu.RLock()
+	model, window := a.Model, a.Window
+	a.modelMu.RUnlock()
+	check := a.Refresh(ctx, reason, model, window)
+	if check.Notice != "" {
+		switch {
+		case hooks.OnWarning != nil:
+			hooks.OnWarning(check.Notice)
+		case hooks.OnNotice != nil:
+			hooks.OnNotice(check.Notice)
+		}
+	}
+	newModel, newWindow := check.Model, check.Window
+	if newModel == "" {
+		newModel = model
+	}
+	if newWindow <= 0 {
+		newWindow = window
+	}
+	if newModel == model && newWindow == window {
+		return false
+	}
+	a.modelMu.Lock()
+	a.Model, a.Window = newModel, newWindow
+	a.modelMu.Unlock()
+	if hooks.OnModel != nil {
+		hooks.OnModel(newModel, newWindow)
+	}
+	return true
+}
+
+// ContextWindow is the context window the agent goes on with, safe to read
+// while a turn runs.
+func (a *Agent) ContextWindow() int {
+	a.modelMu.RLock()
+	defer a.modelMu.RUnlock()
+	return a.Window
+}
+
+// modelName is the model requests go to, safe to read while a turn runs.
+func (a *Agent) modelName() string {
+	a.modelMu.RLock()
+	defer a.modelMu.RUnlock()
+	return a.Model
+}
+
 // turn asks the model and answers its tool calls until it ends.
 func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
+	a.CheckModel(ctx, hooks, CheckTurn)
 	limit := a.MaxSteps
 	if limit == 0 && a.Loop.Enabled {
 		limit = a.Loop.Steps
@@ -159,6 +259,9 @@ func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
 		a.tellEndedJobs()
 		a.tellNotes()
 		a.deliverQueued(hooks)
+		if a.needsCompaction() {
+			a.CheckModel(ctx, hooks, CheckCompact)
+		}
 		if a.needsCompaction() {
 			a.makeRoom(ctx, hooks)
 		}
@@ -182,6 +285,7 @@ func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
 			if stopped {
 				return ctx.Err()
 			}
+			a.CheckModel(ctx, hooks, CheckFailure)
 			return err
 		}
 		if repeated != "" {

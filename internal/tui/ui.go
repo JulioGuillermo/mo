@@ -551,6 +551,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case activityMsg:
 		m.activity = string(msg)
 		return m, nil
+	case modelMsg:
+		return m.modelChanged(msg)
 	case agentsChangedMsg:
 		m.refreshAgentView()
 		return m, m.scheduleSave()
@@ -846,7 +848,7 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "new", "clear":
 		m.newConversation()
-		return m, printText(m.printer.Note("new conversation · the last one stays in /resume"))
+		return m, tea.Batch(printText(m.printer.Note("new conversation · the last one stays in /resume")), m.checkModel())
 	case "resume":
 		if m.running {
 			return m.emit(m.printer.Note("stop the current run first"))
@@ -1485,4 +1487,40 @@ func (m model) cacheCleared(msg cacheClearedMsg) (tea.Model, tea.Cmd) {
 		return m.emitError(fmt.Errorf("the cache was not cleared: %w", msg.err))
 	}
 	return m.emit(m.printer.Note(fmt.Sprintf("cache cleared: %d slots of llama-server erased · the next prompt is read whole", msg.erased)))
+}
+
+// checkModel asks the server what it serves before the conversation that was
+// just started goes on, so the status line already says it.
+func (m model) checkModel() tea.Cmd {
+	current := m.session.Agent
+	if current == nil || current.Refresh == nil {
+		return nil
+	}
+	printer := m.printer
+	return func() tea.Msg {
+		var changed *modelMsg
+		var notice string
+		current.CheckModel(context.Background(), agent.Hooks{
+			OnModel:   func(model string, window int) { changed = &modelMsg{model: model, window: window} },
+			OnWarning: func(text string) { notice = text },
+		}, agent.CheckNew)
+		switch {
+		case changed != nil:
+			return *changed
+		case notice != "":
+			return printMsg(printer.Warning(notice))
+		}
+		return nil
+	}
+}
+
+// modelChanged follows the model the server now has, and says it.
+func (m model) modelChanged(msg modelMsg) (tea.Model, tea.Cmd) {
+	was := m.session.Model
+	m.session.Model = msg.model
+	text := fmt.Sprintf("the server now has %s · context %s tokens", shortModelName(msg.model), formatTokens(msg.window))
+	if msg.model == was {
+		text = fmt.Sprintf("the server's context is now %s tokens", formatTokens(msg.window))
+	}
+	return m.emit(m.printer.Note(text))
 }

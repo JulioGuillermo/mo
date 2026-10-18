@@ -942,6 +942,23 @@
   API takes no bearer key; Anthropic, the Models API's max_input_tokens. When none says, 32768, or
   200000 for Anthropic. Context › Context window overrides it, and the Context section says where
   the window in use came from.
+- **The server can change under a running session**, as llama-server restarted by a script with
+  another model or another `-c`, which left mo naming the old model and trusting a window the
+  server no longer had: past it, a request fails. llama-server is the one that changes, so it is
+  asked as each turn starts, which covers a message, `/continue`, queued messages and jobs that
+  ended, before a compaction is decided (auto compaction depends on the window), at `/compact`,
+  at `/new` and after a failed request. The model it lists, when it is one and not the one
+  listed before, becomes the model in use, a name the user chose being kept while the server
+  stays; the window is its `/props`, never more than a size set in the settings. Any other
+  provider is stable, and while the model writes it is there, so it is asked only when a
+  conversation starts, when `/model` opens its list and after a failed request, whose cause may be
+  the model: one it no longer
+  offers is told once, as a warning in the amber of the warnings and not as a dim note, `warning:` on stderr in one-shot mode (`/model` picks another), and the window is read again where the server says
+  it. The list of models is never kept: `/model` asks the provider for it each time it opens,
+  after asking what the server has, so the model marked in use is the server's. No timer asks
+  anything. A server that does not answer changes nothing. A smaller window is
+  what compaction is decided with at once. A router llama-server, which lists several models,
+  changes nothing: there the name picks the model.
 
 ## Vim keys
 

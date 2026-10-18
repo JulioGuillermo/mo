@@ -391,7 +391,7 @@ func (m model) contextShare(colors statusColors) (int, int, float64, color.Color
 	if m.running && m.metrics.active() {
 		used = m.metrics.context(used)
 	}
-	window := m.session.Agent.Window
+	window := m.session.Agent.ContextWindow()
 	if window <= 0 {
 		return used, 0, 0, colors.low
 	}

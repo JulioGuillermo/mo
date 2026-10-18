@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 
+	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/auth"
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/llm"
@@ -24,8 +25,11 @@ const (
 type modelChoice struct {
 	provider string
 	current  string
-	pick     func(m model, name string) (tea.Model, tea.Cmd)
-	back     func(m model) (tea.Model, tea.Cmd)
+	// check is the agent asked what the server has before the models are
+	// listed, so the one marked in use is the server's.
+	check *agent.Agent
+	pick  func(m model, name string) (tea.Model, tea.Cmd)
+	back  func(m model) (tea.Model, tea.Cmd)
 }
 
 // modelsMsg brings the models a provider lists.
@@ -33,6 +37,8 @@ type modelsMsg struct {
 	choice modelChoice
 	models []string
 	err    error
+	// followed is the model and window the server turned out to have.
+	followed *modelMsg
 }
 
 // listModels asks a provider for its models: an OpenAI-compatible server's
@@ -57,15 +63,38 @@ func listModels(ctx context.Context, provider string, settings config.ProviderCo
 func (m model) chooseModel(settings config.ProviderConfig, choice modelChoice) (tea.Model, tea.Cmd) {
 	m.settingsInFlight = true
 	note := printText(m.printer.Note("asking " + orDefault(choice.provider, "the provider") + " for its models…"))
-	return m, tea.Batch(note, func() tea.Msg {
+	return m, tea.Batch(note, loadModels(settings, choice))
+}
+
+// loadModels asks the server what it has now, then for its models: the list
+// is never kept from an earlier time.
+func loadModels(settings config.ProviderConfig, choice modelChoice) tea.Cmd {
+	return func() tea.Msg {
+		var followed *modelMsg
+		if choice.check != nil {
+			choice.check.CheckModel(context.Background(), agent.Hooks{
+				OnModel: func(model string, window int) { followed = &modelMsg{model: model, window: window} },
+			}, agent.CheckModels)
+		}
 		models, err := listModels(context.Background(), choice.provider, settings)
-		return modelsMsg{choice: choice, models: models, err: err}
-	})
+		return modelsMsg{choice: choice, models: models, err: err, followed: followed}
+	}
 }
 
 // showModels lists the models, the one in use first marked, to filter and
 // pick, or to type a name the list does not have.
 func (m model) showModels(msg modelsMsg) (tea.Model, tea.Cmd) {
+	if msg.followed == nil {
+		return m.showModelList(msg)
+	}
+	msg.choice.current = msg.followed.model
+	followed, note := m.modelChanged(*msg.followed)
+	listed, show := followed.(model).showModelList(msg)
+	return listed, tea.Batch(note, show)
+}
+
+// showModelList is the list of the models, once the server's own are known.
+func (m model) showModelList(msg modelsMsg) (tea.Model, tea.Cmd) {
 	m.settingsInFlight = false
 	choice := msg.choice
 	if msg.err != nil || len(msg.models) == 0 {
@@ -120,7 +149,7 @@ func (m model) typeModelName(choice modelChoice, problem string) (tea.Model, tea
 func (m model) switchModel() (tea.Model, tea.Cmd) {
 	settings := m.session.Config.Providers[m.session.Provider]
 	closed := func(m model) (tea.Model, tea.Cmd) { return m, printText(m.printer.Note("model unchanged")) }
-	return m.chooseModel(settings, modelChoice{provider: m.session.Provider, current: m.session.Model, back: closed,
+	return m.chooseModel(settings, modelChoice{provider: m.session.Provider, current: m.session.Model, check: m.session.Agent, back: closed,
 		pick: func(m model, name string) (tea.Model, tea.Cmd) { return m.useModel(name) }})
 }
 

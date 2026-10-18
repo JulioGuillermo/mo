@@ -55,7 +55,7 @@ var settingsSections = []settingsSection{
 	}, note: func(m model, _ *settingsMenu) string {
 		note := "Sent with every request now " + budgetText(m.session.Agent.Budget())
 		if from := m.session.WindowFrom; from != "" {
-			note += fmt.Sprintf("\nWindow now %s tokens, from %s", formatTokens(m.session.Agent.Window), from)
+			note += fmt.Sprintf("\nWindow now %s tokens, from %s", formatTokens(m.session.Agent.ContextWindow()), from)
 		}
 		return note
 	}, items: contextItems},

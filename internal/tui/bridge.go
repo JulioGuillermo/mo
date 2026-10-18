@@ -23,6 +23,13 @@ type runDoneMsg struct{ err error }
 // queuedReadMsg says the model now reads that many queued messages.
 type queuedReadMsg int
 
+// modelMsg says the server now serves another model or has another context
+// window than the agent went on with.
+type modelMsg struct {
+	model  string
+	window int
+}
+
 // bridge turns agent callbacks, which run on the agent goroutine, into
 // program messages and scrollback lines.
 type bridge struct {
@@ -110,8 +117,14 @@ func (b *bridge) hooks() agent.Hooks {
 		OnNotice: func(text string) {
 			b.print(b.printer.Note(text))
 		},
+		OnWarning: func(text string) {
+			b.print(b.printer.Warning(text))
+		},
 		OnQueued: func(count int) {
 			b.send(queuedReadMsg(count))
+		},
+		OnModel: func(model string, window int) {
+			b.program.Send(modelMsg{model: model, window: window})
 		},
 		OnLoopCut: func(repeated string) {
 			b.program.Send(streamEndMsg{})
@@ -152,6 +165,9 @@ func (b *bridge) flushingFirst(hooks agent.Hooks) agent.Hooks {
 	hooks.OnActivity = func(text string) { first(func() { onActivity(text) })() }
 	hooks.OnUsage = func(usage llm.Usage) { first(func() { onUsage(usage) })() }
 	hooks.OnNotice = func(text string) { first(func() { onNotice(text) })() }
+	if onWarning := hooks.OnWarning; onWarning != nil {
+		hooks.OnWarning = func(text string) { first(func() { onWarning(text) })() }
+	}
 	hooks.OnLoopCut = func(repeated string) { first(func() { onLoopCut(repeated) })() }
 	hooks.OnCompact = func(before, after int) { first(func() { onCompact(before, after) })() }
 	hooks.OnQueued = func(count int) { first(func() { onQueued(count) })() }

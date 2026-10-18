@@ -300,6 +300,7 @@ func toolEnv(workDir, memoryDir string) tools.Env {
 // newAgent is an agent as the config says, on the provider chosen.
 func newAgent(cfg config.Config, chosen chosenProvider, registry *tools.Registry, system string, confirm []string, policy *permissions.Policy) *agent.Agent {
 	return &agent.Agent{
+		Refresh:       modelRefresher(chosen, cfg.Context.Window),
 		Provider:      chosen.provider,
 		Model:         chosen.model,
 		System:        system,

@@ -118,6 +118,7 @@ func (a *Agent) Compact(ctx context.Context, hooks Hooks) error {
 // instruction of the user's for this summary: everything is summed up, as
 // no turn is in progress to keep.
 func (a *Agent) CompactWith(ctx context.Context, hooks Hooks, instruction string) error {
+	a.CheckModel(ctx, hooks, CheckCompact)
 	return a.compact(ctx, hooks, instruction, false)
 }
 

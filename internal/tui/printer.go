@@ -927,6 +927,20 @@ func (p *printer) Note(text string) string {
 	return dimStyle.Render(strings.Join(lines, "\n"))
 }
 
+// Warning is a note that stands out, in the warning colour, for what the
+// user should not miss.
+func (p *printer) Warning(text string) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if i == 0 {
+			lines[i] = noteMark + line
+		} else {
+			lines[i] = strings.Repeat(" ", len([]rune(noteMark))) + line
+		}
+	}
+	return lipgloss.NewStyle().Foreground(warning).Render(strings.Join(lines, "\n"))
+}
+
 func (p *printer) clip(line string) string {
 	p.mu.Lock()
 	limit := p.width - 6

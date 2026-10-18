@@ -37,6 +37,9 @@ func runOnce(ctx context.Context, a *agent.Agent, prompt string) error {
 		OnNotice: func(text string) {
 			fmt.Fprintf(os.Stderr, "(%s)\n", text)
 		},
+		OnWarning: func(text string) {
+			fmt.Fprintf(os.Stderr, "warning: %s\n", text)
+		},
 		OnLoopCut: func(repeated string) {
 			fmt.Println()
 			fmt.Fprintf(os.Stderr, "\n(loop: reply cut, it kept repeating %s)\n", agent.Quote(repeated))
