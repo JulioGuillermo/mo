@@ -172,11 +172,7 @@ func (m model) formingCallView(name, args, sign string) string {
 		if !found {
 			return header
 		}
-		shown := strings.Split(command, "\n")
-		if len(shown) > formingCommand {
-			shown = shown[len(shown)-formingCommand:]
-		}
-		return header + "\n" + m.printer.commandLines(strings.Join(shown, "\n"), true, "bash")
+		return header + "\n" + m.printer.commandTail(command, "bash", formingCommand)
 	case "write", "edit":
 		field := "content"
 		if name == "edit" {
@@ -198,16 +194,14 @@ func (m model) formingCallView(name, args, sign string) string {
 // formingWindow shows the last lines of a file being written, coloured by
 // its language, in a small block that follows what arrives.
 func (m model) formingWindow(path, text string) string {
-	rows := strings.Split(text, "\n")
-	if len(rows) > formingLines {
-		rows = rows[len(rows)-formingLines:]
-	}
 	dark := m.printer == nil || m.printer.isDark()
 	colors := changePalette(dark)
 	width := max(m.mainWidth()-8, 20)
 	block := lipgloss.NewStyle().Background(colors.block)
 	var out []string
-	for _, line := range highlightLines(strings.Join(rows, "\n"), languageOf(path), width, colors.block, dark) {
+	// Coloured with what is above the window, so a string or a comment that
+	// began there is known; the line being written, by itself.
+	for _, line := range codeTail(text, languageOf(path), formingLines, width, colors.block, dark) {
 		fill := block.Render(strings.Repeat(" ", max(width+1-ansi.StringWidth(line), 0)))
 		out = append(out, commandEdge.Render("  ▌")+block.Render(" ")+line+fill)
 	}

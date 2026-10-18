@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"image/color"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -93,50 +95,92 @@ func changePalette(dark bool) changeColors {
 // fileChangeLines shows a change: what a write wrote, highlighted, or what
 // an edit changed, as a diff whose lines are highlighted too.
 func (p *printer) fileChangeLines(change fileChange) string {
+	text, _ := p.fileChangeBlock(change)
+	return text
+}
+
+// fileChangeBlock is a change as lines, and, for a long write, the function
+// that paints the lines in view: they are plain in the text until then.
+func (p *printer) fileChangeBlock(change fileChange) (string, func(from, to int) []string) {
 	p.mu.Lock()
 	width, dark := p.width, p.dark
 	p.mu.Unlock()
 	colors := changePalette(dark)
 	language := languageOf(change.path)
 	inner := max(width-8, 20)
+	edge := commandEdge.Render("  ▌")
+	if !change.edit {
+		block := lipgloss.NewStyle().Background(colors.block)
+		lead, fill := block.Render(" "), newSGR(block)
+		code := newCodeText(change.content, language, inner)
+		return codeBlock(code, colors.block, dark, func(_ int, piece string) string {
+			return edge + lead + piece + fill.wrap(strings.Repeat(" ", max(inner+1-ansi.StringWidth(piece), 0)))
+		})
+	}
 	var out []string
+	for _, each := range change.edits {
+		out = append(out, p.diffRows(each, language, inner, colors, dark)...)
+	}
+	return strings.Join(out, "\n"), nil
+}
+
+// hunkHeader is the line a diff starts a part of the text with, and the lines
+// it begins at in the old text and the new.
+var hunkHeader = regexp.MustCompile(`^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
+
+// diffRows are the lines of an edit as a diff: those taken out on red, those
+// put in on green, each coloured by what the old text or the new one makes of
+// it as a whole, so what a string or a comment holds across lines is known.
+func (p *printer) diffRows(each fileEdit, language string, inner int, colors changeColors, dark bool) []string {
+	oldCode, newCode := newCodeText(each.old, language, inner-2), newCodeText(each.new, language, inner-2)
+	edge := commandEdge.Render("  ▌")
 	pad := func(line string, background color.Color) string {
 		fill := lipgloss.NewStyle().Background(background).Render(strings.Repeat(" ", max(inner+2-ansi.StringWidth(line), 0)))
-		return commandEdge.Render("  ▌") + line + fill
+		return edge + line + fill
 	}
-	if !change.edit {
-		for _, line := range highlightLines(change.content, language, inner, colors.block, dark) {
-			out = append(out, pad(lipgloss.NewStyle().Background(colors.block).Render(" ")+line, colors.block))
-		}
-		return strings.Join(out, "\n")
-	}
-	var diff []string
-	for _, each := range change.edits {
-		diff = append(diff, strings.Split(strings.TrimRight(gitops.Unified("", each.old, each.new), "\n"), "\n")...)
-	}
-	for _, line := range diff {
+	var out []string
+	oldAt, newAt := 0, 0
+	for _, line := range strings.Split(strings.TrimRight(gitops.Unified("", each.old, each.new), "\n"), "\n") {
 		switch {
 		case line == "", strings.HasPrefix(line, "---"), strings.HasPrefix(line, "+++"), strings.HasPrefix(line, `\`):
 			continue
 		case strings.HasPrefix(line, "@@"):
+			if found := hunkHeader.FindStringSubmatch(line); found != nil {
+				oldAt, _ = strconv.Atoi(found[1])
+				newAt, _ = strconv.Atoi(found[2])
+				oldAt, newAt = oldAt-1, newAt-1
+			}
 			out = append(out, pad(lipgloss.NewStyle().Background(colors.block).Foreground(colors.hunk).Render(" "+line), colors.block))
 			continue
 		}
-		background, mark := colors.block, lipgloss.NewStyle().Background(colors.block).Render("  ")
+		code, at, background := newCode, newAt, colors.block
+		mark := lipgloss.NewStyle().Background(background).Render("  ")
 		switch line[0] {
 		case '+':
-			background = colors.added
+			background, newAt = colors.added, newAt+1
 			mark = lipgloss.NewStyle().Background(background).Foreground(colors.addedMark).Bold(true).Render("+ ")
 		case '-':
-			background = colors.removed
+			code, at, background, oldAt = oldCode, oldAt, colors.removed, oldAt+1
 			mark = lipgloss.NewStyle().Background(background).Foreground(colors.removedMark).Bold(true).Render("- ")
+		default:
+			newAt, oldAt = newAt+1, oldAt+1
 		}
-		for i, piece := range highlightLines(line[1:], language, inner-2, background, dark) {
+		var spans [][2]int
+		if at < len(code.lines) {
+			spans = wrapSpans(code.lines[at], inner-2)
+		} else {
+			spans = [][2]int{{0, 0}}
+		}
+		for i, span := range spans {
+			piece := ""
+			if at < len(code.lines) {
+				piece = code.paint(at, span[0], span[1], background, dark)
+			}
 			if i > 0 {
 				mark = lipgloss.NewStyle().Background(background).Render("  ")
 			}
 			out = append(out, pad(mark+piece, background))
 		}
 	}
-	return strings.Join(out, "\n")
+	return out
 }

@@ -127,17 +127,28 @@ func TestReadCode(t *testing.T) {
 		}
 	})
 
-	t.Run("RC-07 a very long file is coloured up to a limit and the rest is counted", func(t *testing.T) {
+	t.Run("RC-07 a very long file is in the text as plain rows and painted where the screen shows it", func(t *testing.T) {
 		p := newPrinter()
 		var lines []string
-		for i := range maxCodeLines + 50 {
+		for i := range 5000 {
 			lines = append(lines, fmt.Sprintf("var v%d = %d", i, i))
 		}
+		run := readRun("main.go", strings.Join(lines, "\n"), nil)
 
-		plain := ansi.Strip(p.Tool(readRun("main.go", strings.Join(lines, "\n"), nil), true))
+		text, lazy := p.toolLazy(run, true)
 
-		if !strings.Contains(plain, fmt.Sprintf("… +%d lines", 50)) || !strings.Contains(plain, fmt.Sprintf("var v%d =", maxCodeLines-1)) || strings.Contains(plain, fmt.Sprintf("var v%d =", maxCodeLines)) {
-			t.Errorf("tail:\n%s", plain[max(len(plain)-300, 0):])
+		if lazy == nil || lazy.count != 5000 || strings.Contains(text, keywordColor) || !strings.Contains(ansi.Strip(text), "var v4999 = 4999") {
+			t.Fatalf("lazy %+v, painted in the text: %v", lazy, strings.Contains(text, keywordColor))
+		}
+		if rows := strings.Count(text, "\n") + 1; rows != lazy.first+lazy.count+1 {
+			t.Errorf("%d lines in the text, the code from %d for %d", rows, lazy.first, lazy.count)
+		}
+		painted := lazy.render(2500, 2503)
+		if len(painted) != 3 || !strings.Contains(painted[0], keywordColor) || !strings.Contains(ansi.Strip(painted[0]), "var v2500 = 2500") {
+			t.Errorf("painted %q", painted)
+		}
+		if plain := strings.Split(text, "\n")[lazy.first+2500]; ansi.StringWidth(plain) != ansi.StringWidth(painted[0]) {
+			t.Errorf("a plain row is %d columns, the painted one %d", ansi.StringWidth(plain), ansi.StringWidth(painted[0]))
 		}
 	})
 

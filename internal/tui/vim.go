@@ -544,7 +544,7 @@ func (m *model) foldAt(line int, open bool) {
 	}
 	m.blocks = slices.Clone(m.blocks)
 	m.blocks[i].open = open
-	m.blocks[i].text = m.blocks[i].draw(open)
+	m.blocks[i].redraw(open)
 	m.vim.line = min(m.vim.line, max(m.conversation(m.conversationHeight()).TotalLineCount()-1, 0))
 }
 

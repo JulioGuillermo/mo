@@ -664,12 +664,30 @@ func (p *printer) highlightedCommand(lines []string, all bool, language string, 
 		inner = 1 << 20
 	}
 	shade := lipgloss.NewStyle().Background(background)
+	code := newCodeText(strings.Join(lines, "\n"), language, inner)
 	var out []string
-	for _, line := range highlightLines(strings.Join(lines, "\n"), language, inner, background, dark) {
-		fill := shade.Render(strings.Repeat(" ", max(total-1-ansi.StringWidth(line), 0)))
-		out = append(out, commandEdge.Render("  ▌")+shade.Render(" ")+line+fill)
+	for _, piece := range code.render(0, len(code.rows), func(int) color.Color { return background }, dark) {
+		fill := shade.Render(strings.Repeat(" ", max(total-1-ansi.StringWidth(piece), 0)))
+		out = append(out, commandEdge.Render("  ▌")+shade.Render(" ")+piece+fill)
 	}
 	return out
+}
+
+// commandTail is the last rows of a command being written, coloured as the
+// whole of it is.
+func (p *printer) commandTail(command, language string, rows int) string {
+	p.mu.Lock()
+	width, dark := p.width, p.dark
+	p.mu.Unlock()
+	total, inner := max(width-4, 16), max(width-8, 10)
+	background := panelBackground(dark)
+	shade := lipgloss.NewStyle().Background(background)
+	var out []string
+	for _, piece := range codeTail(command, language, rows, inner, background, dark) {
+		fill := shade.Render(strings.Repeat(" ", max(total-1-ansi.StringWidth(piece), 0)))
+		out = append(out, commandEdge.Render("  ▌")+shade.Render(" ")+piece+fill)
+	}
+	return strings.Join(out, "\n")
 }
 
 // wrapped splits a line, without its styles, into pieces that fit the width
@@ -685,12 +703,26 @@ func (p *printer) wrapped(line string, margin int) []string {
 // Tool shows a tool call and its result: folded, the first lines of each
 // and a hint when there is more; open, all of both.
 func (p *printer) Tool(run toolRun, open bool) string {
+	text, _ := p.toolLazy(run, open)
+	return text
+}
+
+// toolLazy is Tool, and, when the call has many rows of code, as the content
+// of a long write or what read gave of a long file, where the rows are in the
+// text and how the screen paints those it shows: in the text they are plain.
+func (p *printer) toolLazy(run toolRun, open bool) (string, *lazyRows) {
 	var parts []string
+	var lazy *lazyRows
 	change, changed := fileChangeOf(run.name, run.args)
 	sign := p.runSign(run)
 	switch {
 	case open && changed:
-		parts = append(parts, "\n"+p.toolHeaderAs(run.name, run.args, sign)+" "+run.summary+dimStyle.Render("  "+change.summary())+"\n"+p.fileChangeLines(change))
+		code, paint := p.fileChangeBlock(change)
+		head := "\n" + p.toolHeaderAs(run.name, run.args, sign) + " " + run.summary + dimStyle.Render("  "+change.summary()) + "\n"
+		parts = append(parts, head+code)
+		if paint != nil {
+			lazy = &lazyRows{first: strings.Count(head, "\n"), count: strings.Count(code, "\n") + 1, render: paint}
+		}
 	case open:
 		parts = append(parts, "\n"+p.toolHeaderAs(run.name, run.args, sign)+"\n"+p.commandLines(run.summary, true, commandLanguage(run.name, run.args)))
 		if run.name == "ui" {
@@ -701,11 +733,14 @@ func (p *printer) Tool(run toolRun, open bool) string {
 	default:
 		parts = append(parts, p.toolLine(run.name, run.args, run.summary, sign))
 	}
-	code, isCode := p.readCode(run, open)
+	code, paint, rows, isCode := p.readCode(run, open)
 	switch {
 	case !run.done:
 		parts = append(parts, dimStyle.Render("  ⎿ running…"))
 	case isCode:
+		if paint != nil {
+			lazy = &lazyRows{first: strings.Count(strings.Join(parts, "\n")+"\n", "\n"), count: rows, render: paint}
+		}
 		parts = append(parts, code)
 	case open:
 		parts = append(parts, p.fullResult(run.output, run.isError))
@@ -718,7 +753,7 @@ func (p *printer) Tool(run toolRun, open bool) string {
 	case p.toolHidesSome(run):
 		parts = append(parts, dimStyle.Render("    ▸ ctrl+o or click for the whole call and output"))
 	}
-	return strings.Join(parts, "\n")
+	return strings.Join(parts, "\n"), lazy
 }
 
 // uiCall is what a ui call gave, to read when it is opened: the tree, as

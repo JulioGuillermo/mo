@@ -232,6 +232,31 @@
   A long line wraps into rows, the number on the first, and the rows are coloured as one text so a
   string or comment across them is. An error, an empty file, a file whose language is not known
   and what read says of a part that is not there are shown as any result.
+- **Code is coloured in pieces, and only those the screen needs** (`internal/tui/codeview.go`).
+  Measured, recognising the syntax costs about 1.4 ms for each KB (chroma) and painting 0.7 more:
+  100 KB took 0.2 s, 1 MB 2 s, so a long `write` froze the screen on opening and again at each
+  redraw, and a window of the last lines of a text that is written, coloured by itself, lost the
+  string it began in. Now:
+  - A text is cut into chunks of 150 to 600 lines at places a string or a comment is unlikely to
+    be open: a line with no indent after a blank one, with nothing open (a triple quote, a fence, a
+    raw string, a block comment, by a guess that only costs a chunk of another size). Each chunk is
+    recognised by itself and kept by its content (and the number of its lines, so no lines and a
+    blank one are not the same), in a cache of 2 MB of text, so drawing again at another width, or
+    on another background, recognises nothing.
+  - Only the rows in view are painted. The text of a block with more than 400 rows of code, the
+    content of a write or what read gave, holds them as plain rows, as many lines as painted ones
+    are, so counting, finding and copying read it as any text; the screen takes the rows it shows
+    from `lazyRows.render`. Opening a write of 5.5 MB takes 0.24 s, and painting the screen 3 ms.
+    The cap of 3000 lines read had is gone.
+  - The last lines of what the model writes (write, edit and bash) are the last rows of the text
+    coloured with the lines above them, from a safe place 40 to 250 lines back: a string it began
+    in is known, so the python in a `python3 -c "…"` stays a string and does not turn to shell as its
+    quote leaves the window. The lines that are complete are recognised in chunks of 40, only the
+    last of which grows; the line still being written is coloured by itself, and exact when it
+    ends. Cost does not grow with the length of the text.
+  - An edit's diff takes the colour of each line from the old text or the new one coloured as a
+    whole, so what a raw string or a comment holds across lines is known.
+  The file viewer (`/view`) still colours its whole file when it opens.
 - Attached files are found in the prompt itself (paths, quoted or with escaped spaces, that exist
   as regular files), so pasting and dropping work in any terminal. Images (png, jpeg, gif, webp, up
   to 8 MB) go with the message; images marked in read and MCP results follow the tool results as a

@@ -65,6 +65,9 @@ func (p conversationPane) View() string {
 // window without joining the parts.
 type conversationLines struct {
 	parts []string
+	// lazy are the rows of code the screen paints when it shows them, of the
+	// parts that have them: nil for the others.
+	lazy []*lazyRows
 	// starts are the line each part starts on: every part but the last
 	// ends with a new line.
 	starts []int
@@ -73,11 +76,12 @@ type conversationLines struct {
 
 func (m model) conversationLines() conversationLines {
 	parts := make([]string, 0, len(m.blocks)+1)
+	lazy := make([]*lazyRows, 0, len(m.blocks)+1)
 	for _, b := range m.blocks {
-		parts = append(parts, b.text)
+		parts, lazy = append(parts, b.text), append(lazy, b.lazy)
 	}
-	parts = append(parts, m.liveText())
-	lines := conversationLines{parts: parts, starts: make([]int, len(parts))}
+	parts, lazy = append(parts, m.liveText()), append(lazy, nil)
+	lines := conversationLines{parts: parts, lazy: lazy, starts: make([]int, len(parts))}
 	line := 0
 	for i, part := range parts {
 		lines.starts[i] = line
@@ -134,14 +138,44 @@ func (c conversationLines) lines(from, to int) []string {
 		if end <= from || start >= to || start >= end {
 			continue
 		}
-		split := strings.Split(part, "\n")
-		for row := max(from, start); row < min(to, end); row++ {
-			if index := row - start; index < len(split) {
-				out = append(out, split[index])
-			} else {
-				out = append(out, "")
+		low, high := max(from, start), min(to, end)
+		shown := nthLines(part, low-start, high-start)
+		for len(shown) < high-low {
+			shown = append(shown, "")
+		}
+		// Where the part has rows of code that are plain in its text, those in
+		// view are painted now.
+		if lazy := c.lazy[i]; lazy != nil {
+			first, last := max(low-start, lazy.first), min(high-start, lazy.first+lazy.count)
+			if first < last {
+				copy(shown[first-(low-start):], lazy.render(first-lazy.first, last-lazy.first))
 			}
 		}
+		out = append(out, shown...)
+	}
+	return out
+}
+
+// nthLines is the lines from one to before another of a text, found without
+// cutting the whole of it: a block of many thousands of lines costs what the
+// lines it shows do.
+func nthLines(text string, from, to int) []string {
+	offset := 0
+	for range from {
+		next := strings.IndexByte(text[offset:], '\n')
+		if next < 0 {
+			return nil
+		}
+		offset += next + 1
+	}
+	var out []string
+	for line := from; line < to; line++ {
+		next := strings.IndexByte(text[offset:], '\n')
+		if next < 0 {
+			return append(out, text[offset:])
+		}
+		out = append(out, text[offset:offset+next])
+		offset += next + 1
 	}
 	return out
 }

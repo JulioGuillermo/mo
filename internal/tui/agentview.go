@@ -107,7 +107,7 @@ func (m *model) refreshAgentView() {
 	for i := range drawn.blocks {
 		if i < len(view.blocks) && drawn.blocks[i].foldable && view.blocks[i].foldable && view.blocks[i].open != drawn.blocks[i].open {
 			drawn.blocks[i].open = view.blocks[i].open
-			drawn.blocks[i].text = drawn.blocks[i].draw(drawn.blocks[i].open)
+			drawn.blocks[i].redraw(drawn.blocks[i].open)
 		}
 	}
 	view.blocks, view.todos = drawn.blocks, drawn.todos

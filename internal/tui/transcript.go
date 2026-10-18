@@ -20,12 +20,26 @@ const liveReasoningLines = 3
 // opened or folded; without it the text stays as printed. A foldable block
 // (a reasoning, a tool call, a summary) opens with a click or ctrl+o.
 type block struct {
-	text      string
-	draw      func(open bool) string
+	text string
+	draw func(open bool) string
+	// drawRows is draw for a block with many rows of code: the rows of its
+	// text that the screen paints when it shows them, as lazy says.
+	drawRows  func(open bool) (string, *lazyRows)
+	lazy      *lazyRows
 	foldable  bool
 	open      bool
 	reasoning string
 	tool      *toolRun
+}
+
+// redraw draws a block again, open or not, and keeps what the screen paints
+// of it as it is now.
+func (b *block) redraw(open bool) {
+	if b.drawRows != nil {
+		b.text, b.lazy = b.drawRows(open)
+		return
+	}
+	b.text = b.draw(open)
 }
 
 // toolRun is a tool call shown in the transcript, filled in when it ends.
@@ -85,7 +99,7 @@ func (m model) emitDrawn(draw drawMsg) (tea.Model, tea.Cmd) {
 // ctrl+o left them.
 func (m *model) addFoldable(b block) {
 	b.foldable, b.open = true, m.showDetails
-	b.text = b.draw(b.open)
+	b.redraw(b.open)
 	m.blocks = append(m.blocks, b)
 }
 
@@ -122,11 +136,20 @@ func (m *model) addReasoning(text string) {
 	}
 }
 
+// toolBlock is a tool call as a block that opens and folds: drawn by the
+// printer, which says where it has many rows of code.
+func toolBlock(printer *printer, run *toolRun) block {
+	return block{tool: run,
+		draw:     func(open bool) string { return printer.Tool(*run, open) },
+		drawRows: func(open bool) (string, *lazyRows) { return printer.toolLazy(*run, open) },
+	}
+}
+
 // addTool adds a tool call, its result to come.
 func (m *model) addTool(call llm.ToolCall, summary string) {
 	run := &toolRun{id: call.ID, name: call.Name, summary: summary, args: call.Args}
 	printer := m.printer
-	m.addFoldable(block{tool: run, draw: func(open bool) string { return printer.Tool(*run, open) }})
+	m.addFoldable(toolBlock(printer, run))
 }
 
 // finishTool puts a result into the latest call with its id still running.
@@ -139,10 +162,10 @@ func (m *model) finishTool(id, output string, isError bool) {
 		m.blocks = slices.Clone(m.blocks)
 		finished := *run
 		finished.output, finished.isError, finished.done = output, isError, true
-		printer := m.printer
 		m.blocks[i].tool = &finished
-		m.blocks[i].draw = func(open bool) string { return printer.Tool(finished, open) }
-		m.blocks[i].text = m.blocks[i].draw(m.blocks[i].open)
+		drawn := toolBlock(m.printer, &finished)
+		m.blocks[i].draw, m.blocks[i].drawRows = drawn.draw, drawn.drawRows
+		m.blocks[i].redraw(m.blocks[i].open)
 		return
 	}
 }
@@ -160,7 +183,7 @@ func (m *model) redrawDrawings() {
 	m.blocks = slices.Clone(m.blocks)
 	for i, b := range m.blocks {
 		if b.draw != nil && strings.Contains(b.text, "ctrl+←→ moves across") {
-			m.blocks[i].text = b.draw(b.open)
+			m.blocks[i].redraw(b.open)
 		}
 	}
 }
@@ -169,7 +192,7 @@ func (m *model) redraw() {
 	m.blocks = slices.Clone(m.blocks)
 	for i, b := range m.blocks {
 		if b.draw != nil {
-			m.blocks[i].text = b.draw(b.open)
+			m.blocks[i].redraw(b.open)
 		}
 	}
 }
@@ -241,7 +264,7 @@ func (m *model) toggleDetails() {
 	for i, b := range m.blocks {
 		if b.foldable {
 			m.blocks[i].open = m.showDetails
-			m.blocks[i].text = b.draw(m.showDetails)
+			m.blocks[i].redraw(m.showDetails)
 		}
 	}
 }
@@ -278,7 +301,7 @@ func (m *model) clickDetails(y int) bool {
 	}
 	m.blocks = slices.Clone(m.blocks)
 	m.blocks[i].open = !m.blocks[i].open
-	m.blocks[i].text = m.blocks[i].draw(m.blocks[i].open)
+	m.blocks[i].redraw(m.blocks[i].open)
 	return true
 }
 
