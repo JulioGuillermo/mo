@@ -694,6 +694,14 @@ func (m model) plainKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "pgdown", "shift+down":
 		m.scroll(false, m.pageSize(msg.String()))
 		return m, nil
+	case "ctrl+x":
+		// Clears what is typed, the model's run going on.
+		if m.input.Value() != "" {
+			m.input.Reset()
+			m.history.shown = 0
+			m.suggestion = 0
+			return m, nil
+		}
 	case "ctrl+c":
 		if m.running {
 			m.stop()
@@ -1014,7 +1022,7 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 			if typed := strings.TrimSpace(m.input.Value()); typed != "" {
 				queued = append(queued, typed)
 			}
-			m.input.SetValue(strings.Join(queued, "\n"))
+			m.input.SetValue(joinQueued(queued))
 			m.input.CursorEnd()
 			m.queued = nil
 			lines = append(lines, m.printer.Note("what you queued is back in the input"))

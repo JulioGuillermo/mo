@@ -114,7 +114,7 @@ func (m model) vimKey(msg tea.KeyPressMsg) (bool, tea.Model, tea.Cmd) {
 		m.input.ClearSelection()
 		m.movePane(pressed)
 		return true, m, nil
-	case "ctrl+c", "ctrl+d", "ctrl+b", "ctrl+o", "ctrl+v", "shift+tab", "pgup", "pgdown", "shift+up", "shift+down":
+	case "ctrl+c", "ctrl+d", "ctrl+x", "ctrl+b", "ctrl+o", "ctrl+v", "shift+tab", "pgup", "pgdown", "shift+up", "shift+down":
 		return false, m, nil
 	case "esc":
 		if m.vim.mode == vimVisual {

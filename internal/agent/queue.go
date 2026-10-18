@@ -2,7 +2,10 @@ package agent
 
 import (
 	"context"
+	"strings"
 	"sync"
+
+	"github.com/jg/mo/internal/llm"
 )
 
 // queue holds what the user wrote while the agent worked, for its next
@@ -44,15 +47,31 @@ func (a *Agent) HasQueued() bool {
 	return len(a.queued.texts) > 0
 }
 
-// deliverQueued puts the waiting messages in the conversation as the
-// user's, with what they attach, before the model's next step.
+// deliverQueued puts the waiting messages in the conversation as one message
+// of the user's, a blank line between them, with what they attach, before the
+// model's next step: some chat templates refuse two user messages in a row.
+// It goes on the last message when that is the user's: after a prompt, at
+// its end; before a note of mo's, so the message still begins with what the
+// user wrote and is taken for the prompt.
 func (a *Agent) deliverQueued(hooks Hooks) {
 	texts := a.TakeQueued()
-	for _, text := range texts {
-		a.History = append(a.History, a.promptMessage(text, hooks))
-		a.currentRequest = text
+	if len(texts) == 0 {
+		return
 	}
-	if len(texts) > 0 && hooks.OnQueued != nil {
+	joined := strings.Join(texts, "\n\n")
+	message := a.promptMessage(joined, hooks)
+	if last := len(a.History) - 1; last >= 0 && a.History[last].Role == llm.RoleUser {
+		if isPrompt(a.History[last]) {
+			a.History[last].Text += "\n\n" + message.Text
+		} else {
+			a.History[last].Text = message.Text + "\n\n" + a.History[last].Text
+		}
+		a.History[last].Images = append(a.History[last].Images, message.Images...)
+	} else {
+		a.History = append(a.History, message)
+	}
+	a.currentRequest = joined
+	if hooks.OnQueued != nil {
 		hooks.OnQueued(len(texts))
 	}
 }

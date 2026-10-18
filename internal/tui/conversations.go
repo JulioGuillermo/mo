@@ -399,20 +399,28 @@ func (m model) queuedRead(count int) (tea.Model, tea.Cmd) {
 	count = min(count, len(m.queued))
 	read := m.queued[:count]
 	m.queued = slices.Clone(m.queued[count:])
-	var cmds []tea.Cmd
-	for _, prompt := range read {
-		cmds = append(cmds, drawText(func() string { return m.printer.User(prompt) }))
+	if len(read) == 0 {
+		return m, nil
 	}
-	return m, tea.Sequence(cmds...)
+	// The model reads them as one message, so they show as one.
+	prompt := joinQueued(read)
+	return m, drawText(func() string { return m.printer.User(prompt) })
 }
 
-// queuedView is the messages waiting for the model, a line each.
+// joinQueued is the messages waiting as the model reads them: one, a blank
+// line between them.
+func joinQueued(prompts []string) string {
+	return strings.Join(prompts, "\n\n")
+}
+
+// queuedView is the messages waiting for the model, as one entry: they are
+// read as one message, and up with nothing typed brings them all back.
 func (m model) queuedView() string {
-	var lines []string
-	for _, prompt := range m.queued {
-		lines = append(lines, dimStyle.Render("  ⧗ queued › ")+oneLine(prompt, max(m.width-16, 20)))
+	if len(m.queued) == 0 {
+		return ""
 	}
-	return strings.Join(lines, "\n")
+	prompt := oneLine(strings.Join(m.queued, " ⏎ "), max(m.width-34, 20))
+	return dimStyle.Render("  ⧗ queued › "+prompt) + dimStyle.Render("  ↑ edit")
 }
 
 // saveOrWait writes the settings now; while the model works the session

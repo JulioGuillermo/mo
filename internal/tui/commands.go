@@ -64,6 +64,8 @@ var keyHelp = [][2]string{
 	{"shift+enter, ctrl+j, alt+enter", "new line"},
 	{"tab, ↑ ↓", "complete a command"},
 	{"esc, ctrl+c", "stop the current run"},
+	{"ctrl+x", "clear what is typed; the run goes on"},
+	{"↑ with nothing typed", "bring back the messages waiting for the model, to edit them"},
 	{"ctrl+b", "send the command that blocks the model to the background"},
 	{"vim keys", "esc normal · i a A I o insert · ctrl+h/j/k/l panes · j k gg G ctrl+d ctrl+u move · l h open and fold · v y select and copy · dd x D w b 0 $ edit · : command"},
 	{"pgup, pgdown, wheel, ctrl+↑↓", "scroll the conversation; with nothing typed, ctrl+j k too"},

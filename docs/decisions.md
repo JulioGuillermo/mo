@@ -1246,6 +1246,18 @@
   before reading it.
 - Settings saved during a turn build a new agent; what was queued moves to it with the
   conversation, where before it was lost.
+- **Messages queued together reach the model as one**, a blank line between them: each used to
+  be a message of the user's of its own, two or more in a row, which some chat templates refuse
+  (Gemma's and Mistral's alternate roles). It goes at the end of the last message when that is the
+  user's prompt, before it when it is a note of mo's (so the message still begins with what the
+  user wrote and is taken for the prompt), else as a message of its own. The list over the status
+  line shows them as one entry, `a ⏎ b`, and the conversation draws them as one message when the
+  model reads them.
+- **Up with nothing typed brings all that is queued back to the input**, joined as the model
+  would read them, to edit and send again; the model is not stopped, unlike esc. It takes the
+  queue as the agent's lock allows, so a message the model already read cannot come back, and up
+  then goes through the history as always. **ctrl+x clears what is typed**, also while the model
+  works; it is the key that removes in the other lists of mo.
 
 ## Drawing a long conversation
 
