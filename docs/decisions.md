@@ -41,6 +41,13 @@
   `tool_search` (what the matching tools do and their parameters, by keywords or `select:`). Names
   are cheap, so the model can look around before paying for descriptions. `tool_search` no longer
   lists the hidden tools in its own description: that list grew with every MCP server.
+- Built-in tools are also found by keywords of their own (`internal/tools/keywords.go`): synonyms
+  and the topics tools share, so "file" finds read, write, edit, ls, rm and grep, and "internet"
+  fetch and web_search; some in Spanish. The model never receives them, so descriptions stay
+  short, and a description emptied in the config is found all the same. A query word counts once
+  per tool: 4 in its name, 2 as one of its keywords, 1 inside a keyword or in the description, so
+  the tool that has more of the query's words comes first and a longer list gains nothing. An MCP
+  server's tools bring their own descriptions and no keywords.
 - `tools.load = "context"` (default): what `tool_search` returns stays in the conversation as its
   result, and the model calls those tools through `tool_call {name, args}`. The system prompt and
   the declared tools never change, so the prompt cache holds and no request carries more. A

@@ -32,6 +32,12 @@ const (
 	listToolName     = "tool_list"
 	callToolName     = "tool_call"
 	searchMaxResults = 5
+	// A word of the query found in a tool's name counts more than one that is
+	// a keyword of it, and that more than one found inside a keyword or in the
+	// description. Each word counts once, so the tool that has more of the
+	// query's words comes first, and a longer list of keywords gains nothing.
+	nameWeight    = 4
+	keywordWeight = 2
 )
 
 // Load says what finding a tool with tool_search does in search mode.
@@ -262,7 +268,7 @@ func (r *Registry) list(filter string) string {
 			continue
 		}
 		group, grouped := r.options.Groups[tool.Name]
-		text := strings.ToLower(tool.Name + " " + tool.Description + " " + group)
+		text := strings.ToLower(tool.Name + " " + tool.Description + " " + group + " " + strings.Join(keywordsOf(tool), " "))
 		switch {
 		case !containsAll(text, words):
 		case grouped:
@@ -347,10 +353,17 @@ func (r *Registry) match(query string) []Tool {
 	}
 	var ranked []scored
 	for _, tool := range candidates {
-		text := strings.ToLower(tool.Name + " " + tool.Description)
+		name := strings.ToLower(tool.Name)
+		description := strings.ToLower(tool.Description)
+		keywords := strings.Fields(strings.ToLower(strings.Join(keywordsOf(tool), " ")))
 		score := 0
 		for _, word := range words {
-			if strings.Contains(text, word) {
+			switch {
+			case strings.Contains(name, word):
+				score += nameWeight
+			case slices.Contains(keywords, word):
+				score += keywordWeight
+			case strings.Contains(description, word) || slices.ContainsFunc(keywords, func(keyword string) bool { return strings.Contains(keyword, word) }):
 				score++
 			}
 		}

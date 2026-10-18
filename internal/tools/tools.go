@@ -42,6 +42,9 @@ type Tool struct {
 	// Resumable calls, stopped before they ended, are kept unanswered in
 	// the history, to be run again as resumed when the agent continues.
 	Resumable bool
+	// Keywords are words tool_search and tool_list find the tool by besides
+	// its name and description; the model never receives them.
+	Keywords []string
 }
 
 type callKey struct{}
