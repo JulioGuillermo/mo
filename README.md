@@ -628,7 +628,7 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 
 | Key | Action |
 |---|---|
-| enter | send; while the model works, queue it: it waits over the status line (`⧗ queued › …`) and goes into the conversation when the model reads it, at its next step; several messages queued together are one entry and the model reads them as one message; ↑ with nothing typed brings them all back into the input to edit, without stopping the model; esc gives them back in the input too, but stops the model |
+| enter | send; while the model works, queue it: it waits over the status line, shaded, each message after an icon (💬 or Nerd Font's bubble, » in text), with an amber edge on the left (`⧗ queued · N · ↑ edit` under them) and goes into the conversation when the model reads it, at its next step; a long one wraps over several lines, up to eight; several messages queued together are one entry and the model reads them as one message; ↑ with nothing typed brings them all back into the input to edit, without stopping the model; esc gives them back in the input too, but stops the model |
 | shift+enter, ctrl+j, alt+enter | new line, in the input and in the boxes of forms |
 | esc, ctrl+c | stop the current run; esc with suggestions open (commands, paths, @) closes them first and leaves the run going |
 | ctrl+b | send the command that blocks the model to the background |

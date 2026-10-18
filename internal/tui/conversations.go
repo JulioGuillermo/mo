@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"slices"
 	"strings"
 	"sync"
@@ -9,6 +10,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
@@ -476,14 +479,76 @@ func joinQueued(prompts []string) string {
 	return strings.Join(prompts, "\n\n")
 }
 
-// queuedView is the messages waiting for the model, as one entry: they are
-// read as one message, and up with nothing typed brings them all back.
+// queuedRows is the most lines the messages of the queue take over the status line.
+const queuedRows = 8
+
+// queuedBackground is the shade behind the queue, warmer than the panel of
+// what the user wrote so the two are told apart.
+func queuedBackground(dark bool) color.Color {
+	if dark {
+		return lipgloss.Color("#3b3224")
+	}
+	return lipgloss.Color("#f3e5c4")
+}
+
+// queuedIcon is the mark of a message waiting, of the icon set: a speech
+// bubble in Nerd Font or as an emoji, » in plain text.
+func queuedIcon(set string) string {
+	switch set {
+	case iconsEmoji:
+		return "💬"
+	case iconsText:
+		return "»"
+	}
+	return "\uf075"
+}
+
+// queuedView is the messages waiting for the model, as one shaded entry: they
+// are read as one message, and up with nothing typed brings them all back.
+// Each starts with a sign and takes the lines it needs inside the main panel,
+// up to queuedRows; a last line says what waits and what is not shown.
 func (m model) queuedView() string {
 	if len(m.queued) == 0 {
 		return ""
 	}
-	prompt := oneLine(strings.Join(m.queued, " ⏎ "), max(m.width-34, 20))
-	return dimStyle.Render("  ⧗ queued › "+prompt) + dimStyle.Render("  ↑ edit")
+	dark := m.printer == nil || m.printer.isDark()
+	shade := queuedBackground(dark)
+	edge := lipgloss.NewStyle().Background(shade).Foreground(warning).Render("▌")
+	sign := edge + " " + queuedIcon(m.treeIconSet()) + " "
+	indent := edge + strings.Repeat(" ", ansi.StringWidth(sign)-1)
+	width := max(m.mainWidth(), 20)
+	body := max(width-ansi.StringWidth(sign)-1, 10)
+
+	var rows []string
+	for _, prompt := range m.queued {
+		lead := sign
+		for _, line := range strings.Split(strings.TrimSpace(prompt), "\n") {
+			for _, part := range strings.Split(ansi.Wrap(strings.TrimRight(line, " \t\r"), body, ""), "\n") {
+				rows = append(rows, lead+part)
+				lead = indent
+			}
+		}
+	}
+	hidden := 0
+	if len(rows) > queuedRows {
+		hidden = len(rows) - queuedRows
+		rows = rows[:queuedRows]
+	}
+	rest := fmt.Sprintf(" · %d", len(m.queued))
+	if hidden > 0 {
+		rest += fmt.Sprintf(" · … +%d lines", hidden)
+	}
+	rest += " · ↑ edit"
+
+	band := lipgloss.NewStyle().Background(shade).Width(width)
+	for i, row := range rows {
+		rows[i] = band.Render(row)
+	}
+	label := edge + lipgloss.NewStyle().Background(shade).Foreground(warning).Bold(true).Render(" ⧗ queued")
+	tail := lipgloss.NewStyle().Background(shade).Faint(true).Render(rest)
+	fill := lipgloss.NewStyle().Background(shade).Render(strings.Repeat(" ", max(width-ansi.StringWidth(label)-ansi.StringWidth(tail), 0)))
+	rows = append(rows, label+tail+fill)
+	return strings.Join(rows, "\n")
 }
 
 // saveOrWait writes the settings now; while the model works the session

@@ -1348,8 +1348,13 @@
   (Gemma's and Mistral's alternate roles). It goes at the end of the last message when that is the
   user's prompt, before it when it is a note of mo's (so the message still begins with what the
   user wrote and is taken for the prompt), else as a message of its own. The list over the status
-  line shows them as one entry, `a ⏎ b`, and the conversation draws them as one message when the
-  model reads them.
+  line shows them as one entry, each message starting with a bubble on a new line (Nerd Font's, 💬 as emoji, » in text, as render.icons says), an amber edge down the left, and the
+  conversation draws them as one message when the model reads them. The entry has its own warm
+  shade, not the user's panel's nor the chat's, and a last line, `⧗ queued · N · … +M lines ·
+  ↑ edit`.
+- **The queue wraps inside the main panel**, not the screen: it used to be one line cut at the
+  screen's width, which ran under the side panel when that was open. Each message takes the lines
+  it needs, up to eight, then `… +M lines` in the last line.
 - **Up with nothing typed brings all that is queued back to the input**, joined as the model
   would read them, to edit and send again; the model is not stopped, unlike esc. It takes the
   queue as the agent's lock allows, so a message the model already read cannot come back, and up

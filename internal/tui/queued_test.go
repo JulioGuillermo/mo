@@ -11,6 +11,10 @@ package tui
 // | QM-07 | Happy    | Up with nothing typed brings all that is queued back to the input        | P0       |
 // | QM-08 | Edge     | Up with something typed, or with nothing queued, goes through the history | P0      |
 // | QM-09 | Happy    | ctrl+x clears what is typed while the model works, and stops nothing     | P0       |
+// | QM-10 | Edge     | A long queued message wraps inside the main panel, never under the sidebar | P0     |
+// | QM-12 | Happy    | The queue is shaded, in a colour neither the user's panel nor the chat has | P1      |
+// | QM-13 | Happy    | The mark of a message follows the icon set, and an amber edge runs down the queue | P1 |
+// | QM-11 | Edge     | A queued message of many lines is cut with a count of those not shown    | P1       |
 
 import (
 	"context"
@@ -29,6 +33,7 @@ func queuedModel(t *testing.T) model {
 	m := conversationModel()
 	m.running = true
 	m.cancel = func() {}
+	m.session.Config.Render.Icons = iconsEmoji
 	m = streaming(m, llm.Event{Kind: llm.EventText, Text: strings.Repeat("a long reply line\n", 100)})
 	m.input.SetValue("please also do X")
 	return enter(t, m)
@@ -40,7 +45,7 @@ func TestQueuedMessages(t *testing.T) {
 
 		view := ansi.Strip(m.View().Content)
 
-		if !strings.Contains(view, "queued › please also do X") || strings.Contains(shown(m), "please also do X") {
+		if !strings.Contains(view, "💬 please also do X") || strings.Contains(shown(m), "please also do X") {
 			t.Errorf("view:\n%s\ntranscript:\n%s", view, shown(m))
 		}
 	})
@@ -56,7 +61,7 @@ func TestQueuedMessages(t *testing.T) {
 
 		transcript := shown(m)
 		reply, asked := strings.Index(transcript, "the reply"), strings.Index(transcript, "please also do X")
-		if reply < 0 || asked < reply || strings.Contains(ansi.Strip(m.View().Content), "queued ›") {
+		if reply < 0 || asked < reply || strings.Contains(ansi.Strip(m.View().Content), "⧗ queued") {
 			t.Errorf("transcript:\n%s", transcript)
 		}
 	})
@@ -91,7 +96,7 @@ func TestQueuedMessages(t *testing.T) {
 
 		view := ansi.Strip(m.View().Content)
 
-		if strings.Count(view, "queued ›") != 1 || !strings.Contains(view, "please also do X ⏎ and keep it short") || m.session.Agent.QueuedCount() != 2 {
+		if strings.Count(view, "⧗ queued · 2") != 1 || !strings.Contains(view, "💬 and keep it short") || m.session.Agent.QueuedCount() != 2 {
 			t.Errorf("view:\n%s", view)
 		}
 	})
@@ -156,6 +161,60 @@ func TestQueuedMessages(t *testing.T) {
 
 		if cleared.input.Value() != "" || !cleared.running || stopped || len(cleared.queued) != 1 || !again.running {
 			t.Errorf("input %q running %v stopped %v queued %v", cleared.input.Value(), cleared.running, stopped, cleared.queued)
+		}
+	})
+
+	t.Run("QM-10 a long queued message wraps inside the main panel, never under the sidebar", func(t *testing.T) {
+		m := queuedModel(t)
+		m.width, m.height = 100, 30
+		m.queued = []string{strings.Repeat("word ", 60)}
+
+		rows := strings.Split(ansi.Strip(m.queuedView()), "\n")
+
+		if len(rows) < 3 || !strings.HasPrefix(rows[0], "▌ 💬 word") || !strings.HasPrefix(rows[1], "▌    word") || !strings.Contains(rows[len(rows)-1], "⧗ queued · 1 · ↑ edit") {
+			t.Fatalf("rows %q", rows)
+		}
+		for _, row := range rows {
+			if ansi.StringWidth(row) > m.mainWidth() {
+				t.Errorf("%d columns of %d: %q", ansi.StringWidth(row), m.mainWidth(), row)
+			}
+		}
+	})
+
+	t.Run("QM-11 a queued message of many lines is cut with a count of those not shown", func(t *testing.T) {
+		m := queuedModel(t)
+		m.queued = []string{strings.Repeat("line\n", 20), "last"}
+
+		rows := strings.Split(ansi.Strip(m.queuedView()), "\n")
+
+		if len(rows) != queuedRows+1 || !strings.Contains(rows[len(rows)-1], "… +13 lines") || !strings.Contains(rows[len(rows)-1], "↑ edit") {
+			t.Errorf("rows %q", rows)
+		}
+	})
+
+	t.Run("QM-12 the queue is shaded, in a colour neither the user's panel nor the chat has", func(t *testing.T) {
+		m := queuedModel(t)
+
+		drawn := m.queuedView()
+
+		if queuedBackground(true) == panelBackground(true) || queuedBackground(false) == panelBackground(false) || !strings.Contains(drawn, "48;2;59;50;36") {
+			t.Errorf("%q", drawn)
+		}
+	})
+
+	t.Run("QM-13 the mark of a message follows the icon set, and an amber edge runs down the queue", func(t *testing.T) {
+		m := queuedModel(t)
+		for set, mark := range map[string]string{iconsEmoji: "💬", iconsText: "»", iconsNerd: "\uf075"} {
+			m.session.Config.Render.Icons = set
+			rows := strings.Split(m.queuedView(), "\n")
+			if !strings.Contains(ansi.Strip(rows[0]), "▌ "+mark+" please") {
+				t.Errorf("%s: %q", set, ansi.Strip(rows[0]))
+			}
+			for _, row := range rows {
+				if !strings.Contains(row, "▌") || !strings.Contains(row, "224;175;104") {
+					t.Errorf("%s: no amber edge in %q", set, row)
+				}
+			}
 		}
 	})
 }
