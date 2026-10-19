@@ -13,7 +13,7 @@ package agent
 // | AG-09 | Happy    | RewritePrompt changes the prompt before it enters the history      | P1       |
 // | AG-10 | Security | BlockToolCall stops a call before anyone is asked to approve it    | P0       |
 // | AG-11 | Happy    | Reasoning stays in the history but goes back only with KeepReasoning | P0     |
-// | AG-12 | Edge     | An answer with no text and no call warns; one with text does not   | P0       |
+// | AG-12 | Edge     | An answer with no text and no call says so, shown and kept; one with text is left as is | P0 |
 
 import (
 	"context"
@@ -333,24 +333,23 @@ func onlyRead(t *testing.T, agent *Agent) {
 }
 
 func TestSilentAnswer(t *testing.T) {
-	t.Run("AG-12 an answer with no text and no call warns; one with text does not", func(t *testing.T) {
+	t.Run("AG-12 an answer with no text and no call says so, shown and kept; one with text is left as is", func(t *testing.T) {
 		provider := &scriptedProvider{replies: []llm.Message{
-			{Role: llm.RoleAssistant, Text: "\n"},
-			{Role: llm.RoleAssistant, Reasoning: "let me think", Text: ""},
+			{Role: llm.RoleAssistant, Reasoning: "let me think", Text: "\n"},
 			{Role: llm.RoleAssistant, Text: "hello"},
 		}}
 		agent := newAgent(t, provider)
-		var warnings []string
-		hooks := Hooks{OnWarning: func(text string) { warnings = append(warnings, text) }}
+		var shown []string
+		hooks := Hooks{OnAssistant: func(message llm.Message) { shown = append(shown, message.Text) }}
 
-		for _, prompt := range []string{"one", "two", "three"} {
+		for _, prompt := range []string{"one", "two"} {
 			if err := agent.Run(context.Background(), prompt, hooks); err != nil {
 				t.Fatal(err)
 			}
 		}
 
-		if len(warnings) != 2 || warnings[0] != emptyAnswerWarning || warnings[1] != emptyAfterReasoningWarning {
-			t.Errorf("warnings = %q", warnings)
+		if len(shown) != 2 || shown[0] != llm.SilentNote || shown[1] != "hello" || agent.History[1].Text != llm.SilentNote {
+			t.Errorf("shown = %q history = %q", shown, agent.History[1].Text)
 		}
 	})
 }

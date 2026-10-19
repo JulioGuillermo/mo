@@ -15,10 +15,8 @@ import (
 )
 
 const (
-	deniedResult               = "The user denied this call. Ask them how to proceed."
-	cancelledResult            = "Cancelled by the user before it ran."
-	emptyAnswerWarning         = "the model ended without answering, and the provider gave no reason: a filter may have stopped it. Rephrasing the request, or a new conversation, can help."
-	emptyAfterReasoningWarning = "the model reasoned, then ended without answering, and the provider gave no reason: a filter may have stopped it. Rephrasing the request, or a new conversation, can help."
+	deniedResult    = "The user denied this call. Ask them how to proceed."
+	cancelledResult = "Cancelled by the user before it ran."
 )
 
 type Decision int
@@ -302,6 +300,7 @@ func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
 			}
 			continue
 		}
+		markSilent(&response.Message)
 		// The early calls' goroutine reads the history: it is done before
 		// the history changes.
 		var ran []*earlyCall
@@ -329,7 +328,6 @@ func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
 			hooks.OnAssistant(response.Message)
 		}
 		if len(response.Message.ToolCalls) == 0 {
-			warnIfSilent(response.Message, hooks)
 			return nil
 		}
 		asked := len(a.History) - 1
@@ -354,21 +352,11 @@ func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
 	}
 }
 
-// warnIfSilent says so when the model ends its turn with no text and no
-// call: the provider stopped it without telling why.
-func warnIfSilent(message llm.Message, hooks Hooks) {
-	if strings.TrimSpace(message.Text) != "" {
-		return
-	}
-	warning := emptyAnswerWarning
-	if strings.TrimSpace(message.Reasoning) != "" {
-		warning = emptyAfterReasoningWarning
-	}
-	switch {
-	case hooks.OnWarning != nil:
-		hooks.OnWarning(warning)
-	case hooks.OnNotice != nil:
-		hooks.OnNotice(warning)
+// markSilent makes an answer with no text and no call say so, as the
+// provider stopped it without telling why: shown, and kept for the model.
+func markSilent(message *llm.Message) {
+	if strings.TrimSpace(message.Text) == "" && len(message.ToolCalls) == 0 {
+		message.Text = llm.SilentNote
 	}
 }
 

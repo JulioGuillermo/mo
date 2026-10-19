@@ -7,6 +7,7 @@ package llm
 // | RF-03 | Happy    | The Responses API's content_filter and refusal deltas do the same         | P1       |
 // | RF-04 | Happy    | Gemini's SAFETY finish and a blocked prompt add the note                  | P1       |
 // | RF-05 | Edge     | An answer that ends normally gets no note                                 | P0       |
+// | RF-06 | Happy    | StopNote splits either note off an answer, its brackets taken off          | P1       |
 
 import (
 	"context"
@@ -98,6 +99,19 @@ func TestRefusals(t *testing.T) {
 
 		if err != nil || response.Message.Text != "done" {
 			t.Errorf("text = %q err = %v", response.Message.Text, err)
+		}
+	})
+
+	t.Run("RF-06 StopNote splits either note off an answer, its brackets taken off", func(t *testing.T) {
+		answer, refused := StopNote("Sure, " + refusedTextNote)
+		silentAnswer, silent := StopNote(SilentNote)
+		plain, none := StopNote("all good")
+
+		if answer != "Sure," || !strings.HasPrefix(refused, "the provider's safety filter") || strings.ContainsAny(refused, "[]") {
+			t.Errorf("answer = %q refused = %q", answer, refused)
+		}
+		if silentAnswer != "" || !strings.HasPrefix(silent, "the model ended without answering") || plain != "all good" || none != "" {
+			t.Errorf("silent = %q %q plain = %q %q", silentAnswer, silent, plain, none)
 		}
 	})
 }

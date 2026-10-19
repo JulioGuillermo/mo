@@ -100,6 +100,35 @@ func (p *printer) renderer() render.Renderer {
 // drawing, with its line under it, is set apart from the text around it
 // by a blank line, the text itself as it is.
 func (p *printer) Answer(text string) string {
+	answer, stopped := llm.StopNote(text)
+	if stopped == "" {
+		return p.answerParts(text)
+	}
+	return p.answerParts(answer) + "\n\n" + p.Stopped(stopped)
+}
+
+// Stopped is the note of an answer a filter stopped: red on a dark red
+// band the width of the screen, after a mark.
+func (p *printer) Stopped(text string) string {
+	p.mu.Lock()
+	width, dark := p.width, p.dark
+	p.mu.Unlock()
+	colors := changePalette(dark)
+	band := lipgloss.NewStyle().Background(colors.removed).Foreground(colors.removedMark)
+	inner := max(width-6, 20)
+	var lines []string
+	for i, line := range strings.Split(ansi.Wrap(text, inner, " "), "\n") {
+		mark := "   "
+		if i == 0 {
+			mark = " ⊘ "
+		}
+		row := mark + line
+		lines = append(lines, band.Render(row+strings.Repeat(" ", max(inner+4-ansi.StringWidth(row), 0))))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (p *printer) answerParts(text string) string {
 	var out strings.Builder
 	previous := render.SegmentKind(-1)
 	for _, segment := range render.Split(text) {
