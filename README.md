@@ -323,7 +323,7 @@ log of gigabytes take a second or two.
 
 `grep` gives matches under their file, or with `show` only the files or a count, and `context`
 lines around them. It reads each file a line at a time, whatever its size, skips binary ones by
-their first 8 KB, stops a file at its first match when only names are asked, and esc stops it. `edit` takes several replacements at once in `edits`, all or none.
+their first 8 KB, stops a file at its first match when only names are asked, and esc stops it. `edit` takes several replacements at once in `edits`, each in the call's `path` or its own, so one call changes several files, all or none.
 
 `web_fetch` reads a URL as markdown (the article of an HTML page, indented JSON, plain text).
 `web_search` uses DuckDuckGo by default, with no key; see `[web]` below for the others.

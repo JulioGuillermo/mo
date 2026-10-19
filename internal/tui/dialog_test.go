@@ -13,9 +13,12 @@ package tui
 // | DG-08 | Happy    | What a later call asks joins the open dialog; each ask is answered once its parts are | P0 |
 // | HL-01 | Happy    | Bash is coloured by what each piece is, on the block's background     | P2       |
 // | FC-01 | Happy    | An opened edit shows its diff highlighted; an opened write what it wrote | P1    |
+// | FC-02 | Happy    | An edit of several files shows each file's name over its diff        | P1       |
+// | FC-03 | Happy    | A folded edit keeps its files and counts on the tool's line, cut to fit | P2     |
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -289,6 +292,35 @@ func TestFileChanges(t *testing.T) {
 		}
 		if strings.Contains(view, "▌ \n") {
 			t.Errorf("an empty line slipped into the change:\n%s", view)
+		}
+	})
+	t.Run("FC-02 an edit of several files shows each file's name over its diff", func(t *testing.T) {
+		p := newPrinter()
+		p.setWidth(70)
+		one, _ := fileChangeOf("edit", []byte(`{"path":"a.go","old":"x","new":"y"}`))
+		several, _ := fileChangeOf("edit", []byte(`{"path":"a.go","edits":[{"old":"Old","new":"New"},{"path":"b.go","old":"a.Old","new":"a.New"}]}`))
+
+		single := ansi.Strip(p.fileChangeLines(one))
+		lines := strings.Split(ansi.Strip(p.fileChangeLines(several)), "\n")
+
+		if strings.Contains(single, "a.go") {
+			t.Errorf("one file names it:\n%s", single)
+		}
+		if strings.TrimSpace(lines[0]) != "▌ a.go" || !slices.ContainsFunc(lines, func(line string) bool { return strings.TrimSpace(line) == "▌ b.go" }) {
+			t.Errorf("lines:\n%s", strings.Join(lines, "\n"))
+		}
+	})
+
+	t.Run("FC-03 a folded edit keeps its files and counts on the tool's line, cut to fit", func(t *testing.T) {
+		p := newPrinter()
+		p.setWidth(40)
+		args := []byte(`{"edits":[{"path":"/tmp/edit-test/b.go","old":"a","new":"b"},{"path":"/tmp/edit-test/notes.md","old":"c","new":"d"}]}`)
+		change, _ := fileChangeOf("edit", args)
+
+		line := strings.TrimPrefix(ansi.Strip(p.fileChangeLine(toolRun{name: "edit", args: args, summary: "/tmp/edit-test/b.go, /tmp/edit-test/notes.md"}, change, markDone)), "\n")
+
+		if strings.Contains(line, "\n") || !strings.HasPrefix(line, "● edit /tmp/edit-test/b.go") || !strings.HasSuffix(line, "…  +2 −2") || ansi.StringWidth(line) > 40 {
+			t.Errorf("line %q", line)
 		}
 	})
 }

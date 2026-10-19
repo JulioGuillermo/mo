@@ -28,6 +28,10 @@ package tools
 // | TL-24 | Security | rm through a symlinked directory still protects the workdir   | P0       |
 // | TL-25 | Happy    | read of an image answers its format, size and a marker        | P1       |
 // | TL-26 | Happy    | The title tool hands the title over, and only exists where it can | P1       |
+// | TL-27 | Happy    | edit changes several files in one call, each edit in its path or the call's | P0 |
+// | TL-28 | Happy    | edit fails whole across files: one edit that does not apply changes none | P0   |
+// | TL-29 | Security | Warning checks every file an edit changes, not only the call's path | P0       |
+// | TL-30 | Error    | An edit with no path, for the call or for itself, says so        | P1       |
 
 import (
 	"bytes"
@@ -618,6 +622,70 @@ func TestHelpAndView(t *testing.T) {
 		}
 		if !strings.HasPrefix(string(some), `{"type":"object","properties":{"path"`) || !strings.Contains(string(none), `"numbered"`) {
 			t.Errorf("some = %s none = %s", some, none)
+		}
+	})
+}
+
+func TestEditFiles(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("TL-27 edit changes several files in one call, each edit in its path or the call's", func(t *testing.T) {
+		env := newEnv(t)
+		writeFile(t, env, "a.go", "package a\n\nfunc Old() {}\n")
+		writeFile(t, env, "b.go", "package b\n\nvar x = a.Old()\n")
+
+		output, err := runEdit(ctx, env, args(t, map[string]any{"path": "a.go", "edits": []map[string]any{
+			{"old": "Old", "new": "New"}, {"path": "b.go", "old": "a.Old", "new": "a.New"}}}))
+
+		a, _ := os.ReadFile(filepath.Join(env.WorkDir, "a.go"))
+		b, _ := os.ReadFile(filepath.Join(env.WorkDir, "b.go"))
+		if err != nil || !strings.Contains(string(a), "func New()") || !strings.Contains(string(b), "a.New()") {
+			t.Fatalf("err %v a %q b %q", err, a, b)
+		}
+		if output != "edited 2 files\na.go: replaced 1 occurrence(s), at line 3\nb.go: replaced 1 occurrence(s), at line 3" {
+			t.Errorf("output %q", output)
+		}
+		if summary := editTool().Summary(args(t, map[string]any{"edits": []map[string]any{{"path": "a.go"}, {"path": "b.go"}, {"path": "a.go"}}})); summary != "a.go, b.go" {
+			t.Errorf("summary %q", summary)
+		}
+	})
+
+	t.Run("TL-28 edit fails whole across files: one edit that does not apply changes none", func(t *testing.T) {
+		env := newEnv(t)
+		writeFile(t, env, "a.go", "alpha\n")
+		writeFile(t, env, "b.go", "beta\n")
+
+		_, err := runEdit(ctx, env, args(t, map[string]any{"edits": []map[string]any{
+			{"path": "a.go", "old": "alpha", "new": "A"}, {"path": "b.go", "old": "missing", "new": "x"}}}))
+
+		a, _ := os.ReadFile(filepath.Join(env.WorkDir, "a.go"))
+		if err == nil || err.Error() != "edit 2: old text not found in b.go" || string(a) != "alpha\n" {
+			t.Errorf("err %v a %q", err, a)
+		}
+	})
+
+	t.Run("TL-29 Warning checks every file an edit changes, not only the call's path", func(t *testing.T) {
+		registry := NewRegistry(Env{WorkDir: "/work/project"}, Options{})
+		call := func(fields map[string]any) llm.ToolCall {
+			return llm.ToolCall{Name: "edit", Args: args(t, fields)}
+		}
+
+		inside := registry.Warning(call(map[string]any{"path": "a.go", "edits": []map[string]any{{"old": "x", "new": "y"}, {"path": "b.go", "old": "x", "new": "y"}}}))
+		outside := registry.Warning(call(map[string]any{"path": "a.go", "edits": []map[string]any{{"old": "x", "new": "y"}, {"path": "/etc/hosts", "old": "x", "new": "y"}}}))
+		protected := registry.Warning(call(map[string]any{"edits": []map[string]any{{"path": ".git/config", "old": "x", "new": "y"}}}))
+
+		if inside != "" || outside != warningOutsideWorkDir || protected != warningProtectedPath {
+			t.Errorf("inside %q outside %q protected %q", inside, outside, protected)
+		}
+	})
+
+	t.Run("TL-30 an edit with no path, for the call or for itself, says so", func(t *testing.T) {
+		env := newEnv(t)
+
+		_, err := runEdit(ctx, env, args(t, map[string]any{"edits": []map[string]any{{"old": "x", "new": "y"}}}))
+
+		if err == nil || !strings.Contains(err.Error(), "give path") {
+			t.Errorf("err %v", err)
 		}
 	})
 }

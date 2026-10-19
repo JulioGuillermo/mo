@@ -569,6 +569,18 @@ func (p *printer) toolLine(name string, args json.RawMessage, summary, sign stri
 	return header + "\n" + p.commandLines(summary, false, commandLanguage(name, args))
 }
 
+// fileChangeLine is a write or an edit folded: its files and the lines it
+// adds and removes on the tool's own line, the files cut to fit.
+func (p *printer) fileChangeLine(run toolRun, change fileChange, sign string) string {
+	p.mu.Lock()
+	width := p.width
+	p.mu.Unlock()
+	header := p.toolHeaderAs(run.name, run.args, sign)
+	counts := "  " + change.summary()
+	room := max(width-ansi.StringWidth(header)-ansi.StringWidth(counts)-1, 10)
+	return "\n" + header + " " + ansi.Truncate(run.summary, room, "…") + dimStyle.Render(counts)
+}
+
 // commandLanguage is the language the command of a call is written in, to
 // highlight: a shell command of bash. What else bash shows, a job's output
 // or help, is not a command.
@@ -733,7 +745,7 @@ func (p *printer) toolLazy(run toolRun, open bool) (string, *lazyRows) {
 			parts = append(parts, p.uiCall(run.args)...)
 		}
 	case changed:
-		parts = append(parts, p.toolLine(run.name, run.args, run.summary+dimStyle.Render("  "+change.summary()), sign))
+		parts = append(parts, p.fileChangeLine(run, change, sign))
 	default:
 		parts = append(parts, p.toolLine(run.name, run.args, run.summary, sign))
 	}

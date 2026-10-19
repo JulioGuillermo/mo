@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"image/color"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -25,12 +27,13 @@ type fileChange struct {
 	edit          bool
 }
 
-type fileEdit struct{ old, new string }
+// fileEdit is a pair of old and new text, and the file it is in.
+type fileEdit struct{ path, old, new string }
 
 func fileChangeOf(name string, args json.RawMessage) (fileChange, bool) {
 	var fields struct {
 		Path, Content, Old, New string
-		Edits                   []struct{ Old, New string }
+		Edits                   []struct{ Path, Old, New string }
 	}
 	if (name != "write" && name != "edit") || json.Unmarshal(args, &fields) != nil {
 		return fileChange{}, false
@@ -38,13 +41,24 @@ func fileChangeOf(name string, args json.RawMessage) (fileChange, bool) {
 	change := fileChange{path: fields.Path, content: fields.Content, edit: name == "edit"}
 	if change.edit {
 		if fields.Old != "" || fields.New != "" {
-			change.edits = append(change.edits, fileEdit{old: fields.Old, new: fields.New})
+			change.edits = append(change.edits, fileEdit{path: fields.Path, old: fields.Old, new: fields.New})
 		}
 		for _, each := range fields.Edits {
-			change.edits = append(change.edits, fileEdit{old: each.Old, new: each.New})
+			change.edits = append(change.edits, fileEdit{path: cmp.Or(each.Path, fields.Path), old: each.Old, new: each.New})
 		}
 	}
 	return change, change.content != "" || len(change.edits) > 0
+}
+
+// files are the files an edit changes, each once, in order.
+func (c fileChange) files() []string {
+	var files []string
+	for _, each := range c.edits {
+		if !slices.Contains(files, each.path) {
+			files = append(files, each.path)
+		}
+	}
+	return files
 }
 
 // summary counts the lines a change writes, adds and removes.
@@ -124,8 +138,12 @@ func (p *printer) fileChangeBlock(change fileChange) (string, func(from, to int)
 		})
 	}
 	var out []string
-	for _, each := range change.edits {
-		out = append(out, p.diffRows(each, language, inner, colors, dark)...)
+	files := change.files()
+	for i, each := range change.edits {
+		if len(files) > 1 && (i == 0 || each.path != change.edits[i-1].path) {
+			out = append(out, edge+toolName.Render(" "+each.path))
+		}
+		out = append(out, p.diffRows(each, languageOf(each.path), inner, colors, dark)...)
 	}
 	return strings.Join(out, "\n"), nil
 }

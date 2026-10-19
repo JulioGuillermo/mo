@@ -3,6 +3,7 @@ package tools
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -270,21 +272,42 @@ func editTool() Tool {
 	return Tool{
 		ChangesPathArg: true,
 		Name:           "edit",
-		Description:    "Replace exact text in a file: old must be found once, or set all. edits: several at once, all or none.",
+		Description: "Replace exact text: old must be found once, or set all to replace every one.\n" +
+			"One change: {path, old, new}.\n" +
+			"Several in one file: {path, edits: [{old, new}, ...]}.\n" +
+			"Several files: {edits: [{path, old, new}, ...]}.\n" +
+			"All are made or none.",
 		Schema: json.RawMessage(`{"type":"object","properties":{
 "path":{"type":"string"},"old":{"type":"string"},"new":{"type":"string"},"all":{"type":"boolean"},
-"edits":{"type":"array","items":{"type":"object","properties":{"old":{"type":"string"},"new":{"type":"string"},"all":{"type":"boolean"}},"required":["old","new"]}}},"required":["path"]}`),
+"edits":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"old":{"type":"string"},"new":{"type":"string"},"all":{"type":"boolean"}},"required":["old","new"]}}}}`),
 		Run:     runEdit,
-		Summary: func(args json.RawMessage) string { return argField(args, "path") },
+		Summary: func(args json.RawMessage) string { return strings.Join(editedPaths(args), ", ") },
 	}
 }
 
 type replacement struct {
-	Old string `json:"old"`
-	New string `json:"new"`
-	All bool   `json:"all"`
+	Path string `json:"path"`
+	Old  string `json:"old"`
+	New  string `json:"new"`
+	All  bool   `json:"all"`
 }
 
+// editedFile is a file an edit changes: as it was, and as the edits leave
+// it, with where the new text went.
+type editedFile struct {
+	path     string
+	shown    string
+	before   []byte
+	content  string
+	mode     os.FileMode
+	edits    int
+	replaced int
+	changed  []span
+}
+
+// runEdit makes every edit in memory first, each in its own path or the
+// call's, and writes the files only when all of them apply; a write that
+// fails puts back the files written before it.
 func runEdit(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	var args struct {
 		Path  string        `json:"path"`
@@ -306,44 +329,110 @@ func runEdit(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	if len(edits) == 0 {
 		return "", errors.New("give old and new, or edits")
 	}
-	path := env.Resolve(args.Path)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	content := string(data)
-	total := 0
-	var changed []span
+	var files []*editedFile
+	byPath := map[string]*editedFile{}
 	for i, edit := range edits {
 		where := ""
 		if len(edits) > 1 {
 			where = fmt.Sprintf("edit %d: ", i+1)
 		}
+		shown := cmp.Or(edit.Path, args.Path)
+		if shown == "" {
+			return "", errors.New(where + "give path, for the call or for the edit")
+		}
+		path := env.Resolve(shown)
+		file, opened := byPath[path]
+		if !opened {
+			var err error
+			if file, err = openForEdit(path, shown); err != nil {
+				return "", errors.New(where + err.Error())
+			}
+			byPath[path] = file
+			files = append(files, file)
+		}
 		if edit.Old == "" {
 			return "", errors.New(where + "old is empty; use write to create a file")
 		}
-		count := strings.Count(content, edit.Old)
+		count := strings.Count(file.content, edit.Old)
 		if count == 0 {
-			return "", errors.New(where + "old text not found")
+			return "", fmt.Errorf("%sold text not found in %s", where, shown)
 		}
 		if count > 1 && !edit.All {
-			return "", fmt.Errorf("%sold text found %d times; add context to make it unique or set all", where, count)
+			return "", fmt.Errorf("%sold text found %d times in %s; add context to make it unique or set all", where, count, shown)
 		}
-		content, changed = replaceTracked(content, edit.Old, edit.New, changed)
-		total += count
+		file.content, file.changed = replaceTracked(file.content, edit.Old, edit.New, file.changed)
+		file.edits++
+		file.replaced += count
+	}
+	if err := writeAll(files); err != nil {
+		return "", err
+	}
+	if len(files) == 1 {
+		return editReport(files[0]), nil
+	}
+	var lines []string
+	for _, file := range files {
+		lines = append(lines, file.shown+": "+editReport(file))
+	}
+	return fmt.Sprintf("edited %d files\n%s", len(files), strings.Join(lines, "\n")), nil
+}
+
+func openForEdit(path, shown string) (*editedFile, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	if err := os.WriteFile(path, []byte(content), info.Mode().Perm()); err != nil {
-		return "", err
+	return &editedFile{path: path, shown: shown, before: data, content: string(data), mode: info.Mode().Perm()}, nil
+}
+
+// writeAll writes the files, or, when one fails, puts back those written.
+func writeAll(files []*editedFile) error {
+	for i, file := range files {
+		if err := os.WriteFile(file.path, []byte(file.content), file.mode); err != nil {
+			for _, written := range files[:i] {
+				os.WriteFile(written.path, written.before, written.mode)
+			}
+			return fmt.Errorf("%s: %w; no file was changed", file.shown, err)
+		}
 	}
-	at := "at " + lineList(content, changed)
-	if len(edits) > 1 {
-		return fmt.Sprintf("made %d edits, %d replacement(s), %s", len(edits), total, at), nil
+	return nil
+}
+
+func editReport(file *editedFile) string {
+	at := "at " + lineList(file.content, file.changed)
+	if file.edits > 1 {
+		return fmt.Sprintf("made %d edits, %d replacement(s), %s", file.edits, file.replaced, at)
 	}
-	return fmt.Sprintf("replaced %d occurrence(s), %s", total, at), nil
+	return fmt.Sprintf("replaced %d occurrence(s), %s", file.replaced, at)
+}
+
+// editedPaths are the files an edit call changes, each once, in order.
+func editedPaths(args json.RawMessage) []string {
+	var fields struct {
+		Path  string  `json:"path"`
+		Old   *string `json:"old"`
+		Edits []struct {
+			Path string `json:"path"`
+		} `json:"edits"`
+	}
+	json.Unmarshal(args, &fields)
+	var paths []string
+	add := func(path string) {
+		if path != "" && !slices.Contains(paths, path) {
+			paths = append(paths, path)
+		}
+	}
+	if fields.Old != nil || len(fields.Edits) == 0 {
+		add(fields.Path)
+	}
+	for _, edit := range fields.Edits {
+		add(cmp.Or(edit.Path, fields.Path))
+	}
+	return paths
 }
 
 // span is where a replacement's new text is in the content, by byte.

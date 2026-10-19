@@ -37,12 +37,18 @@ func (r *Registry) Warning(call llm.ToolCall) string {
 	if !tool.ChangesPathArg {
 		return ""
 	}
-	path := changedPath(call.Name, r.env.Resolve(argField(call.Args, "path")))
-	if !isInside(path, physicalPath(r.env.WorkDir)) {
-		return warningOutsideWorkDir
+	paths := []string{argField(call.Args, "path")}
+	if call.Name == "edit" {
+		paths = editedPaths(call.Args)
 	}
-	if r.isProtected(path) {
-		return warningProtectedPath
+	for _, each := range paths {
+		path := changedPath(call.Name, r.env.Resolve(each))
+		if !isInside(path, physicalPath(r.env.WorkDir)) {
+			return warningOutsideWorkDir
+		}
+		if r.isProtected(path) {
+			return warningProtectedPath
+		}
 	}
 	return ""
 }
