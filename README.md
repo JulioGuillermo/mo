@@ -757,6 +757,7 @@ is your own code, with your rights and all of Lua's libraries, and it can:
 | hooks on a turn | `mo.on("prompt" \| "tool_call" \| "tool_result" \| "stream" \| "turn_end", fn)` |
 | items under **Plugins** in the side panel | `mo.sidebar.set{ id, text, detail, color, icon, on_click }` |
 | dialogs with inputs and buttons, as the `ui` tool draws them | `mo.dialog{ title, tree, on_event }` |
+| messages to the model, through the permission mode | `mo.send{ title, message, wake }` |
 
 ```lua
 mo.command{ name = "standup", run = function()

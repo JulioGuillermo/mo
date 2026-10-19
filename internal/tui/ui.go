@@ -184,6 +184,8 @@ type model struct {
 	uiLives map[int]*uiLive
 	// uiStore holds the open dialog's interface: the model's or a plugin's.
 	uiStore *tools.UIs
+	// pluginSends is how the messages plugins send the model stand.
+	pluginSends *pluginSends
 	// svgs draws the svg nodes of interfaces, away from the screen.
 	svgs             *svgFrames
 	clickedAt        point
@@ -294,6 +296,7 @@ func Run(session Session) error {
 		uis.OnChange(func() { bridge.send(uiChangedMsg{}) })
 	}
 	session.Plugins.Follow(func() { bridge.send(uiChangedMsg{}) }, func(id int) { bridge.send(pluginDialogMsg(id)) })
+	session.Plugins.OnSend(func(message plugins.SentMessage) { bridge.send(pluginSendMsg(message)) })
 	if session.Team != nil {
 		session.Team.Follow(func(team.Info) agent.Hooks { return agent.Hooks{Interact: bridge.interact} },
 			func() { bridge.send(agentsChangedMsg{}) }, func() { bridge.send(agentEndedMsg{}) })
@@ -444,6 +447,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if clicked, ok := msg.(pluginClickMsg); ok {
 		return m.pluginClicked(clicked)
+	}
+	switch msg := msg.(type) {
+	case pluginSendMsg:
+		return m.pluginSent(plugins.SentMessage(msg))
+	case pluginJudgedMsg:
+		return m.pluginJudged(msg)
+	case pluginRetryMsg:
+		return m.pluginRetried()
 	}
 	if opened, ok := msg.(pluginDialogMsg); ok {
 		if m.settings != nil || m.popup != nil {
@@ -892,6 +903,9 @@ func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 	if m.peers != nil {
 		m.peers.streak = 0
 	}
+	if m.pluginSends != nil {
+		m.pluginSends.streak = 0
+	}
 	if m.running {
 		return m.queue(prompt)
 	}
@@ -1039,7 +1053,8 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		}
 		return m, clearCache(m.session.Agent.Provider)
 	case "plugins":
-		return m, printText(m.printer.Note(pluginReport(m.session.Plugins)))
+		asked, ask := m.askPostponedPlugin()
+		return asked, tea.Batch(printText(m.printer.Note(pluginReport(m.session.Plugins))), ask)
 	case "mcp":
 		m.settingsInFlight = true
 		return m, tea.Sequence(printText(m.printer.Note(mcpReport(m.session.MCP, m.session.Config))), loadSettings(m.session, mcpSettings))

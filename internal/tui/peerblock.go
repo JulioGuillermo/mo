@@ -37,6 +37,11 @@ func (p *printer) PeerIn(from string, message peers.Message, status string) stri
 	return p.peerBlock(true, header, message.At, status, message.Text)
 }
 
+// PluginIn draws a message a plugin sends the model.
+func (p *printer) PluginIn(plugin, title, text, status string) string {
+	return p.peerBlock(true, "⇠ plugin "+plugin+" · "+title, time.Now(), status, text)
+}
+
 // PeerOut draws a message this agent sent to a peer.
 func (p *printer) PeerOut(label string, to peers.Info, text string) string {
 	header := "⇢ to " + label

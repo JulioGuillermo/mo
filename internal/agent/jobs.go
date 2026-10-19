@@ -29,6 +29,7 @@ func (a *Agent) tellEndedJobs() {
 		}
 	}
 	notes = append(notes, a.peerNotes()...)
+	notes = append(notes, a.pluginNotes()...)
 	if len(notes) == 0 {
 		return
 	}
@@ -43,6 +44,9 @@ func (a *Agent) tellEndedJobs() {
 // HasEndedJobs tells whether a background job ended that the model has not
 // heard of.
 func (a *Agent) HasEndedJobs() bool {
+	if a.hasPluginMessages() {
+		return true
+	}
 	if a.Tools == nil {
 		return false
 	}

@@ -41,8 +41,10 @@ type popup struct {
 	// on the popups about the settings files, closed when the files change.
 	border color.Color
 	config bool
-	// peer is set on the question about a peer's message.
-	peer bool
+	// peer and plugin are set on the question about a peer's or a
+	// plugin's message.
+	peer   bool
+	plugin bool
 	// dismiss, when set, runs when the popup closes without a choice.
 	dismiss func(m model) (tea.Model, tea.Cmd)
 }

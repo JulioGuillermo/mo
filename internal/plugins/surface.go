@@ -18,6 +18,7 @@ type surface struct {
 	dialogs  *tools.UIs
 	changed  func()
 	open     func(id int)
+	send     func(SentMessage)
 }
 
 type sidebarEntry struct {

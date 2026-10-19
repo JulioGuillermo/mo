@@ -114,6 +114,7 @@ type Agent struct {
 	alwaysAllowed map[string]bool
 	queued        queue
 	told          notes
+	pluginInbox   notes
 	// partial is the answer being streamed, kept when the user stops it,
 	// with its reasoning; shown is what of them was shown before a call
 	// run while the reply was written. The stream writes them while a

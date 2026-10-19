@@ -2,7 +2,7 @@
 
 A plugin is a Lua file in `~/.config/mo/plugins/`. mo runs every one when it starts. A plugin can
 add tools for the model, commands for you, hooks on what happens in a turn, items in the side panel
-and dialogs. `/plugins` lists what each one added, or why it failed to load.
+and dialogs, and send the model a message of its own. `/plugins` lists what each one added, or why it failed to load.
 
 ```lua
 -- ~/.config/mo/plugins/hello.lua
@@ -21,6 +21,7 @@ Restart mo, then type `/hello ana`.
 - [Hooks](#hooks)
 - [The side panel](#the-side-panel)
 - [Dialogs](#dialogs)
+- [Sending to the model](#sending-to-the-model)
 - [What a plugin can use](#what-a-plugin-can-use)
 - [Limits and errors](#limits-and-errors)
 - [The Lua version](#the-lua-version)
@@ -197,6 +198,35 @@ What you do in the dialog goes to `on_event`, never to the model. The event is
 A hidden dialog stays under **Plugins** in the side panel, to open again with a click, until the
 plugin calls `close`. Esc hides it too. Dialogs live while mo runs and are never saved. An error in
 `on_event` shows under the dialog and goes to the log.
+
+## Sending to the model
+
+```lua
+mo.send{ title = "BSSP-1234 moved to review", message = "Ana moved it at 17:02 and asked for a check." }
+```
+
+`mo.send` gives the model a message with a title, as a note that says which plugin sent it and that
+it is not you. It shows in the conversation with a violet bar, as a peer's message does. It returns
+`true` when there was a conversation to take it (not in one-shot `mo "prompt"` runs), not whether it
+got in.
+
+| Field | Meaning |
+|---|---|
+| `title` | one line saying what it is |
+| `message` | the text, 64 KB at most |
+| `wake` | `true` (default): an idle model gets a turn to read it. `false`: it waits for your next message, or the model's next step |
+
+It goes through the permission mode, as anything that reaches the model from outside:
+
+| Mode | What happens |
+|---|---|
+| `all` | it goes in |
+| `auto` | the model judges it with your request; when not sure it is safe, you are asked |
+| `ask`, `edits` and the rest | you are asked: let it in, let in everything from that plugin this session, or reject it |
+
+After 10 messages from plugins went in without you, the next one asks again until you write: a
+`turn_end` hook that sends at every turn's end cannot keep the model running on its own. Esc puts a
+question off; `/plugins` asks it again.
 
 ## What a plugin can use
 

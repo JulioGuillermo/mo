@@ -532,6 +532,11 @@
   once, the ones within 300 ms of it wait and go together. The agent only appends to a buffer; a
   timer outside the reply's goroutine calls the hook, so a slow hook never slows the reply, and a
   hook may still run after the turn ended.
+- `mo.send` reaches the model as a peer's message does: a note naming the plugin and saying it is
+  not the user, shown with a violet bar, decided by the permission mode (all lets it in, auto has
+  the model judge it, the rest ask, with "let in all from this plugin" for the session). The same
+  limit of 10 unasked in a row applies, so a hook that sends at every turn's end cannot run the
+  model on its own. `wake = false` makes it a note for the next step, starting no turn.
 - A plugin's items and dialogs go under their own **Plugins** section of the side panel. Dialogs
   reuse the `ui` tool's nodes and drawing, in a store of their own (`tools.NewPluginUIs`): numbered
   from 1001 so they never mix with the model's, never saved, and what the user does in them goes to
