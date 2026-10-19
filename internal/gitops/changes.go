@@ -26,7 +26,7 @@ const (
 // Changes are the files that differ from HEAD, staged or not, sorted by
 // path: each once, by what happened to it, a conflict over anything else.
 func (r *Repo) Changes() ([]Change, error) {
-	status, err := r.tree.Status()
+	status, err := r.status()
 	if err != nil {
 		return nil, err
 	}

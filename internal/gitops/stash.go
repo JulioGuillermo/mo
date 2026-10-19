@@ -71,7 +71,7 @@ func (r *Repo) writeStashes(entries []stashEntry) error {
 
 // trackedChanges lists the tracked files changed or staged.
 func (r *Repo) trackedChanges() (staged, changed []string, err error) {
-	status, err := r.tree.Status()
+	status, err := r.status()
 	if err != nil {
 		return nil, nil, err
 	}

@@ -60,6 +60,7 @@ func Open(dir string) (*Repo, error) {
 	if err != nil {
 		return nil, err
 	}
+	tree.Excludes = append(tree.Excludes, userExcludes()...)
 	gitDir := filepath.Join(tree.Filesystem.Root(), ".git")
 	if storage, ok := repo.Storer.(*filesystem.Storage); ok {
 		gitDir = storage.Filesystem().Root()
@@ -159,7 +160,7 @@ func (r *Repo) commitOf(revision string) (*object.Commit, error) {
 // Status says the branch, what is half done, and the files staged, not
 // staged and untracked.
 func (r *Repo) Status() (string, error) {
-	status, err := r.tree.Status()
+	status, err := r.status()
 	if err != nil {
 		return "", err
 	}
@@ -208,7 +209,7 @@ func (r *Repo) Status() (string, error) {
 // Diff shows the changes not staged, or the staged ones, of every file or of
 // those named.
 func (r *Repo) Diff(staged bool, paths []string) (string, error) {
-	status, err := r.tree.Status()
+	status, err := r.status()
 	if err != nil {
 		return "", err
 	}
@@ -449,7 +450,7 @@ func (r *Repo) markersLeft() ([]string, error) {
 			paths[path] = true
 		}
 	}
-	status, err := r.tree.Status()
+	status, err := r.status()
 	if err != nil {
 		return nil, err
 	}
@@ -482,10 +483,7 @@ func (r *Repo) markersLeft() ([]string, error) {
 // Add stages the named paths, or every change when none are named.
 func (r *Repo) Add(paths []string) (string, error) {
 	if len(paths) == 0 {
-		if err := r.tree.AddWithOptions(&git.AddOptions{All: true}); err != nil {
-			return "", err
-		}
-		return "staged every change", nil
+		return r.addEverything()
 	}
 	for _, path := range paths {
 		if _, err := r.tree.Add(path); err != nil {
@@ -493,6 +491,23 @@ func (r *Repo) Add(paths []string) (string, error) {
 		}
 	}
 	return "staged " + strings.Join(paths, ", "), nil
+}
+
+// addEverything stages every change but those git ignores.
+func (r *Repo) addEverything() (string, error) {
+	status, err := r.status()
+	if err != nil {
+		return "", err
+	}
+	for path, file := range status {
+		if file.Worktree == git.Unmodified {
+			continue
+		}
+		if _, err := r.tree.Add(path); err != nil {
+			return "", fmt.Errorf("%s: %w", path, err)
+		}
+	}
+	return "staged every change", nil
 }
 
 // Commit records what is staged. It refuses while conflict markers are
@@ -584,7 +599,7 @@ func (r *Repo) requireClean() error {
 	if r.inProgress() != nil {
 		return errors.New("a merge or cherry-pick is in progress: git continue or git abort first")
 	}
-	status, err := r.tree.Status()
+	status, err := r.status()
 	if err != nil {
 		return err
 	}
@@ -934,7 +949,7 @@ func (r *Repo) finish(op *operation) (string, error) {
 
 // nothingStaged tells whether the index matches HEAD.
 func (r *Repo) nothingStaged() (bool, error) {
-	status, err := r.tree.Status()
+	status, err := r.status()
 	if err != nil {
 		return false, err
 	}

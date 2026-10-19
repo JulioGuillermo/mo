@@ -336,10 +336,11 @@ type codeText struct {
 	chunks   []int
 }
 
-// cleanCode is code as it is drawn: tabs four spaces, no styles, and no new
-// lines at its end.
+// cleanCode is code as it is drawn: tabs four spaces, no styles, no carriage
+// returns, and no new lines at its end.
 func cleanCode(text string) string {
-	return strings.TrimRight(strings.ReplaceAll(ansi.Strip(text), "\t", "    "), "\n")
+	text = strings.ReplaceAll(ansi.Strip(text), "\r", "")
+	return strings.TrimRight(strings.ReplaceAll(text, "\t", "    "), "\n")
 }
 
 func newCodeText(text, language string, inner int) *codeText {

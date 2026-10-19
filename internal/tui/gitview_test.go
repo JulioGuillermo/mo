@@ -14,6 +14,7 @@ package tui
 // | GV-10 | Edge     | A fold has nothing to comment, and e off a fold says where to press it      | P2       |
 // | GV-11 | Happy    | The cursor's row is one lighter colour end to end: fold, added, removed     | P1       |
 // | GV-12 | Happy    | /git opens while the model works                                            | P1       |
+// | GV-13 | Edge     | A file with CRLF line ends draws no carriage return, which would break the rows | P1    |
 
 import (
 	"fmt"
@@ -306,6 +307,27 @@ func TestGitWhileRunning(t *testing.T) {
 
 		if m.viewer == nil || m.viewer.changes == nil {
 			t.Errorf("not opened:\n%s", shown(m))
+		}
+	})
+}
+
+func TestDiffCarriageReturns(t *testing.T) {
+	t.Run("GV-13 a file with CRLF line ends draws no carriage return, which would break the rows", func(t *testing.T) {
+		m, dir := gitModel(t)
+		writeFile(t, filepath.Join(dir, "ca.crt"), "-----BEGIN-----\r\nAAAA\r\nBBBB\r\n-----END-----\r\n")
+
+		m = runGit(t, m, "show")
+
+		if m.viewer == nil || m.viewer.diff == nil {
+			t.Fatal("no diff opened")
+		}
+		for _, line := range m.viewer.lines {
+			if strings.Contains(line, "\r") {
+				t.Fatalf("carriage return in %q", line)
+			}
+		}
+		if !strings.Contains(ansi.Strip(strings.Join(m.viewer.lines, "\n")), "AAAA") {
+			t.Errorf("lines:\n%s", strings.Join(m.viewer.lines, "\n"))
 		}
 	})
 }
