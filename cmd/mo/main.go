@@ -17,6 +17,7 @@ import (
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/detect"
 	"github.com/jg/mo/internal/mcphub"
+	"github.com/jg/mo/internal/peers"
 	"github.com/jg/mo/internal/plugins"
 	"github.com/jg/mo/internal/render"
 	"github.com/jg/mo/internal/team"
@@ -119,7 +120,9 @@ func startJobs(loaded *extensions) func() {
 	loaded.titles = tools.NewTitles()
 	loaded.uis = tools.NewUIs(config.SessionDir())
 	loaded.team = team.New()
+	loaded.peers = peers.NewNode(peers.SocketDir())
 	return func() {
+		loaded.peers.Stop()
 		loaded.team.Close()
 		loaded.jobs.Close()
 	}

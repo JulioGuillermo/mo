@@ -43,12 +43,13 @@ import (
 	"unicode/utf8"
 
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/peers"
 	"github.com/jg/mo/internal/render"
 )
 
 func newEnv(t *testing.T) Env {
 	t.Helper()
-	return Env{WorkDir: t.TempDir(), Titles: NewTitles(), UIs: NewUIs(""), Agents: idleAgents{}, Parent: deafParent{}}
+	return Env{WorkDir: t.TempDir(), Titles: NewTitles(), UIs: NewUIs(""), Agents: idleAgents{}, Parent: deafParent{}, Peers: peers.NewNode(t.TempDir())}
 }
 
 // deafParent takes notes and does nothing with them.

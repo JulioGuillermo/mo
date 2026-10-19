@@ -28,6 +28,7 @@ func (a *Agent) tellEndedJobs() {
 			notes = append(notes, moNotePrefix+note)
 		}
 	}
+	notes = append(notes, a.peerNotes()...)
 	if len(notes) == 0 {
 		return
 	}
@@ -46,7 +47,7 @@ func (a *Agent) HasEndedJobs() bool {
 		return false
 	}
 	jobs, uis, agents := a.Tools.Jobs(), a.Tools.UIs(), a.Tools.Agents()
-	return (jobs != nil && jobs.HasEnded()) || (uis != nil && uis.HasEvents()) || (agents != nil && agents.HasEnded())
+	return (jobs != nil && jobs.HasEnded()) || (uis != nil && uis.HasEvents()) || (agents != nil && agents.HasEnded()) || a.Tools.Peers().HasInbox()
 }
 
 // RunEndedJobs lets the model react to background jobs that ended while it

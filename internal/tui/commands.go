@@ -47,6 +47,7 @@ var builtinCommands = []command{
 	{name: "compact", argument: "[instruction]", description: "summarize the conversation to free context; an instruction is added under the summary prompt, as yours"},
 	{name: "skill", argument: "[name] [text]", description: "load a skill with your message, as $name does; no name lists them"},
 	{name: "git", argument: "show | compare <branch>", description: "see the changes not committed, or what this branch adds over another as a pull request: their files in a tree, each file's diff beside it"},
+	{name: "peers", argument: "[name|incoming|outgoing|on|off]", description: "the other mo windows the model can message, when peers are on; and how this session takes their messages"},
 	{name: "settings", description: "global settings, and what this project overrides · /settings project"},
 	{name: "reload", description: "load the settings files again, provider, model, effort and permission mode included"},
 	{name: "providers", description: "add, edit or delete providers"},
@@ -122,6 +123,8 @@ func (m model) suggestions() []command {
 			return m.effortSuggestions(partial)
 		case "git":
 			return m.gitSuggestions(partial)
+		case "peers":
+			return m.peerSuggestions(partial)
 		case "skill":
 			if strings.Contains(partial, " ") {
 				return nil

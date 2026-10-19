@@ -345,7 +345,7 @@ func (m model) useSession(session Session) (tea.Model, tea.Cmd) {
 	m.configureJobs()
 	m.usage = m.session.Agent.LastUsage
 	// The model may take other efforts.
-	return m, tea.Batch(m.applyUI(), loadEfforts(m.session))
+	return m, tea.Batch(m.applyUI(), loadEfforts(m.session), m.applyPeers())
 }
 
 // applyUI puts in force the settings that are the screen's alone, [render]

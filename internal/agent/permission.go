@@ -50,6 +50,9 @@ func (a *Agent) approvalFor(ctx context.Context, call llm.ToolCall, hooks Hooks)
 			return approval{ask: true, warning: "deny rule: " + rule, ruled: ruled}
 		}
 	}
+	if peer, isPeer := a.peerApproval(ctx, call, hooks); isPeer {
+		return peer
+	}
 	mode := policy.Mode()
 	switch {
 	case mode == permissions.ModeAll:

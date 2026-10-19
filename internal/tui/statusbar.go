@@ -338,12 +338,18 @@ func (m *model) readRepo() tea.Cmd {
 // readRepoAgain takes a read that came back, and starts the one asked
 // meanwhile.
 func (m *model) repoRead(msg repoMsg) tea.Cmd {
+	branchChanged := m.branch != msg.branch
 	m.branch, m.changes, m.repoReading = msg.branch, msg.changes, false
+	var rename tea.Cmd
+	if branchChanged {
+		m.tellPeers()
+		rename = m.renamePeer()
+	}
 	if m.repoStale {
 		m.repoStale = false
-		return m.readRepo()
+		return tea.Batch(rename, m.readRepo())
 	}
-	return nil
+	return rename
 }
 
 // changeCounts are the changes in the working tree as counts by kind, in

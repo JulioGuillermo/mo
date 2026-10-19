@@ -76,6 +76,15 @@ var settingsSections = []settingsSection{
 	}, note: func(model, *settingsMenu) string {
 		return "the model hands tasks to subagents with the agent tool; each has its own conversation and reports back"
 	}, items: agentItems},
+	{key: "peers", title: "Peers", summary: func(d *settingsDraft) string {
+		if !d.peersEnabled {
+			return "off"
+		}
+		return fmt.Sprintf("on · %s · incoming %s · outgoing %s", orDefault(d.peersName, "folder@branch"), d.peersIncoming, d.peersOutgoing)
+	}, note: func(model, *settingsMenu) string {
+		return "the main agent sees the other mo windows of yours with peers on and sends them messages with the peers tool\n" +
+			"on this computer only, through sockets only you can open · /peers changes these for a session"
+	}, items: peerItems},
 	{key: "skills", title: "Skills", summary: skillsSummary, note: skillsNote, items: skillItems},
 	{key: "instructions", title: "Instructions", summary: func(d *settingsDraft) string {
 		if !d.instructionsOn {
@@ -540,6 +549,31 @@ func agentItems(model, *settingsMenu) []settingItem {
 		count("Steps each", "replies of the model before a subagent is stopped", func(d *settingsDraft) *string { return &d.agentsSteps }),
 		{"Subagents' model", func(d *settingsDraft) string { return orDefault(d.agentsModel, "the main agent's") }, func(d *settingsDraft) huh.Field {
 			return huh.NewInput().Title("Subagents' model").Description("provider/model, e.g. llama-server/qwen3; empty for the main agent's").Value(&d.agentsModel)
+		}},
+	}
+}
+
+func peerItems(model, *settingsMenu) []settingItem {
+	approval := func(title, description string, value func(d *settingsDraft) *string) settingItem {
+		return settingItem{title, func(d *settingsDraft) string { return *value(d) }, func(d *settingsDraft) huh.Field {
+			var options []huh.Option[string]
+			for _, each := range config.PeerApprovals {
+				options = append(options, huh.NewOption(each+": "+approvalDescription[each], each))
+			}
+			return huh.NewSelect[string]().Title(title).Description(description).Options(options...).Value(value(d))
+		}}
+	}
+	return []settingItem{
+		{"Peers", func(d *settingsDraft) string { return onOff(d.peersEnabled) }, func(d *settingsDraft) huh.Field {
+			return huh.NewConfirm().Title("Peers").Description("let the model see the other mo windows and message them").Affirmative("On").Negative("Off").Value(&d.peersEnabled)
+		}},
+		{"Name", func(d *settingsDraft) string { return orDefault(d.peersName, "folder@branch") }, func(d *settingsDraft) huh.Field {
+			return huh.NewInput().Title("Name").Description("what the others call this window; auto: from the conversation's title; empty: folder@branch").Value(&d.peersName)
+		}},
+		approval("Incoming messages", "what asks before a peer's message reaches the model", func(d *settingsDraft) *string { return &d.peersIncoming }),
+		approval("Outgoing messages", "what asks before the model sends a message", func(d *settingsDraft) *string { return &d.peersOutgoing }),
+		{"Wake the model", func(d *settingsDraft) string { return onOff(d.peersWake) }, func(d *settingsDraft) huh.Field {
+			return huh.NewConfirm().Title("Wake the model").Description("a message let in while the model is idle starts a turn; off, it waits for your next one").Affirmative("On").Negative("Off").Value(&d.peersWake)
 		}},
 	}
 }

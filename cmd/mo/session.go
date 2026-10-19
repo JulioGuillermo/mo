@@ -12,6 +12,7 @@ import (
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/mcphub"
+	"github.com/jg/mo/internal/peers"
 	"github.com/jg/mo/internal/permissions"
 	"github.com/jg/mo/internal/plugins"
 	"github.com/jg/mo/internal/skills"
@@ -49,6 +50,8 @@ type extensions struct {
 	uis *tools.UIs
 	// team runs the subagents; nil when mo answers once.
 	team *team.Team
+	// peers are the other mo instances; nil when mo answers once.
+	peers *peers.Node
 }
 
 // pendingHub is a connection to the MCP servers being made in the
@@ -143,6 +146,9 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	env.Titles = loaded.titles
 	env.Recall = loaded.recall
 	env.UIs = loaded.uis
+	if *cfg.Peers.Enabled {
+		env.Peers = loaded.peers
+	}
 	found := skills.Find(cfg.SkillDirs(workDir))
 	instructions := agent.FindInstructions(cfg.InstructionFiles(), filepath.Join(config.ConfigHome(), "mo"), workDir)
 	extra := extraTools(hub, loaded.plugins)
@@ -221,13 +227,14 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		Rebuild:      rebuild,
 		MCP:          hub.Status(),
 		Plugins:      loaded.plugins,
-		ToolNames:    allToolNames(hub, loaded.plugins),
+		ToolNames:    allToolNames(hub, loaded.plugins, env.Peers != nil),
 		Skills:       skills.Names(found),
 		Found:        found,
 		Instructions: instructionPaths(instructions),
 
 		ToolDescriptions: toolDescriptions(hub, loaded.plugins),
 		Team:             loaded.team,
+		Peers:            loaded.peers,
 	}, nil
 }
 
@@ -276,8 +283,11 @@ func extraTools(hub *mcphub.Hub, loaded *plugins.Set) []tools.Tool {
 
 // allToolNames lists every tool a session can have, also the disabled ones,
 // for the settings screen.
-func allToolNames(hub *mcphub.Hub, loaded *plugins.Set) []string {
+func allToolNames(hub *mcphub.Hub, loaded *plugins.Set, peersOn bool) []string {
 	names := tools.BuiltinNames()
+	if !peersOn {
+		names = slices.DeleteFunc(names, func(name string) bool { return name == tools.PeersName })
+	}
 	for _, tool := range hub.Tools() {
 		names = append(names, tool.Name)
 	}

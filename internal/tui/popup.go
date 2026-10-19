@@ -41,6 +41,10 @@ type popup struct {
 	// on the popups about the settings files, closed when the files change.
 	border color.Color
 	config bool
+	// peer is set on the question about a peer's message.
+	peer bool
+	// dismiss, when set, runs when the popup closes without a choice.
+	dismiss func(m model) (tea.Model, tea.Cmd)
 }
 
 // popupBox is a popup laid out: its lines, where it goes, and which row
@@ -151,7 +155,7 @@ func (m model) updatePopup(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter", "l", "space":
 			return m.choosePopup(p.selected)
 		case "esc", "q", "h", "ctrl+c":
-			m.popup = nil
+			return m.dismissPopup()
 		default:
 			for i, option := range p.options {
 				if key := msg.String(); len(key) == 1 && strings.HasPrefix(strings.ToLower(strings.TrimSpace(ansi.Strip(option.Key))), key) {
@@ -165,11 +169,13 @@ func (m model) updatePopup(msg tea.Msg) (tea.Model, tea.Cmd) {
 		box := m.popupLayout()
 		row, inside := msg.Y-box.y, msg.X >= box.x && msg.X < box.x+ansi.StringWidth(box.lines[0]) && msg.Y >= box.y && msg.Y < box.y+len(box.lines)
 		if !inside {
-			m.popup = nil
+			dismissed, cmd := m.dismissPopup()
+			m = dismissed.(model)
 			if msg.Button == tea.MouseRight {
-				return m.rightClick(msg.X, msg.Y)
+				clicked, click := m.rightClick(msg.X, msg.Y)
+				return clicked, tea.Batch(cmd, click)
 			}
-			return m, nil
+			return m, cmd
 		}
 		if i, ok := box.options[row]; ok && msg.Button == tea.MouseLeft {
 			return m.choosePopup(i)
@@ -186,6 +192,16 @@ func (m model) updatePopup(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.WindowSizeMsg:
 		return m, m.resize(msg)
+	}
+	return m, nil
+}
+
+// dismissPopup closes the popup without a choice.
+func (m model) dismissPopup() (tea.Model, tea.Cmd) {
+	p := m.popup
+	m.popup = nil
+	if p.dismiss != nil {
+		return p.dismiss(m)
 	}
 	return m, nil
 }

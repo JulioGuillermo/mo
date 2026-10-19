@@ -149,7 +149,8 @@ func (m model) titled(msg titledMsg) (tea.Model, tea.Cmd) {
 // saving to the end of the turn while the model works.
 func (m model) setTitle(title string) (tea.Model, tea.Cmd) {
 	m.thread.title = title
-	note := printText(m.printer.Note("title: " + title))
+	m.tellPeers()
+	note := tea.Batch(printText(m.printer.Note("title: "+title)), m.renamePeer())
 	if m.running {
 		return m, note
 	}

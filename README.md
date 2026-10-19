@@ -240,6 +240,13 @@ max_agents = 20            # started in one of your turns
 max_steps = 50             # replies of the model before a subagent is stopped
 model = ""                 # "provider/model" for them; empty for the main agent's
 
+[peers]                    # user file only; /settings › Peers
+enabled = false            # let the main agent see the other mo windows and message them
+name = ""                  # what the others call this one; "auto": from the title; empty: folder@branch
+incoming = "ask"           # before a peer's message reaches the model: tools | ask | auto | allow
+outgoing = "tools"         # before the model sends one: the same choices
+wake = true                # a message let in while the model is idle starts a turn
+
 [memory]
 dir = "~/.local/share/mo/memory"
 
@@ -446,6 +453,38 @@ parent reads only that report, so long searches or test runs stay out of its con
 - Before it reports, a subagent reads what it was sent during its last step and waits for those it
   left working in the background, to hear them. Answering once (`mo "…"`), subagents work too: what
   they do shows on stderr under their name, and what needs confirmation is denied unless `-y`.
+
+## Peers
+
+With `[peers] enabled = true`, each mo window you open is a peer of the others: the main agent gets
+the `peers` tool, to `list` them (name, conversation title, folder, working or idle) and `send` one a
+message. A send returns once the other mo received it, without waiting for an answer; the other agent
+answers, if it wants, with the same tool. The model hears clearly why one failed: `not sent:
+api@dev is no longer running`, `no peer named "x"; peers: …`, `no answer from … in 5s`.
+
+They meet on this computer only, through a Unix socket each in `$XDG_RUNTIME_DIR/mo/peers/`, a folder
+only you can open; no network. Each window has a random id and a name, `folder@branch` (`mo@master`,
+`-2` when taken), set with `name` or `/peers name`, or `auto` for a few words of its title. A project
+file never turns peers on or loosens what asks.
+
+What asks before a message passes, each way:
+
+| Setting | |
+|---|---|
+| `tools` | as the permission mode says: ask and edits ask, auto judges, all lets through |
+| `ask` | asks you every time; default for incoming |
+| `auto` | the model judges it, and asks you when unsure |
+| `allow` | never asks |
+
+A message in shows in a block of its own, a violet bar with `⇠`, who sent it, from which
+conversation and when; one out has a cyan bar with `⇢ to …`. Asked about one, you let it in, let in
+all from that peer for the session, or reject it, the sender not told; closing the question leaves it
+waiting for `/peers`. A message let in reaches the model at its next step, or starts a turn when it is
+idle (`wake`). After 10 messages in a row let in without you, the next asks, in any setting; your
+next prompt starts the count again. Subagents have no `peers` tool.
+
+`/peers` lists them; `/peers name <name>|auto`, `/peers incoming|outgoing <setting>` and
+`/peers on|off` change the session only.
 
 ## Instructions
 
@@ -687,5 +726,5 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | click on the branch | the files changed, each with its kind |
 | right click | a small menu by the pointer, over the screen (↑↓ or j k, enter or a click, esc or a click outside closes it): the mode: all modes to pick · a task: change its state or delete it · a job in the panel, or a bash call still running: watch its output live, its last lines, send it to the background, kill it |
 | wheel over the side panel | scroll its tasks and jobs |
-| `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact [instruction]` `/cache clear` `/settings` `/reload` `/providers` `/mcp` `/plugins` `/agents` `/view [file]` `/git show` `/git compare <branch>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
+| `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact [instruction]` `/cache clear` `/settings` `/reload` `/providers` `/mcp` `/plugins` `/agents` `/view [file]` `/git show` `/git compare <branch>` `/peers` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
 | `/<name> text` | a plugin command |

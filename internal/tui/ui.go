@@ -28,6 +28,7 @@ import (
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/mcphub"
 	"github.com/jg/mo/internal/notify"
+	"github.com/jg/mo/internal/peers"
 	"github.com/jg/mo/internal/permissions"
 	"github.com/jg/mo/internal/plugins"
 	"github.com/jg/mo/internal/render"
@@ -73,6 +74,8 @@ type Session struct {
 
 	// Team runs the subagents; nil when mo cannot start any.
 	Team *team.Team
+	// Peers are the other mo instances, this one among them once started.
+	Peers *peers.Node
 }
 
 // activate is called once a reloaded session replaces the one in use, and
@@ -115,6 +118,9 @@ type model struct {
 	pendingSession *Session
 	// config follows the settings files on disk.
 	config *configSync
+	// peers is what /peers changed for the session, and the peers'
+	// messages that wait for the user.
+	peers *peerSession
 	// lastEvent is the kind of what the model sent last, and runningTool
 	// the call running now: they say what the agent is doing.
 	lastEvent llm.EventKind
@@ -258,6 +264,7 @@ func Run(session Session) error {
 		shownSpeeds: &shownSpeeds{},
 		svgs:        &svgFrames{kitty: printer.images == render.ModeKitty, ready: func() { bridge.send(svgReadyMsg{}) }},
 		config:      watchConfig(session.WorkDir),
+		peers:       newPeerSession(),
 	}
 	defer m.config.close()
 	printer.setKind(m.toolKind)
@@ -267,6 +274,7 @@ func Run(session Session) error {
 	bridge.program = program
 	bridge.paceReply(paceOf(session.Config.Render))
 	m.config.tell(bridge)
+	followPeers(session.Peers, bridge)
 	if titles := session.Agent.Tools.Titles(); titles != nil {
 		titles.OnSet(func(title string) { bridge.send(titleSetMsg(title)) })
 	}
@@ -347,7 +355,7 @@ func (m model) Init() tea.Cmd {
 	if opening := m.openingConversation(); opening != nil {
 		start = tea.Sequence(start, opening)
 	}
-	return tea.Batch(start, tea.RequestBackgroundColor, textarea.Blink, m.readRepo(), loadEfforts(m.session))
+	return tea.Batch(start, tea.RequestBackgroundColor, textarea.Blink, m.readRepo(), loadEfforts(m.session), m.applyPeers())
 }
 
 // openingConversation is what mo opens on besides a new conversation: the
@@ -402,6 +410,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.configChanged()
 	case configBuiltMsg:
 		return m.configBuilt(msg)
+	case peerMsg:
+		return m.peerArrived(peers.Message(msg))
+	case peerJudgedMsg:
+		return m.peerJudged(msg)
+	case peerSentMsg:
+		return m.peerSent(msg)
+	case peerRetryMsg:
+		return m.peerRetried()
+	case peersListedMsg:
+		if msg.err != nil {
+			return m.emitError(msg.err)
+		}
+		return m.emit(m.printer.Note(msg.text))
 	}
 	if m.settings != nil && !isAgentMsg(msg) {
 		return m.updateSettings(msg)
@@ -613,7 +634,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		finished, cmd := m.finishRun(msg.err)
 		done := finished.(model)
 		read := done.readRepo()
-		return done, tea.Batch(cmd, read)
+		return done, tea.Batch(cmd, read, done.peersAfterTurn())
 	case spinner.TickMsg:
 		if !m.running && m.titling == nil && !m.agentWorking() {
 			return m, nil
@@ -834,6 +855,9 @@ func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 	if err != nil {
 		return m.emit(m.printer.Note(err.Error()))
 	}
+	if m.peers != nil {
+		m.peers.streak = 0
+	}
 	if m.running {
 		return m.queue(prompt)
 	}
@@ -863,6 +887,7 @@ func (m model) start(first tea.Cmd, work func(context.Context, agent.Hooks) erro
 	ctx, cancel := context.WithCancel(context.Background())
 	finished := make(chan struct{})
 	m.running = true
+	m.tellPeers()
 	m.cancel = cancel
 	m.finished = finished
 	hooks := m.bridge.hooks()
@@ -950,6 +975,8 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		return m.followConfig(true)
 	case "git":
 		return m.gitCommand(argument)
+	case "peers":
+		return m.peersCommand(argument)
 	case "help":
 		return m, drawText(m.helpView)
 	case "settings":
@@ -1023,6 +1050,7 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 	sendingNow := m.sendingNow
 	m.sendingNow = false
 	m.running = false
+	m.tellPeers()
 	if !m.runStarted.IsZero() {
 		m.worked = time.Since(m.runStarted)
 	}

@@ -40,6 +40,7 @@ type Config struct {
 	Permissions  Permissions               `toml:"permissions,omitempty"`
 	Notify       Notify                    `toml:"notify,omitempty"`
 	Agents       Agents                    `toml:"agents,omitempty"`
+	Peers        Peers                     `toml:"peers,omitempty"`
 	Providers    map[string]ProviderConfig `toml:"providers,omitempty"`
 }
 
@@ -191,6 +192,28 @@ type Agents struct {
 	Model    string `toml:"model,omitempty"`
 	MaxSteps int    `toml:"max_steps,omitzero"`
 }
+
+// Peers let the main agent see the other mo instances of this user that
+// run with peers on, and send them messages with the peers tool.
+type Peers struct {
+	Enabled *bool `toml:"enabled,omitempty"`
+	// Name is what the others call this instance: empty for folder@branch,
+	// "auto" for a few words of the conversation's title.
+	Name string `toml:"name,omitempty"`
+	// Incoming and Outgoing say what asks before a message is let in or
+	// sent: one of PeerApprovals.
+	Incoming string `toml:"incoming,omitempty"`
+	Outgoing string `toml:"outgoing,omitempty"`
+	// Wake starts a turn when a message is let in while the model is idle.
+	Wake *bool `toml:"wake,omitempty"`
+}
+
+// PeerApprovals are what may ask before a peer's message: the permission
+// mode of the session, the user always, the model judging it, or nothing.
+var PeerApprovals = []string{"tools", "ask", "auto", "allow"}
+
+// PeerNameAuto names an instance from its conversation's title.
+const PeerNameAuto = "auto"
 
 type Loop struct {
 	Enabled       *bool `toml:"enabled,omitempty"`
@@ -403,6 +426,7 @@ func Defaults() Config {
 			SpinnerMS: 80, RunningMS: 150, WritingMS: 220, ReasoningMS: 160, AskingMS: 500},
 		Loop:        Loop{Enabled: ptr(true), Replies: 30, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2), Steps: ptr(300)},
 		Agents:      Agents{Enabled: ptr(false), Depth: 1, MaxParallel: 3, MaxAgents: 20, MaxSteps: 50},
+		Peers:       Peers{Enabled: ptr(false), Incoming: "ask", Outgoing: "tools", Wake: ptr(true)},
 		Permissions: Permissions{Mode: "edits", Allow: DefaultAllow},
 		Notify:      Notify{Finish: ptr(true), Approval: ptr(true), Method: "auto", Focused: ptr(false)},
 		Providers:   presets(),
@@ -526,6 +550,11 @@ func validate(cfg Config) error {
 	if err := validateAgents(cfg.Agents); err != nil {
 		return err
 	}
+	for _, each := range []struct{ name, value string }{{"incoming", cfg.Peers.Incoming}, {"outgoing", cfg.Peers.Outgoing}} {
+		if !slices.Contains(PeerApprovals, each.value) {
+			return fmt.Errorf("peers.%s %q: use %s", each.name, each.value, strings.Join(PeerApprovals, ", "))
+		}
+	}
 	return validateLoop(cfg.Loop)
 }
 
@@ -645,6 +674,21 @@ func merge(base, layer Config) Config {
 	base.Permissions = mergePermissions(base.Permissions, layer.Permissions)
 	base.Notify = mergeNotify(base.Notify, layer.Notify)
 	base.Agents = mergeAgents(base.Agents, layer.Agents)
+	base.Peers = mergePeers(base.Peers, layer.Peers)
+	return base
+}
+
+// mergePeers takes the peers' settings from the user file only: a project
+// could otherwise open the agent to messages.
+func mergePeers(base, layer Peers) Peers {
+	for _, field := range []struct{ base, layer **bool }{{&base.Enabled, &layer.Enabled}, {&base.Wake, &layer.Wake}} {
+		if *field.layer != nil {
+			*field.base = *field.layer
+		}
+	}
+	base.Name = override(base.Name, layer.Name)
+	base.Incoming = override(base.Incoming, layer.Incoming)
+	base.Outgoing = override(base.Outgoing, layer.Outgoing)
 	return base
 }
 

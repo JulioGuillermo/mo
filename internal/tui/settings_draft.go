@@ -85,6 +85,11 @@ type settingsDraft struct {
 	agentsMax         string
 	agentsSteps       string
 	agentsModel       string
+	peersEnabled      bool
+	peersName         string
+	peersIncoming     string
+	peersOutgoing     string
+	peersWake         bool
 	loopReplies       string
 	loopRepeats       string
 	loopStreamRepeats string
@@ -182,6 +187,11 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		agentsMax:         strconv.Itoa(cfg.Agents.MaxAgents),
 		agentsSteps:       strconv.Itoa(cfg.Agents.MaxSteps),
 		agentsModel:       cfg.Agents.Model,
+		peersEnabled:      *cfg.Peers.Enabled,
+		peersName:         cfg.Peers.Name,
+		peersIncoming:     cfg.Peers.Incoming,
+		peersOutgoing:     cfg.Peers.Outgoing,
+		peersWake:         *cfg.Peers.Wake,
 		loopReplies:       strconv.Itoa(cfg.Loop.Replies),
 		loopRepeats:       strconv.Itoa(cfg.Loop.Repeats),
 		loopStreamRepeats: strconv.Itoa(cfg.Loop.StreamRepeats),
@@ -251,6 +261,7 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 		return layer, err
 	}
 	layer.Agents = agents
+	layer.Peers = d.peers()
 	loop, err := d.loop()
 	if err != nil {
 		return layer, err
@@ -480,6 +491,19 @@ func (d *settingsDraft) agents() (config.Agents, error) {
 		agents.Enabled = &d.agentsEnabled
 	}
 	return agents, nil
+}
+
+// peers reads the peers' fields, keeping only what differs from the
+// built-in defaults.
+func (d *settingsDraft) peers() config.Peers {
+	defaults := config.Defaults().Peers
+	return config.Peers{
+		Enabled:  unlessDefaultFlag(d.peersEnabled, *defaults.Enabled),
+		Name:     strings.TrimSpace(d.peersName),
+		Incoming: unlessDefault(d.peersIncoming, defaults.Incoming),
+		Outgoing: unlessDefault(d.peersOutgoing, defaults.Outgoing),
+		Wake:     unlessDefaultFlag(d.peersWake, *defaults.Wake),
+	}
 }
 
 // loop reads the loop guard fields, keeping only what differs from the

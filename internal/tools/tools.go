@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/peers"
 	"github.com/jg/mo/internal/skills"
 	"github.com/jg/mo/internal/web"
 )
@@ -101,6 +102,9 @@ type Env struct {
 	// Parent is the agent that started this one, a subagent; without it
 	// there is no tell_parent tool.
 	Parent Parent
+	// Peers are the other mo instances; without them there is no peers
+	// tool.
+	Peers *peers.Node
 }
 
 // Resolve turns a path from the model into an absolute one, relative paths
@@ -151,7 +155,7 @@ func NewRegistry(env Env, options Options) *Registry {
 	env.ReadMaxSize = options.ReadMaxSize
 	registry := &Registry{env: env, options: options}
 	for _, tool := range append(builtinsWith(options.Searcher), options.Extra...) {
-		if slices.Contains(options.Disabled, tool.Name) || (tool.Name == titleToolName && env.Titles == nil) || (tool.Name == "ui" && env.UIs == nil) || (tool.Name == AgentName && env.Agents == nil) || (tool.Name == TellParentName && env.Parent == nil) {
+		if slices.Contains(options.Disabled, tool.Name) || (tool.Name == titleToolName && env.Titles == nil) || (tool.Name == "ui" && env.UIs == nil) || (tool.Name == AgentName && env.Agents == nil) || (tool.Name == TellParentName && env.Parent == nil) || (tool.Name == PeersName && env.Peers == nil) {
 			continue
 		}
 		if description, ok := options.Descriptions[tool.Name]; ok {
@@ -199,7 +203,7 @@ func builtins() []Tool {
 func builtinsWith(searcher web.Searcher) []Tool {
 	return []Tool{
 		bashTool(), readTool(), writeTool(), editTool(), lsTool(), mkdirTool(), rmTool(), grepTool(),
-		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), gitTool(), titleTool(), uiTool(), agentTool(), tellParentTool(),
+		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), gitTool(), titleTool(), uiTool(), agentTool(), tellParentTool(), peersTool(),
 	}
 }
 
@@ -233,6 +237,14 @@ func (r *Registry) UIs() *UIs {
 		return nil
 	}
 	return r.env.UIs
+}
+
+// Peers are the other mo instances, or nil, also for no registry.
+func (r *Registry) Peers() *peers.Node {
+	if r == nil {
+		return nil
+	}
+	return r.env.Peers
 }
 
 // Jobs are the session's background jobs, or nil, also for no registry.
