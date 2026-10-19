@@ -32,6 +32,7 @@ import (
 	"github.com/jg/mo/internal/plugins"
 	"github.com/jg/mo/internal/render"
 	"github.com/jg/mo/internal/sessions"
+	"github.com/jg/mo/internal/skills"
 	"github.com/jg/mo/internal/team"
 	"github.com/jg/mo/internal/tools"
 )
@@ -50,6 +51,9 @@ type Session struct {
 	ToolNames []string
 	// Skills names every skill found, also the ones turned off.
 	Skills []string
+	// Found are those skills, which the user may load by hand: $name or
+	// /skill name.
+	Found []skills.Skill
 	// Instructions are the instructions files read into the system prompt.
 	Instructions []string
 	// WindowFrom says where the context window came from.
@@ -813,6 +817,10 @@ func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 	if strings.HasPrefix(prompt, "/") {
 		return m.runCommand(prompt)
 	}
+	prompt, err := m.withSkill(prompt)
+	if err != nil {
+		return m.emit(m.printer.Note(err.Error()))
+	}
 	if m.running {
 		return m.queue(prompt)
 	}
@@ -956,6 +964,11 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 	case "mcp":
 		m.settingsInFlight = true
 		return m, tea.Sequence(printText(m.printer.Note(mcpReport(m.session.MCP, m.session.Config))), loadSettings(m.session, mcpSettings))
+	case "skill":
+		if argument == "" {
+			return m.emit(m.printer.Note(m.skillReport()))
+		}
+		return m.submitted("$" + argument)
 	case "compact":
 		note := "compacting…"
 		if argument != "" {

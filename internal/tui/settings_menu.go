@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"reflect"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -297,12 +298,17 @@ func (m model) editItem(menu *settingsMenu, section settingsSection, item settin
 	}
 	draft := menu.sectionDraft(section)
 	restore := draft.snapshot()
+	off := slices.Clone(draft.skillsDisabled)
 	field := item.field(draft)
 	toSection := func(m model) (tea.Model, tea.Cmd) { return m.showSection(menu, section, item.title) }
 	keep := toSection
 	if menu.overriding(section) {
 		keep = func(m model) (tea.Model, tea.Cmd) {
 			menu.project.set[fieldKey(section, item)] = true
+			// A skill's row turns it off or on too.
+			if !slices.Equal(off, draft.skillsDisabled) {
+				menu.project.set["skills.disabled"] = true
+			}
 			return toSection(m)
 		}
 	}

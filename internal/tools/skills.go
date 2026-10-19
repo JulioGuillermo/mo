@@ -14,7 +14,8 @@ const (
 	skillToolName       = "skill"
 	skillListToolName   = "skill_list"
 	skillSearchToolName = "skill_search"
-	skillFilesShown     = 30
+	// SkillFilesShown is how many of a skill's other files loading it lists.
+	SkillFilesShown = 30
 )
 
 func isSkillTool(name string) bool {
@@ -88,7 +89,7 @@ func skillTools(found []skills.Skill, mode Mode, modes map[string]Mode) []Tool {
 		},
 		Tool{
 			Name:        skillSearchToolName,
-			Description: "Find skills for a task by keywords: their names and what they are for.",
+			Description: "Find skills for a task by keywords, or one by its name: their names and what they are for.",
 			Schema:      json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}`),
 			Run: func(_ context.Context, _ Env, raw json.RawMessage) (string, error) {
 				return searchSkills(found, argField(raw, "query")), nil
@@ -111,20 +112,11 @@ func oneLine(text string) string {
 }
 
 func loadSkill(found []skills.Skill, name string) (string, error) {
-	index := slices.IndexFunc(found, func(skill skills.Skill) bool { return skill.Name == strings.TrimSpace(name) })
-	if index < 0 {
+	skill, ok := skills.Named(found, name)
+	if !ok {
 		return "", fmt.Errorf("no skill %q; the skills are: %s", name, strings.Join(skills.Names(found), ", "))
 	}
-	skill := found[index]
-	body, err := skill.Body()
-	if err != nil {
-		return "", err
-	}
-	out := fmt.Sprintf("Skill %s, in %s\n\n%s", skill.Name, skill.Dir, body)
-	if files := skill.Files(skillFilesShown); len(files) > 0 {
-		out += "\n\nIts other files, relative to its folder: " + strings.Join(files, ", ")
-	}
-	return out, nil
+	return skill.Load(SkillFilesShown)
 }
 
 func listSkills(found []skills.Skill, filter string) string {
@@ -151,6 +143,10 @@ func searchSkills(found []skills.Skill, query string) string {
 	for _, skill := range found {
 		text := strings.ToLower(skill.Name + " " + skill.Description)
 		score := 0
+		// A skill named exactly comes first.
+		if strings.EqualFold(skill.Name, strings.TrimSpace(query)) {
+			score = len(words) + 1
+		}
 		for _, word := range words {
 			if strings.Contains(text, word) {
 				score++

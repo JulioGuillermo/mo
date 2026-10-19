@@ -219,6 +219,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		Plugins:      loaded.plugins,
 		ToolNames:    allToolNames(hub, loaded.plugins),
 		Skills:       skills.Names(found),
+		Found:        found,
 		Instructions: instructionPaths(instructions),
 
 		ToolDescriptions: toolDescriptions(hub, loaded.plugins),

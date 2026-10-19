@@ -5,6 +5,7 @@
 package skills
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -97,6 +98,29 @@ func (s Skill) Body() (string, error) {
 	}
 	_, body := frontMatter(string(data))
 	return strings.TrimSpace(body), nil
+}
+
+// Load is what loading the skill gives the model: its instructions, its
+// folder and up to filesShown of its other files.
+func (s Skill) Load(filesShown int) (string, error) {
+	body, err := s.Body()
+	if err != nil {
+		return "", err
+	}
+	out := fmt.Sprintf("Skill %s, in %s\n\n%s", s.Name, s.Dir, body)
+	if files := s.Files(filesShown); len(files) > 0 {
+		out += "\n\nIts other files, relative to its folder: " + strings.Join(files, ", ")
+	}
+	return out, nil
+}
+
+// Named is the skill of that name among found.
+func Named(found []Skill, name string) (Skill, bool) {
+	index := slices.IndexFunc(found, func(skill Skill) bool { return skill.Name == strings.TrimSpace(name) })
+	if index < 0 {
+		return Skill{}, false
+	}
+	return found[index], true
 }
 
 // Files lists the skill's other files, relative to its folder, up to limit.

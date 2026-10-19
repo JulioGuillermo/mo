@@ -280,10 +280,10 @@ func TestProjectSettings(t *testing.T) {
 		m.session.Skills = []string{"pdf", "deploy"}
 		found, _ := m.openMenuChoice(menu, "skills")
 
-		if view := empty.(model).settings.form.View(); !strings.Contains(view, "No skills found") || strings.Contains(view, "Skills off") {
+		if view := empty.(model).settings.form.View(); !strings.Contains(view, "No skills found") {
 			t.Errorf("empty:\n%s", view)
 		}
-		if view := found.(model).settings.form.View(); !strings.Contains(view, "2 found: pdf, deploy") || !strings.Contains(view, "Skills off") {
+		if view := found.(model).settings.form.View(); !strings.Contains(view, "2 skills loaded, 2 on") || !strings.Contains(view, "$name") {
 			t.Errorf("found:\n%s", view)
 		}
 	})

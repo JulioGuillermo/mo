@@ -50,12 +50,15 @@ func Summary(message llm.Message) string {
 	return summary
 }
 
-// PromptText is a prompt as the user typed it, without the list of attached
-// files mo added.
+// PromptText is a prompt as the user typed it, without what mo added to
+// it: the list of attached files, a skill loaded with it, its notes.
 func PromptText(message llm.Message) string {
-	text, _, _ := strings.Cut(message.Text, "\n\n"+attachedNote)
+	text, _, _ := strings.Cut(message.Text, "\n\n"+moNotePrefix)
 	return text
 }
+
+// SkillNote starts, after a prompt, a skill the user loaded with it.
+const SkillNote = moNotePrefix + "The user loaded this skill for this message; follow it:"
 
 // Rewind drops the history from index on, to go on from before that prompt.
 // The size of what is left is estimated until the next answer.

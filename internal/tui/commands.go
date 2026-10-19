@@ -26,6 +26,8 @@ type command struct {
 	more bool
 	// mention is a file offered after @, to attach.
 	mention bool
+	// skill is a skill offered after $, to load with the message.
+	skill bool
 }
 
 var builtinCommands = []command{
@@ -43,6 +45,7 @@ var builtinCommands = []command{
 	{name: "title", description: "name the conversation: /title <name>, or /title auto for the model to"},
 	{name: "cache", argument: "clear", description: "llama-server: erase what every slot holds, its KV cache"},
 	{name: "compact", argument: "[instruction]", description: "summarize the conversation to free context; an instruction is added under the summary prompt, as yours"},
+	{name: "skill", argument: "[name] [text]", description: "load a skill with your message, as $name does; no name lists them"},
 	{name: "settings", description: "global settings, and what this project overrides · /settings project"},
 	{name: "providers", description: "add, edit or delete providers"},
 	{name: "mcp", description: "MCP servers: status, add, edit, delete"},
@@ -102,6 +105,9 @@ func (m model) suggestions() []command {
 	if typed, ok := m.mention(); ok {
 		return m.mentionSuggestions(typed)
 	}
+	if typed, ok := strings.CutPrefix(m.input.Value(), "$"); ok && !strings.ContainsAny(typed, " \n") {
+		return m.skillSuggestions(typed, "$")
+	}
 	typed, isCommand := strings.CutPrefix(m.input.Value(), "/")
 	if !isCommand || strings.Contains(typed, "\n") {
 		return nil
@@ -112,6 +118,11 @@ func (m model) suggestions() []command {
 			return m.pathSuggestions(partial)
 		case "effort":
 			return m.effortSuggestions(partial)
+		case "skill":
+			if strings.Contains(partial, " ") {
+				return nil
+			}
+			return m.skillSuggestions(partial, "/skill ")
 		}
 		return m.providerSuggestions(name, partial)
 	}
@@ -158,6 +169,12 @@ func (m *model) completeCommand(chosen command) bool {
 		m.completeMention(chosen)
 		return false
 	}
+	if chosen.skill {
+		m.input.SetValue(chosen.name + " ")
+		m.input.CursorEnd()
+		m.suggestion = 0
+		return false
+	}
 	if chosen.more {
 		m.input.SetValue("/" + chosen.name)
 		m.input.CursorEnd()
@@ -198,8 +215,11 @@ func (m model) suggestionLayout(matches []command) (string, []region) {
 			return m.submit()
 		}))
 		name := "/" + candidate.name
-		if candidate.mention {
+		switch {
+		case candidate.mention:
 			name = "@" + candidate.name
+		case candidate.skill:
+			name = candidate.name
 		}
 		if candidate.argument != "" {
 			name += " " + candidate.argument

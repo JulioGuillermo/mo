@@ -450,7 +450,13 @@ With at least one skill on, the model gets a `skill` tool that loads one: its in
 folder and the list of its other files. `skills.mode` says how it learns what there is: `full` puts
 every name with its description in that tool's description, `compact` only the names, `search`
 adds `skill_list` and `skill_search` to find them. Without skills, or with every one off, no skill
-tool is sent. `/settings › Skills` turns skills off and picks the mode, globally or per project.
+tool is sent. `/settings › Skills` picks the default mode; `Each skill ›` lists every skill to turn
+it off or give it its own mode, globally or per project. Compact mode comes with `skill_list` and
+`skill_search` too.
+
+You load one yourself by starting a message with `$name` (`$pdf fill form.pdf`) or with
+`/skill name text`; both complete the name as you type. The skill goes with that message only.
+`/skill` alone lists them. A `$` that names no skill, like `$HOME`, is sent as it is.
 
 ## Conversations
 
