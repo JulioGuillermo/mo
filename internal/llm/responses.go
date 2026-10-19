@@ -111,14 +111,14 @@ func (p *Responses) Stream(ctx context.Context, req Request, onEvent func(Event)
 	var calls []*ToolCall
 	slots := map[int]int{}
 	var usage Usage
-	cutOff := false
+	cutOff, refused := false, false
 	err = readSSE(resp.Body, func(data []byte) error {
 		var event respEvent
 		if err := json.Unmarshal(data, &event); err != nil {
 			return fmt.Errorf("bad stream event: %w", err)
 		}
 		switch event.Type {
-		case "response.output_text.delta":
+		case "response.output_text.delta", "response.refusal.delta":
 			clock.piece()
 			text.WriteString(event.Delta)
 			onEvent(Event{Kind: EventText, Text: event.Delta})
@@ -146,7 +146,10 @@ func (p *Responses) Stream(ctx context.Context, req Request, onEvent func(Event)
 			if event.Response.Usage != nil {
 				usage.InputTokens, usage.OutputTokens = event.Response.Usage.InputTokens, event.Response.Usage.OutputTokens
 			}
-			cutOff = event.Response.IncompleteDetails != nil && event.Response.IncompleteDetails.Reason == "max_output_tokens"
+			if details := event.Response.IncompleteDetails; details != nil {
+				cutOff = details.Reason == "max_output_tokens"
+				refused = details.Reason == "content_filter"
+			}
 			return errStopSSE
 		case "response.failed":
 			message := "the response failed"
@@ -173,6 +176,9 @@ func (p *Responses) Stream(ctx context.Context, req Request, onEvent func(Event)
 	if cutOff && len(calls) == 0 {
 		message.Text += cutOffTextNote
 		onEvent(Event{Kind: EventText, Text: cutOffTextNote})
+	}
+	if refused {
+		noteRefusal(&message, onEvent)
 	}
 	return Response{Message: message, Usage: clock.fill(usage)}, nil
 }

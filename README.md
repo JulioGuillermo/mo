@@ -80,6 +80,9 @@ Anthropic's requests also carry Claude Code's `max_tokens` for the model (32000 
 `max_tokens` is 0, and its thinking: `adaptive` where the model has it, else a budget of tokens.
 Thinking blocks go back to the model with their signature, as the API asks; when it refuses
 them (a history changed by compaction), the request goes again without them.
+When a provider's safety filter stops an answer (Anthropic's `refusal`, OpenAI's `content_filter`,
+Gemini's `SAFETY` and the like), the answer ends with a note saying so; a turn that ends with no
+text and no call, the provider giving no reason, shows a warning instead of ending in silence.
 `antigravity` and `claude-code` start the system prompt as Antigravity's and Claude Code's own
 requests do, then say the model runs inside mo; `preamble = false` under the provider, or its form
 in `/providers`, sends mo's prompt alone (Claude accounts' tokens may be refused without it).

@@ -19,6 +19,7 @@ type anthropicStream struct {
 	blocks          []*pendingThinking
 	thinkingByIndex map[int]*pendingThinking
 	cutOff          bool
+	refused         bool
 	usage           Usage
 }
 
@@ -63,6 +64,7 @@ func (s *anthropicStream) handle(event anthropicEvent) error {
 	case "message_delta":
 		s.usage.OutputTokens = event.Usage.OutputTokens
 		s.cutOff = event.Delta.StopReason == "max_tokens"
+		s.refused = event.Delta.StopReason == "refusal"
 	case "message_stop":
 		return errStopSSE
 	case "error":
@@ -101,6 +103,9 @@ func (s *anthropicStream) message() Message {
 	if s.cutOff && len(s.toolUses) == 0 {
 		message.Text += cutOffTextNote
 		s.onEvent(Event{Kind: EventText, Text: cutOffTextNote})
+	}
+	if s.refused {
+		noteRefusal(&message, s.onEvent)
 	}
 	message.Thinking = s.thinkingBlocks()
 	for _, toolUse := range s.toolUses {

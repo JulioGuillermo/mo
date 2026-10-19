@@ -15,8 +15,10 @@ import (
 )
 
 const (
-	deniedResult    = "The user denied this call. Ask them how to proceed."
-	cancelledResult = "Cancelled by the user before it ran."
+	deniedResult               = "The user denied this call. Ask them how to proceed."
+	cancelledResult            = "Cancelled by the user before it ran."
+	emptyAnswerWarning         = "the model ended without answering, and the provider gave no reason: a filter may have stopped it. Rephrasing the request, or a new conversation, can help."
+	emptyAfterReasoningWarning = "the model reasoned, then ended without answering, and the provider gave no reason: a filter may have stopped it. Rephrasing the request, or a new conversation, can help."
 )
 
 type Decision int
@@ -327,6 +329,7 @@ func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
 			hooks.OnAssistant(response.Message)
 		}
 		if len(response.Message.ToolCalls) == 0 {
+			warnIfSilent(response.Message, hooks)
 			return nil
 		}
 		asked := len(a.History) - 1
@@ -348,6 +351,24 @@ func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
 		if a.looping() {
 			return ErrLooping
 		}
+	}
+}
+
+// warnIfSilent says so when the model ends its turn with no text and no
+// call: the provider stopped it without telling why.
+func warnIfSilent(message llm.Message, hooks Hooks) {
+	if strings.TrimSpace(message.Text) != "" {
+		return
+	}
+	warning := emptyAnswerWarning
+	if strings.TrimSpace(message.Reasoning) != "" {
+		warning = emptyAfterReasoningWarning
+	}
+	switch {
+	case hooks.OnWarning != nil:
+		hooks.OnWarning(warning)
+	case hooks.OnNotice != nil:
+		hooks.OnNotice(warning)
 	}
 }
 

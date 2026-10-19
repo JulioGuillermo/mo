@@ -108,6 +108,9 @@ type ccEnvelope struct {
 
 type ccChunk struct {
 	Response struct {
+		PromptFeedback *struct {
+			BlockReason string `json:"blockReason"`
+		} `json:"promptFeedback"`
 		Candidates []struct {
 			Content      ccContent `json:"content"`
 			FinishReason string    `json:"finishReason"`
@@ -139,11 +142,14 @@ func (p *CloudCode) Stream(ctx context.Context, req Request, onEvent func(Event)
 	var text, reasoning strings.Builder
 	var calls []ToolCall
 	var usage Usage
-	cutOff := false
+	cutOff, refused := false, false
 	err = readSSE(resp.Body, func(data []byte) error {
 		var chunk ccChunk
 		if err := json.Unmarshal(data, &chunk); err != nil {
 			return fmt.Errorf("bad stream chunk: %w", err)
+		}
+		if feedback := chunk.Response.PromptFeedback; feedback != nil && feedback.BlockReason != "" {
+			refused = true
 		}
 		if meta := chunk.Response.UsageMetadata; meta != nil {
 			usage.InputTokens, usage.OutputTokens = meta.PromptTokenCount, meta.CandidatesTokenCount+meta.ThoughtsTokenCount
@@ -173,6 +179,9 @@ func (p *CloudCode) Stream(ctx context.Context, req Request, onEvent func(Event)
 			if candidate.FinishReason == "MAX_TOKENS" {
 				cutOff = true
 			}
+			if geminiRefused(candidate.FinishReason) {
+				refused = true
+			}
 		}
 		return nil
 	})
@@ -183,6 +192,9 @@ func (p *CloudCode) Stream(ctx context.Context, req Request, onEvent func(Event)
 	if cutOff && len(calls) == 0 {
 		message.Text += cutOffTextNote
 		onEvent(Event{Kind: EventText, Text: cutOffTextNote})
+	}
+	if refused {
+		noteRefusal(&message, onEvent)
 	}
 	return Response{Message: message, Usage: clock.fill(usage)}, nil
 }

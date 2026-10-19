@@ -81,6 +81,7 @@ type openAIChunk struct {
 	Choices []struct {
 		Delta struct {
 			Content          string           `json:"content"`
+			Refusal          string           `json:"refusal"`
 			ReasoningContent string           `json:"reasoning_content"`
 			Reasoning        string           `json:"reasoning"`
 			ToolCalls        []openAIToolCall `json:"tool_calls"`
@@ -137,7 +138,7 @@ func (p *OpenAI) Stream(ctx context.Context, req Request, onEvent func(Event)) (
 	}
 	var calls []*openAIToolCall
 	var usage Usage
-	cutOff := false
+	cutOff, refused := false, false
 	err = readSSE(resp.Body, func(data []byte) error {
 		if string(data) == "[DONE]" {
 			return errStopSSE
@@ -160,6 +161,9 @@ func (p *OpenAI) Stream(ctx context.Context, req Request, onEvent func(Event)) (
 		}
 		for _, choice := range chunk.Choices {
 			delta := choice.Delta
+			if delta.Refusal != "" {
+				emit(delta.Refusal, "")
+			}
 			if delta.Content != "" || delta.ReasoningContent != "" || delta.Reasoning != "" || len(delta.ToolCalls) > 0 {
 				clock.piece()
 			}
@@ -174,6 +178,9 @@ func (p *OpenAI) Stream(ctx context.Context, req Request, onEvent func(Event)) (
 			if choice.FinishReason == "length" {
 				cutOff = true
 			}
+			if choice.FinishReason == "content_filter" {
+				refused = true
+			}
 		}
 		return nil
 	})
@@ -186,6 +193,9 @@ func (p *OpenAI) Stream(ctx context.Context, req Request, onEvent func(Event)) (
 	if cutOff && len(calls) == 0 {
 		message.Text += cutOffTextNote
 		onEvent(Event{Kind: EventText, Text: cutOffTextNote})
+	}
+	if refused {
+		noteRefusal(&message, onEvent)
 	}
 	for i, call := range calls {
 		id := call.ID
