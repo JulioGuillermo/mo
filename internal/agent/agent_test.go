@@ -18,6 +18,7 @@ package agent
 // | AG-14 | Edge     | A plan limit is not retried; a short one gives up after LimitRetries more tries | P0 |
 // | AG-15 | Happy    | AfterToolCall changes what the model reads of a call, and what is shown | P0     |
 // | AG-16 | Happy    | EndTurn hears each turn once, with its prompt, last answer and error  | P0       |
+// | AG-17 | Happy    | StreamPiece hears every piece of text and reasoning as it comes       | P1       |
 
 import (
 	"context"
@@ -459,6 +460,35 @@ func TestPluginEvents(t *testing.T) {
 		want := []string{"one|first answer|<nil>", "two|second answer|<nil>", "three||boom"}
 		if strings.Join(ends, "\n") != strings.Join(want, "\n") {
 			t.Errorf("ends = %q", ends)
+		}
+	})
+}
+
+// pieceProvider streams its reply in pieces, then gives it.
+type pieceProvider struct{}
+
+func (pieceProvider) Stream(_ context.Context, _ llm.Request, onEvent func(llm.Event)) (llm.Response, error) {
+	onEvent(llm.Event{Kind: llm.EventReasoning, Text: "hm"})
+	onEvent(llm.Event{Kind: llm.EventText, Text: "hel"})
+	onEvent(llm.Event{Kind: llm.EventText, Text: "lo"})
+	return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, Text: "hello", Reasoning: "hm"}}, nil
+}
+
+func TestStreamPieces(t *testing.T) {
+	t.Run("AG-17 StreamPiece hears every piece of text and reasoning as it comes", func(t *testing.T) {
+		agent := newAgent(t, pieceProvider{})
+		var pieces []string
+		agent.StreamPiece = func(kind llm.EventKind, text string) {
+			pieces = append(pieces, fmt.Sprintf("%d:%s", kind, text))
+		}
+
+		if err := agent.Run(context.Background(), "hi", Hooks{}); err != nil {
+			t.Fatal(err)
+		}
+
+		want := []string{fmt.Sprintf("%d:hm", llm.EventReasoning), fmt.Sprintf("%d:hel", llm.EventText), fmt.Sprintf("%d:lo", llm.EventText)}
+		if strings.Join(pieces, ",") != strings.Join(want, ",") {
+			t.Errorf("pieces = %q", pieces)
 		}
 	})
 }

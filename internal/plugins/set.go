@@ -21,6 +21,7 @@ const (
 	hookToolCall   = "tool_call"
 	hookToolResult = "tool_result"
 	hookTurnEnd    = "turn_end"
+	hookStream     = "stream"
 
 	maxCommandOutput = 64 << 10
 	maxPromptBytes   = 256 << 10
@@ -30,6 +31,7 @@ const (
 type Set struct {
 	plugins []*Plugin
 	surface *surface
+	feed    *streamFeed
 
 	toolsOnce sync.Once
 	tools     []tools.Tool
@@ -70,6 +72,7 @@ func Load(dir, workDir, logDir string) *Set {
 		})
 		set.plugins = append(set.plugins, plugin)
 	}
+	set.streamHooks()
 	return set
 }
 

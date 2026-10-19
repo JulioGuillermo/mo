@@ -188,6 +188,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	assistant.BlockToolCall = loaded.plugins.BlockToolCall
 	assistant.AfterToolCall = loaded.plugins.AfterToolCall
 	assistant.EndTurn = loaded.plugins.EndTurn
+	assistant.StreamPiece = loaded.plugins.StreamPiece
 	rebuild := func(fresh config.Config) (tui.Session, error) {
 		if reflect.DeepEqual(fresh.ActiveMCP(), cfg.ActiveMCP()) {
 			return buildSession(context.Background(), workDir, fresh, sessionChoice{yes: choice.yes}, loaded)

@@ -28,7 +28,7 @@ const (
 
 var reservedCommands = []string{"new", "clear", "compact", "settings", "providers", "mcp", "plugins", "agents", "cache", "view", "help", "quit", "exit"}
 
-var hookEvents = []string{hookPrompt, hookToolCall, hookToolResult, hookTurnEnd}
+var hookEvents = []string{hookPrompt, hookToolCall, hookToolResult, hookTurnEnd, hookStream}
 
 var (
 	errPluginStuck = errors.New("stopped responding and was turned off")

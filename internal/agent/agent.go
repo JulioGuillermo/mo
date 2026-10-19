@@ -92,6 +92,9 @@ type Agent struct {
 	// EndTurn hears how a turn ended: the prompt, the model's last answer,
 	// and the error it ended with, nil when it ended well.
 	EndTurn func(prompt, answer string, err error)
+	// StreamPiece hears each piece of the reply as it comes, text or
+	// reasoning; it must not block.
+	StreamPiece func(kind llm.EventKind, text string)
 
 	History   []llm.Message
 	LastUsage llm.Usage
@@ -425,6 +428,9 @@ func (a *Agent) stream(ctx context.Context, hooks Hooks, early *earlyRunner) (ll
 		}
 		switch event.Kind {
 		case llm.EventText, llm.EventReasoning:
+			if a.StreamPiece != nil {
+				a.StreamPiece(event.Kind, event.Text)
+			}
 			a.partialMu.Lock()
 			if event.Kind == llm.EventText {
 				a.partial.WriteString(event.Text)

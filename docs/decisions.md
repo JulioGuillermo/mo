@@ -141,6 +141,18 @@
   without one gets Gemini's skip value.
 - Anthropic requests mark the system prompt, the last tool and the last message as cache
   breakpoints, so every turn rereads the shared prefix from the prompt cache.
+- An answer a provider's safety filter stopped (Anthropic's `refusal`, OpenAI's `content_filter`
+  and refusal text, Gemini's `SAFETY` and blocked prompts) ends with a note saying so, and a turn
+  that ends with no text and no call gets such a note as its answer. Both are drawn red on a dark
+  red band and stay in the history, so the model knows its answer was cut.
+- A failing HTTP answer keeps its status, headers and body. Limits are told apart only by what the
+  provider names: Claude's subscription headers (5-hour or weekly, with the reset), Codex's
+  `usage_limit_reached`, OpenAI's `insufficient_quota`, Gemini's `RESOURCE_EXHAUSTED` without a
+  short retry. Those end the turn, said plainly with when they lift, the provider's error folded
+  under them. Short ones (`rate_limit_error`, `rate_limit_exceeded`, `overloaded_error`, a bare
+  429, 529 or 503) are sent again 3 times after the wait asked, a minute at most, else 2, 4 and 8
+  s, and only when nothing of the reply came yet, so no text shows twice. Any other error shows
+  as it came.
 - Tool arguments cut off by the output token limit become `{}` plus `ToolCall.ArgsError`. Sending
   the broken JSON back would make every later request fail; the error tells the model to split the
   work.
@@ -370,6 +382,10 @@
 - stdio servers run in their own session (`setsid`), so they cannot read the terminal, and their
   stderr goes to a log file instead of the screen.
 - `[mcp]` is user-only: a project adding a server would be running any command it likes.
+- A URL server takes `ca`, a PEM file of authorities trusted besides the system's, for a server
+  signed by a private one, or `insecure`, which takes any certificate. Claude Code reaches such
+  servers through `NODE_EXTRA_CA_CERTS`, which only Node reads; mo says it per server instead of
+  trusting an authority for everything it reaches.
 - Images and audio in tool results are only named for now.
 
 ## Rendering
@@ -468,10 +484,24 @@
   the other candidate; Lua is smaller to embed and to learn for short scripts.
 - Only the user's `~/.config/mo/plugins/*.lua` load, in name order; a project never brings code to
   run. The folder is a protected path, so the model cannot write a plugin without being asked.
-- Each plugin has its own Lua state with base, table, string and math; `io`, `os`, `require`,
-  `dofile` and `loadfile` are removed and the system is reached through the `mo` table instead.
-  That is not a sandbox against the user's own code (`mo.exec` runs bash); it keeps the surface
-  small and every effect visible in one place.
+- Each plugin has its own Lua state with every standard library: `io`, `os`, `package`,
+  `debug`, `require` from `~/.config/mo/lib`. The first version kept only base, table, string and
+  math so every effect went through the `mo` table, but a plugin is the user's own code and
+  `mo.exec` already ran bash, so the sandbox protected nothing and stopped real plugins (an OAuth
+  login needs files, sockets and a browser). The `ui` tool's scripts, which the model writes,
+  keep the sandbox (`internal/luabox`).
+- Only what would break mo's own screen is turned aside: `print` and `io.write` go to the
+  plugin's log, `io.read` reads nothing, `os.exit` raises an error and `os.execute` runs with no
+  terminal. The rest of Lua behaves as it does anywhere.
+- `mo` adds what Lua 5.1 lacks to work with the system: `mo.run` (argv, cwd, env, stdin,
+  timeout, stderr apart), `mo.http` (requests with json, headers, a private ca or none, and
+  `listen` for one request on 127.0.0.1, as an OAuth redirect), `mo.fs`, base64, sha256, hmac and
+  url escaping, `mo.sleep`. They use mo's own Go code, `internal/netx` for certificates as MCP
+  servers do, and stop at the call's time limit.
+- Lua stays 5.1 (gopher-lua, 7 000 stars, stable). arnodel/golua implements 5.4 and 5.5, with CPU
+  and memory quotas, but has 160 stars, one author and a 0.x API; nothing a plugin does needs
+  `goto`, `//` or bit operators. A plugin's state costs about 164 KB; a table of a million integers
+  32 MB, about twice what PUC-Lua takes.
 - A Lua state is not safe to share, so calls into one plugin take turns, each with a time limit:
   10 s to load, 5 s per hook, 2 minutes per tool or command. Waiting for the turn also ends with
   the caller's context, so a busy plugin cannot freeze a prompt and Esc works. Lua code stops at
@@ -492,6 +522,21 @@
   reported. Names start with a letter or `_`, which every provider accepts. They run without
   asking unless declared with `confirm = true`: the user wrote them.
 - A blocked call is shown like any other, with its reason, and the model receives the reason.
+- An error a plugin raises reaches the model as its message alone; Lua's stack trace goes to the
+  plugin's log. It was noise to the model and cost context.
+- Hooks are five events of the main conversation: `prompt`, `tool_call`, `tool_result`, `stream`,
+  `turn_end`. Subagents run none: a guard written for the user's conversation should not decide a
+  subagent's calls without being asked to. `tool_result` changes what the model reads and what is
+  shown alike, so the screen never shows the user something the model did not get.
+- `stream` gets the reply gathered, never a call per token: a piece after 300 ms of quiet goes at
+  once, the ones within 300 ms of it wait and go together. The agent only appends to a buffer; a
+  timer outside the reply's goroutine calls the hook, so a slow hook never slows the reply, and a
+  hook may still run after the turn ended.
+- A plugin's items and dialogs go under their own **Plugins** section of the side panel. Dialogs
+  reuse the `ui` tool's nodes and drawing, in a store of their own (`tools.NewPluginUIs`): numbered
+  from 1001 so they never mix with the model's, never saved, and what the user does in them goes to
+  the plugin's `on_event` through a channel, never to the model. A hidden dialog stays listed until
+  the plugin closes it; an error in `on_event` shows under it.
 
 ## Loop guard
 
@@ -791,6 +836,21 @@
   the stash.
 - `tag` makes a light tag, or an annotated one with a message. `reset` is soft, mixed or hard;
   hard warns, so it asks in every mode but all, and so does `stash_drop`.
+- Every action takes `repo`, relative or absolute, for mo run above the repositories, as in a
+  workspace; none is the working directory's. A repository outside the working directory warns, so
+  reading one asks too, as reading a file outside does. Outside a repository the error lists those
+  2 levels below (not inside a repository, a hidden folder, `node_modules` or `vendor`, 20 at most)
+  and says deeper ones are not listed, so a small model knows what to pass. `repos` lists them and
+  every repository opened since mo started, however deep; that list lives in memory only.
+- go-git ignores the user's `core.excludesFile` and lets a folder pattern such as `!/tmp/keep/`
+  bring back the files a `/tmp/keep/*` before it ignored, so ignored files showed as untracked and
+  `add` staged them. mo reads the user's ignore file and checks each folder of a path before the
+  path itself, as git does, for status and `add` alike.
+- The reset behind switch, `reset hard`, stash and merge skips submodules, whose folder the commit's
+  file list leaves out: removing it failed halfway, with HEAD and the index on the new branch and
+  the files on the old one. Links are written as links. A switch that cannot write its files puts
+  HEAD and the files back and says "switch undone".
+- `init` makes a repository and its folder, on git's `init.defaultBranch`, else `main`.
 - go-git runs `git-upload-pack` for remotes that are folders. Without git installed, mo serves them
   with go-git's own server, which can leave objects out of a fetch that is not a fast-forward, so
   git's is used wherever it is installed. SSH and HTTPS remotes need neither.
@@ -1565,3 +1625,25 @@
   backquotes is a program of its own, named apart (`echo $(git rev-parse HEAD)` is `echo, git`);
   a wrapper whose command is one, `sudo $(which docker)`, is its name alone, and `command -v`
   only looks a program up, so it is `command`.
+
+## /git and !command
+
+- `/git show` and `/git compare` open the changes in the viewer: a tree with only the changed
+  files (new green, changed amber, deleted red) and the diff beside it. `compare` is what a pull
+  request shows, from where the two parted, not a plain diff of two tips. Unchanged lines fold into
+  `⋯` rows that open 20 at a time or all; `f` shows the whole file. Comments on a diff line reach
+  the model with the line in the new file, or the old one for a line taken out.
+- Every other action of the `git` tool is in `/git` too, typed as git takes it, and runs through
+  the tool's own code: the user and the model get the same results, and no git command is needed.
+  Actions that change the repository wait while the model works, since the model may be editing
+  the same files; reading ones run at once.
+- A repository after the action makes `/git` work from a folder above the repositories. A word is
+  the repository when it is one, or a folder outside this folder's repository; `compare` with two
+  words always takes the first, so the branch is never mistaken for a folder. The repository goes
+  before the branch so tab can offer that repository's branches.
+- `/git branch` switches through the same code as the tool's `switch`, so it refuses over
+  uncommitted changes and undoes itself when it cannot write the files.
+- `!command` runs in the shell without a terminal, so a pager or an editor will not work. It runs
+  beside the model, never in its turn; esc stops the model first, then the command. The model gets
+  the command and its output (8 KB, start and end) with the next message, not at once, so a
+  command run to look at something does not cost a turn.

@@ -747,88 +747,31 @@ circles, hexagons, parallelograms) are drawn as boxes.
 
 ## Plugins
 
-Lua files in `~/.config/mo/plugins/` load at start; `/plugins` lists them. A plugin can add tools
-for the model, commands for you and hooks:
+Lua files in `~/.config/mo/plugins/` run when mo starts; `/plugins` lists what each added. A plugin
+is your own code, with your rights and all of Lua's libraries, and it can:
+
+| Add | With |
+|---|---|
+| tools for the model, asking first or not | `mo.tool{ name, description, params, confirm, run }` |
+| commands for you, `/name text` | `mo.command{ name, description, run }` |
+| hooks on a turn | `mo.on("prompt" \| "tool_call" \| "tool_result" \| "stream" \| "turn_end", fn)` |
+| items under **Plugins** in the side panel | `mo.sidebar.set{ id, text, detail, color, icon, on_click }` |
+| dialogs with inputs and buttons, as the `ui` tool draws them | `mo.dialog{ title, tree, on_event }` |
 
 ```lua
-mo.tool{
-  name = "git_log", description = "Recent commits.",
-  params = { count = { type = "integer" } },
-  confirm = false,                       -- true: ask before it runs
-  run = function(args) return (mo.exec("git log --oneline -n " .. (args.count or 10))) end,
-}
-mo.command{ name = "standup", run = function(text) return "**markdown** to print" end }
-mo.on("prompt", function(text) return text .. " (be brief)" end)   -- rewrite every prompt
-mo.on("tool_call", function(call)                                    -- return a reason to block
+mo.command{ name = "standup", run = function()
+  return "**Since yesterday**\n\n" .. mo.exec("git log --since=yesterday --format='- %s'")
+end }
+mo.on("tool_call", function(call)
   if call.name == "bash" and call.args.command:find("push %-%-force") then return "no force pushes" end
 end)
 ```
 
-`mo.on(event, function)` takes these events; a hook has 5 seconds:
-
-| Event | When | It gets | What it returns |
-|---|---|---|---|
-| `prompt` | before your message goes to the model | the text | text replaces it; `nil` keeps it |
-| `tool_call` | before a call runs, before anyone is asked | `{ name, args }` | a reason blocks it; `nil` lets it go. A guard that fails, or did not load, blocks every call |
-| `tool_result` | after a call ran, before the model reads it | `{ name, args, output, is_error }` | text replaces what the model reads and what is shown; `nil` keeps it |
-| `turn_end` | when a turn ends, well or not | `{ prompt, answer, error, stopped }` | nothing: to notify, log or count |
-
-They are for the main conversation: subagents do not run them.
-
-A plugin is your own code and has your rights: all of Lua's libraries are there (`io`, `os`,
-`package`, `debug`, `coroutine`), and `mo` adds what a script needs to work with the system:
-
-| | |
-|---|---|
-| `mo.exec(cmd)` | run a shell command in the working directory: its output (errors too) and exit code |
-| `mo.run{ command = "...", argv = {...}, cwd, env, stdin, timeout }` | the same with what a command may need: `argv` runs with no shell, `env` adds to the environment, `timeout` is in seconds; gives `{ stdout, stderr, code, ok }` |
-| `mo.http.get(url, opts)`, `mo.http.post(url, body, opts)`, `mo.http.request{ url, method, headers, body, json, timeout, ca, insecure, redirects }` | HTTP: `json` is a table sent as JSON; `ca` is a PEM file trusted besides the system's, `insecure = true` takes any certificate, `redirects = false` stops at the first answer; gives `{ status, ok, headers, body }` (header names in lower case), or `nil` and the reason; a 404 is an answer, not an error |
-| `mo.http.listen{ port, path, reply }` | listens on this computer only for one request to `path` (a login's redirect, say): gives `{ port, wait, close }`; `wait(seconds)` gives `{ method, path, query, body }`, or `nil` and the reason, and closes it; `reply` is the page the browser gets |
-| `mo.fs.list(dir)`, `stat`, `mkdir` (with parents), `remove(path, recursive)`, `rename`, `glob` | what `io` lacks of the file system; `mo.read(path)` and `mo.write(path, text)` for whole files; relative paths start in the working directory |
-| `mo.json_encode`, `mo.json_decode` | JSON |
-| `mo.base64_encode`, `mo.base64_decode`, `mo.sha256`, `mo.hmac_sha256(key, text)`, `mo.url_encode` | encodings (hashes in hex) |
-| `mo.sleep(seconds)`, `mo.env(name)`, `mo.workdir`, `mo.log` | the rest; `print` and `io.write` go to the log too, in `~/.local/share/mo/logs/plugin-<name>.log` |
-
-A plugin can also show things to you, under **Plugins** in the side panel:
-
-```lua
-mo.sidebar.set{ id = "jira", text = "Jira · logged in", detail = "12 open", color = "success",
-                icon = "●", on_click = function() return "text to show" end }
-mo.sidebar.remove("jira")
-
-local dialog
-dialog = mo.dialog{
-  title = "New issue",
-  tree = { type = "card", title = "New issue", children = {
-    { type = "input", id = "summary" },
-    { type = "button", id = "save", label = "Save" } } },
-  on_event = function(event)          -- { dialog, element, event, action, value, values }
-    if event.element == "save" then dialog.close() end
-  end,
-}
--- dialog.id, dialog.update{ title, tree }, dialog.close()
-```
-
-`set` adds an item, or changes the one with the same id; `color` is `text`, `dim`, `accent`,
-`success`, `warning` or `error`. A click on an item runs `on_click`, and the text it returns shows
-as a note. `mo.dialog` takes the same nodes as the model's `ui` tool (`{"action":"help"}` of `ui`
-lists them) and opens at once over the screen; what you do in it goes to `on_event`, never to the
-model: a button's click, an input's `on_input` and `on_change`, with every value; an element whose
-`on_click` is `close` or `submit` hides the dialog, which stays in the side panel to open again until
-the plugin closes it. An error in `on_event` shows under the dialog.
-
-`require("name")` loads `~/.config/mo/lib/name.lua` or `~/.config/mo/lib/name/init.lua`, to share
-code between plugins (a `.lua` file in `plugins/` is a plugin, run at start). What would break the
-terminal is turned aside: `io.read` reads nothing, `os.exit` raises an error, and `os.execute` runs
-with no terminal, its output in the log. A call stops at its time limit (a tool, 2 minutes; a hook, 5
-seconds), also in the middle of a request or a command. An error a plugin raises reaches the model
-as its message; the stack trace goes to the plugin's log. A full example is in
-`docs/examples/plugins/git.lua`.
-
-The language is Lua 5.1 as gopher-lua implements it: patterns have no `%f` frontier (it finds
-nothing, without an error), and there is no `goto` or integer division.
-
-Plugins are your code and run with your rights; they are never loaded from a project.
+To reach the system a plugin has `mo.exec` and `mo.run` for commands, `mo.http` for requests (and
+to wait for an OAuth redirect), `mo.fs` and `io` for files, JSON, base64, sha256 and hmac, and
+`require` for modules in `~/.config/mo/lib/`. A tool or command has 2 minutes, a hook 5 seconds.
+Plugins run Lua 5.1 (gopher-lua). [docs/plugins.md](docs/plugins.md) explains all of it, with
+examples; [docs/examples/plugins/git.lua](docs/examples/plugins/git.lua) is a complete plugin.
 
 ## Keys
 
