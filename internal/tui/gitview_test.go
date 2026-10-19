@@ -12,8 +12,12 @@ package tui
 // | GV-08 | Happy    | f shows the whole file and back, the cursor kept on its line                | P0       |
 // | GV-09 | Happy    | A comment on a diff line goes to the model with its line, kept as lines unfold | P0    |
 // | GV-10 | Edge     | A fold has nothing to comment, and e off a fold says where to press it      | P2       |
+// | GV-11 | Happy    | The cursor's row is one lighter colour end to end: fold, added, removed     | P1       |
+// | GV-12 | Happy    | /git opens while the model works                                            | P1       |
 
 import (
+	"fmt"
+	"image/color"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -263,6 +267,45 @@ func TestDiffFolds(t *testing.T) {
 
 		if folded.viewer.commenting || !strings.Contains(offFold.viewer.notice, "⋯") {
 			t.Errorf("commenting %v notice %q", folded.viewer.commenting, offFold.viewer.notice)
+		}
+	})
+}
+
+func TestDiffCursor(t *testing.T) {
+	t.Run("GV-11 the cursor's row is one lighter colour end to end: fold, added, removed", func(t *testing.T) {
+		m, _ := longFileModel(t)
+		colors := changePalette(true)
+		for _, each := range []struct {
+			down    int
+			lighter color.Color
+			plain   color.Color
+		}{{0, colors.blockCursor, colors.block}, {4, colors.removedCursor, colors.removed}, {5, colors.addedCursor, colors.added}} {
+			m.viewer.cursor = each.down
+
+			row := strings.Split(m.viewerView(), "\n")[1+each.down]
+
+			if !strings.Contains(row, backgroundOf(each.lighter)) || strings.Contains(row, backgroundOf(each.plain)) || strings.Contains(row, cursorBackground) {
+				t.Errorf("row %d = %q", each.down, row)
+			}
+		}
+	})
+}
+
+func backgroundOf(c color.Color) string {
+	r, g, b, _ := c.RGBA()
+	return fmt.Sprintf("48;2;%d;%d;%d", r>>8, g>>8, b>>8)
+}
+
+func TestGitWhileRunning(t *testing.T) {
+	t.Run("GV-12 /git opens while the model works", func(t *testing.T) {
+		m, dir := gitModel(t)
+		changeUncommitted(t, dir)
+		m.running = true
+
+		m = runGit(t, m, "show")
+
+		if m.viewer == nil || m.viewer.changes == nil {
+			t.Errorf("not opened:\n%s", shown(m))
 		}
 	})
 }

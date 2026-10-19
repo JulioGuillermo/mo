@@ -223,7 +223,7 @@ func (v *outputViewer) colouredLine(i int, dark bool) string {
 		return v.code.paint(i, 0, 1<<30, lipgloss.NoColor{}, dark)
 	}
 	if v.diff != nil {
-		return v.diff.paint(i, dark)
+		return v.diff.paint(i, dark, false)
 	}
 	return v.colored[i]
 }
@@ -681,6 +681,10 @@ func (m model) viewerBody(width int) string {
 				style = viewerCurrent
 			}
 			line = re.ReplaceAllStringFunc(line, func(found string) string { return style.Render(found) })
+		case v.diff != nil:
+			onCursor := (i == v.cursor && !v.commenting) || (v.commenting && i >= v.commentFrom && i <= v.commentTo)
+			line = ansi.Cut(v.diff.paint(i, dark, onCursor), v.left, v.left+room)
+			line = v.diff.fillRow(i, line, room, dark, onCursor)
 		case (v.annotatable() && i == v.cursor && !v.commenting) || (v.commenting && i >= v.commentFrom && i <= v.commentTo):
 			if v.coloured() {
 				line = ansi.Cut(v.colouredLine(i, dark), v.left, v.left+room)
@@ -688,9 +692,6 @@ func (m model) viewerBody(width int) string {
 			line = cursorRow(line, room)
 		case v.coloured():
 			line = ansi.Cut(v.colouredLine(i, dark), v.left, v.left+room)
-			if v.diff != nil {
-				line = v.diff.fillRow(i, line, room, dark)
-			}
 		}
 		if gutter > 0 {
 			mark := " "

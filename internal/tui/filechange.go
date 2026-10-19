@@ -77,6 +77,8 @@ func languageOf(path string) string {
 
 type changeColors struct {
 	block, added, removed, addedMark, removedMark, hunk color.Color
+	// The cursor's line, lighter: a fold, a line put in, taken out, kept.
+	blockCursor, addedCursor, removedCursor, cursor color.Color
 }
 
 func changePalette(dark bool) changeColors {
@@ -84,11 +86,15 @@ func changePalette(dark bool) changeColors {
 		return changeColors{
 			block: lipgloss.Color("#0e1630"), added: lipgloss.Color("#12301f"), removed: lipgloss.Color("#3a1622"),
 			addedMark: lipgloss.Color("#9ece6a"), removedMark: lipgloss.Color("#f7768e"), hunk: lipgloss.Color("#565f89"),
+			blockCursor: lipgloss.Color("#22305a"), addedCursor: lipgloss.Color("#1f4d33"), removedCursor: lipgloss.Color("#5c2535"),
+			cursor: lipgloss.Color("#292e42"),
 		}
 	}
 	return changeColors{
 		block: lipgloss.Color("#e6ecfa"), added: lipgloss.Color("#dcf2dc"), removed: lipgloss.Color("#f8dde2"),
 		addedMark: lipgloss.Color("#587539"), removedMark: lipgloss.Color("#f52a65"), hunk: lipgloss.Color("#8990b3"),
+		blockCursor: lipgloss.Color("#c9d6f2"), addedCursor: lipgloss.Color("#bfe6bf"), removedCursor: lipgloss.Color("#f0c2cb"),
+		cursor: lipgloss.Color("#d8dcea"),
 	}
 }
 

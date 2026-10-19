@@ -191,11 +191,11 @@ func (d *diffText) rowOf(edit int) int {
 }
 
 // paint is a row coloured: its number and mark, then the code, on the
-// colour of what the line is.
-func (d *diffText) paint(i int, dark bool) string {
+// colour of what the line is, a lighter one under the cursor.
+func (d *diffText) paint(i int, dark, cursor bool) string {
 	row := d.rows[i]
 	colors := changePalette(dark)
-	background := d.background(i, dark)
+	background := d.background(i, dark, cursor)
 	if row.folded() {
 		return lipgloss.NewStyle().Background(background).Foreground(colors.hunk).Render(d.foldLabel(row))
 	}
@@ -215,28 +215,41 @@ func (d *diffText) paint(i int, dark bool) string {
 	return gutter.Render(fmt.Sprintf("%*d %c ", d.numberWidth, line+1, edit.Kind)) + text
 }
 
-// background is the colour a row is drawn on, to the end of the screen.
-func (d *diffText) background(i int, dark bool) color.Color {
+// background is the colour a row is drawn on, to the end of the screen:
+// a fold's, a line put in's or taken out's, lighter under the cursor.
+func (d *diffText) background(i int, dark, cursor bool) color.Color {
 	colors := changePalette(dark)
 	row := d.rows[i]
+	kind := byte('@')
+	if !row.folded() {
+		kind = d.edits[row.edit].Kind
+	}
 	switch {
-	case row.folded():
+	case kind == '@' && cursor:
+		return colors.blockCursor
+	case kind == '@':
 		return colors.block
-	case d.edits[row.edit].Kind == '+':
+	case kind == '+' && cursor:
+		return colors.addedCursor
+	case kind == '+':
 		return colors.added
-	case d.edits[row.edit].Kind == '-':
+	case kind == '-' && cursor:
+		return colors.removedCursor
+	case kind == '-':
 		return colors.removed
+	case cursor:
+		return colors.cursor
 	}
 	return lipgloss.NoColor{}
 }
 
 // fillRow paints the rest of a row, to width, on its colour.
-func (d *diffText) fillRow(i int, line string, width int, dark bool) string {
+func (d *diffText) fillRow(i int, line string, width int, dark, cursor bool) string {
 	missing := width - ansi.StringWidth(line)
 	if missing <= 0 {
 		return line
 	}
-	return line + lipgloss.NewStyle().Background(d.background(i, dark)).Render(strings.Repeat(" ", missing))
+	return line + lipgloss.NewStyle().Background(d.background(i, dark, cursor)).Render(strings.Repeat(" ", missing))
 }
 
 // describe says where a line of the diff is, for the model.
