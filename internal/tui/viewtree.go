@@ -54,6 +54,10 @@ type fileTree struct {
 	typed   string
 	found   []string
 	indexed []string
+	// listing gives the folders and files of a folder, from the disk when
+	// unset; kinds is what happened to each file of a comparison, by path.
+	listing func(dir string) (folders, files []string)
+	kinds   map[string]rune
 }
 
 func newFileTree(root string) *fileTree {
@@ -98,8 +102,12 @@ func (t *fileTree) rebuild() {
 		}
 	} else {
 		var walk func(dir string, depth int)
+		listing := t.listing
+		if listing == nil {
+			listing = entries
+		}
 		walk = func(dir string, depth int) {
-			folders, files := entries(dir)
+			folders, files := listing(dir)
 			for _, name := range folders {
 				full := filepath.Join(dir, name)
 				open := t.expanded[full]
@@ -234,9 +242,12 @@ func (t *fileTree) lines(width, height int, focused bool, icons string) []string
 			text = treeBlurred.Render(plain)
 		default:
 			label := name
+			kind, changed := t.kinds[row.path]
 			switch {
 			case row.dir:
 				label = treeFolder.Render(name)
+			case changed:
+				label = changeStyle(kind, row.path == t.current).Render(name)
 			case row.path == t.current:
 				label = treeOpened.Render(name)
 			}
@@ -319,6 +330,10 @@ func (m model) toggleTree() {
 		v.left = 0
 		return
 	}
+	if v.changes != nil {
+		v.tree, v.treeFocus = v.changes.tree, true
+		return
+	}
 	if m.width < treeNarrow {
 		v.notice = "the terminal is too narrow for the tree"
 		return
@@ -344,6 +359,11 @@ func (m model) toggleTree() {
 // kept; focus goes to the file when asked.
 func (m model) openFromTree(path string, focusFile bool) (tea.Model, tea.Cmd) {
 	old := m.viewer
+	if old.changes != nil {
+		m.openChange(old.changes, path)
+		m.viewer.tree, m.viewer.treeFocus = old.tree, !focusFile
+		return m, nil
+	}
 	if drawnInline(path) {
 		old.notice = "pictures and diagrams show in the conversation: /view " + filepath.Base(path)
 		return m, nil

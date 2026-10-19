@@ -46,6 +46,7 @@ var builtinCommands = []command{
 	{name: "cache", argument: "clear", description: "llama-server: erase what every slot holds, its KV cache"},
 	{name: "compact", argument: "[instruction]", description: "summarize the conversation to free context; an instruction is added under the summary prompt, as yours"},
 	{name: "skill", argument: "[name] [text]", description: "load a skill with your message, as $name does; no name lists them"},
+	{name: "git", argument: "show | compare <branch>", description: "see the changes not committed, or what this branch adds over another as a pull request: their files in a tree, each file's diff beside it"},
 	{name: "settings", description: "global settings, and what this project overrides · /settings project"},
 	{name: "reload", description: "load the settings files again, provider, model, effort and permission mode included"},
 	{name: "providers", description: "add, edit or delete providers"},
@@ -119,6 +120,8 @@ func (m model) suggestions() []command {
 			return m.pathSuggestions(partial)
 		case "effort":
 			return m.effortSuggestions(partial)
+		case "git":
+			return m.gitSuggestions(partial)
 		case "skill":
 			if strings.Contains(partial, " ") {
 				return nil

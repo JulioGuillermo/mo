@@ -946,6 +946,8 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		return m.pickPrompt()
 	case "reload":
 		return m.followConfig(true)
+	case "git":
+		return m.gitCommand(argument)
 	case "help":
 		return m, drawText(m.helpView)
 	case "settings":

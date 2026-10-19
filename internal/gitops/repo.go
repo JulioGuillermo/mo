@@ -131,6 +131,11 @@ func (r *Repo) head() (*object.Commit, string, error) {
 	return commit, name, nil
 }
 
+// Root is the folder of the working tree.
+func (r *Repo) Root() string {
+	return r.root
+}
+
 // CurrentBranch is the branch checked out, or "" with HEAD detached or no
 // commit yet.
 func (r *Repo) CurrentBranch() string {
@@ -223,7 +228,7 @@ func (r *Repo) Diff(staged bool, paths []string) (string, error) {
 			if file.Staging == git.Unmodified || file.Staging == git.Untracked {
 				continue
 			}
-			before, after = r.headContent(head, path), r.indexContent(path)
+			before, after = r.commitContent(head, path), r.indexContent(path)
 		} else {
 			if file.Worktree == git.Unmodified || file.Worktree == git.Untracked {
 				continue
@@ -238,11 +243,11 @@ func (r *Repo) Diff(staged bool, paths []string) (string, error) {
 	return out.String(), nil
 }
 
-func (r *Repo) headContent(head *object.Commit, path string) string {
-	if head == nil {
+func (r *Repo) commitContent(commit *object.Commit, path string) string {
+	if commit == nil {
 		return ""
 	}
-	file, err := head.File(path)
+	file, err := commit.File(path)
 	if err != nil {
 		return ""
 	}

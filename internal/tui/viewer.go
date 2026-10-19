@@ -70,6 +70,11 @@ type outputViewer struct {
 	tree        *fileTree
 	treeFocus   bool
 	placeholder bool
+	// changes, when set, is the comparison whose file diffFile the viewer
+	// shows, as diff paints it.
+	changes  *changeView
+	diffFile string
+	diff     *diffText
 	// drawing, when set, names a diagram shown whole, as it was drawn;
 	// dragging pans it, from where the drag started and the view then.
 	drawing  string
@@ -203,7 +208,12 @@ func (m model) openFile(path string) (tea.Model, tea.Cmd) {
 
 // coloured tells whether the viewer has the lines of its text coloured.
 func (v *outputViewer) coloured() bool {
-	return v.colored != nil || v.code != nil
+	return v.colored != nil || v.code != nil || v.diff != nil
+}
+
+// showsJob tells whether the viewer shows a job's output.
+func (v *outputViewer) showsJob() bool {
+	return v.file == "" && v.drawing == "" && !v.placeholder && v.changes == nil
 }
 
 // colouredLine is a line as it is coloured, the file's painted as it is asked
@@ -211,6 +221,9 @@ func (v *outputViewer) coloured() bool {
 func (v *outputViewer) colouredLine(i int, dark bool) string {
 	if v.code != nil {
 		return v.code.paint(i, 0, 1<<30, lipgloss.NoColor{}, dark)
+	}
+	if v.diff != nil {
+		return v.diff.paint(i, dark)
 	}
 	return v.colored[i]
 }
@@ -228,7 +241,7 @@ func humanBytes(size int64) string {
 // reloadViewer reads the job's output again, keeping the place unless the
 // view follows the end; a file stays as it was opened.
 func (m model) reloadViewer() error {
-	if m.viewer.file != "" || m.viewer.drawing != "" || m.viewer.placeholder {
+	if !m.viewer.showsJob() {
 		return nil
 	}
 	jobs := m.jobs()
@@ -488,7 +501,7 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 			v.treeFocus = true
 		}
 	case "t":
-		if v.file != "" {
+		if v.file != "" || v.changes != nil {
 			m.toggleTree()
 		}
 	case "esc", "q", "ctrl+c":
@@ -552,7 +565,7 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 	case "y":
 		return m, m.copyViewer(strings.Join(v.lines, "\n"), fmt.Sprintf("copied all %d lines", len(v.lines)))
 	case "b":
-		if v.file != "" || v.drawing != "" || v.placeholder {
+		if !v.showsJob() {
 			return m, nil
 		}
 		if err := m.jobs().DetachJob(v.id); err != nil {
@@ -561,7 +574,7 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 		}
 		v.notice = "goes on in the background; the model was let go on"
 	case "x":
-		if v.file != "" || v.drawing != "" || v.placeholder {
+		if !v.showsJob() {
 			return m, nil
 		}
 		jobs, id := m.jobs(), v.id
@@ -620,6 +633,10 @@ func (m model) viewerBody(width int) string {
 		// The comment mark, the line's number, a space.
 		gutter = 1 + len(fmt.Sprint(len(v.lines))) + 1
 	}
+	if v.changes != nil {
+		header = v.changeHeader(width)
+		help = changeHelp
+	}
 	if v.drawing != "" {
 		widest := 0
 		for _, line := range v.lines {
@@ -670,6 +687,9 @@ func (m model) viewerBody(width int) string {
 			line = cursorRow(line, room)
 		case v.coloured():
 			line = ansi.Cut(v.colouredLine(i, dark), v.left, v.left+room)
+			if v.diff != nil {
+				line = v.diff.fillRow(i, line, room, dark)
+			}
 		}
 		if gutter > 0 {
 			mark := " "

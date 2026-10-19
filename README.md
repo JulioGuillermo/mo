@@ -603,6 +603,13 @@ the path, the lines and their first line quoted; as `[file name]` without. In th
 few letters offer the files of the project whose name or path holds them, or their letters in
 order; tab or enter attaches the one picked.
 
+`/git show` opens the same viewer on the changes not committed, staged or not, and
+`/git compare <branch>` on what the branch checked out adds over that one, as a pull request shows
+it: the commits since the two parted, so what only the other branch has is left out. The
+tree lists only the files that changed: new in green, changed in amber, deleted in red. Beside it,
+the diff of the file picked: three lines around each change, the lines taken out on red and those
+put in on green, numbered and highlighted. Tab after `/git compare ` offers the branches.
+
 ```toml
 [render]
 images = "auto"   # auto | kitty | blocks | off
@@ -676,5 +683,5 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | click on the branch | the files changed, each with its kind |
 | right click | a small menu by the pointer, over the screen (↑↓ or j k, enter or a click, esc or a click outside closes it): the mode: all modes to pick · a task: change its state or delete it · a job in the panel, or a bash call still running: watch its output live, its last lines, send it to the background, kill it |
 | wheel over the side panel | scroll its tasks and jobs |
-| `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact [instruction]` `/cache clear` `/settings` `/reload` `/providers` `/mcp` `/plugins` `/agents` `/view [file]` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
+| `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact [instruction]` `/cache clear` `/settings` `/reload` `/providers` `/mcp` `/plugins` `/agents` `/view [file]` `/git show` `/git compare <branch>` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
 | `/<name> text` | a plugin command |

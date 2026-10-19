@@ -3,6 +3,9 @@ package gitops
 // Test Traceability Table
 // | ID    | Category | Description                                                          | Priority |
 // | GC-01 | Happy    | Each changed file once, by what happened to it, untracked and staged too | P1 |
+// | GC-02 | Happy    | Uncommitted gives each changed file with HEAD's content and the disk's | P0 |
+// | GC-03 | Happy    | Compare gives what HEAD adds since it parted from a branch, as a PR does | P0     |
+// | GC-04 | Error    | Compare with a branch that does not exist says so                    | P1       |
 // | GR-01 | Happy    | status, diff, log, show, blame and branches read the repository      | P0       |
 // | GR-02 | Happy    | A merge fast-forwards when HEAD is behind; nothing to do when ahead  | P1       |
 // | GR-03 | Happy    | A three-way merge without conflicts commits with both parents        | P0       |
@@ -17,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -293,6 +297,55 @@ func TestChanges(t *testing.T) {
 			if got[path] != kind {
 				t.Errorf("%s: %c, want %c", path, got[path], kind)
 			}
+		}
+	})
+}
+
+func TestComparisons(t *testing.T) {
+	t.Run("GC-02 Uncommitted gives each changed file with HEAD's content and the disk's", func(t *testing.T) {
+		tr := newRepo(t)
+		tr.commit("base", map[string]string{"edit.txt": "old\n", "gone.txt": "g\n"})
+		tr.write(map[string]string{"edit.txt": "new\n", "new.txt": "n\n"})
+		_ = os.Remove(filepath.Join(tr.dir, "gone.txt"))
+
+		comparison, err := tr.r.Uncommitted()
+
+		if err != nil || len(comparison.Files) != 3 {
+			t.Fatalf("files %v err %v", comparison.Files, err)
+		}
+		before, after := comparison.Contents("edit.txt")
+		goneBefore, goneAfter := comparison.Contents("gone.txt")
+		if before != "old\n" || after != "new\n" || goneBefore != "g\n" || goneAfter != "" {
+			t.Errorf("edit %q→%q gone %q→%q", before, after, goneBefore, goneAfter)
+		}
+	})
+
+	t.Run("GC-03 Compare gives what HEAD adds since it parted from a branch, as a PR does", func(t *testing.T) {
+		tr := diverged(t, "package main\n\nfunc a() { master() }\n\nfunc b() {}\n\nfunc c() {}\n")
+		tr.write(map[string]string{"loose.txt": "not committed\n"})
+
+		comparison, err := tr.r.Compare("feature")
+
+		want := []Change{{Path: "main.go", Kind: ChangeModified}}
+		if err != nil || !slices.Equal(comparison.Files, want) {
+			t.Fatalf("files %v err %v", comparison.Files, err)
+		}
+		before, after := comparison.Contents("main.go")
+		if strings.Contains(before, "feature()") || !strings.Contains(before, "func a() {}") || !strings.Contains(after, "master()") {
+			t.Errorf("main.go %q → %q", before, after)
+		}
+		if names := tr.r.BranchNames(); !slices.Equal(names, []string{"feature", "master"}) {
+			t.Errorf("branches %v", names)
+		}
+	})
+
+	t.Run("GC-04 Compare with a branch that does not exist says so", func(t *testing.T) {
+		tr := newRepo(t)
+
+		_, err := tr.r.Compare("nowhere")
+
+		if err == nil || !strings.Contains(err.Error(), "nowhere") {
+			t.Errorf("err = %v", err)
 		}
 	})
 }
