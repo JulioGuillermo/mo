@@ -298,6 +298,13 @@ type MCPServer struct {
 	URL     string            `toml:"url,omitempty"`
 	Headers map[string]string `toml:"headers,omitempty"`
 	Trust   bool              `toml:"trust,omitempty"`
+	// CA is a PEM file of certificate authorities trusted for url besides
+	// the system's, for a server signed by a private one; ~ is the home
+	// folder.
+	CA string `toml:"ca,omitempty"`
+	// Insecure accepts any certificate from url, self-signed too, so
+	// anyone between could read and change the traffic.
+	Insecure bool `toml:"insecure,omitempty"`
 }
 
 // BarStyles are the looks of the context bar, the first the default.

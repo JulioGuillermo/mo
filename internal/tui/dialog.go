@@ -264,6 +264,7 @@ func (m model) handleQuestionKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	var cmd tea.Cmd
+	item.other.SetWidth(m.otherAnswerWidth())
 	item.other, cmd = item.other.Update(msg)
 	return m, cmd
 }
@@ -277,8 +278,15 @@ func (m model) pasteIntoDialog(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	var cmd tea.Cmd
+	item.other.SetWidth(m.otherAnswerWidth())
 	item.other, cmd = item.other.Update(msg)
 	return m, cmd
+}
+
+// otherAnswerWidth is how wide the box for an answer of one's own is, so
+// a long one scrolls inside it instead of running past the dialog.
+func (m model) otherAnswerWidth() int {
+	return max(max(m.mainWidth(), 30)-4-8, 10)
 }
 
 func (m model) chosenAnswer(item dialogItem, question tools.Question) string {
@@ -700,7 +708,6 @@ func (m model) questionLines(item dialogItem, colors dialogColors, body lipgloss
 		return m, m.focusItem()
 	}))
 	if item.cursor == len(question.Options) {
-		item.other.SetWidth(max(width-8, 10))
 		lines = append(lines, chosen.Render("❯ ✎ ")+item.other.View())
 	} else {
 		lines = append(lines, body.Foreground(colors.dim).Render("  ✎ your own answer"))

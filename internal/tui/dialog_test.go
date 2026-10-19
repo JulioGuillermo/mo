@@ -11,6 +11,7 @@ package tui
 // | DG-07 | Happy    | Each part of a bash command shows what the rules say of it            | P1       |
 // | DG-09 | Happy    | A command of many parts scrolls with them, every part reachable       | P1       |
 // | DG-08 | Happy    | What a later call asks joins the open dialog; each ask is answered once its parts are | P0 |
+// | DG-10 | Edge     | A long answer of one's own scrolls inside the dialog, its end in view, never wider | P1 |
 // | HL-01 | Happy    | Bash is coloured by what each piece is, on the block's background     | P2       |
 // | FC-01 | Happy    | An opened edit shows its diff highlighted; an opened write what it wrote | P1    |
 // | FC-02 | Happy    | An edit of several files shows each file's name over its diff        | P1       |
@@ -228,6 +229,26 @@ func TestCommandView(t *testing.T) {
 		}
 		if !strings.Contains(tabs, "2") || !stillOpen || gotFirst.Decisions[0] != agent.Deny || gotSecond.Decisions[0] != agent.Allow {
 			t.Errorf("open %v first %+v second %+v tabs:\n%s", stillOpen, gotFirst, gotSecond, tabs)
+		}
+	})
+
+	t.Run("DG-10 a long answer of one's own scrolls inside the dialog, its end in view, never wider", func(t *testing.T) {
+		m, _ := asking(agent.Interaction{Questions: []tools.Question{{Text: "How?", Options: []string{"this"}}}})
+		m.width, m.height = 80, 30
+		m = keys(t, m, keyDown)
+		long := strings.Repeat("word ", 40) + "THE-END"
+
+		updated, _ := m.Update(tea.PasteMsg{Content: long})
+		m = updated.(model)
+
+		view := m.dialogView()
+		for _, line := range strings.Split(view, "\n") {
+			if width := ansi.StringWidth(line); width > m.mainWidth() {
+				t.Fatalf("a line %d wide, over %d: %q", width, m.mainWidth(), ansi.Strip(line))
+			}
+		}
+		if !strings.Contains(ansi.Strip(view), "THE-END") {
+			t.Errorf("the end of the answer is not in view:\n%s", ansi.Strip(view))
 		}
 	})
 

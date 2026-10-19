@@ -37,6 +37,8 @@ type mcpDraft struct {
 	env          string
 	url          string
 	headers      string
+	ca           string
+	insecure     bool
 	trust        bool
 	remove       bool
 	savedEnv     map[string]string
@@ -66,6 +68,8 @@ func newMCPDraft(name string, server config.MCPServer) *mcpDraft {
 		env:          joinPairs(server.Env, "="),
 		url:          server.URL,
 		headers:      joinPairs(server.Headers, ": "),
+		ca:           server.CA,
+		insecure:     server.Insecure,
 		trust:        server.Trust,
 		savedEnv:     server.Env,
 		savedHeaders: server.Headers,
@@ -108,6 +112,12 @@ func (d *mcpDraft) entries(taken map[string]config.MCPServer) []entry {
 			entry{"Headers", func() string { return countOf(d.headers, "header", "headers") }, func() huh.Field {
 				return huh.NewText().Title("Headers").Description("Name: value per line; " + hiddenValue + " keeps the saved value").Lines(6).Value(&d.headers)
 			}},
+			entry{"Certificate authority", func() string { return valueOr(d.ca, "the system's") }, func() huh.Field {
+				return huh.NewInput().Title("Certificate authority").Description("a PEM file trusted besides the system's, for a server signed by a private one").Value(&d.ca)
+			}},
+			entry{"Any certificate", func() string { return yesNo(d.insecure) }, func() huh.Field {
+				return huh.NewConfirm().Title("Any certificate").Description("accept self-signed ones too: anyone between could read and change the traffic").Value(&d.insecure)
+			}},
 		)
 	} else {
 		entries = append(entries,
@@ -133,7 +143,7 @@ func (d mcpDraft) forKind() *mcpDraft {
 	if d.kind == kindURL {
 		d.command, d.args, d.env = "", "", ""
 	} else {
-		d.url, d.headers = "", ""
+		d.url, d.headers, d.ca, d.insecure = "", "", "", false
 	}
 	return &d
 }
@@ -148,10 +158,12 @@ func (d *mcpDraft) applyTo(layer config.Config) (config.Config, error) {
 		return layer, nil
 	}
 	server := config.MCPServer{
-		Command: strings.TrimSpace(d.command),
-		Args:    lines(d.args),
-		URL:     strings.TrimSpace(d.url),
-		Trust:   d.trust,
+		Command:  strings.TrimSpace(d.command),
+		Args:     lines(d.args),
+		URL:      strings.TrimSpace(d.url),
+		CA:       strings.TrimSpace(d.ca),
+		Insecure: d.insecure,
+		Trust:    d.trust,
 	}
 	if (server.Command == "") == (server.URL == "") {
 		return layer, fmt.Errorf("MCP %s: set either a command or a URL", name)

@@ -635,6 +635,8 @@ args = ["@playwright/mcp@latest"]
 url = "https://example.com/mcp"
 headers = { Authorization = "Bearer ${DOCS_TOKEN}" }   # ${NAME} reads the environment
 trust = true               # run its tools without asking
+ca = "~/corp-ca.crt"       # a PEM authority trusted besides the system's, for a private one
+# insecure = true          # any certificate, self-signed too; anyone between could read it
 ```
 
 Their tools are named `mcp__<server>__<tool>` and ask before running unless the server has

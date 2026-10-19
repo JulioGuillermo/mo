@@ -148,7 +148,11 @@ func connectWith(ctx context.Context, transport mcp.Transport) (*mcp.ClientSessi
 func transportFor(name string, settings config.MCPServer, logDir string) (mcp.Transport, *exec.Cmd, error) {
 	switch {
 	case settings.URL != "":
-		client := &http.Client{Transport: headerTransport{headers: expanded(settings.Headers)}}
+		base, err := httpTransport(settings)
+		if err != nil {
+			return nil, nil, err
+		}
+		client := &http.Client{Transport: headerTransport{headers: expanded(settings.Headers), base: base}}
 		return &mcp.StreamableClientTransport{Endpoint: settings.URL, HTTPClient: client}, nil, nil
 	case settings.Command != "":
 		cmd := exec.Command(settings.Command, settings.Args...)
@@ -190,6 +194,7 @@ func expanded(values map[string]string) map[string]string {
 
 type headerTransport struct {
 	headers map[string]string
+	base    http.RoundTripper
 }
 
 func (t headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -197,7 +202,7 @@ func (t headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	for name, value := range t.headers {
 		req.Header.Set(name, value)
 	}
-	return http.DefaultTransport.RoundTrip(req)
+	return t.base.RoundTrip(req)
 }
 
 func (h *Hub) Status() []Status {
