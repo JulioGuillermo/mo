@@ -17,8 +17,10 @@ import (
 )
 
 const (
-	hookPrompt   = "prompt"
-	hookToolCall = "tool_call"
+	hookPrompt     = "prompt"
+	hookToolCall   = "tool_call"
+	hookToolResult = "tool_result"
+	hookTurnEnd    = "turn_end"
 
 	maxCommandOutput = 64 << 10
 	maxPromptBytes   = 256 << 10

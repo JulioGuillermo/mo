@@ -764,6 +764,17 @@ mo.on("tool_call", function(call)                                    -- return a
 end)
 ```
 
+`mo.on(event, function)` takes these events; a hook has 5 seconds:
+
+| Event | When | It gets | What it returns |
+|---|---|---|---|
+| `prompt` | before your message goes to the model | the text | text replaces it; `nil` keeps it |
+| `tool_call` | before a call runs, before anyone is asked | `{ name, args }` | a reason blocks it; `nil` lets it go. A guard that fails, or did not load, blocks every call |
+| `tool_result` | after a call ran, before the model reads it | `{ name, args, output, is_error }` | text replaces what the model reads and what is shown; `nil` keeps it |
+| `turn_end` | when a turn ends, well or not | `{ prompt, answer, error, stopped }` | nothing: to notify, log or count |
+
+They are for the main conversation: subagents do not run them.
+
 A plugin is your own code and has your rights: all of Lua's libraries are there (`io`, `os`,
 `package`, `debug`, `coroutine`), and `mo` adds what a script needs to work with the system:
 

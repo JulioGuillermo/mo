@@ -186,6 +186,8 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	assistant := newAgent(cfg, chosen, registry, system, confirm, policy)
 	assistant.RewritePrompt = loaded.plugins.RewritePrompt
 	assistant.BlockToolCall = loaded.plugins.BlockToolCall
+	assistant.AfterToolCall = loaded.plugins.AfterToolCall
+	assistant.EndTurn = loaded.plugins.EndTurn
 	rebuild := func(fresh config.Config) (tui.Session, error) {
 		if reflect.DeepEqual(fresh.ActiveMCP(), cfg.ActiveMCP()) {
 			return buildSession(context.Background(), workDir, fresh, sessionChoice{yes: choice.yes}, loaded)

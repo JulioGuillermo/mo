@@ -28,6 +28,8 @@ const (
 
 var reservedCommands = []string{"new", "clear", "compact", "settings", "providers", "mcp", "plugins", "agents", "cache", "view", "help", "quit", "exit"}
 
+var hookEvents = []string{hookPrompt, hookToolCall, hookToolResult, hookTurnEnd}
+
 var (
 	errPluginStuck = errors.New("stopped responding and was turned off")
 	toolCallHook   = regexp.MustCompile(`mo\.on\s*\(\s*["']tool_call["']`)
@@ -239,8 +241,8 @@ func (p *Plugin) declareCommand(state *lua.LState) int {
 func (p *Plugin) declareHook(state *lua.LState) int {
 	p.mustBeLoading(state, "mo.on")
 	event := state.CheckString(1)
-	if event != hookPrompt && event != hookToolCall {
-		state.RaiseError("mo.on: unknown event %q (use %q or %q)", event, hookPrompt, hookToolCall)
+	if !slices.Contains(hookEvents, event) {
+		state.RaiseError("mo.on: unknown event %q (use %s)", event, strings.Join(hookEvents, ", "))
 	}
 	p.hooks[event] = append(p.hooks[event], state.CheckFunction(2))
 	return 0

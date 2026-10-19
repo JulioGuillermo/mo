@@ -156,7 +156,7 @@ func (a *Agent) finishCall(ctx context.Context, pending pendingCall, reply Reply
 	if hooks.OnToolStart != nil {
 		hooks.OnToolStart(pending.call, pending.summary)
 	}
-	output, isError = a.Tools.Run(ctx, pending.call)
+	output, isError = a.runTool(ctx, pending.call)
 	interrupted := ctx.Err() != nil
 	if hooks.OnToolDone != nil {
 		hooks.OnToolDone(pending.call, output, isError)

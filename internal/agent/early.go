@@ -186,7 +186,7 @@ func (r *earlyRunner) run() {
 			}
 			running, call.ran = true, true
 			go func(call *earlyCall) {
-				call.result, call.isError = r.agent.Tools.Run(r.ctx, call.pending.call)
+				call.result, call.isError = r.agent.runTool(r.ctx, call.pending.call)
 				call.interrupted = r.ctx.Err() != nil
 				results <- call
 			}(call)

@@ -87,6 +87,11 @@ type Agent struct {
 
 	RewritePrompt func(ctx context.Context, prompt string) string
 	BlockToolCall func(ctx context.Context, call llm.ToolCall) string
+	// AfterToolCall may change what a call gave before the model reads it.
+	AfterToolCall func(ctx context.Context, call llm.ToolCall, output string, isError bool) string
+	// EndTurn hears how a turn ended: the prompt, the model's last answer,
+	// and the error it ended with, nil when it ended well.
+	EndTurn func(prompt, answer string, err error)
 
 	History   []llm.Message
 	LastUsage llm.Usage
@@ -255,6 +260,38 @@ func (a *Agent) modelName() string {
 
 // turn asks the model and answers its tool calls until it ends.
 func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
+	err := a.steps(ctx, hooks)
+	if a.EndTurn != nil {
+		a.EndTurn(a.currentRequest, a.lastAnswer(), err)
+	}
+	return err
+}
+
+// lastAnswer is the text the model last wrote in this turn.
+func (a *Agent) lastAnswer() string {
+	for i := len(a.History) - 1; i >= 0; i-- {
+		message := a.History[i]
+		if message.Role == llm.RoleUser {
+			return ""
+		}
+		if message.Role == llm.RoleAssistant && strings.TrimSpace(message.Text) != "" {
+			return message.Text
+		}
+	}
+	return ""
+}
+
+// runTool runs a call and lets AfterToolCall change what it gave.
+func (a *Agent) runTool(ctx context.Context, call llm.ToolCall) (string, bool) {
+	output, isError := a.Tools.Run(ctx, call)
+	if a.AfterToolCall != nil {
+		output = a.AfterToolCall(ctx, call, output, isError)
+	}
+	return output, isError
+}
+
+// steps runs the model and its calls until it answers in text.
+func (a *Agent) steps(ctx context.Context, hooks Hooks) error {
 	a.CheckModel(ctx, hooks, CheckTurn)
 	limit := a.MaxSteps
 	if limit == 0 && a.Loop.Enabled {

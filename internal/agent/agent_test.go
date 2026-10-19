@@ -16,6 +16,8 @@ package agent
 // | AG-12 | Edge     | An answer with no text and no call says so, shown and kept; one with text is left as is | P0 |
 // | AG-13 | Happy    | A short limit is retried after the wait asked, saying so, then the turn goes on | P0 |
 // | AG-14 | Edge     | A plan limit is not retried; a short one gives up after LimitRetries more tries | P0 |
+// | AG-15 | Happy    | AfterToolCall changes what the model reads of a call, and what is shown | P0     |
+// | AG-16 | Happy    | EndTurn hears each turn once, with its prompt, last answer and error  | P0       |
 
 import (
 	"context"
@@ -410,6 +412,53 @@ func TestLimitRetries(t *testing.T) {
 		}
 		if _, limited := llm.LimitOf(shortErr); !limited || short.calls != LimitRetries+1 {
 			t.Errorf("short: err = %v calls = %d", shortErr, short.calls)
+		}
+	})
+}
+
+func TestPluginEvents(t *testing.T) {
+	t.Run("AG-15 AfterToolCall changes what the model reads of a call, and what is shown", func(t *testing.T) {
+		provider := &scriptedProvider{replies: []llm.Message{
+			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("c1", "read", `{"path":"a.txt"}`)}},
+			{Role: llm.RoleAssistant, Text: "ok"},
+		}}
+		agent := newAgent(t, provider)
+		agent.AfterToolCall = func(_ context.Context, call llm.ToolCall, output string, _ bool) string {
+			return call.Name + " gave " + strings.ToUpper(output)
+		}
+		var shown string
+		hooks := Hooks{OnToolDone: func(_ llm.ToolCall, output string, _ bool) { shown = output }}
+
+		if err := agent.Run(context.Background(), "read it", hooks); err != nil {
+			t.Fatal(err)
+		}
+
+		result := agent.History[2]
+		if result.Role != llm.RoleTool || !strings.HasPrefix(result.Text, "read gave ") || !strings.Contains(result.Text, "HELLO") || shown != result.Text {
+			t.Errorf("result = %q shown = %q", result.Text, shown)
+		}
+	})
+
+	t.Run("AG-16 EndTurn hears each turn once, with its prompt, last answer and error", func(t *testing.T) {
+		provider := &scriptedProvider{replies: []llm.Message{
+			{Role: llm.RoleAssistant, Text: "first answer"},
+			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("c1", "read", `{"path":"a.txt"}`)}},
+			{Role: llm.RoleAssistant, Text: "second answer"},
+		}}
+		agent := newAgent(t, provider)
+		var ends []string
+		agent.EndTurn = func(prompt, answer string, err error) {
+			ends = append(ends, fmt.Sprintf("%s|%s|%v", prompt, answer, err))
+		}
+
+		agent.Run(context.Background(), "one", Hooks{})
+		agent.Run(context.Background(), "two", Hooks{})
+		provider.err = errors.New("boom")
+		agent.Run(context.Background(), "three", Hooks{})
+
+		want := []string{"one|first answer|<nil>", "two|second answer|<nil>", "three||boom"}
+		if strings.Join(ends, "\n") != strings.Join(want, "\n") {
+			t.Errorf("ends = %q", ends)
 		}
 	})
 }

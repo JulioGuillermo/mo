@@ -125,7 +125,7 @@ func (a *Agent) Continue(ctx context.Context, hooks Hooks) error {
 			if hooks.OnToolStart != nil {
 				hooks.OnToolStart(call, summary)
 			}
-			output, isError := a.Tools.Run(tools.WithResume(ctx), call)
+			output, isError := a.runTool(tools.WithResume(ctx), call)
 			if hooks.OnToolDone != nil {
 				hooks.OnToolDone(call, output, isError)
 			}
