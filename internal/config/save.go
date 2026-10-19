@@ -46,6 +46,7 @@ func FromFiles(workDir string, user Config, project Project) (Config, error) {
 func combine(workDir string, user Config, project Project) (Config, error) {
 	cfg := merge(Defaults(), user)
 	cfg.Permissions = cfg.Permissions.ForProject(workDir)
+	cfg.Peers = cfg.Peers.ForProject(workDir)
 	if project.Trusted {
 		cfg = WithProject(cfg, project.Layer)
 	} else {

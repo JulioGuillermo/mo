@@ -24,6 +24,7 @@ const (
 	menuProject        = "\x00project"
 	menuGlobal         = "\x00global"
 	projectPermissions = "project-permissions"
+	projectPeers       = "project-peers"
 	overrideChange     = "change"
 	overrideGlobal     = "global"
 	projectFileName    = ".mo/settings.toml"
@@ -153,7 +154,7 @@ func copyValue(to, from any) {
 // overriding tells whether a section edits the project's draft: every one
 // of the project screen but its permissions, which are the user's.
 func (menu *settingsMenu) overriding(section settingsSection) bool {
-	return menu.scope == projectScope && section.key != projectPermissions
+	return menu.scope == projectScope && section.key != projectPermissions && section.key != projectPeers
 }
 
 // sectionDraft is the draft a section edits.
@@ -254,6 +255,7 @@ func (m model) projectOptions(menu *settingsMenu, row func(title, summary string
 	}
 	return append(options,
 		huh.NewOption(row("Permissions", projectPermissionSection.summary(menu.draft)), projectPermissions),
+		huh.NewOption(row("Peers", projectPeersSection.summary(menu.draft)), projectPeers),
 		huh.NewOption(row("Global ›", "the settings for every project · tab"), menuGlobal),
 		huh.NewOption(keyStyle.Render("Save and close"), menuSave),
 		huh.NewOption("Close without saving", menuDiscard),
@@ -311,6 +313,32 @@ func (m model) chooseOverride(menu *settingsMenu, section settingsSection, item 
 		return m.editItem(menu, section, item)
 	}
 	return m.showSettings(&settingsScreen{form: form, layer: menu.layer, next: next, back: back, help: menuHelp})
+}
+
+// projectPeersSection holds the peers' secret of this folder, in the user's
+// own file, so a repository never carries it.
+var projectPeersSection = settingsSection{key: projectPeers, title: "Peers",
+	summary: func(d *settingsDraft) string {
+		if d.projectSecret == "" && d.projectSecretEnv == "" {
+			return "secret as Global"
+		}
+		return "secret " + secretValue(d.projectSecret, d.projectSecretEnv) + " here"
+	},
+	note: func(model, *settingsMenu) string {
+		return "kept in your own settings for this folder, not in " + projectFileName + ": a repository never carries the secret\n" +
+			"another team's secret here, for the peers of this project"
+	},
+	items: func(model, *settingsMenu) []settingItem {
+		return []settingItem{
+			{"Secret in this project", func(d *settingsDraft) string { return secretValue(d.projectSecret, "") }, func(d *settingsDraft) huh.Field {
+				return huh.NewInput().Title("Secret in this project").Description("over the global one here; empty for the global").
+					EchoMode(huh.EchoModePassword).Validate(validSecret).Value(&d.projectSecret)
+			}},
+			{"Secret from a variable here", func(d *settingsDraft) string { return orDefault(d.projectSecretEnv, "none") }, func(d *settingsDraft) huh.Field {
+				return huh.NewInput().Title("Secret from a variable here").Description("the environment variable that holds it, when the secret here is empty").Value(&d.projectSecretEnv)
+			}},
+		}
+	},
 }
 
 // projectPermissionSection holds the rules of this folder. They stay in the

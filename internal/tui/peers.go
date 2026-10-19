@@ -19,8 +19,8 @@ const (
 	peerStreakMost  = 10
 	peerRetry       = time.Second
 	peerNameWords   = 3
-	peerListTimeout = 3 * time.Second
-	peersUsage      = "/peers · name [<name>|auto] · incoming|outgoing tools|ask|auto|allow · on|off"
+	peerListTimeout = 5 * time.Second
+	peersUsage      = "/peers · name [<name>|auto] · incoming|outgoing tools|ask|auto|allow · visible|hidden|local · scan · secret [new|set|clear] [global|project|session] · on|off"
 )
 
 // peerMsg is a message a peer sent; peerSentMsg one this agent sent;
@@ -52,7 +52,13 @@ type peerSession struct {
 	name     *string
 	incoming string
 	outgoing string
+	network  string
 	off      bool
+	// networkProblem is what keeps the network off, told once.
+	networkProblem string
+	// secret is the network's secret of this session alone, over the
+	// settings', kept nowhere.
+	secret string
 	// streak is how many messages in a row came in without the user;
 	// trusted the peers the user let in for the session, by id.
 	streak  int
@@ -104,7 +110,34 @@ func (m model) applyPeers() tea.Cmd {
 	if err := node.Start(); err != nil {
 		return printText(m.printer.Error(err))
 	}
-	return m.renamePeer()
+	return tea.Batch(m.applyNetwork(), m.renamePeer())
+}
+
+// networkMode is how this instance is on the network: as /peers says for
+// the session, else the settings.
+func (m model) networkMode() string {
+	return orDefault(m.peers.network, m.session.Config.Peers.Network)
+}
+
+// applyNetwork puts the network as the settings and the session say,
+// telling once what keeps it off.
+func (m model) applyNetwork() tea.Cmd {
+	settings := m.session.Config.Peers
+	err := m.session.Peers.SetNetwork(peers.Network{
+		Mode: m.networkMode(), Port: settings.Port, Secret: m.peerSecret(), Addresses: settings.Addresses,
+	})
+	problem := ""
+	if err != nil {
+		problem = "peers stay on this computer: " + err.Error()
+	}
+	if problem == m.peers.networkProblem {
+		return nil
+	}
+	m.peers.networkProblem = problem
+	if problem == "" {
+		return nil
+	}
+	return printText(m.printer.Note(problem))
 }
 
 // tellPeers updates what this instance tells its peers: the folder, the
@@ -215,7 +248,7 @@ func (m model) letPeerInUnasked(message peers.Message, status string) (tea.Model
 // else in a turn of its own when the settings wake it.
 func (m model) letPeerIn(message peers.Message, status string) (tea.Model, tea.Cmd) {
 	m.session.Peers.Deliver(message)
-	shown, show := m.emit(m.printer.PeerIn(message, status))
+	shown, show := m.emit(m.printer.PeerIn(m.session.Peers.Label(message.From), message, status))
 	m = shown.(model)
 	if m.running || !*m.session.Config.Peers.Wake {
 		return m, show
@@ -233,7 +266,7 @@ func (m model) askAboutPeer(message peers.Message, reason string) (tea.Model, te
 	}
 	m.peers.pending = append(m.peers.pending, pendingPeer{message: message, reason: reason})
 	m.peers.postponed = false
-	shown, show := m.emit(m.printer.PeerIn(message, status))
+	shown, show := m.emit(m.printer.PeerIn(m.session.Peers.Label(message.From), message, status))
 	m = shown.(model)
 	asked, ask := m.askNextPeer()
 	return asked, tea.Batch(show, ask)
@@ -254,7 +287,7 @@ func (m model) askNextPeer() (tea.Model, tea.Cmd) {
 		return m, tea.Tick(peerRetry, func(time.Time) tea.Msg { return peerRetryMsg{} })
 	}
 	waiting := p.pending[0]
-	from := waiting.message.From.Name
+	from := m.session.Peers.Label(waiting.message.From)
 	description := "Its message is above, in the conversation."
 	if waiting.reason != "" {
 		description = waiting.reason + ". " + description
@@ -298,10 +331,11 @@ func (m model) answerPeer(choice string) (tea.Model, tea.Cmd) {
 	waiting := p.pending[0]
 	p.pending = p.pending[1:]
 	from := waiting.message.From
+	label := m.session.Peers.Label(from)
 	var done tea.Cmd
 	if choice == "reject" {
 		var shown tea.Model
-		shown, done = m.emit(m.printer.Note("message from " + from.Name + " rejected · it is not told"))
+		shown, done = m.emit(m.printer.Note("message from " + label + " rejected · it is not told"))
 		m = shown.(model)
 	} else {
 		p.streak = 0
@@ -309,7 +343,7 @@ func (m model) answerPeer(choice string) (tea.Model, tea.Cmd) {
 			p.trusted[from.ID] = true
 		}
 		m.session.Peers.Deliver(waiting.message)
-		note := "message from " + from.Name + " let in"
+		note := "message from " + label + " let in"
 		if choice == "trust" {
 			note += " · and all it sends this session"
 		}
@@ -328,7 +362,7 @@ func (m model) answerPeer(choice string) (tea.Model, tea.Cmd) {
 
 // peerSent shows a message this agent sent.
 func (m model) peerSent(msg peerSentMsg) (tea.Model, tea.Cmd) {
-	return m.emit(m.printer.PeerOut(msg.to, msg.text))
+	return m.emit(m.printer.PeerOut(m.session.Peers.Label(msg.to), msg.to, msg.text))
 }
 
 // peersCommand is /peers: who there is, and what this session changes of
@@ -349,7 +383,7 @@ func (m model) peersCommand(argument string) (tea.Model, tea.Cmd) {
 			p.postponed = false
 			return m.askNextPeer()
 		}
-		return m, m.listPeers()
+		return m, m.listPeers(false)
 	case "name":
 		if value == "" {
 			p.name = nil
@@ -371,12 +405,30 @@ func (m model) peersCommand(argument string) (tea.Model, tea.Cmd) {
 	case "on", "off":
 		p.off = action == "off"
 		return m, tea.Batch(m.applyPeers(), printText(m.printer.Note("peers "+action+" · for this session")))
+	case "visible", "hidden", "local":
+		p.network = action
+		if action == "local" {
+			p.network = "off"
+		}
+		applied := m.applyNetwork()
+		return m, tea.Batch(applied, printText(m.printer.Note(m.session.Peers.NetworkState()+" · for this session")))
+	case "secret":
+		return m.secretCommand(value)
+	case "scan":
+		scan := m.networkMode() != "off"
+		note := "asking the network who is there…"
+		if !scan {
+			note = "the network is off: only this computer's peers"
+		}
+		shown, show := m.emit(m.printer.Note(note))
+		return shown, tea.Batch(show, shown.(model).listPeers(scan))
 	}
 	return m.emit(m.printer.Note("usage: " + peersUsage))
 }
 
-// listPeers says who this instance is and which others there are.
-func (m model) listPeers() tea.Cmd {
+// listPeers says who this instance is and which others there are; scan
+// waits longer for the network's answers.
+func (m model) listPeers(scan bool) tea.Cmd {
 	node := m.session.Peers
 	if !m.peersOn() {
 		return printText(m.printer.Note("peers are off for this session · /peers on"))
@@ -385,9 +437,13 @@ func (m model) listPeers() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), peerListTimeout)
 		defer cancel()
-		found, err := node.List(ctx)
+		list := node.List
+		if scan {
+			list = node.Scan
+		}
+		found, err := list(ctx)
 		self := node.Self()
-		lines := []string{fmt.Sprintf("you are %s (id %s) · incoming %s · outgoing %s", self.Name, self.ID, incoming, outgoing)}
+		lines := []string{fmt.Sprintf("you are %s (id %s) · %s · incoming %s · outgoing %s", self.Name, self.ID, node.NetworkState(), incoming, outgoing)}
 		if len(found) == 0 {
 			lines = append(lines, "no other mo is running with peers on")
 		}
@@ -396,7 +452,7 @@ func (m model) listPeers() tea.Cmd {
 			if peer.Working {
 				state = "working"
 			}
-			line := fmt.Sprintf("%s · %s · %s", peer.Name, state, peer.Dir)
+			line := fmt.Sprintf("%s · %s · %s", node.Label(peer), state, peer.Dir)
 			if peer.Title != "" {
 				line += fmt.Sprintf(" · %q", peer.Title)
 			}
@@ -411,6 +467,14 @@ func (m model) peerSuggestions(partial string) []command {
 	options := []command{
 		{name: "peers name ", description: "a name for this session; auto from the title; nothing for folder@branch", more: true},
 		{name: "peers on", description: "take and send messages again"},
+		{name: "peers visible", description: "on the network, found by the others, for this session"},
+		{name: "peers hidden", description: "on the network, reached only by address, for this session"},
+		{name: "peers local", description: "this computer only, for this session"},
+		{name: "peers scan", description: "ask the network who is there, waiting longer for the answers"},
+		{name: "peers secret", description: "where the network's secret in force comes from"},
+		{name: "peers secret new ", description: "make one: global, project, or session to keep it nowhere", more: true},
+		{name: "peers secret set ", description: "set one: global, project or session, then the secret", more: true},
+		{name: "peers secret clear ", description: "take one away: global, project or session", more: true},
 		{name: "peers off", description: "take and send none, for this session"},
 	}
 	for _, way := range []string{"incoming", "outgoing"} {

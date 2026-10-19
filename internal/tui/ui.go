@@ -838,6 +838,9 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.input.Reset()
+	if !keptInHistory(prompt) {
+		return m.submitted(prompt)
+	}
 	if keep := m.history.add(prompt); keep != nil {
 		next, cmd := m.submitted(prompt)
 		return next, tea.Batch(cmd, keep)

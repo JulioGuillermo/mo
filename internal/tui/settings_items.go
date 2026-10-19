@@ -80,10 +80,15 @@ var settingsSections = []settingsSection{
 		if !d.peersEnabled {
 			return "off"
 		}
-		return fmt.Sprintf("on · %s · incoming %s · outgoing %s", orDefault(d.peersName, "folder@branch"), d.peersIncoming, d.peersOutgoing)
+		where := "this computer"
+		if d.peersNetwork != "off" {
+			where = "network " + d.peersNetwork
+		}
+		return fmt.Sprintf("on · %s · %s · incoming %s · outgoing %s", orDefault(d.peersName, "folder@branch"), where, d.peersIncoming, d.peersOutgoing)
 	}, note: func(model, *settingsMenu) string {
 		return "the main agent sees the other mo windows of yours with peers on and sends them messages with the peers tool\n" +
-			"on this computer only, through sockets only you can open · /peers changes these for a session"
+			"on this computer through sockets only you can open; on the network over TLS, every connection proving the team's secret\n" +
+			"/peers changes the name, approvals and network for a session"
 	}, items: peerItems},
 	{key: "skills", title: "Skills", summary: skillsSummary, note: skillsNote, items: skillItems},
 	{key: "instructions", title: "Instructions", summary: func(d *settingsDraft) string {
@@ -575,7 +580,48 @@ func peerItems(model, *settingsMenu) []settingItem {
 		{"Wake the model", func(d *settingsDraft) string { return onOff(d.peersWake) }, func(d *settingsDraft) huh.Field {
 			return huh.NewConfirm().Title("Wake the model").Description("a message let in while the model is idle starts a turn; off, it waits for your next one").Affirmative("On").Negative("Off").Value(&d.peersWake)
 		}},
+		{"Network", func(d *settingsDraft) string { return d.peersNetwork }, func(d *settingsDraft) huh.Field {
+			return huh.NewSelect[string]().Title("Network").Description("peers on other computers too; it needs the secret").Options(
+				huh.NewOption("off: this computer only", "off"),
+				huh.NewOption("visible: found by the others on the local network", "visible"),
+				huh.NewOption("hidden: not told of; reached only at its address", "hidden"),
+			).Value(&d.peersNetwork)
+		}},
+		{"Port", func(d *settingsDraft) string {
+			if strings.TrimSpace(d.peersPort) == "0" {
+				return "any free one"
+			}
+			return d.peersPort
+		}, func(d *settingsDraft) huh.Field {
+			return huh.NewInput().Title("Port").Description("where this mo takes peers from the network; 0 for any free one, which only visible peers can be found on").Validate(func(text string) error {
+				if port, err := parseCount(text); err != nil || port > 65535 {
+					return fmt.Errorf("use 0, or 1 to 65535")
+				}
+				return nil
+			}).Value(&d.peersPort)
+		}},
+		{"Addresses", func(d *settingsDraft) string { return ruleCount(d.peersAddresses) }, func(d *settingsDraft) huh.Field {
+			return huh.NewText().Title("Addresses").Description("peers to ask directly, host:port a line: hidden ones, or across a VPN").Lines(6).Validate(validAddresses).Value(&d.peersAddresses)
+		}},
+		{"Secret", func(d *settingsDraft) string { return secretValue(d.peersSecret, d.peersSecretEnv) }, func(d *settingsDraft) huh.Field {
+			return huh.NewInput().Title("Secret").Description(fmt.Sprintf("shared by the team's computers; %d characters or more; /peers secret new makes one", config.PeerSecretMin)).
+				EchoMode(huh.EchoModePassword).Validate(validSecret).Value(&d.peersSecret)
+		}},
+		{"Secret from a variable", func(d *settingsDraft) string { return orDefault(d.peersSecretEnv, "none") }, func(d *settingsDraft) huh.Field {
+			return huh.NewInput().Title("Secret from a variable").Description("the environment variable that holds it, when Secret is empty").Value(&d.peersSecretEnv)
+		}},
 	}
+}
+
+// secretValue says whether a secret is set and where, never what it is.
+func secretValue(secret, variable string) string {
+	switch {
+	case secret != "":
+		return "set"
+	case variable != "":
+		return "from $" + variable
+	}
+	return "none"
 }
 
 func loopItems(model, *settingsMenu) []settingItem {

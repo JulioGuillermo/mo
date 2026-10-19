@@ -1,6 +1,7 @@
-// Package peers lets mo instances of the same user on one machine find each
-// other and pass messages, each through a Unix socket in a folder only the
-// user can open.
+// Package peers lets mo instances of the same user find each other and pass
+// messages: on one machine through a Unix socket each, in a folder only the
+// user can open, and across the network over TLS, every connection proving
+// a secret the team shares.
 package peers
 
 import (
@@ -32,14 +33,25 @@ const (
 	MaxTextRunes = 20000
 )
 
-// Info is what an instance tells about itself.
+// Info is what an instance tells about itself, and how to reach it.
 type Info struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Title   string `json:"title,omitempty"`
 	Dir     string `json:"dir,omitempty"`
 	Branch  string `json:"branch,omitempty"`
+	Host    string `json:"host,omitempty"`
 	Working bool   `json:"working"`
+	route   route
+}
+
+// route is how a peer is reached: its socket on this machine, or its
+// address on the network and, once found, the fingerprint of its
+// certificate.
+type route struct {
+	socket      string
+	address     string
+	fingerprint string
 }
 
 // Message is what a peer sent.
@@ -50,19 +62,21 @@ type Message struct {
 }
 
 type request struct {
-	Kind string `json:"kind"`
-	From Info   `json:"from,omitempty"`
-	Text string `json:"text,omitempty"`
+	Kind  string `json:"kind"`
+	From  Info   `json:"from,omitempty"`
+	Text  string `json:"text,omitempty"`
+	Proof string `json:"proof,omitempty"`
 }
 
 type response struct {
 	Info  *Info  `json:"info,omitempty"`
 	OK    bool   `json:"ok,omitempty"`
 	Error string `json:"error,omitempty"`
+	Proof string `json:"proof,omitempty"`
 }
 
-// Node is this instance among its peers: the socket it listens on, what it
-// tells of itself, and the messages accepted for the model.
+// Node is this instance among its peers: where it listens, what it tells of
+// itself, and the messages accepted for the model.
 type Node struct {
 	dir string
 
@@ -71,6 +85,7 @@ type Node struct {
 	fixedName string
 	outgoing  string
 	listener  net.Listener
+	net       *network
 	onMessage func(Message)
 	onSent    func(to Info, text string)
 	inbox     []Message
@@ -79,7 +94,8 @@ type Node struct {
 
 // NewNode is an instance that listens in dir once started.
 func NewNode(dir string) *Node {
-	return &Node{dir: dir, seen: map[string]Info{}}
+	host, _ := os.Hostname()
+	return &Node{dir: dir, seen: map[string]Info{}, self: Info{Host: host}}
 }
 
 // SocketDir is where the instances of this user listen: the runtime
@@ -91,8 +107,8 @@ func SocketDir() string {
 	return filepath.Join(os.TempDir(), fmt.Sprintf("mo-%d", os.Getuid()), "peers")
 }
 
-// Start listens for peers under a new id. Starting a started node does
-// nothing.
+// Start listens for peers on this machine under a new id. Starting a
+// started node does nothing.
 func (n *Node) Start() error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -102,6 +118,11 @@ func (n *Node) Start() error {
 	if err := privateDir(n.dir); err != nil {
 		return err
 	}
+	return n.listenAsNew()
+}
+
+// listenAsNew takes a new id and listens on its socket; n.mu is held.
+func (n *Node) listenAsNew() error {
 	for range 5 {
 		id := newID()
 		listener, err := net.Listen("unix", n.socket(id))
@@ -113,18 +134,34 @@ func (n *Node) Start() error {
 		}
 		n.listener = listener
 		n.self.ID = id
-		go n.serve(listener)
+		go n.serve(listener, nil)
 		return nil
 	}
 	return errors.New("peers: no free id")
 }
 
-// Stop closes the socket; peers no longer find this instance.
+// changeID moves this instance to a new id, when another on the network
+// has its own.
+func (n *Node) changeID() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	old := n.listener
+	if old == nil || n.listenAsNew() != nil {
+		return
+	}
+	old.Close()
+}
+
+// Stop closes the socket and leaves the network; peers no longer find this
+// instance.
 func (n *Node) Stop() {
 	n.mu.Lock()
-	listener := n.listener
-	n.listener = nil
+	listener, network := n.listener, n.net
+	n.listener, n.net = nil, nil
 	n.mu.Unlock()
+	if network != nil {
+		network.stop()
+	}
 	if listener != nil {
 		listener.Close()
 	}
@@ -150,8 +187,18 @@ func (n *Node) Update(change func(info *Info)) {
 	change(&n.self)
 }
 
+// Label is how a peer is named here: its name, with its computer when it
+// runs on another.
+func (n *Node) Label(info Info) string {
+	if info.Host == "" || info.Host == n.Self().Host {
+		return info.Name
+	}
+	return info.Name + " (" + info.Host + ")"
+}
+
 // SetName names this instance as the user asked, or by its folder and
-// branch when name is empty, adding -2, -3 when another peer has it.
+// branch when name is empty, adding -2, -3 when another peer of this
+// computer has it.
 func (n *Node) SetName(ctx context.Context, name string) {
 	n.mu.Lock()
 	n.fixedName = name
@@ -166,11 +213,14 @@ func (n *Node) Rename(ctx context.Context) {
 	if base == "" {
 		base = DefaultName(n.self.Dir, n.self.Branch)
 	}
+	host := n.self.Host
 	n.mu.Unlock()
 	taken := map[string]bool{}
 	if others, err := n.List(ctx); err == nil {
 		for _, other := range others {
-			taken[other.Name] = true
+			if other.Host == host || other.Host == "" {
+				taken[other.Name] = true
+			}
 		}
 	}
 	name := base
@@ -218,17 +268,31 @@ func (n *Node) OnSent(handle func(to Info, text string)) {
 	n.onSent = handle
 }
 
-// List asks every peer what it is; the ones that no longer answer are
-// forgotten, their sockets removed.
+// List asks every peer what it is: those of this computer, and with the
+// network on, those found there and at the addresses set. The local ones
+// that no longer answer are forgotten, their sockets removed.
 func (n *Node) List(ctx context.Context) ([]Info, error) {
-	ctx, cancel := context.WithTimeout(ctx, listTimeout)
+	return n.list(ctx, whoWait)
+}
+
+// Scan is List waiting longer for the network's answers, to find the peers
+// that are slow to answer or were not heard of yet.
+func (n *Node) Scan(ctx context.Context) ([]Info, error) {
+	return n.list(ctx, scanWait)
+}
+
+func (n *Node) list(ctx context.Context, answers time.Duration) ([]Info, error) {
+	ctx, cancel := context.WithTimeout(ctx, listTimeout+answers)
 	defer cancel()
-	entries, err := os.ReadDir(n.dir)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
+	routes, err := n.localRoutes()
 	if err != nil {
 		return nil, err
+	}
+	n.mu.Lock()
+	network := n.net
+	n.mu.Unlock()
+	if network != nil {
+		routes = append(routes, network.routes(ctx, answers)...)
 	}
 	self := n.Self().ID
 	var (
@@ -236,30 +300,28 @@ func (n *Node) List(ctx context.Context) ([]Info, error) {
 		found []Info
 		wait  sync.WaitGroup
 	)
-	for _, entry := range entries {
-		id, isSocket := strings.CutSuffix(entry.Name(), socketSuffix)
-		if !isSocket || id == self {
-			continue
-		}
+	for _, way := range routes {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			answer, err := n.ask(ctx, id, request{Kind: "info"})
-			if isGone(err) {
-				os.Remove(n.socket(id))
+			answer, err := n.ask(ctx, way, request{Kind: "info"})
+			if way.socket != "" && isGone(err) {
+				os.Remove(way.socket)
 				return
 			}
-			if err != nil || answer.Info == nil {
+			if err != nil || answer.Info == nil || answer.Info.ID == self {
 				return
 			}
-			answer.Info.ID = id
+			info := *answer.Info
+			info.route = way
 			mu.Lock()
-			found = append(found, *answer.Info)
+			found = append(found, info)
 			mu.Unlock()
 		}()
 	}
 	wait.Wait()
-	slices.SortFunc(found, func(a, b Info) int { return strings.Compare(a.Name, b.Name) })
+	found = closestOnce(found)
+	slices.SortFunc(found, func(a, b Info) int { return strings.Compare(n.Label(a), n.Label(b)) })
 	n.mu.Lock()
 	for _, info := range found {
 		n.seen[info.ID] = info
@@ -268,8 +330,49 @@ func (n *Node) List(ctx context.Context) ([]Info, error) {
 	return found, nil
 }
 
-// Send gives a message to the peer named, by name or id, and returns once
-// it received it.
+// closestOnce keeps each peer once: by its socket when it is on this
+// computer too.
+func closestOnce(found []Info) []Info {
+	slices.SortStableFunc(found, func(a, b Info) int {
+		if (a.route.socket != "") == (b.route.socket != "") {
+			return 0
+		}
+		if a.route.socket != "" {
+			return -1
+		}
+		return 1
+	})
+	seen := map[string]bool{}
+	return slices.DeleteFunc(found, func(info Info) bool {
+		if seen[info.ID] {
+			return true
+		}
+		seen[info.ID] = true
+		return false
+	})
+}
+
+func (n *Node) localRoutes() ([]route, error) {
+	entries, err := os.ReadDir(n.dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	self := n.Self().ID
+	var routes []route
+	for _, entry := range entries {
+		id, isSocket := strings.CutSuffix(entry.Name(), socketSuffix)
+		if isSocket && id != self {
+			routes = append(routes, route{socket: n.socket(id)})
+		}
+	}
+	return routes, nil
+}
+
+// Send gives a message to the peer named, by name, name and computer, or
+// id, and returns once it received it.
 func (n *Node) Send(ctx context.Context, to, text string) (Info, error) {
 	if !n.Running() {
 		return Info{}, errors.New("peers are off in this mo")
@@ -281,26 +384,27 @@ func (n *Node) Send(ctx context.Context, to, text string) (Info, error) {
 	case len([]rune(text)) > MaxTextRunes:
 		return Info{}, fmt.Errorf("the message is over %d characters", MaxTextRunes)
 	}
-	peers, err := n.List(ctx)
+	found, err := n.List(ctx)
 	if err != nil {
 		return Info{}, err
 	}
-	peer, found := find(peers, to)
-	if !found {
-		return Info{}, n.notFound(to, peers)
+	peer, err := n.find(found, to)
+	if err != nil {
+		return Info{}, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, SendTimeout)
 	defer cancel()
-	answer, err := n.ask(ctx, peer.ID, request{Kind: "message", From: n.Self(), Text: text})
+	answer, err := n.ask(ctx, peer.route, request{Kind: "message", From: n.Self(), Text: text})
+	label := n.Label(peer)
 	switch {
 	case isGone(err):
-		return peer, fmt.Errorf("%s is no longer running", peer.Name)
+		return peer, fmt.Errorf("%s is no longer running", label)
 	case errors.Is(err, context.DeadlineExceeded) || isTimeout(err):
-		return peer, fmt.Errorf("no answer from %s in %s", peer.Name, SendTimeout)
+		return peer, fmt.Errorf("no answer from %s in %s", label, SendTimeout)
 	case err != nil:
-		return peer, err
+		return peer, fmt.Errorf("%s: %w", label, err)
 	case answer.Error != "":
-		return peer, fmt.Errorf("%s: %s", peer.Name, answer.Error)
+		return peer, fmt.Errorf("%s: %s", label, answer.Error)
 	}
 	n.mu.Lock()
 	onSent := n.onSent
@@ -311,44 +415,49 @@ func (n *Node) Send(ctx context.Context, to, text string) (Info, error) {
 	return peer, nil
 }
 
-// notFound says a peer is gone when it was seen before, else which there
-// are.
-func (n *Node) notFound(to string, peers []Info) error {
-	n.mu.Lock()
-	seen := slices.Collect(func(yield func(Info) bool) {
-		for _, info := range n.seen {
-			if !yield(info) {
-				return
-			}
-		}
-	})
-	n.mu.Unlock()
-	if gone, wasSeen := find(seen, to); wasSeen {
-		return fmt.Errorf("%s is no longer running", gone.Name)
-	}
-	if len(peers) == 0 {
-		return fmt.Errorf("no peer named %q: no other mo is running with peers on", to)
-	}
-	var names []string
-	for _, peer := range peers {
-		names = append(names, peer.Name)
-	}
-	return fmt.Errorf("no peer named %q; peers: %s", to, strings.Join(names, ", "))
-}
-
-func find(peers []Info, to string) (Info, bool) {
+// find is the peer named: by id, by name and computer, then by name when
+// one alone has it. A peer seen before and gone now is said to be gone.
+func (n *Node) find(found []Info, to string) (Info, error) {
 	to = strings.TrimSpace(to)
-	for _, peer := range peers {
-		if peer.ID == to || peer.Name == to {
-			return peer, true
+	var named []Info
+	for _, peer := range found {
+		switch {
+		case peer.ID == to || n.Label(peer) == to:
+			return peer, nil
+		case strings.EqualFold(peer.Name, to):
+			named = append(named, peer)
 		}
 	}
-	for _, peer := range peers {
-		if strings.EqualFold(peer.Name, to) {
-			return peer, true
+	switch len(named) {
+	case 1:
+		return named[0], nil
+	case 0:
+	default:
+		var labels []string
+		for _, peer := range named {
+			labels = append(labels, fmt.Sprintf("%s (id %s)", n.Label(peer), peer.ID))
+		}
+		return Info{}, fmt.Errorf("%d peers are named %q: use the id; %s", len(named), to, strings.Join(labels, ", "))
+	}
+	n.mu.Lock()
+	var gone []Info
+	for _, info := range n.seen {
+		gone = append(gone, info)
+	}
+	n.mu.Unlock()
+	for _, peer := range gone {
+		if peer.ID == to || strings.EqualFold(peer.Name, to) || n.Label(peer) == to {
+			return Info{}, fmt.Errorf("%s is no longer running", n.Label(peer))
 		}
 	}
-	return Info{}, false
+	if len(found) == 0 {
+		return Info{}, fmt.Errorf("no peer named %q: no other mo is running with peers on", to)
+	}
+	var labels []string
+	for _, peer := range found {
+		labels = append(labels, n.Label(peer))
+	}
+	return Info{}, fmt.Errorf("no peer named %q; peers: %s", to, strings.Join(labels, ", "))
 }
 
 // Deliver keeps a message the user let through, for the model's next step.
@@ -384,47 +493,71 @@ func (n *Node) socket(id string) string {
 	return filepath.Join(n.dir, id+socketSuffix)
 }
 
-func (n *Node) serve(listener net.Listener) {
+// serve answers what comes to a listener; secret, for the network, is what
+// every request proves.
+func (n *Node) serve(listener net.Listener, secret []byte) {
+	busy := make(chan struct{}, maxConnections)
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			return
 		}
-		go n.answer(conn)
+		select {
+		case busy <- struct{}{}:
+		default:
+			conn.Close()
+			continue
+		}
+		go func() {
+			defer func() { <-busy }()
+			n.answer(conn, secret)
+		}()
 	}
 }
 
-func (n *Node) answer(conn net.Conn) {
+func (n *Node) answer(conn net.Conn, secret []byte) {
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(SendTimeout))
+	proofs, err := proofsOf(conn, secret, serverSide)
+	if err != nil {
+		return
+	}
 	var asked request
 	if err := json.NewDecoder(io.LimitReader(conn, maxRequest)).Decode(&asked); err != nil {
 		return
 	}
-	var answer response
+	if !proofs.checks(asked.Proof) {
+		time.Sleep(authFailedDelay)
+		json.NewEncoder(conn).Encode(response{Error: authFailed})
+		return
+	}
+	answer := n.handle(asked)
+	answer.Proof = proofs.own
+	json.NewEncoder(conn).Encode(answer)
+}
+
+func (n *Node) handle(asked request) response {
 	switch asked.Kind {
 	case "info":
 		self := n.Self()
-		answer.Info = &self
+		return response{Info: &self}
 	case "message":
 		n.mu.Lock()
 		handle := n.onMessage
 		n.mu.Unlock()
 		if handle == nil {
-			answer.Error = "it takes no messages now"
-			break
+			return response{Error: "it takes no messages now"}
 		}
 		handle(Message{From: asked.From, Text: asked.Text, At: time.Now()})
-		answer.OK = true
-	default:
-		answer.Error = "unknown request " + asked.Kind
+		return response{OK: true}
 	}
-	json.NewEncoder(conn).Encode(answer)
+	return response{Error: "unknown request " + asked.Kind}
 }
 
-func (n *Node) ask(ctx context.Context, id string, asked request) (response, error) {
-	dialer := net.Dialer{Timeout: dialTimeout}
-	conn, err := dialer.DialContext(ctx, "unix", n.socket(id))
+// ask sends a request by its route and reads the answer: through the
+// socket, or over TLS with the secret proved both ways.
+func (n *Node) ask(ctx context.Context, way route, asked request) (response, error) {
+	conn, secret, err := n.dial(ctx, way)
 	if err != nil {
 		return response{}, err
 	}
@@ -432,15 +565,44 @@ func (n *Node) ask(ctx context.Context, id string, asked request) (response, err
 	if deadline, ok := ctx.Deadline(); ok {
 		conn.SetDeadline(deadline)
 	}
+	proofs, err := proofsOf(conn, secret, clientSide)
+	if err != nil {
+		return response{}, err
+	}
+	asked.Proof = proofs.own
 	if err := json.NewEncoder(conn).Encode(asked); err != nil {
 		return response{}, err
 	}
 	var answer response
-	err = json.NewDecoder(io.LimitReader(conn, maxRequest)).Decode(&answer)
-	return answer, err
+	if err := json.NewDecoder(io.LimitReader(conn, maxRequest)).Decode(&answer); err != nil {
+		return response{}, err
+	}
+	switch {
+	case answer.Error == authFailed:
+		return response{}, errors.New("authentication failed, the secrets differ")
+	case !proofs.checks(answer.Proof):
+		return response{}, errors.New("its answer did not prove the secret")
+	}
+	return answer, nil
 }
 
-// isGone tells an error of a socket nobody listens on.
+func (n *Node) dial(ctx context.Context, way route) (net.Conn, []byte, error) {
+	if way.socket != "" {
+		dialer := net.Dialer{Timeout: dialTimeout}
+		conn, err := dialer.DialContext(ctx, "unix", way.socket)
+		return conn, nil, err
+	}
+	n.mu.Lock()
+	network := n.net
+	n.mu.Unlock()
+	if network == nil {
+		return nil, nil, errors.New("the network is off in this mo")
+	}
+	conn, err := network.dial(ctx, way)
+	return conn, network.secret, err
+}
+
+// isGone tells an error of a socket or port nobody listens on.
 func isGone(err error) bool {
 	return errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ENOENT)
 }
@@ -454,6 +616,13 @@ func newID() string {
 	raw := make([]byte, 5)
 	rand.Read(raw)
 	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(raw))[:idLength]
+}
+
+// NewSecret is a random secret to share with a team, 32 characters.
+func NewSecret() string {
+	raw := make([]byte, 20)
+	rand.Read(raw)
+	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(raw))
 }
 
 // privateDir makes the folder the sockets go in, readable by the user

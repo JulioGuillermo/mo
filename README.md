@@ -246,6 +246,13 @@ name = ""                  # what the others call this one; "auto": from the tit
 incoming = "ask"           # before a peer's message reaches the model: tools | ask | auto | allow
 outgoing = "tools"         # before the model sends one: the same choices
 wake = true                # a message let in while the model is idle starts a turn
+network = "off"            # off: this computer only | visible: found on the local network | hidden: by address only
+port = 0                   # where it takes peers from the network; 0 for any free one
+addresses = []             # peers asked directly, "host:port": hidden ones, or across a VPN
+secret = ""                # the team's; 16 characters or more; /peers secret new makes one
+secret_env = ""            # or the variable that holds it
+# [peers.projects."/path/to/project"]  # another team's secret for one folder; /settings project › Peers
+# secret = "..."
 
 [memory]
 dir = "~/.local/share/mo/memory"
@@ -462,10 +469,30 @@ message. A send returns once the other mo received it, without waiting for an an
 answers, if it wants, with the same tool. The model hears clearly why one failed: `not sent:
 api@dev is no longer running`, `no peer named "x"; peers: …`, `no answer from … in 5s`.
 
-They meet on this computer only, through a Unix socket each in `$XDG_RUNTIME_DIR/mo/peers/`, a folder
-only you can open; no network. Each window has a random id and a name, `folder@branch` (`mo@master`,
-`-2` when taken), set with `name` or `/peers name`, or `auto` for a few words of its title. A project
-file never turns peers on or loosens what asks.
+On one computer they meet through a Unix socket each in `$XDG_RUNTIME_DIR/mo/peers/`, a folder only
+you can open. Each window has a random id and a name, `folder@branch` (`mo@master`, `-2` when another
+here has it), set with `name` or `/peers name`, or `auto` for a few words of its title. A project file
+never turns peers on, opens the network or loosens what asks.
+
+With `network` on, peers on other computers of the team are reached too, named with their computer:
+`api@dev (jg-laptop)`.
+
+- Every connection is TLS 1.3, and both ends prove the team's `secret` by signing the keys of that
+  very session with it: the secret never travels, and a proof seen or passed on is worth nothing on
+  another connection. A peer with another secret is refused both ways and the sender is told
+  `authentication failed, the secrets differ`.
+- `visible` tells the local network where it is, by multicast, every 30 seconds, and answers who
+  asks; a `list` asks and hears the answers at once, and `/peers scan` asks and waits longer. The packets carry a tag made with the secret, so only
+  the team's are heard, and the TLS certificate's fingerprint, which the connection then has to show.
+- `hidden` tells no one; the others reach it at its `port` through their `addresses`. It still finds
+  the visible ones.
+- The secret goes in your own settings, never in the project file: globally, or for one folder in
+  `/settings project › Peers`, which overrides the global there; or for the session alone, kept
+  nowhere, over both. Use a long random one: the network sees what it signs.
+- `/peers secret new|set|clear global|project|session` makes, sets or takes one away there;
+  `new` shows the one it made, once, to set on the others; `set` never shows it, and the command is
+  not kept in the input's history. `/peers secret` says where the one in force comes from.
+- Outside the local network, across a VPN, use `addresses`.
 
 What asks before a message passes, each way:
 
@@ -483,7 +510,8 @@ waiting for `/peers`. A message let in reaches the model at its next step, or st
 idle (`wake`). After 10 messages in a row let in without you, the next asks, in any setting; your
 next prompt starts the count again. Subagents have no `peers` tool.
 
-`/peers` lists them; `/peers name <name>|auto`, `/peers incoming|outgoing <setting>` and
+`/peers` lists them with how this one is on the network, `/peers scan` asks the network again;
+`/peers name <name>|auto`, `/peers incoming|outgoing <setting>`, `/peers visible|hidden|local` and
 `/peers on|off` change the session only.
 
 ## Instructions

@@ -29,8 +29,8 @@ func peerPalette(dark bool) peerColors {
 
 // PeerIn draws a message a peer sent: its bar, who sent it, from which
 // conversation and when, then the text; status says what became of it.
-func (p *printer) PeerIn(message peers.Message, status string) string {
-	header := "⇠ " + message.From.Name
+func (p *printer) PeerIn(from string, message peers.Message, status string) string {
+	header := "⇠ " + from
 	if message.From.Title != "" {
 		header += fmt.Sprintf(" · %q", message.From.Title)
 	}
@@ -38,8 +38,8 @@ func (p *printer) PeerIn(message peers.Message, status string) string {
 }
 
 // PeerOut draws a message this agent sent to a peer.
-func (p *printer) PeerOut(to peers.Info, text string) string {
-	header := "⇢ to " + to.Name
+func (p *printer) PeerOut(label string, to peers.Info, text string) string {
+	header := "⇢ to " + label
 	if to.Title != "" {
 		header += fmt.Sprintf(" · %q", to.Title)
 	}

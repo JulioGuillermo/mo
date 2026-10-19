@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,6 +17,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/jg/mo/internal/notify"
+	"github.com/jg/mo/internal/peers"
 	"github.com/jg/mo/internal/permissions"
 	"github.com/jg/mo/internal/render"
 	"github.com/jg/mo/internal/tools"
@@ -206,6 +208,54 @@ type Peers struct {
 	Outgoing string `toml:"outgoing,omitempty"`
 	// Wake starts a turn when a message is let in while the model is idle.
 	Wake *bool `toml:"wake,omitempty"`
+	// Network reaches peers on other computers too: off, visible, found by
+	// the others on the local network, or hidden, reached only by address.
+	Network string `toml:"network,omitempty"`
+	// Port is where this instance takes peers from the network; 0 for any
+	// free one, which only visible instances can be found on.
+	Port int `toml:"port,omitzero"`
+	// Addresses are peers asked directly, as host:port, besides the ones
+	// found: hidden ones, or across a VPN.
+	Addresses []string `toml:"addresses,omitempty"`
+	// Secret is shared by the instances of a team; without it the network
+	// stays off. SecretEnv names a variable that holds it instead.
+	Secret    string `toml:"secret,omitempty"`
+	SecretEnv string `toml:"secret_env,omitempty"`
+	// Projects keep another secret for one folder, in the user file only.
+	Projects map[string]PeerProject `toml:"projects,omitempty"`
+}
+
+// PeerProject is the secret of the peers of one folder.
+type PeerProject struct {
+	Secret    string `toml:"secret,omitempty"`
+	SecretEnv string `toml:"secret_env,omitempty"`
+}
+
+// PeerNetworks are what peers reach over the network.
+var PeerNetworks = []string{"off", "visible", "hidden"}
+
+// PeerSecretMin is the shortest secret taken.
+const PeerSecretMin = peers.SecretMin
+
+// Key is the secret: the one set, else the variable named.
+func (p Peers) Key() string {
+	if p.Secret != "" {
+		return p.Secret
+	}
+	if p.SecretEnv != "" {
+		return os.Getenv(p.SecretEnv)
+	}
+	return ""
+}
+
+// ForProject is the peers' settings in workDir: the folder's secret, when
+// the user keeps one, over the global.
+func (p Peers) ForProject(workDir string) Peers {
+	if own, found := p.Projects[ProjectKey(workDir)]; found && (own.Secret != "" || own.SecretEnv != "") {
+		p.Secret, p.SecretEnv = own.Secret, own.SecretEnv
+	}
+	p.Projects = nil
+	return p
 }
 
 // PeerApprovals are what may ask before a peer's message: the permission
@@ -426,7 +476,7 @@ func Defaults() Config {
 			SpinnerMS: 80, RunningMS: 150, WritingMS: 220, ReasoningMS: 160, AskingMS: 500},
 		Loop:        Loop{Enabled: ptr(true), Replies: 30, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2), Steps: ptr(300)},
 		Agents:      Agents{Enabled: ptr(false), Depth: 1, MaxParallel: 3, MaxAgents: 20, MaxSteps: 50},
-		Peers:       Peers{Enabled: ptr(false), Incoming: "ask", Outgoing: "tools", Wake: ptr(true)},
+		Peers:       Peers{Enabled: ptr(false), Incoming: "ask", Outgoing: "tools", Wake: ptr(true), Network: "off"},
 		Permissions: Permissions{Mode: "edits", Allow: DefaultAllow},
 		Notify:      Notify{Finish: ptr(true), Approval: ptr(true), Method: "auto", Focused: ptr(false)},
 		Providers:   presets(),
@@ -550,10 +600,8 @@ func validate(cfg Config) error {
 	if err := validateAgents(cfg.Agents); err != nil {
 		return err
 	}
-	for _, each := range []struct{ name, value string }{{"incoming", cfg.Peers.Incoming}, {"outgoing", cfg.Peers.Outgoing}} {
-		if !slices.Contains(PeerApprovals, each.value) {
-			return fmt.Errorf("peers.%s %q: use %s", each.name, each.value, strings.Join(PeerApprovals, ", "))
-		}
+	if err := validatePeers(cfg.Peers); err != nil {
+		return err
 	}
 	return validateLoop(cfg.Loop)
 }
@@ -598,6 +646,29 @@ func validateAgents(agents Agents) error {
 	}
 	if agents.Model != "" && !strings.Contains(agents.Model, "/") {
 		return fmt.Errorf("agents.model %q: use provider/model, or leave it empty for the main agent's", agents.Model)
+	}
+	return nil
+}
+
+func validatePeers(peers Peers) error {
+	for _, each := range []struct{ name, value string }{{"incoming", peers.Incoming}, {"outgoing", peers.Outgoing}} {
+		if !slices.Contains(PeerApprovals, each.value) {
+			return fmt.Errorf("peers.%s %q: use %s", each.name, each.value, strings.Join(PeerApprovals, ", "))
+		}
+	}
+	if !slices.Contains(PeerNetworks, peers.Network) {
+		return fmt.Errorf("peers.network %q: use %s", peers.Network, strings.Join(PeerNetworks, ", "))
+	}
+	if peers.Port < 0 || peers.Port > 65535 {
+		return fmt.Errorf("peers.port %d: use 0 for any, or 1 to 65535", peers.Port)
+	}
+	for _, address := range peers.Addresses {
+		if _, _, err := net.SplitHostPort(address); err != nil {
+			return fmt.Errorf("peers.addresses %q: use host:port", address)
+		}
+	}
+	if secret := peers.Secret; secret != "" && len([]rune(secret)) < PeerSecretMin {
+		return fmt.Errorf("peers.secret: use %d characters or more; /peers secret new makes one", PeerSecretMin)
 	}
 	return nil
 }
@@ -689,6 +760,19 @@ func mergePeers(base, layer Peers) Peers {
 	base.Name = override(base.Name, layer.Name)
 	base.Incoming = override(base.Incoming, layer.Incoming)
 	base.Outgoing = override(base.Outgoing, layer.Outgoing)
+	base.Network = override(base.Network, layer.Network)
+	base.Port = override(base.Port, layer.Port)
+	base.Secret = override(base.Secret, layer.Secret)
+	base.SecretEnv = override(base.SecretEnv, layer.SecretEnv)
+	if layer.Addresses != nil {
+		base.Addresses = layer.Addresses
+	}
+	for dir, own := range layer.Projects {
+		if base.Projects == nil {
+			base.Projects = map[string]PeerProject{}
+		}
+		base.Projects[dir] = own
+	}
 	return base
 }
 

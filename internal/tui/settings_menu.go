@@ -199,6 +199,8 @@ func (m model) openMenuChoice(menu *settingsMenu, choice string) (tea.Model, tea
 		return m.switchScope(menu)
 	case projectPermissions:
 		return m.showSection(menu, projectPermissionSection, "")
+	case projectPeers:
+		return m.showSection(menu, projectPeersSection, "")
 	case menuProviders:
 		return m.pickProvider(menu.loadedNow(), menu)
 	case menuMCP:

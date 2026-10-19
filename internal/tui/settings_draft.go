@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"maps"
+	"net"
 	"slices"
 	"strconv"
 	"strings"
@@ -78,18 +79,27 @@ type settingsDraft struct {
 	skillsDisabled []string
 	skillDirs      string
 
-	loopEnabled       bool
-	agentsEnabled     bool
-	agentsDepth       string
-	agentsParallel    string
-	agentsMax         string
-	agentsSteps       string
-	agentsModel       string
-	peersEnabled      bool
-	peersName         string
-	peersIncoming     string
-	peersOutgoing     string
-	peersWake         bool
+	loopEnabled    bool
+	agentsEnabled  bool
+	agentsDepth    string
+	agentsParallel string
+	agentsMax      string
+	agentsSteps    string
+	agentsModel    string
+	peersEnabled   bool
+	peersName      string
+	peersIncoming  string
+	peersOutgoing  string
+	peersWake      bool
+	peersNetwork   string
+	peersPort      string
+	peersAddresses string
+	peersSecret    string
+	peersSecretEnv string
+	// projectSecret and projectSecretEnv are the peers' secret of the
+	// working directory, kept in the user file.
+	projectSecret     string
+	projectSecretEnv  string
 	loopReplies       string
 	loopRepeats       string
 	loopStreamRepeats string
@@ -192,6 +202,11 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		peersIncoming:     cfg.Peers.Incoming,
 		peersOutgoing:     cfg.Peers.Outgoing,
 		peersWake:         *cfg.Peers.Wake,
+		peersNetwork:      cfg.Peers.Network,
+		peersPort:         strconv.Itoa(cfg.Peers.Port),
+		peersAddresses:    strings.Join(cfg.Peers.Addresses, "\n"),
+		peersSecret:       cfg.Peers.Secret,
+		peersSecretEnv:    cfg.Peers.SecretEnv,
 		loopReplies:       strconv.Itoa(cfg.Loop.Replies),
 		loopRepeats:       strconv.Itoa(cfg.Loop.Repeats),
 		loopStreamRepeats: strconv.Itoa(cfg.Loop.StreamRepeats),
@@ -261,7 +276,11 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 		return layer, err
 	}
 	layer.Agents = agents
-	layer.Peers = d.peers()
+	peers, err := d.peers(layer.Peers.Projects)
+	if err != nil {
+		return layer, err
+	}
+	layer.Peers = peers
 	loop, err := d.loop()
 	if err != nil {
 		return layer, err
@@ -389,6 +408,8 @@ func (d *settingsDraft) forProject(workDir string, layer config.Config) {
 	d.projectMode = rules.Mode
 	d.projectAllow = strings.Join(rules.Allow, "\n")
 	d.projectDeny = strings.Join(rules.Deny, "\n")
+	own := layer.Peers.Projects[d.project]
+	d.projectSecret, d.projectSecretEnv = own.Secret, own.SecretEnv
 }
 
 // applyPermissions writes the mode and rules, refusing a rule that does not
@@ -494,16 +515,66 @@ func (d *settingsDraft) agents() (config.Agents, error) {
 }
 
 // peers reads the peers' fields, keeping only what differs from the
-// built-in defaults.
-func (d *settingsDraft) peers() config.Peers {
+// built-in defaults, and the folders' secrets with this one's as edited.
+func (d *settingsDraft) peers(projects map[string]config.PeerProject) (config.Peers, error) {
 	defaults := config.Defaults().Peers
-	return config.Peers{
-		Enabled:  unlessDefaultFlag(d.peersEnabled, *defaults.Enabled),
-		Name:     strings.TrimSpace(d.peersName),
-		Incoming: unlessDefault(d.peersIncoming, defaults.Incoming),
-		Outgoing: unlessDefault(d.peersOutgoing, defaults.Outgoing),
-		Wake:     unlessDefaultFlag(d.peersWake, *defaults.Wake),
+	port, err := parseCount(d.peersPort)
+	if err != nil || port > 65535 {
+		return config.Peers{}, fmt.Errorf("peers port: use 0 for any, or 1 to 65535")
 	}
+	addresses := ruleLines(d.peersAddresses)
+	if err := validAddresses(d.peersAddresses); err != nil {
+		return config.Peers{}, err
+	}
+	for _, secret := range []string{d.peersSecret, d.projectSecret} {
+		if err := validSecret(secret); err != nil {
+			return config.Peers{}, err
+		}
+	}
+	peers := config.Peers{
+		Enabled:   unlessDefaultFlag(d.peersEnabled, *defaults.Enabled),
+		Name:      strings.TrimSpace(d.peersName),
+		Incoming:  unlessDefault(d.peersIncoming, defaults.Incoming),
+		Outgoing:  unlessDefault(d.peersOutgoing, defaults.Outgoing),
+		Wake:      unlessDefaultFlag(d.peersWake, *defaults.Wake),
+		Network:   unlessDefault(d.peersNetwork, defaults.Network),
+		Port:      port,
+		Addresses: addresses,
+		Secret:    strings.TrimSpace(d.peersSecret),
+		SecretEnv: strings.TrimSpace(d.peersSecretEnv),
+		Projects:  projects,
+	}
+	if d.project == "" {
+		return peers, nil
+	}
+	own := config.PeerProject{Secret: strings.TrimSpace(d.projectSecret), SecretEnv: strings.TrimSpace(d.projectSecretEnv)}
+	if own == (config.PeerProject{}) {
+		peers.Projects = withoutEntry(peers.Projects, d.project)
+	} else {
+		peers.Projects = withEntry(peers.Projects, d.project, own)
+	}
+	if len(peers.Projects) == 0 {
+		peers.Projects = nil
+	}
+	return peers, nil
+}
+
+// validAddresses takes one host:port a line.
+func validAddresses(text string) error {
+	for _, address := range ruleLines(text) {
+		if _, _, err := net.SplitHostPort(address); err != nil {
+			return fmt.Errorf("peer address %q: use host:port", address)
+		}
+	}
+	return nil
+}
+
+// validSecret takes none, or one long enough not to be guessed.
+func validSecret(secret string) error {
+	if secret := strings.TrimSpace(secret); secret != "" && len([]rune(secret)) < config.PeerSecretMin {
+		return fmt.Errorf("peers secret: use %d characters or more; /peers secret new makes one", config.PeerSecretMin)
+	}
+	return nil
 }
 
 // loop reads the loop guard fields, keeping only what differs from the
