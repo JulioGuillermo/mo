@@ -1098,6 +1098,9 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 		lines = append(lines, m.printer.Note("stopped · /continue goes on"))
 	case errors.Is(err, agent.ErrNothingToContinue):
 		lines = append(lines, m.printer.Note("nothing to continue yet"))
+	case knownLimit(err):
+		lines = append(lines, "\n"+m.printer.Stopped(m.limitText(err)))
+		folded, foldAt = err, len(lines)
 	case err != nil && longError(err):
 		folded, foldAt = err, len(lines)
 	case err != nil:

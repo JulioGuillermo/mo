@@ -84,6 +84,12 @@ When a provider's safety filter stops an answer (Anthropic's `refusal`, OpenAI's
 Gemini's `SAFETY` and the like), the answer ends with a note saying so, red on a dark red band
 after ⊘; a turn that ends with no text and no call, the provider giving no reason, gets such a note
 instead of ending in silence. The model reads the note too.
+A limit the provider names is said plainly on the same band, with when it lifts when the provider
+says: Claude's 5-hour or weekly limit, Codex's usage limit, OpenAI's `insufficient_quota`, Gemini's
+`RESOURCE_EXHAUSTED`; the provider's error stays folded under it. A short one (`rate_limit_error`,
+`rate_limit_exceeded`, `overloaded_error`, a 429, 529 or 503) is sent again up to 3 times, after the
+wait it asks for (a minute at most) or 2, 4 and 8 seconds, the spinner saying so; esc stops the wait.
+Any other error shows as the provider sent it.
 `antigravity` and `claude-code` start the system prompt as Antigravity's and Claude Code's own
 requests do, then say the model runs inside mo; `preamble = false` under the provider, or its form
 in `/providers`, sends mo's prompt alone (Claude accounts' tokens may be refused without it).

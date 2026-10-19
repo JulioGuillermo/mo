@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/permissions"
@@ -17,6 +18,8 @@ import (
 const (
 	deniedResult    = "The user denied this call. Ask them how to proceed."
 	cancelledResult = "Cancelled by the user before it ran."
+	// LimitRetries is how many times a request a short limit refused is sent again.
+	LimitRetries = 3
 )
 
 type Decision int
@@ -271,8 +274,9 @@ func (a *Agent) turn(ctx context.Context, hooks Hooks) error {
 			a.makeRoom(ctx, hooks)
 		}
 		early := a.startEarlyCalls(ctx, hooks)
-		response, repeated, err := a.stream(ctx, hooks, early)
-		if err != nil && ctx.Err() == nil && (early == nil || !early.any()) && a.withoutImages() {
+		response, repeated, err := a.streamRetrying(ctx, hooks, early)
+		_, limited := llm.LimitOf(err)
+		if err != nil && !limited && ctx.Err() == nil && (early == nil || !early.any()) && a.withoutImages() {
 			if hooks.OnNotice != nil {
 				hooks.OnNotice(fmt.Sprintf("the model did not take the images (%v); sending without them", err))
 			}
@@ -416,6 +420,37 @@ func (a *Agent) stream(ctx context.Context, hooks Hooks, early *earlyRunner) (ll
 		return llm.Response{}, "", ctx.Err()
 	}
 	return llm.Response{}, repeated, nil
+}
+
+// streamRetrying is stream, sent again when a short limit or an overloaded
+// server refuses it before anything came: after the wait the provider asks
+// for, else 2, 4 and 8 seconds, LimitRetries times at most.
+func (a *Agent) streamRetrying(ctx context.Context, hooks Hooks, early *earlyRunner) (llm.Response, string, error) {
+	for attempt := 1; ; attempt++ {
+		response, repeated, err := a.stream(ctx, hooks, early)
+		limit, limited := llm.LimitOf(err)
+		if !limited || limit.Plan || attempt > LimitRetries || ctx.Err() != nil || a.streamedAnything(early) {
+			return response, repeated, err
+		}
+		wait := limit.RetryAfter
+		if wait <= 0 {
+			wait = time.Duration(1<<attempt) * time.Second
+		}
+		hooks.activity(fmt.Sprintf("%s · retrying in %s (%d of %d)", limit.Reason, llm.Span(wait), attempt, LimitRetries))
+		select {
+		case <-time.After(wait):
+		case <-ctx.Done():
+			hooks.activity("")
+			return response, repeated, ctx.Err()
+		}
+		hooks.activity("")
+	}
+}
+
+func (a *Agent) streamedAnything(early *earlyRunner) bool {
+	a.partialMu.Lock()
+	defer a.partialMu.Unlock()
+	return a.partial.Len() > 0 || a.partialReasoning.Len() > 0 || (early != nil && early.any())
 }
 
 // answerToolCalls gives every call a result, also the ones skipped after a

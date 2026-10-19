@@ -14,11 +14,15 @@ package agent
 // | AG-10 | Security | BlockToolCall stops a call before anyone is asked to approve it    | P0       |
 // | AG-11 | Happy    | Reasoning stays in the history but goes back only with KeepReasoning | P0     |
 // | AG-12 | Edge     | An answer with no text and no call says so, shown and kept; one with text is left as is | P0 |
+// | AG-13 | Happy    | A short limit is retried after the wait asked, saying so, then the turn goes on | P0 |
+// | AG-14 | Edge     | A plan limit is not retried; a short one gives up after LimitRetries more tries | P0 |
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -350,6 +354,62 @@ func TestSilentAnswer(t *testing.T) {
 
 		if len(shown) != 2 || shown[0] != llm.SilentNote || shown[1] != "hello" || agent.History[1].Text != llm.SilentNote {
 			t.Errorf("shown = %q history = %q", shown, agent.History[1].Text)
+		}
+	})
+}
+
+// limitedProvider refuses the first requests with err, then answers.
+type limitedProvider struct {
+	refusals int
+	err      error
+	calls    int
+}
+
+func (p *limitedProvider) Stream(context.Context, llm.Request, func(llm.Event)) (llm.Response, error) {
+	p.calls++
+	if p.calls <= p.refusals {
+		return llm.Response{}, p.err
+	}
+	return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, Text: "done"}}, nil
+}
+
+func limitError(code int, retryAfter, body string) error {
+	header := http.Header{}
+	header.Set("Retry-After", retryAfter)
+	return fmt.Errorf("wrapped: %w", &llm.HTTPError{Code: code, Status: http.StatusText(code), Header: header, Body: body})
+}
+
+func TestLimitRetries(t *testing.T) {
+	overloaded := `{"type":"error","error":{"type":"overloaded_error"}}`
+
+	t.Run("AG-13 a short limit is retried after the wait asked, saying so, then the turn goes on", func(t *testing.T) {
+		provider := &limitedProvider{refusals: 2, err: limitError(529, "0.01", overloaded)}
+		agent := newAgent(t, provider)
+		var activity []string
+		hooks := Hooks{OnActivity: func(text string) { activity = append(activity, text) }}
+
+		err := agent.Run(context.Background(), "hi", hooks)
+
+		if err != nil || provider.calls != 3 || agent.History[len(agent.History)-1].Text != "done" {
+			t.Fatalf("err = %v calls = %d", err, provider.calls)
+		}
+		if len(activity) != 4 || activity[0] != "overloaded · retrying in 0 s (1 of 3)" || activity[2] != "overloaded · retrying in 0 s (2 of 3)" || activity[3] != "" {
+			t.Errorf("activity = %q", activity)
+		}
+	})
+
+	t.Run("AG-14 a plan limit is not retried; a short one gives up after LimitRetries more tries", func(t *testing.T) {
+		plan := &limitedProvider{refusals: 9, err: limitError(429, "", `{"error":{"type":"usage_limit_reached"}}`)}
+		short := &limitedProvider{refusals: 9, err: limitError(529, "0.01", overloaded)}
+
+		planErr := newAgent(t, plan).Run(context.Background(), "hi", Hooks{})
+		shortErr := newAgent(t, short).Run(context.Background(), "hi", Hooks{})
+
+		if planErr == nil || plan.calls != 1 {
+			t.Errorf("plan: err = %v calls = %d", planErr, plan.calls)
+		}
+		if _, limited := llm.LimitOf(shortErr); !limited || short.calls != LimitRetries+1 {
+			t.Errorf("short: err = %v calls = %d", shortErr, short.calls)
 		}
 	})
 }

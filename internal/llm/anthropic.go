@@ -139,6 +139,7 @@ type anthropicEvent struct {
 	} `json:"delta"`
 	Usage anthropicUsage `json:"usage"`
 	Error struct {
+		Type    string `json:"type"`
 		Message string `json:"message"`
 	} `json:"error"`
 }

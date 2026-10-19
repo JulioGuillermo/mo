@@ -7,6 +7,10 @@ import (
 	"strings"
 )
 
+// anthropicStreamLimits are the errors Anthropic can send in the middle of
+// a stream that a limit causes, with the status they come with otherwise.
+var anthropicStreamLimits = map[string]int{"overloaded_error": 529, "rate_limit_error": 429}
+
 const cutOffTextNote = "\n\n[answer cut off at the output token limit]"
 
 type anthropicStream struct {
@@ -68,6 +72,10 @@ func (s *anthropicStream) handle(event anthropicEvent) error {
 	case "message_stop":
 		return errStopSSE
 	case "error":
+		if code, isLimit := anthropicStreamLimits[event.Error.Type]; isLimit {
+			body, _ := json.Marshal(map[string]any{"type": "error", "error": event.Error})
+			return &HTTPError{Code: code, Status: "provider error", Body: string(body)}
+		}
 		return fmt.Errorf("provider error: %s", event.Error.Message)
 	}
 	return nil

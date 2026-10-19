@@ -16,6 +16,19 @@ const (
 	networkRetryDelay = 500 * time.Millisecond
 )
 
+// HTTPError is a provider's answer with a failing HTTP status: its
+// headers and body kept, to tell a limit from other errors.
+type HTTPError struct {
+	Code   int
+	Status string
+	Header http.Header
+	Body   string
+}
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("%s: %s", e.Status, e.Body)
+}
+
 // postJSON sends payload and returns the response when its status is a
 // success. A request that fails at the network level is sent once more.
 func postJSON(ctx context.Context, client *http.Client, url string, headers map[string]string, payload any) (*http.Response, error) {
@@ -38,7 +51,7 @@ func postJSON(ctx context.Context, client *http.Client, url string, headers map[
 	if resp.StatusCode >= 300 {
 		defer resp.Body.Close()
 		detail, _ := io.ReadAll(io.LimitReader(resp.Body, errorBodyLimit))
-		return nil, fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(detail)))
+		return nil, &HTTPError{Code: resp.StatusCode, Status: resp.Status, Header: resp.Header, Body: strings.TrimSpace(string(detail))}
 	}
 	return resp, nil
 }
