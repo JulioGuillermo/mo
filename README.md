@@ -782,7 +782,8 @@ A plugin is your own code and has your rights: all of Lua's libraries are there 
 code between plugins (a `.lua` file in `plugins/` is a plugin, run at start). What would break the
 terminal is turned aside: `io.read` reads nothing, `os.exit` raises an error, and `os.execute` runs
 with no terminal, its output in the log. A call stops at its time limit (a tool, 2 minutes; a hook, 5
-seconds), also in the middle of a request or a command. A full example is in
+seconds), also in the middle of a request or a command. An error a plugin raises reaches the model
+as its message; the stack trace goes to the plugin's log. A full example is in
 `docs/examples/plugins/git.lua`.
 
 The language is Lua 5.1 as gopher-lua implements it: patterns have no `%f` frontier (it finds

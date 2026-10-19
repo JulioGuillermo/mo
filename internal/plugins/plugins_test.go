@@ -28,6 +28,7 @@ package plugins
 // | PL-24 | Happy    | The example plugin loads and its guard stops force pushes only     | P1       |
 // | PL-25 | Security | A guard turned off at runtime keeps blocking tool calls            | P0       |
 // | PL-26 | Edge     | Only a real mo.on("tool_call") makes a broken plugin a guard        | P2       |
+// | PL-27 | Happy    | A plugin's error reaches the caller as its message, the stack trace in the log | P1  |
 
 import (
 	"context"
@@ -434,6 +435,21 @@ error("not finished")`}).set
 
 		if reason := set.BlockToolCall(ctx, llm.ToolCall{Name: "ls", Args: json.RawMessage(`{}`)}); reason != "" {
 			t.Errorf("reason = %q", reason)
+		}
+	})
+}
+
+func TestErrorMessages(t *testing.T) {
+	t.Run("PL-27 a plugin's error reaches the caller as its message, the stack trace in the log", func(t *testing.T) {
+		f := loadSource(t, map[string]string{"fails": `
+local function deep() error("the server said no", 0) end
+mo.tool{ name = "fail", run = function() deep() end }`})
+
+		_, err := f.set.Tools(nil)[0].Run(context.Background(), tools.Env{}, json.RawMessage(`{}`))
+
+		log, _ := os.ReadFile(filepath.Join(f.logDir, "plugin-fails.log"))
+		if err == nil || err.Error() != "plugin fails: the server said no" || !strings.Contains(string(log), "stack traceback") {
+			t.Errorf("err = %v log = %q", err, log)
 		}
 	})
 }

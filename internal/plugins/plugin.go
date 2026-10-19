@@ -130,7 +130,7 @@ func (p *Plugin) call(ctx context.Context, timeout time.Duration, work func(*lua
 	select {
 	case result := <-done:
 		if result.err != nil {
-			return nil, fmt.Errorf("plugin %s: %w", p.name, result.err)
+			return nil, fmt.Errorf("plugin %s: %w", p.name, p.readable(result.err))
 		}
 		return result.value, nil
 	case <-ctx.Done():
@@ -146,6 +146,17 @@ func (p *Plugin) call(ctx context.Context, timeout time.Duration, work func(*lua
 		p.log("turned off: a call did not stop at its time limit")
 		return nil, fmt.Errorf("plugin %s %w", p.name, errPluginStuck)
 	}
+}
+
+// readable is the message of a Lua error without its stack trace, which goes
+// to the plugin's log: whoever reads the error has no use for it.
+func (p *Plugin) readable(err error) error {
+	var failure *lua.ApiError
+	if !errors.As(err, &failure) || failure.StackTrace == "" {
+		return err
+	}
+	p.log("error:", err.Error())
+	return errors.New(failure.Object.String())
 }
 
 // callFunction calls a Lua function and converts its first result with
