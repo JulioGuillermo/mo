@@ -44,19 +44,28 @@ func changeStyle(kind rune, current bool) lipgloss.Style {
 	return style.Bold(current)
 }
 
-// showComparison is /git show and /git compare in the viewer: the files
-// in a tree, the diff of the first beside it.
+// showComparison is /git show, of the changes not committed or of a
+// commit, and /git compare, in the viewer: the files in a tree, the diff of
+// the first beside it.
 func (m model) showComparison(repo *gitops.Repo, request gitRequest) (tea.Model, tea.Cmd) {
 	var comparison gitops.Comparison
 	var err error
 	var title, nothing string
-	if request.action == "show" {
+	switch {
+	case request.action == "show" && len(request.words) == 0:
 		comparison, err = repo.Uncommitted()
 		title, nothing = "Changes not committed", "nothing changed since the last commit"
-	} else {
-		comparison, err = repo.Compare(request.branch)
-		title = request.branch + " → " + orDefault(repo.CurrentBranch(), "HEAD")
-		nothing = "this branch adds nothing over " + request.branch
+	case request.action == "show" && len(request.words) == 1:
+		revision := request.words[0]
+		comparison, err = repo.CommitChanges(revision)
+		title, nothing = "Commit "+revision, revision+" changes no file"
+	case request.action == "compare" && len(request.words) == 1:
+		branch := request.words[0]
+		comparison, err = repo.Compare(branch)
+		title = branch + " → " + orDefault(repo.CurrentBranch(), "HEAD")
+		nothing = "this branch adds nothing over " + branch
+	default:
+		return m.emit(m.printer.Note(gitUsage()))
 	}
 	if err != nil {
 		return m.emitError(err)

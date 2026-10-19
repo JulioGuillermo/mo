@@ -131,6 +131,12 @@ type model struct {
 	changes     []gitops.Change
 	repoReading bool
 	repoStale   bool
+	// userRuns numbers the commands run with ! and the /git actions;
+	// shells stops those of ! still going, and shellNotes keeps what they
+	// printed for the model's next message.
+	userRuns   int
+	shells     map[string]context.CancelFunc
+	shellNotes []string
 	// history is what was sent before, for the arrows to bring back.
 	history inputHistory
 	// titling is the title the model is working out, after /title auto.
@@ -544,6 +550,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		running := msg.call
 		m.runningTool = &running
 		return m, nil
+	case shellDoneMsg:
+		return m.finishShell(msg)
+	case gitDoneMsg:
+		return m.finishGitAction(msg)
 	case toolDoneMsg:
 		m.runningTool = nil
 		m.finishTool(msg.id, msg.output, msg.isError)
@@ -757,6 +767,9 @@ func (m model) plainKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.stop()
 			return m, nil
 		}
+		if m.stopShells() {
+			return m, nil
+		}
 		if m.input.Value() != "" {
 			m.input.Reset()
 			return m, nil
@@ -765,6 +778,9 @@ func (m model) plainKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		if m.running {
 			m.stop()
+			return m, nil
+		}
+		if m.stopShells() {
 			return m, nil
 		}
 		if m.titling != nil {
@@ -854,6 +870,9 @@ func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 	if strings.HasPrefix(prompt, "/") {
 		return m.runCommand(prompt)
 	}
+	if command, isShell := strings.CutPrefix(prompt, "!"); isShell {
+		return m.runShell(strings.TrimSpace(command))
+	}
 	prompt, err := m.withSkill(prompt)
 	if err != nil {
 		return m.emit(m.printer.Note(err.Error()))
@@ -872,7 +891,7 @@ func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 		m.session.Team.BeginTurn()
 	}
 	echo := drawText(func() string { return m.printer.User(prompt) })
-	sent := m.withAttachments(prompt)
+	sent := m.withShellNotes(m.withAttachments(prompt))
 	return m.start(echo, func(ctx context.Context, hooks agent.Hooks) error {
 		return m.session.Agent.Run(ctx, sent, hooks)
 	})

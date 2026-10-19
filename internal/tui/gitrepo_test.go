@@ -2,7 +2,7 @@ package tui
 
 // Test Traceability Table
 // | ID    | Category | Description                                                                  | Priority |
-// | GW-01 | Happy    | compare takes the branch alone, or the repository then the branch; show and branch an optional repository | P0 |
+// | GW-01 | Happy    | The word after the action is the repository when it is one; compare with two words and init take it anyway | P0 |
 // | GW-02 | Happy    | /git show <repo> from a folder above opens that repository's changes         | P0       |
 // | GW-03 | Happy    | Outside a repository with one below, /git show opens it                      | P1       |
 // | GW-04 | Happy    | Outside a repository with several below, a list offers them                  | P1       |
@@ -58,23 +58,24 @@ func suggestionNames(found []command) []string {
 }
 
 func TestGitRepos(t *testing.T) {
-	t.Run("GW-01 compare takes the branch alone, or the repository then the branch; show and branch an optional repository", func(t *testing.T) {
+	t.Run("GW-01 the word after the action is the repository when it is one; compare with two words and init take it anyway", func(t *testing.T) {
+		repos := map[string]bool{"./mo": true, "../x": true, "/home/a/mo": true}
+		isRepo := func(word string) bool { return repos[word] }
 		cases := map[string]gitRequest{
-			"compare master":    {action: "compare", branch: "master"},
-			"compare ./mo main": {action: "compare", repo: "./mo", branch: "main"},
-			"show":              {action: "show"},
-			"show ../x":         {action: "show", repo: "../x"},
-			"branch /home/a/mo": {action: "branch", repo: "/home/a/mo"},
-			"repos":             {action: "repos"},
+			"compare master":           {action: "compare", words: []string{"master"}, text: "master"},
+			"compare ./mo main":        {action: "compare", repo: "./mo", words: []string{"main"}, text: "main"},
+			"compare other main":       {action: "compare", repo: "other", words: []string{"main"}, text: "main"},
+			"show":                     {action: "show"},
+			"show ../x":                {action: "show", repo: "../x"},
+			"show HEAD~1":              {action: "show", words: []string{"HEAD~1"}, text: "HEAD~1"},
+			"branch /home/a/mo":        {action: "branch", repo: "/home/a/mo"},
+			"commit ./mo fix: the bug": {action: "commit", repo: "./mo", words: []string{"fix:", "the", "bug"}, text: "fix: the bug"},
+			"init new":                 {action: "init", repo: "new"},
 		}
 		for argument, want := range cases {
-			if got, ok := parseGitRequest(argument); !ok || got != want {
-				t.Errorf("%q = %+v %v", argument, got, ok)
-			}
-		}
-		for _, wrong := range []string{"", "compare", "show a b", "repos a", "push"} {
-			if _, ok := parseGitRequest(wrong); ok {
-				t.Errorf("%q taken", wrong)
+			got := parseGitRequest(argument, isRepo)
+			if got.action != want.action || got.repo != want.repo || got.text != want.text || strings.Join(got.words, "|") != strings.Join(want.words, "|") {
+				t.Errorf("%q = %+v, want %+v", argument, got, want)
 			}
 		}
 	})

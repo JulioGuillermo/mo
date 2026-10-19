@@ -53,18 +53,46 @@ func (r *Repo) Compare(revision string) (Comparison, error) {
 	if len(bases) == 0 {
 		return Comparison{}, fmt.Errorf("%s and this branch share no history", revision)
 	}
-	from := bases[0]
-	fromTree, err := from.Tree()
-	if err != nil {
-		return Comparison{}, err
-	}
-	headTree, err := head.Tree()
-	if err != nil {
-		return Comparison{}, err
-	}
-	changes, err := object.DiffTree(fromTree, headTree)
+	comparison, err := r.between(bases[0], head)
 	if err != nil {
 		return Comparison{}, fmt.Errorf("comparing with %s: %w", revision, err)
+	}
+	return comparison, nil
+}
+
+// CommitChanges is what a commit changed over its first parent, or all
+// its files for the first commit.
+func (r *Repo) CommitChanges(revision string) (Comparison, error) {
+	commit, err := r.commitOf(revision)
+	if err != nil {
+		return Comparison{}, err
+	}
+	var parent *object.Commit
+	if commit.NumParents() > 0 {
+		if parent, err = commit.Parent(0); err != nil {
+			return Comparison{}, err
+		}
+	}
+	return r.between(parent, commit)
+}
+
+// between compares two commits; a nil from is a commit with no files.
+func (r *Repo) between(from, to *object.Commit) (Comparison, error) {
+	fromTree := &object.Tree{}
+	if from != nil {
+		tree, err := from.Tree()
+		if err != nil {
+			return Comparison{}, err
+		}
+		fromTree = tree
+	}
+	toTree, err := to.Tree()
+	if err != nil {
+		return Comparison{}, err
+	}
+	changes, err := object.DiffTree(fromTree, toTree)
+	if err != nil {
+		return Comparison{}, err
 	}
 	var files []Change
 	for _, change := range changes {
@@ -83,7 +111,7 @@ func (r *Repo) Compare(revision string) (Comparison, error) {
 	}
 	slices.SortFunc(files, func(a, b Change) int { return strings.Compare(a.Path, b.Path) })
 	before := func(path string) string { return r.commitContent(from, path) }
-	after := func(path string) string { return r.commitContent(head, path) }
+	after := func(path string) string { return r.commitContent(to, path) }
 	return Comparison{Files: files, before: before, after: after}, nil
 }
 

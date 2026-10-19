@@ -234,3 +234,14 @@ func firstNonEmpty(values ...string) string {
 	}
 	return ""
 }
+
+// RunGit runs one action of the git tool in workDir, as the model's calls
+// do, for the user's /git.
+func RunGit(ctx context.Context, workDir string, args json.RawMessage) (string, error) {
+	return runGit(ctx, Env{WorkDir: workDir}, args)
+}
+
+// GitChanges tells whether a git action changes the repository.
+func GitChanges(action string) bool {
+	return slices.Contains(gitChanges, action)
+}

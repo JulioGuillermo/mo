@@ -687,13 +687,31 @@ alone again. ↑↓ move a cursor, and `c`, `d` and `a` comment lines and attach
 `/view` opened: the model gets each comment with its line in the new file, or in the old one for a
 line taken out. Tab after `/git compare ` offers the branches.
 
-Each takes a repository folder, relative or absolute, for when mo runs above the repositories, as in
-a workspace: `/git show ./mo`, `/git compare ./mo master` (repository first, the branch alone means
-this folder's). Tab offers the repositories first, then the other folders to go into. Outside a
-repository with none named, the one in the 2 levels below opens, or a list offers them.
-`/git branch [repo]` lists the branches, the current one marked, to filter (`/`) and switch to one
-(not while the model works). `/git repos` lists the repositories found and every one opened, each
-with its branches; enter lists the branches of the one picked.
+`/git show <revision>` opens the changes of that commit the same way.
+
+Every action of the `git` tool is there for you too, typed as git takes it and run without the git
+command: `/git status`, `diff [--staged] [paths]`, `log [-n N] [path]`, `blame <path>`, `check`,
+`switch [-c] <branch>`, `branch <name>`, `add [paths]`, `commit <message>`, `fetch`, `pull [remote]
+[branch] [--rebase|--merge]`, `push`, `merge`, `rebase`, `cherry-pick`, `continue`, `abort`,
+`stash [message]`, `stash list|apply|pop|drop [n]`, `tags`, `tag <name> [revision] [-m message]`,
+`reset [revision] [--soft|--mixed|--hard]` and `init [folder]`. Each shows as a git call with what it
+gave. While the model works, those that change the repository wait for it to end. `/git help`
+lists them.
+
+Each takes a repository folder after the action, relative or absolute, for when mo runs above the
+repositories, as in a workspace: `/git show ./mo`, `/git log ../api`, `/git compare ./mo master`. The
+word is the repository when it is one, or a folder outside this folder's repository; `compare` with
+two words always takes the first. Tab offers the repositories first, then the other folders to go
+into, and the branches after `compare`, `switch`, `merge`, `rebase` and `cherry-pick`. Outside a
+repository with none named, the one in the 2 levels below is taken, or a list offers them.
+`/git branch [repo]` lists the branches, the current one marked, to filter (`/`) and switch to one.
+`/git repos` lists the repositories found and every one opened, each with its branches; enter lists
+the branches of the one picked.
+
+`!command` runs a command in the shell, in the working directory, without a terminal (an editor or a
+pager will not work there): `!make test`. It shows as a bash call with its output, and esc or ctrl+c
+stops it. The model reads the command and what it printed (its start and end, 8 KB) with your next
+message.
 
 ```toml
 [render]
@@ -750,7 +768,8 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 |---|---|
 | enter | send; while the model works, queue it: it waits over the status line, shaded, each message after an icon (💬 or Nerd Font's bubble, » in text), with an amber edge on the left (`⧗ queued · N · ↑ edit` under them) and goes into the conversation when the model reads it, at its next step; a long one wraps over several lines, up to eight; several messages queued together are one entry and the model reads them as one message; ↑ with nothing typed brings them all back into the input to edit, without stopping the model; ctrl+s sends them (and what is typed) now: the model stops where it is and answers them, instead of reading them at its next step; esc gives them back in the input too, but stops the model |
 | shift+enter, ctrl+j, alt+enter | new line, in the input and in the boxes of forms |
-| esc, ctrl+c | stop the current run; esc with suggestions open (commands, paths, @) closes them first and leaves the run going |
+| `!command` | run it in the shell, in this folder; the model reads it with your next message |
+| esc, ctrl+c | stop the current run, or the commands run with `!`; esc with suggestions open (commands, paths, @) closes them first and leaves the run going |
 | ctrl+b | send the command that blocks the model to the background |
 | `/vim`, or `keys = "vim"` under `[render]` | vim keys: esc to normal mode, i a A I o to write; ctrl+h/j/k/l move between the conversation, the input and the side panel; in the conversation j k gg G ctrl+d ctrl+u move a cursor, l and h open and fold what it is on, v selects lines and y copies them; in the panel j k pick a task or job and l opens its menu; in the input h l w b 0 $ x D dd edit, v selects, u and ctrl+r undo and redo; y yy dd x D copy to the clipboard and p P paste from it; `:` starts a command; in settings lists l goes in and h back. The mode shows before the status line |
 | ctrl+x | clear what is typed, also while the model works, which goes on |
@@ -768,5 +787,5 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | click on the branch | the files changed, each with its kind |
 | right click | a small menu by the pointer, over the screen (↑↓ or j k, enter or a click, esc or a click outside closes it): the mode: all modes to pick · a task: change its state or delete it · a job in the panel, or a bash call still running: watch its output live, its last lines, send it to the background, kill it |
 | wheel over the side panel | scroll its tasks and jobs |
-| `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact [instruction]` `/cache clear` `/settings` `/reload` `/providers` `/mcp` `/plugins` `/agents` `/view [file]` `/git show [repo]` `/git compare [repo] <branch>` `/git branch [repo]` `/git repos` `/peers` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
+| `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact [instruction]` `/cache clear` `/settings` `/reload` `/providers` `/mcp` `/plugins` `/agents` `/view [file]` `/git <action> [repo]` `/peers` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
 | `/<name> text` | a plugin command |

@@ -13,50 +13,71 @@ import (
 	"github.com/jg/mo/internal/gitops"
 )
 
-const (
-	gitUsage = "usage: /git show [repo], the changes not committed · /git compare [repo] <branch>, what this branch adds over it, as a pull request · " +
-		"/git branch [repo], the branches, to switch to one · /git repos, the repositories known"
-	repoPickHelp = "↑↓ choose · / filter · enter take · esc back"
-)
+const repoPickHelp = "↑↓ choose · / filter · enter take · esc back"
 
-// gitRequest is what /git was asked: show, compare or branch, in the
-// working directory's repository or in repo.
+// gitRequest is what /git was asked: an action, in the working directory's
+// repository or in repo, with the words after them and the same text
+// as typed, for a message.
 type gitRequest struct {
 	action string
 	repo   string
-	branch string
+	words  []string
+	text   string
 }
 
-// parseGitRequest reads /git show [repo], /git compare [repo] <branch> and
-// /git branch [repo].
-func parseGitRequest(argument string) (gitRequest, bool) {
-	words := strings.Fields(argument)
-	if len(words) == 0 {
-		return gitRequest{}, false
+// parseGitRequest reads /git <action> [repo] [arguments]. The word after
+// the action is the repository when isRepo says so; compare with two
+// words takes the first as the repository whatever it is, and init takes
+// its folder there.
+func parseGitRequest(argument string, isRepo func(word string) bool) gitRequest {
+	action, rest := cutWord(argument)
+	request := gitRequest{action: action}
+	first, afterFirst := cutWord(rest)
+	repoFirst := first != "" && (isRepo(first) || action == "init" || (action == "compare" && len(strings.Fields(rest)) == 2))
+	if repoFirst {
+		request.repo, rest = first, afterFirst
 	}
-	request := gitRequest{action: words[0]}
-	rest := words[1:]
-	switch {
-	case request.action == "compare" && len(rest) == 1:
-		request.branch = rest[0]
-	case request.action == "compare" && len(rest) == 2:
-		request.repo, request.branch = rest[0], rest[1]
-	case (request.action == "show" || request.action == "branch") && len(rest) == 1:
-		request.repo = rest[0]
-	case (request.action == "show" || request.action == "branch" || request.action == "repos") && len(rest) == 0:
-	default:
-		return request, false
+	request.text = rest
+	request.words = strings.Fields(rest)
+	return request
+}
+
+// cutWord splits off the first word of text, the rest trimmed.
+func cutWord(text string) (word, rest string) {
+	text = strings.TrimSpace(text)
+	word, rest, _ = strings.Cut(text, " ")
+	return word, strings.TrimSpace(rest)
+}
+
+// isRepoArgument tells whether a word after a /git action names a
+// repository: a folder that is one, or any folder outside the working
+// directory's repository, or any folder when the working directory is in
+// none, to look for those below it.
+func (m model) isRepoArgument(word string) bool {
+	dir := m.absolutePath(word)
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return false
 	}
-	return request, true
+	if gitops.IsRepo(dir) {
+		return true
+	}
+	here, err := gitops.Open(m.session.WorkDir)
+	if err != nil {
+		return true
+	}
+	relative, err := filepath.Rel(here.Root(), dir)
+	return err != nil || strings.HasPrefix(relative, "..")
 }
 
 func (m model) gitCommand(argument string) (tea.Model, tea.Cmd) {
-	request, ok := parseGitRequest(argument)
-	if !ok {
-		return m.emit(m.printer.Note(gitUsage))
-	}
-	if request.action == "repos" {
+	request := parseGitRequest(argument, m.isRepoArgument)
+	switch request.action {
+	case "", "help":
+		return m.emit(m.printer.Note(gitUsage()))
+	case "repos":
 		return m.showRepos()
+	case "init":
+		return m.runGitAction(request, "")
 	}
 	return m.runGitRequest(request)
 }
@@ -75,10 +96,13 @@ func (m model) runGitRequest(request gitRequest) (tea.Model, tea.Cmd) {
 	if err != nil {
 		return m.emitError(err)
 	}
-	if request.action == "branch" {
+	switch {
+	case request.action == "branch" && len(request.words) == 0:
 		return m.showBranches(repo)
+	case request.action == "show" || request.action == "compare":
+		return m.showComparison(repo, request)
 	}
-	return m.showComparison(repo, request)
+	return m.runGitAction(request, repo.Root())
 }
 
 // showRepos is /git repos: the repositories known, each with its branch;

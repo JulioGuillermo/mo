@@ -1,0 +1,98 @@
+package tui
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/tools"
+)
+
+const (
+	shellUsage = "!<command> runs it in the shell, in this folder, without a terminal; the model reads it with your next message"
+	// shellNoteLimit is how much of a command's output the model is given,
+	// its start and end kept.
+	shellNoteLimit = 8000
+)
+
+// shellDoneMsg brings what a command run with ! printed.
+type shellDoneMsg struct {
+	id, command, output string
+	err                 error
+}
+
+// runShell is !command: run in the working directory, shown as a bash call,
+// stopped by esc; what it printed goes to the model with the next message.
+func (m model) runShell(command string) (tea.Model, tea.Cmd) {
+	if command == "" {
+		return m.emit(m.printer.Note(shellUsage))
+	}
+	m.userRuns++
+	id := fmt.Sprintf("user-shell-%d", m.userRuns)
+	args, _ := json.Marshal(map[string]string{"command": command})
+	m.addTool(llm.ToolCall{ID: id, Name: "bash", Args: args}, command)
+	ctx, cancel := context.WithCancel(context.Background())
+	if m.shells == nil {
+		m.shells = map[string]context.CancelFunc{}
+	}
+	m.shells[id] = cancel
+	workDir := m.session.WorkDir
+	return m, func() tea.Msg {
+		output, err := tools.RunUserCommand(ctx, workDir, command)
+		if ctx.Err() != nil {
+			err = errors.New("stopped with esc")
+		}
+		return shellDoneMsg{id: id, command: command, output: output, err: err}
+	}
+}
+
+func (m model) finishShell(msg shellDoneMsg) (tea.Model, tea.Cmd) {
+	if cancel, ok := m.shells[msg.id]; ok {
+		cancel()
+		delete(m.shells, msg.id)
+	}
+	output := msg.output
+	ending := "it ended well"
+	if msg.err != nil {
+		output = strings.TrimSpace(output + "\n" + msg.err.Error())
+		ending = msg.err.Error()
+	}
+	m.finishTool(msg.id, output, msg.err != nil)
+	note := fmt.Sprintf("I ran `%s` in the shell; %s. It printed:\n```\n%s\n```", msg.command, ending, headAndTail(msg.output, shellNoteLimit))
+	m.shellNotes = append(m.shellNotes, note)
+	return m, m.readRepo()
+}
+
+// stopShells stops the commands run with ! still going, telling whether
+// there were any.
+func (m model) stopShells() bool {
+	for _, cancel := range m.shells {
+		cancel()
+	}
+	return len(m.shells) > 0
+}
+
+// withShellNotes puts the commands run with ! since the last message, and
+// what they printed, before the message, for the model to read.
+func (m *model) withShellNotes(prompt string) string {
+	if len(m.shellNotes) == 0 {
+		return prompt
+	}
+	notes := strings.Join(m.shellNotes, "\n\n")
+	m.shellNotes = nil
+	return notes + "\n\n" + prompt
+}
+
+func headAndTail(text string, limit int) string {
+	text = strings.TrimRight(text, "\n")
+	if len(text) <= limit {
+		return text
+	}
+	half := limit / 2
+	return text[:half] + fmt.Sprintf("\n… %d bytes left out …\n", len(text)-2*half) + text[len(text)-half:]
+}

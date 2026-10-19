@@ -305,3 +305,12 @@ func detachFromTerminal(cmd *exec.Cmd) {
 	}
 	cmd.WaitDelay = bashWaitForOutput
 }
+
+// userCommandTimeout is how long a command the user runs with ! may take.
+const userCommandTimeout = time.Hour
+
+// RunUserCommand runs a command the user typed, in dir, without a terminal,
+// keeping the start and end of what it prints.
+func RunUserCommand(ctx context.Context, dir, command string) (string, error) {
+	return runAlone(ctx, Env{WorkDir: dir}, command, userCommandTimeout)
+}

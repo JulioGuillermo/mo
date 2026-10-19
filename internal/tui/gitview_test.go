@@ -154,7 +154,7 @@ func TestGitView(t *testing.T) {
 		clean := runGit(t, m, "show")
 		usage := runGit(t, m, "")
 
-		if clean.viewer != nil || !strings.Contains(shown(clean), "nothing changed") || !strings.Contains(shown(usage), "usage: /git show") {
+		if clean.viewer != nil || !strings.Contains(shown(clean), "nothing changed") || !strings.Contains(shown(usage), "compare [repo] <branch>") {
 			t.Errorf("clean:\n%s\nusage:\n%s", shown(clean), shown(usage))
 		}
 	})
@@ -164,7 +164,7 @@ func TestGitView(t *testing.T) {
 		repo, _ := gitops.Open(dir)
 		repo.Switch("feature", true)
 
-		actions := m.gitSuggestions("co")
+		actions := m.gitSuggestions("comp")
 		branches := m.gitSuggestions("compare ")
 
 		if len(actions) != 1 || actions[0].name != "git compare " || len(branches) != 2 || branches[0].name != "git compare master" || branches[1].name != "git compare src/" {

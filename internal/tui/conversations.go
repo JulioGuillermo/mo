@@ -453,7 +453,7 @@ var whileRunning = map[string]bool{
 // It waits over the status line, where it is in view whatever the model
 // is writing, and goes into the conversation where the model reads it.
 func (m model) queue(prompt string) (tea.Model, tea.Cmd) {
-	m.session.Agent.Queue(m.withAttachments(prompt))
+	m.session.Agent.Queue(m.withShellNotes(m.withAttachments(prompt)))
 	m.queued = append(m.queued, prompt)
 	m.scrolled = false
 	return m, nil

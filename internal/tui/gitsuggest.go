@@ -9,12 +9,12 @@ import (
 )
 
 // gitSuggestions are what /git takes: its actions, then the repositories
-// and folders show, branch and compare take, then the branches compare
-// does.
+// and folders show, branch and compare take, then the branches compare,
+// switch, merge, rebase and cherry-pick do.
 func (m model) gitSuggestions(partial string) []command {
 	action, rest, spaced := strings.Cut(partial, " ")
 	if !spaced {
-		return gitActions(action)
+		return gitActionSuggestions(action)
 	}
 	words := strings.Split(rest, " ")
 	switch {
@@ -25,22 +25,31 @@ func (m model) gitSuggestions(partial string) []command {
 		return append(branches, m.repoSuggestions(action, words[0], true)...)
 	case action == "compare" && len(words) == 2:
 		return m.branchSuggestions(m.absolutePath(words[0]), "git compare "+words[0]+" ", words[1])
+	case takesBranch(action) && len(words) == 1:
+		return m.branchSuggestions(m.session.WorkDir, "git "+action+" ", words[0])
 	}
 	return nil
 }
 
-func gitActions(typed string) []command {
-	actions := []command{
-		{name: "git show", description: "the changes not committed, staged or not; a repository after it, of another"},
-		{name: "git compare ", description: "what this branch adds over another, as a pull request", more: true},
-		{name: "git branch", description: "the branches, to switch to one; a repository after it, of another"},
-		{name: "git repos", description: "the repositories known, each with its branch"},
-	}
+func takesBranch(action string) bool {
+	return action == "switch" || action == "merge" || action == "rebase" || action == "cherry-pick"
+}
+
+func gitActionSuggestions(typed string) []command {
 	var matches []command
-	for _, action := range actions {
-		if strings.HasPrefix(action.name, "git "+typed) {
-			matches = append(matches, action)
+	for _, action := range gitActions {
+		if !strings.HasPrefix(action.name, typed) {
+			continue
 		}
+		description := action.description
+		if action.usage != "" {
+			description = action.usage + " · " + description
+		}
+		name := "git " + action.name
+		if action.needsMore {
+			name += " "
+		}
+		matches = append(matches, command{name: name, description: description, more: action.needsMore})
 	}
 	return matches
 }
@@ -55,7 +64,7 @@ func (m model) branchSuggestions(dir, before, typed string) []command {
 	var matches []command
 	for _, name := range repo.BranchNames() {
 		if strings.HasPrefix(name, typed) && name != repo.CurrentBranch() {
-			matches = append(matches, command{name: before + name, description: "what " + orDefault(repo.CurrentBranch(), "HEAD") + " adds over " + name})
+			matches = append(matches, command{name: before + name, description: "branch"})
 		}
 	}
 	return matches
