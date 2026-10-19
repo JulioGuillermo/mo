@@ -234,18 +234,14 @@ func (m *model) withAttachments(prompt string) string {
 	for label, path := range m.attachments {
 		if note, ok := m.commentNotes[label]; ok && strings.Contains(prompt, label) {
 			notes = append(notes, note)
-			for file := range m.fileComments {
-				if filepath.Join(m.session.WorkDir, file) == path || file == path {
-					delete(m.fileComments, file)
-				}
-			}
+			delete(m.fileComments, m.commentSources[label])
 		}
 		if strings.ContainsAny(path, " '\"\\") {
 			path = `"` + strings.ReplaceAll(path, `"`, `\"`) + `"`
 		}
 		prompt = strings.ReplaceAll(prompt, label, path)
 	}
-	m.attachments, m.commentNotes = nil, nil
+	m.attachments, m.commentNotes, m.commentSources = nil, nil, nil
 	if len(notes) > 0 {
 		sort.Strings(notes)
 		prompt += "\n\n" + strings.Join(notes, "\n\n")

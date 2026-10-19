@@ -608,7 +608,11 @@ order; tab or enter attaches the one picked.
 it: the commits since the two parted, so what only the other branch has is left out. The
 tree lists only the files that changed: new in green, changed in amber, deleted in red. Beside it,
 the diff of the file picked: three lines around each change, the lines taken out on red and those
-put in on green, numbered and highlighted. Tab after `/git compare ` offers the branches.
+put in on green, numbered and highlighted. The unchanged lines between are folded into a `⋯` row:
+on it `e` shows 20 more, `E` all of them, and `f` anywhere shows the whole file, or the changes
+alone again. ↑↓ move a cursor, and `c`, `d` and `a` comment lines and attach them as in a file
+`/view` opened: the model gets each comment with its line in the new file, or in the old one for a
+line taken out. Tab after `/git compare ` offers the branches.
 
 ```toml
 [render]

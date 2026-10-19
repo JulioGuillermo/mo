@@ -424,7 +424,7 @@ func (m model) updateViewer(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(v.lines) == 0 {
 			return m, nil
 		}
-		if v.file != "" {
+		if v.annotatable() {
 			v.cursor = v.pickTo
 			v.selected = from != to
 			if !v.selected {
@@ -512,27 +512,27 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 		m.viewer = nil
 		return m, nil
 	case "up", "k":
-		if v.file != "" {
+		if v.annotatable() {
 			m.moveCursor(-1)
 			return m, nil
 		}
 		m.scrollViewer(-1)
 	case "down", "j":
-		if v.file != "" {
+		if v.annotatable() {
 			m.moveCursor(1)
 			return m, nil
 		}
 		m.scrollViewer(1)
 	case "c":
-		if v.file != "" {
+		if v.annotatable() {
 			m.startComment()
 		}
 	case "d":
-		if comment, _, ok := m.commentAt(v.cursor); ok && v.file != "" {
+		if comment, _, ok := m.commentAt(v.cursor); ok && v.annotatable() {
 			m.setComment(comment.from, comment.to, "")
 		}
 	case "a":
-		if v.file != "" {
+		if v.annotatable() || v.changes != nil {
 			return m.attachFile()
 		}
 	case "pgup", "shift+up":
@@ -562,6 +562,10 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 		if v.drawing != "" {
 			v.toggleCode()
 		}
+	case "e", "E":
+		m.expandDiff(pressed == "E")
+	case "f":
+		m.toggleWholeDiff()
 	case "y":
 		return m, m.copyViewer(strings.Join(v.lines, "\n"), fmt.Sprintf("copied all %d lines", len(v.lines)))
 	case "b":
@@ -621,21 +625,18 @@ func (m model) viewerBody(width int) string {
 		if v.language != "" {
 			about += " · " + v.language
 		}
-		switch count := len(m.comments()); count {
-		case 0:
-		case 1:
-			about += " · 1 comment, a attaches it"
-		default:
-			about += fmt.Sprintf(" · %d comments, a attaches them", count)
-		}
+		about += m.commentCount()
 		header = toolName.Render(oneLine(v.file, width/2)) + " " + dimStyle.Render(about+" · only you see it")
 		help = fileHelp
 		// The comment mark, the line's number, a space.
 		gutter = 1 + len(fmt.Sprint(len(v.lines))) + 1
 	}
 	if v.changes != nil {
-		header = v.changeHeader(width)
+		header = v.changeHeader(width, m.commentCount())
 		help = changeHelp
+		if v.diff != nil {
+			gutter = 1
+		}
 	}
 	if v.drawing != "" {
 		widest := 0
@@ -680,7 +681,7 @@ func (m model) viewerBody(width int) string {
 				style = viewerCurrent
 			}
 			line = re.ReplaceAllStringFunc(line, func(found string) string { return style.Render(found) })
-		case (v.file != "" && i == v.cursor && !v.commenting) || (v.commenting && i >= v.commentFrom && i <= v.commentTo):
+		case (v.annotatable() && i == v.cursor && !v.commenting) || (v.commenting && i >= v.commentFrom && i <= v.commentTo):
 			if v.coloured() {
 				line = ansi.Cut(v.colouredLine(i, dark), v.left, v.left+room)
 			}
@@ -696,7 +697,10 @@ func (m model) viewerBody(width int) string {
 			if _, _, commented := m.commentAt(i); commented {
 				mark = commentMark.Render("◆")
 			}
-			line = mark + dimStyle.Render(fmt.Sprintf("%*d ", gutter-2, i+1)) + line
+			if v.file != "" {
+				mark += dimStyle.Render(fmt.Sprintf("%*d ", gutter-2, i+1))
+			}
+			line = mark + line
 		}
 		out = append(out, line)
 	}
@@ -708,8 +712,14 @@ func (m model) viewerBody(width int) string {
 		if v.commentTo > v.commentFrom {
 			where = fmt.Sprintf("lines %d-%d", v.commentFrom+1, v.commentTo+1)
 		}
+		if v.diff != nil {
+			where = fmt.Sprintf("%d lines", v.commentTo-v.commentFrom+1)
+			if from, ok := v.diff.edit(v.commentFrom); ok && v.commentTo == v.commentFrom {
+				where = v.diff.describe(from)
+			}
+		}
 		footer = commentMark.Render("◆ "+where+": ") + v.commentText + "▏" + dimStyle.Render("  enter keep · esc cancel · empty deletes it")
-	case v.file != "" && onComment && !v.typing:
+	case v.annotatable() && onComment && !v.typing:
 		footer = commentFooter.Render("◆ "+comment.text) + dimStyle.Render(" · c edit · d delete")
 	case v.typing:
 		footer = keyStyle.Render("/") + v.typed + "▏" + dimStyle.Render("  enter search · esc cancel")

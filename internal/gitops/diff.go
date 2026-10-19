@@ -83,50 +83,61 @@ func matches(a, b []string) []int {
 	return match
 }
 
-// Unified writes the changes from a to b as a unified diff of the named
-// file, with three lines of context; empty when nothing changed.
-func Unified(name, a, b string) string {
+// Line is a line of a diff: kept, taken out or put in, as ' ', '-' or
+// '+', with its text and where it is in the old text and the new, from 0;
+// a line put in keeps the old place it goes at, and one taken out the new.
+type Line struct {
+	Kind     byte
+	Text     string
+	Old, New int
+}
+
+// Lines are every line of the diff from a to b, the kept ones too, in
+// order.
+func Lines(a, b string) []Line {
 	before, after := lines(a), lines(b)
 	match := matches(before, after)
-	type edit struct {
-		kind byte
-		text string
-		i, j int
-	}
-	var edits []edit
+	var edits []Line
 	i, j := 0, 0
 	for i < len(before) || j < len(after) {
 		switch {
 		case i < len(before) && match[i] == j:
-			edits = append(edits, edit{' ', before[i], i, j})
+			edits = append(edits, Line{' ', before[i], i, j})
 			i, j = i+1, j+1
 		case i < len(before) && match[i] < 0:
-			edits = append(edits, edit{'-', before[i], i, j})
+			edits = append(edits, Line{'-', before[i], i, j})
 			i++
 		default:
-			edits = append(edits, edit{'+', after[j], i, j})
+			edits = append(edits, Line{'+', after[j], i, j})
 			j++
 		}
 	}
+	return edits
+}
+
+// Unified writes the changes from a to b as a unified diff of the named
+// file, with three lines of context; empty when nothing changed.
+func Unified(name, a, b string) string {
+	edits := Lines(a, b)
 	var out strings.Builder
 	for start := 0; start < len(edits); {
-		if edits[start].kind == ' ' {
+		if edits[start].Kind == ' ' {
 			start++
 			continue
 		}
 		from := max(start-contextLines, 0)
 		end := start
 		for quiet := 0; end < len(edits) && quiet <= 2*contextLines; end++ {
-			if edits[end].kind == ' ' {
+			if edits[end].Kind == ' ' {
 				quiet++
 			} else {
 				quiet = 0
 			}
 		}
 		end = min(end, len(edits))
-		for end > start && edits[end-1].kind == ' ' && end-start > contextLines {
+		for end > start && edits[end-1].Kind == ' ' && end-start > contextLines {
 			trailing := 0
-			for t := end - 1; t >= start && edits[t].kind == ' '; t-- {
+			for t := end - 1; t >= start && edits[t].Kind == ' '; t-- {
 				trailing++
 			}
 			if trailing <= contextLines {
@@ -136,21 +147,21 @@ func Unified(name, a, b string) string {
 		}
 		oldCount, newCount := 0, 0
 		for _, e := range edits[from:end] {
-			if e.kind != '+' {
+			if e.Kind != '+' {
 				oldCount++
 			}
-			if e.kind != '-' {
+			if e.Kind != '-' {
 				newCount++
 			}
 		}
 		if out.Len() == 0 {
 			fmt.Fprintf(&out, "--- a/%s\n+++ b/%s\n", name, name)
 		}
-		fmt.Fprintf(&out, "@@ -%d,%d +%d,%d @@\n", edits[from].i+1, oldCount, edits[from].j+1, newCount)
+		fmt.Fprintf(&out, "@@ -%d,%d +%d,%d @@\n", edits[from].Old+1, oldCount, edits[from].New+1, newCount)
 		for _, e := range edits[from:end] {
-			out.WriteByte(e.kind)
-			out.WriteString(e.text)
-			if !strings.HasSuffix(e.text, "\n") {
+			out.WriteByte(e.Kind)
+			out.WriteString(e.Text)
+			if !strings.HasSuffix(e.Text, "\n") {
 				out.WriteString("\n\\ No newline at end of file\n")
 			}
 		}

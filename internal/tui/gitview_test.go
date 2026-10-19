@@ -8,14 +8,20 @@ package tui
 // | GV-04 | Happy    | /git compare <branch> shows what this branch adds over it                   | P0       |
 // | GV-05 | Edge     | Nothing to show, or no action, says so instead of opening                   | P1       |
 // | GV-06 | Happy    | /git suggests its actions, then the other branches                          | P2       |
+// | GV-07 | Happy    | Lines far from a change fold into one row; e shows 20 of them, E all        | P0       |
+// | GV-08 | Happy    | f shows the whole file and back, the cursor kept on its line                | P0       |
+// | GV-09 | Happy    | A comment on a diff line goes to the model with its line, kept as lines unfold | P0    |
+// | GV-10 | Edge     | A fold has nothing to comment, and e off a fold says where to press it      | P2       |
 
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -158,6 +164,105 @@ func TestGitView(t *testing.T) {
 
 		if len(actions) != 1 || actions[0].name != "git compare " || len(branches) != 1 || branches[0].name != "git compare master" {
 			t.Errorf("actions %v branches %v", actions, branches)
+		}
+	})
+}
+
+func longFileModel(t *testing.T) (model, string) {
+	t.Helper()
+	m, dir := gitModel(t)
+	var before strings.Builder
+	for i := 1; i <= 100; i++ {
+		before.WriteString("line " + strconv.Itoa(i) + "\n")
+	}
+	gitRepo, _ := git.PlainOpen(dir)
+	commitFiles(t, gitRepo, dir, map[string]string{"long.txt": before.String()})
+	writeFile(t, filepath.Join(dir, "long.txt"), strings.Replace(before.String(), "line 50\n", "line fifty\n", 1))
+	m = runGit(t, m, "show")
+	m.viewer.treeFocus = false
+	return m, dir
+}
+
+func pressKeys(m model, keys ...string) model {
+	for _, key := range keys {
+		var msg tea.KeyPressMsg
+		switch key {
+		case "up":
+			msg = tea.KeyPressMsg{Code: tea.KeyUp}
+		case "down":
+			msg = tea.KeyPressMsg{Code: tea.KeyDown}
+		case "enter":
+			msg = tea.KeyPressMsg{Code: tea.KeyEnter}
+		default:
+			msg = tea.KeyPressMsg{Code: rune(key[0]), Text: key}
+		}
+		updated, _ := m.Update(msg)
+		m = updated.(model)
+	}
+	return m
+}
+
+func TestDiffFolds(t *testing.T) {
+	t.Run("GV-07 lines far from a change fold into one row; e shows 20 of them, E all", func(t *testing.T) {
+		m, _ := longFileModel(t)
+		lines := m.viewer.lines
+		if len(lines) != 10 || !strings.Contains(lines[0], "⋯ 46 unchanged lines") || !strings.Contains(lines[9], "⋯ 47 unchanged lines") {
+			t.Fatalf("lines:\n%s", strings.Join(lines, "\n"))
+		}
+
+		m = pressKeys(m, "e")
+		afterStep := len(m.viewer.lines)
+		m.viewer.cursor = 0
+		m = pressKeys(m, "E")
+
+		if afterStep != 30 || len(m.viewer.lines) != 55 || !strings.Contains(m.viewer.lines[0], "1   line 1") {
+			t.Errorf("after e %d rows, after E %d:\n%s", afterStep, len(m.viewer.lines), strings.Join(m.viewer.lines[:3], "\n"))
+		}
+	})
+
+	t.Run("GV-08 f shows the whole file and back, the cursor kept on its line", func(t *testing.T) {
+		m, _ := longFileModel(t)
+		m = pressKeys(m, "down", "down", "down", "down")
+		on := m.viewer.lines[m.viewer.cursor]
+
+		m = pressKeys(m, "f")
+		whole, wholeOn := len(m.viewer.lines), m.viewer.lines[m.viewer.cursor]
+		m = pressKeys(m, "f")
+
+		if whole != 101 || wholeOn != on || m.viewer.lines[m.viewer.cursor] != on || len(m.viewer.lines) != 10 {
+			t.Errorf("whole %d on %q / %q, back %d on %q", whole, on, wholeOn, len(m.viewer.lines), m.viewer.lines[m.viewer.cursor])
+		}
+	})
+
+	t.Run("GV-09 a comment on a diff line goes to the model with its line, kept as lines unfold", func(t *testing.T) {
+		m, _ := longFileModel(t)
+		m = pressKeys(m, "down", "down", "down", "down", "down")
+		m = pressKeys(m, "c", "w", "h", "y", "enter")
+		m.viewer.cursor = 0
+		m = pressKeys(m, "E")
+
+		row := m.viewer.rowOf(m.comments()[0].from)
+		marked := strings.Contains(m.viewer.lines[row], "+ line fifty")
+		m = pressKeys(m, "a")
+		prompt := m.withAttachments(m.input.Value() + "check")
+
+		if !marked || !strings.Contains(prompt, "line 50, added (`line fifty`): why") || !strings.Contains(prompt, "long.txt") {
+			t.Errorf("marked %v prompt:\n%s", marked, prompt)
+		}
+		if len(m.fileComments) != 0 {
+			t.Errorf("comments left after sending: %v", m.fileComments)
+		}
+	})
+
+	t.Run("GV-10 a fold has nothing to comment, and e off a fold says where to press it", func(t *testing.T) {
+		m, _ := longFileModel(t)
+
+		folded := pressKeys(m, "c")
+		folded.viewer.notice, folded.viewer.cursor = "", 4
+		offFold := pressKeys(folded, "e")
+
+		if folded.viewer.commenting || !strings.Contains(offFold.viewer.notice, "⋯") {
+			t.Errorf("commenting %v notice %q", folded.viewer.commenting, offFold.viewer.notice)
 		}
 	})
 }

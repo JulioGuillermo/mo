@@ -149,11 +149,13 @@ type model struct {
 	// efforts are what the model in use takes, read from its provider.
 	efforts effortInfo
 	// fileComments are the user's comments on files shown with /view, by
-	// path; commentNotes what each attached comments label sends; files
-	// the index @ searches.
-	fileComments map[string][]fileComment
-	commentNotes map[string]string
-	files        *fileIndex
+	// path, and on diffs; commentNotes what each attached comments label
+	// sends, commentSources whose comments it holds; files the index @
+	// searches.
+	fileComments   map[string][]fileComment
+	commentNotes   map[string]string
+	commentSources map[string]string
+	files          *fileIndex
 	// runStarted is when the turn running began; worked how long the last
 	// one took, shown once it ends.
 	runStarted time.Time

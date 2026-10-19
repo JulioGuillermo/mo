@@ -2,22 +2,19 @@ package tui
 
 import (
 	"fmt"
-	"image/color"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/gitops"
 )
 
 const (
 	gitUsage   = "usage: /git show, the changes not committed · /git compare <branch>, what this branch adds over it, as a pull request"
-	changeHelp = "↑↓ scroll · ←→ long lines · / search · n N next · y copy · tab tree · t hide it · esc close"
+	changeHelp = "↑↓ move · e E on ⋯ show lines · f whole file · c comment · a attach · / search · y copy · t tree · esc close"
 )
 
 var (
@@ -33,21 +30,6 @@ type changeView struct {
 	root       string
 	comparison gitops.Comparison
 	tree       *fileTree
-}
-
-// diffText is a file's diff as the viewer paints it: each row a line of
-// the old text or the new, or a hunk's header, painted when in view.
-type diffText struct {
-	rows        []diffRow
-	before      *codeText
-	after       *codeText
-	numberWidth int
-}
-
-type diffRow struct {
-	mark   byte
-	line   int
-	header string
 }
 
 // changeStyle is the colour of a file by what happened to it: new in
@@ -140,13 +122,16 @@ func (m *model) openChange(changes *changeView, path string) {
 	if isBinary(before) || isBinary(after) {
 		v.lines = []string{"a binary file: its changes are not shown"}
 	} else {
-		v.diff, v.lines = newDiffText(before, after, languageOf(path))
-		if len(v.lines) == 0 {
-			v.lines = []string{"no changes in the text"}
-			v.diff = nil
+		v.diff = newDiffText(before, after, languageOf(path))
+		v.lines = []string{"no changes in the text"}
+		if v.diff != nil {
+			v.lines = v.diff.lines()
 		}
 	}
 	changes.tree.current = path
+	if m.fileComments == nil {
+		m.fileComments = map[string][]fileComment{}
+	}
 	m.viewer = v
 }
 
@@ -154,94 +139,16 @@ func isBinary(text string) bool {
 	return strings.IndexByte(text[:min(len(text), 8000)], 0) >= 0
 }
 
-// newDiffText is the diff from before to after, three lines around each
-// change, and its lines as plain text, to search and copy.
-func newDiffText(before, after, language string) (*diffText, []string) {
-	d := &diffText{before: newCodeText(before, language, 1<<30), after: newCodeText(after, language, 1<<30)}
-	d.numberWidth = len(strconv.Itoa(max(len(d.before.lines), len(d.after.lines))))
-	var plain []string
-	beforeAt, afterAt := 0, 0
-	for _, line := range strings.Split(gitops.Unified("", cleanCode(before), cleanCode(after)), "\n") {
-		switch {
-		case line == "", strings.HasPrefix(line, "---"), strings.HasPrefix(line, "+++"), strings.HasPrefix(line, `\`):
-			continue
-		case strings.HasPrefix(line, "@@"):
-			if found := hunkHeader.FindStringSubmatch(line); found != nil {
-				beforeAt, _ = strconv.Atoi(found[1])
-				afterAt, _ = strconv.Atoi(found[2])
-				beforeAt, afterAt = max(beforeAt-1, 0), max(afterAt-1, 0)
-			}
-			d.rows = append(d.rows, diffRow{mark: '@', header: line})
-			plain = append(plain, line)
-			continue
-		}
-		row := diffRow{mark: line[0], line: afterAt}
-		switch line[0] {
-		case '-':
-			row.line = beforeAt
-			beforeAt++
-		case '+':
-			afterAt++
-		default:
-			beforeAt++
-			afterAt++
-		}
-		d.rows = append(d.rows, row)
-		plain = append(plain, fmt.Sprintf("%*d %c %s", d.numberWidth, row.line+1, row.mark, line[1:]))
-	}
-	return d, plain
-}
-
-// paint is a row of the diff coloured: its number and mark, then the code,
-// on the colour of what the row is.
-func (d *diffText) paint(i int, dark bool) string {
-	row := d.rows[i]
-	colors := changePalette(dark)
-	background := d.background(i, dark)
-	if row.mark == '@' {
-		return lipgloss.NewStyle().Background(background).Foreground(colors.hunk).Render(row.header)
-	}
-	code, markColor := d.after, colors.hunk
-	switch row.mark {
-	case '-':
-		code, markColor = d.before, colors.removedMark
-	case '+':
-		markColor = colors.addedMark
-	}
-	gutter := lipgloss.NewStyle().Background(background).Foreground(markColor)
-	text := ""
-	if row.line < len(code.lines) {
-		text = code.paint(row.line, 0, 1<<30, background, dark)
-	}
-	return gutter.Render(fmt.Sprintf("%*d %c ", d.numberWidth, row.line+1, row.mark)) + text
-}
-
-// background is the colour a row is drawn on, to the end of the screen.
-func (d *diffText) background(i int, dark bool) color.Color {
-	colors := changePalette(dark)
-	switch d.rows[i].mark {
-	case '+':
-		return colors.added
-	case '-':
-		return colors.removed
-	case '@':
-		return colors.block
-	}
-	return lipgloss.NoColor{}
-}
-
-// fillRow paints the rest of a diff row, to width, on its colour.
-func (d *diffText) fillRow(i int, line string, width int, dark bool) string {
-	missing := width - ansi.StringWidth(line)
-	if missing <= 0 {
-		return line
-	}
-	return line + lipgloss.NewStyle().Background(d.background(i, dark)).Render(strings.Repeat(" ", missing))
-}
-
 // changeHeader is what the viewer says over a file of a comparison.
-func (v *outputViewer) changeHeader(width int) string {
+func (v *outputViewer) changeHeader(width int, comments string) string {
 	about := fmt.Sprintf("%s · %d files", v.changes.title, len(v.changes.comparison.Files))
+	if len(v.changes.comparison.Files) == 1 {
+		about = v.changes.title + " · 1 file"
+	}
+	if v.diff != nil && v.diff.whole {
+		about += " · whole file"
+	}
+	about += comments
 	return toolName.Render(oneLine(v.diffFile, width/2)) + " " + dimStyle.Render(about+" · only you see it")
 }
 

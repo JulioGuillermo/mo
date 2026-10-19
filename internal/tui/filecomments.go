@@ -29,7 +29,8 @@ var (
 )
 
 // fileComment is what the user said of lines of a file, from and to
-// counted from 0, to send the model with it.
+// counted from 0, to send the model with it; on a diff they count the
+// diff's lines, shown or not.
 type fileComment struct {
 	from, to int
 	text     string
@@ -40,11 +41,59 @@ func (m model) comments() []fileComment {
 	if m.viewer == nil || m.fileComments == nil {
 		return nil
 	}
-	return m.fileComments[m.viewer.file]
+	return m.fileComments[m.viewer.commentKey()]
 }
 
-// commentAt is the comment covering a line, its index in the list.
-func (m model) commentAt(line int) (fileComment, int, bool) {
+// commentCount says how many comments there are and that a attaches them.
+func (m model) commentCount() string {
+	switch count := len(m.comments()); count {
+	case 0:
+		return ""
+	case 1:
+		return " · 1 comment, a attaches it"
+	default:
+		return fmt.Sprintf(" · %d comments, a attaches them", count)
+	}
+}
+
+// commentKey is what the comments on what the viewer shows are kept by:
+// the file, or the file in its comparison.
+func (v *outputViewer) commentKey() string {
+	if v.changes != nil {
+		return "diff " + v.changes.title + " " + v.diffFile
+	}
+	return v.file
+}
+
+// annotatable tells whether the viewer shows lines to move a cursor on and
+// comment: a file, or a diff.
+func (v *outputViewer) annotatable() bool {
+	return v.file != "" || v.diff != nil
+}
+
+// anchor is what a comment on a row of the viewer keeps: the row of a
+// file, the line of a diff; a fold of a diff has none.
+func (v *outputViewer) anchor(row int) (int, bool) {
+	if v.diff != nil {
+		return v.diff.edit(row)
+	}
+	return row, true
+}
+
+// rowOf is the row an anchor is shown on.
+func (v *outputViewer) rowOf(anchor int) int {
+	if v.diff != nil {
+		return v.diff.rowOf(anchor)
+	}
+	return anchor
+}
+
+// commentAt is the comment covering a row, its index in the list.
+func (m model) commentAt(row int) (fileComment, int, bool) {
+	line, ok := m.viewer.anchor(row)
+	if !ok {
+		return fileComment{}, -1, false
+	}
 	for i, comment := range m.comments() {
 		if line >= comment.from && line <= comment.to {
 			return comment, i, true
@@ -61,9 +110,13 @@ func (m model) startComment() {
 	if v.selected {
 		from, to = min(v.pickFrom, v.pickTo), max(v.pickFrom, v.pickTo)
 	}
+	if _, ok := v.anchor(from); !ok {
+		v.notice = "a fold has nothing to comment: e shows its lines"
+		return
+	}
 	v.commenting, v.commentFrom, v.commentTo, v.commentText = true, from, to, ""
 	if comment, _, ok := m.commentAt(from); ok {
-		v.commentFrom, v.commentTo, v.commentText = comment.from, comment.to, comment.text
+		v.commentFrom, v.commentTo, v.commentText = v.rowOf(comment.from), v.rowOf(comment.to), comment.text
 	}
 }
 
@@ -74,7 +127,14 @@ func (m model) typeComment(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
 		v.commenting, v.selected = false, false
-		m.setComment(v.commentFrom, v.commentTo, strings.TrimSpace(v.commentText))
+		from, fromOK := v.anchor(v.commentFrom)
+		to, toOK := v.anchor(v.commentTo)
+		if !toOK {
+			to, toOK = v.anchor(v.commentTo - 1)
+		}
+		if fromOK && toOK {
+			m.setComment(from, to, strings.TrimSpace(v.commentText))
+		}
 	case "esc":
 		v.commenting = false
 	case "backspace":
@@ -91,10 +151,10 @@ func (m model) typeComment(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// setComment keeps a comment on lines, in place of one that covers them;
-// empty, it deletes that one.
+// setComment keeps a comment on lines, by their anchors, in place of one
+// that covers them; empty, it deletes that one.
 func (m model) setComment(from, to int, text string) {
-	file := m.viewer.file
+	file := m.viewer.commentKey()
 	kept := slices.DeleteFunc(slices.Clone(m.fileComments[file]), func(each fileComment) bool {
 		return each.from <= to && each.to >= from
 	})
@@ -129,6 +189,9 @@ func (m model) moveCursor(by int) {
 func (m model) attachFile() (tea.Model, tea.Cmd) {
 	v := m.viewer
 	full := v.file
+	if v.changes != nil {
+		full = filepath.Join(v.changes.root, v.diffFile)
+	}
 	if !filepath.IsAbs(full) {
 		full = filepath.Join(m.session.WorkDir, full)
 	}
@@ -136,7 +199,8 @@ func (m model) attachFile() (tea.Model, tea.Cmd) {
 	if m.attachments == nil {
 		m.attachments = map[string]string{}
 	}
-	comments := m.fileComments[v.file]
+	key := v.commentKey()
+	comments := m.fileComments[key]
 	if len(comments) == 0 {
 		m.attach([]string{full}, false)
 		return m, nil
@@ -147,9 +211,13 @@ func (m model) attachFile() (tea.Model, tea.Cmd) {
 	}
 	m.attachments[label] = full
 	if m.commentNotes == nil {
-		m.commentNotes = map[string]string{}
+		m.commentNotes, m.commentSources = map[string]string{}, map[string]string{}
 	}
+	m.commentSources[label] = key
 	m.commentNotes[label] = commentNote(v.file, v.lines, comments)
+	if v.diff != nil {
+		m.commentNotes[label] = v.diff.commentNote(v.diffFile, v.changes.title, comments)
+	}
 	m.input.InsertString(label + " ")
 	return m, nil
 }
@@ -166,14 +234,20 @@ func commentNote(file string, lines []string, comments []fileComment) string {
 		}
 		quoted := ""
 		if comment.from < len(lines) {
-			quoted = strings.TrimSpace(lines[comment.from])
-			if len([]rune(quoted)) > commentQuoteMost {
-				quoted = string([]rune(quoted)[:commentQuoteMost]) + "…"
-			}
+			quoted = quote(lines[comment.from])
 		}
 		fmt.Fprintf(&b, "\n- %s (`%s`): %s", where, quoted, comment.text)
 	}
 	return b.String()
+}
+
+// quote is a line as a comment quotes it: trimmed, and cut when long.
+func quote(line string) string {
+	quoted := strings.TrimSpace(line)
+	if len([]rune(quoted)) > commentQuoteMost {
+		quoted = string([]rune(quoted)[:commentQuoteMost]) + "…"
+	}
+	return quoted
 }
 
 // fileIndex is the files of the working directory, read again when old,
