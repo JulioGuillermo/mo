@@ -145,6 +145,8 @@ func (n *Node) startNetwork(settings Network) (*network, error) {
 	started.discovery, err = startDiscovery(started.secret, settings.Mode == "visible", self, onSameID)
 	if err != nil {
 		started.problem = "peers are not found by multicast here (" + err.Error() + "), only at the addresses set"
+	} else {
+		started.discovery.onNew = n.checkName
 	}
 	return started, nil
 }

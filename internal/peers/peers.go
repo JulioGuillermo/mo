@@ -42,7 +42,18 @@ type Info struct {
 	Branch  string `json:"branch,omitempty"`
 	Host    string `json:"host,omitempty"`
 	Working bool   `json:"working"`
-	route   route
+	// Since is when the instance started, to tell which of two with one
+	// name came later.
+	Since int64 `json:"since,omitempty"`
+	route route
+}
+
+// startedBefore tells whether a started before b, the id deciding a tie.
+func (a Info) startedBefore(b Info) bool {
+	if a.Since != b.Since {
+		return a.Since < b.Since
+	}
+	return a.ID < b.ID
 }
 
 // route is how a peer is reached: its socket on this machine, or its
@@ -95,7 +106,7 @@ type Node struct {
 // NewNode is an instance that listens in dir once started.
 func NewNode(dir string) *Node {
 	host, _ := os.Hostname()
-	return &Node{dir: dir, seen: map[string]Info{}, self: Info{Host: host}}
+	return &Node{dir: dir, seen: map[string]Info{}, self: Info{Host: host, Since: time.Now().UnixNano()}}
 }
 
 // SocketDir is where the instances of this user listen: the runtime
@@ -208,26 +219,57 @@ func (n *Node) SetName(ctx context.Context, name string) {
 
 // Rename works the name out again, after the folder or branch changed.
 func (n *Node) Rename(ctx context.Context) {
+	found, _ := n.List(ctx)
+	n.nameAmong(found)
+}
+
+// nameAmong names this instance by its base name, adding -2, -3 when a
+// peer of this computer that started before it has that name.
+func (n *Node) nameAmong(found []Info) {
 	n.mu.Lock()
+	defer n.mu.Unlock()
 	base := n.fixedName
 	if base == "" {
 		base = DefaultName(n.self.Dir, n.self.Branch)
 	}
-	host := n.self.Host
-	n.mu.Unlock()
 	taken := map[string]bool{}
-	if others, err := n.List(ctx); err == nil {
-		for _, other := range others {
-			if other.Host == host || other.Host == "" {
-				taken[other.Name] = true
-			}
+	for _, other := range found {
+		if n.sameComputer(other) && other.startedBefore(n.self) {
+			taken[other.Name] = true
 		}
 	}
 	name := base
 	for i := 2; taken[name]; i++ {
 		name = fmt.Sprintf("%s-%d", base, i)
 	}
-	n.Update(func(info *Info) { info.Name = name })
+	n.self.Name = name
+}
+
+// sameComputer tells a peer of this computer, whose name has to differ;
+// n.mu is held.
+func (n *Node) sameComputer(other Info) bool {
+	return other.Host == "" || other.Host == n.self.Host
+}
+
+// nameTaken tells whether a peer of this computer that started before
+// this one has its name.
+func (n *Node) nameTaken(found []Info) bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for _, other := range found {
+		if other.Name == n.self.Name && n.sameComputer(other) && other.startedBefore(n.self) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkName takes another name when a peer found later turns out to have
+// this one's, as one met over the network after both started.
+func (n *Node) checkName() {
+	ctx, cancel := context.WithTimeout(context.Background(), listTimeout)
+	defer cancel()
+	n.List(ctx)
 }
 
 // DefaultName is folder@branch, or the folder alone outside a branch.
@@ -321,6 +363,9 @@ func (n *Node) list(ctx context.Context, answers time.Duration) ([]Info, error) 
 	}
 	wait.Wait()
 	found = closestOnce(found)
+	if n.nameTaken(found) {
+		n.nameAmong(found)
+	}
 	slices.SortFunc(found, func(a, b Info) int { return strings.Compare(n.Label(a), n.Label(b)) })
 	n.mu.Lock()
 	for _, info := range found {
@@ -446,9 +491,13 @@ func (n *Node) find(found []Info, to string) (Info, error) {
 	}
 	n.mu.Unlock()
 	for _, peer := range gone {
-		if peer.ID == to || strings.EqualFold(peer.Name, to) || n.Label(peer) == to {
+		if peer.ID != to && !strings.EqualFold(peer.Name, to) && n.Label(peer) != to {
+			continue
+		}
+		if peer.route.socket != "" {
 			return Info{}, fmt.Errorf("%s is no longer running", n.Label(peer))
 		}
+		return Info{}, fmt.Errorf("%s is not reachable: it stopped, or rejects the secret", n.Label(peer))
 	}
 	if len(found) == 0 {
 		return Info{}, fmt.Errorf("no peer named %q: no other mo is running with peers on", to)

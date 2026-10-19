@@ -49,8 +49,10 @@ type discovery struct {
 	visible  bool
 	self     func() packet
 	onSameID func(packet)
-	write    func(packet, *net.UDPAddr)
-	now      func() time.Time
+	// onNew is told of a peer heard of for the first time.
+	onNew func()
+	write func(packet, *net.UDPAddr)
+	now   func() time.Time
 
 	mu      sync.Mutex
 	found   map[string]sighting
@@ -153,8 +155,12 @@ func (d *discovery) handle(data []byte, from *net.UDPAddr) {
 		}
 		address := net.JoinHostPort(from.IP.String(), strconv.Itoa(got.Port))
 		d.mu.Lock()
+		_, known := d.found[got.FP]
 		d.found[got.FP] = sighting{route: route{address: address, fingerprint: got.FP}, seen: d.now()}
 		d.mu.Unlock()
+		if !known && d.onNew != nil {
+			go d.onNew()
+		}
 	case "bye":
 		d.mu.Lock()
 		delete(d.found, got.FP)

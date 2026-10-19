@@ -467,11 +467,12 @@ With `[peers] enabled = true`, each mo window you open is a peer of the others: 
 the `peers` tool, to `list` them (name, conversation title, folder, working or idle) and `send` one a
 message. A send returns once the other mo received it, without waiting for an answer; the other agent
 answers, if it wants, with the same tool. The model hears clearly why one failed: `not sent:
-api@dev is no longer running`, `no peer named "x"; peers: …`, `no answer from … in 5s`.
+api@dev is no longer running`, `… is not reachable: it stopped, or rejects the secret` for a peer
+of the network, `no peer named "x"; peers: …`, `no answer from … in 5s`.
 
 On one computer they meet through a Unix socket each in `$XDG_RUNTIME_DIR/mo/peers/`, a folder only
 you can open. Each window has a random id and a name, `folder@branch` (`mo@master`, `-2` when another
-here has it), set with `name` or `/peers name`, or `auto` for a few words of its title. A project file
+of this computer has it, the later of the two taking it, also when they meet over the network), set with `name` or `/peers name`, or `auto` for a few words of its title. A project file
 never turns peers on, opens the network or loosens what asks.
 
 With `network` on, peers on other computers of the team are reached too, named with their computer:

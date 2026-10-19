@@ -10,6 +10,8 @@ package peers
 // | PN-06 | Happy    | A peer of another computer is named with it; one name on two computers asks for the id | P1 |
 // | PN-07 | Happy    | The same peer reached by socket and network is listed once, by its socket   | P1       |
 // | PN-08 | Happy    | The same settings again keep the network as it is                           | P2       |
+// | PN-09 | Happy    | Two of one computer with one name, met over the network: the later takes -2 | P1       |
+// | PN-10 | Error    | A network peer seen and gone is not reachable: stopped or rejecting the secret | P1    |
 
 import (
 	"context"
@@ -158,6 +160,37 @@ func TestNetwork(t *testing.T) {
 
 		if node.net != before {
 			t.Error("the network started again")
+		}
+	})
+}
+
+func TestNetworkNames(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("PN-09 two of one computer with one name, met over the network: the later takes -2", func(t *testing.T) {
+		first := networkNode(t, "/w/api", testSecret)
+		later := networkNode(t, "/other/api", testSecret, addressOf(first))
+		first.SetNetwork(Network{Mode: "hidden", Port: first.net.port, Secret: testSecret, Addresses: []string{addressOf(later)}})
+		named := first.Self().Name == "api@dev" && later.Self().Name == "api@dev"
+
+		first.List(ctx)
+		later.List(ctx)
+
+		if !named || first.Self().Name != "api@dev" || later.Self().Name != "api@dev-2" {
+			t.Errorf("named %v first %q later %q", named, first.Self().Name, later.Self().Name)
+		}
+	})
+
+	t.Run("PN-10 a network peer seen and gone is not reachable: stopped or rejecting the secret", func(t *testing.T) {
+		api := networkNode(t, "/w/api", testSecret)
+		web := networkNode(t, "/w/web", testSecret, addressOf(api))
+		web.List(ctx)
+		api.Stop()
+
+		_, err := web.Send(ctx, api.Self().ID, "still there?")
+
+		if err == nil || err.Error() != "api@dev is not reachable: it stopped, or rejects the secret" {
+			t.Errorf("err = %v", err)
 		}
 	})
 }
