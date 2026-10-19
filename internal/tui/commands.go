@@ -47,6 +47,7 @@ var builtinCommands = []command{
 	{name: "compact", argument: "[instruction]", description: "summarize the conversation to free context; an instruction is added under the summary prompt, as yours"},
 	{name: "skill", argument: "[name] [text]", description: "load a skill with your message, as $name does; no name lists them"},
 	{name: "settings", description: "global settings, and what this project overrides · /settings project"},
+	{name: "reload", description: "load the settings files again, provider, model, effort and permission mode included"},
 	{name: "providers", description: "add, edit or delete providers"},
 	{name: "mcp", description: "MCP servers: status, add, edit, delete"},
 	{name: "plugins", description: "plugins and their commands"},

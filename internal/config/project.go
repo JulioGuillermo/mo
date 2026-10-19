@@ -24,6 +24,7 @@ type Project struct {
 	Layer   Config
 	Path    string
 	Trusted bool
+	data    []byte
 }
 
 // ProjectDir is the folder of a project's mo files.
@@ -60,7 +61,7 @@ func ReadProject(workDir string) (Project, error) {
 		if _, err := toml.Decode(string(data), &layer); err != nil {
 			return Project{Path: path}, fmt.Errorf("%s: %w", path, err)
 		}
-		return Project{Layer: layer, Path: path, Trusted: isTrusted(path, data)}, nil
+		return Project{Layer: layer, Path: path, Trusted: isTrusted(path, data), data: data}, nil
 	}
 	return Project{}, nil
 }
@@ -76,6 +77,56 @@ func (p Project) HeldBack(workDir string, user Config) bool {
 	trusted.Trusted = true
 	full, _ := combine(workDir, user, trusted)
 	return !reflect.DeepEqual(restricted, full)
+}
+
+// Digest tells one content of the file from another; empty when there is
+// no file.
+func (p Project) Digest() string {
+	if p.Path == "" {
+		return ""
+	}
+	return digest(p.data)
+}
+
+// Trust records the file as read as the user's own, so all of it applies
+// until it changes again.
+func (p *Project) Trust() error {
+	if err := trust(p.Path, p.data); err != nil {
+		return err
+	}
+	p.Trusted = true
+	return nil
+}
+
+// HeldBackKeys are the settings the file sets that do not apply while it
+// is not trusted, by their names in the file.
+func (p Project) HeldBackKeys(workDir string, user Config) []string {
+	if p.Path == "" || p.Trusted {
+		return nil
+	}
+	restricted, _ := combine(workDir, user, p)
+	trusted := p
+	trusted.Trusted = true
+	full, _ := combine(workDir, user, trusted)
+	return differentKeys(reflect.ValueOf(restricted), reflect.ValueOf(full), "")
+}
+
+// differentKeys names the fields that differ, down into the sections.
+func differentKeys(a, b reflect.Value, prefix string) []string {
+	var keys []string
+	for i := range a.NumField() {
+		name, _, _ := strings.Cut(a.Type().Field(i).Tag.Get("toml"), ",")
+		left, right := a.Field(i), b.Field(i)
+		if reflect.DeepEqual(left.Interface(), right.Interface()) {
+			continue
+		}
+		if left.Kind() == reflect.Struct {
+			keys = append(keys, differentKeys(left, right, prefix+name+".")...)
+			continue
+		}
+		keys = append(keys, prefix+name)
+	}
+	return keys
 }
 
 // SaveProject writes layer as .mo/settings.toml, or removes the file when

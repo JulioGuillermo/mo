@@ -37,6 +37,12 @@ func LoadLayers(workDir string, user, project Config) (Config, error) {
 	return combine(workDir, user, Project{Layer: project, Trusted: true})
 }
 
+// FromFiles is the settings of workDir from the files as read, the project
+// one applied whole only if trusted.
+func FromFiles(workDir string, user Config, project Project) (Config, error) {
+	return combine(workDir, user, project)
+}
+
 func combine(workDir string, user Config, project Project) (Config, error) {
 	cfg := merge(Defaults(), user)
 	cfg.Permissions = cfg.Permissions.ForProject(workDir)

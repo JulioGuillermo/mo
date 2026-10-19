@@ -45,7 +45,9 @@ type Session struct {
 	WorkDir  string
 	// Reload builds a session from the user file given and the project's:
 	// the one given, which the user made, or the one on disk when nil.
-	Reload    func(userLayer config.Config, projectLayer *config.Config) (Session, error)
+	Reload func(userLayer config.Config, projectLayer *config.Config) (Session, error)
+	// Rebuild builds a session from settings already put together.
+	Rebuild   func(cfg config.Config) (Session, error)
 	MCP       []mcphub.Status
 	Plugins   *plugins.Set
 	ToolNames []string
@@ -111,6 +113,8 @@ type model struct {
 	// pendingSession is built from settings saved while a turn ran, to take
 	// over when it ends.
 	pendingSession *Session
+	// config follows the settings files on disk.
+	config *configSync
 	// lastEvent is the kind of what the model sent last, and runningTool
 	// the call running now: they say what the agent is doing.
 	lastEvent llm.EventKind
@@ -251,13 +255,16 @@ func Run(session Session) error {
 		files:       &fileIndex{},
 		shownSpeeds: &shownSpeeds{},
 		svgs:        &svgFrames{kitty: printer.images == render.ModeKitty, ready: func() { bridge.send(svgReadyMsg{}) }},
+		config:      watchConfig(session.WorkDir),
 	}
+	defer m.config.close()
 	printer.setKind(m.toolKind)
 	m.configureJobs()
 	m.paceAnimations()
 	program := tea.NewProgram(m)
 	bridge.program = program
 	bridge.paceReply(paceOf(session.Config.Render))
+	m.config.tell(bridge)
 	if titles := session.Agent.Tools.Titles(); titles != nil {
 		titles.OnSet(func(title string) { bridge.send(titleSetMsg(title)) })
 	}
@@ -389,6 +396,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case modelsMsg:
 		return m.showModels(msg)
+	case configChangedMsg:
+		return m.configChanged()
+	case configBuiltMsg:
+		return m.configBuilt(msg)
 	}
 	if m.settings != nil && !isAgentMsg(msg) {
 		return m.updateSettings(msg)
@@ -824,6 +835,7 @@ func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 	if m.running {
 		return m.queue(prompt)
 	}
+	m.checkConfig()
 
 	m.scrolled = false
 	m.newPrompt = true
@@ -932,6 +944,8 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(sendNotification(method, "test notification"), printText(m.printer.Note("sent a test notification · "+string(method))))
 	case "rewind":
 		return m.pickPrompt()
+	case "reload":
+		return m.followConfig(true)
 	case "help":
 		return m, drawText(m.helpView)
 	case "settings":

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -18,6 +19,7 @@ const (
 
 var (
 	popupBorder   = lipgloss.Color("#7aa2f7")
+	popupError    = lipgloss.Color("#f7768e")
 	popupSelected = lipgloss.NewStyle().Background(lipgloss.Color("#7aa2f7")).Foreground(lipgloss.Color("#1a1b26")).Bold(true)
 )
 
@@ -35,6 +37,10 @@ type popup struct {
 	// at is where it was opened from; anchored is unset to center it.
 	at       point
 	anchored bool
+	// border is the frame's colour, popupBorder when unset; config is set
+	// on the popups about the settings files, closed when the files change.
+	border color.Color
+	config bool
 }
 
 // popupBox is a popup laid out: its lines, where it goes, and which row
@@ -99,7 +105,11 @@ func (m model) popupLayout() popupBox {
 	if below := len(p.options) - p.top - room; below > 0 {
 		body = append(body, dimStyle.Render(fmt.Sprintf(" ↓ %d more", below)))
 	}
-	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(popupBorder).Padding(0, 1).
+	border := p.border
+	if border == nil {
+		border = popupBorder
+	}
+	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 1).
 		Background(lipgloss.Color("#16161e")).Render(strings.Join(body, "\n"))
 	lines := strings.Split(box, "\n")
 	boxWidth, boxHeight := ansi.StringWidth(lines[0]), len(lines)

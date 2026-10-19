@@ -15,6 +15,7 @@ require (
 	github.com/alecthomas/chroma/v2 v2.14.0
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/charmbracelet/x/term v0.2.2
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-git/go-git/v5 v5.16.2
 	github.com/kanrichan/resvg-go v0.0.1
 	github.com/modelcontextprotocol/go-sdk v1.8.0

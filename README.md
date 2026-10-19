@@ -157,6 +157,20 @@ only pick a provider that needs no key, set models, `system_prompt`, `max_tokens
 so at start when that holds something back, and saving it from `/settings project` trusts it.
 Providers with URLs or keys always go in the user file.
 
+mo follows both files while it runs, edited by hand or saved from another mo:
+
+| What | When it applies |
+|---|---|
+| look, keys, notifications (`[render]`, `[notify]`) | at once |
+| tools, MCP servers, skills, instructions, context, permission rules, the rest | at the next turn; a turn under way ends with what it began with |
+| provider, model, effort, `max_tokens`, permission mode | at `/reload`, or when mo starts again |
+
+A file that does not parse, or holds a wrong value, opens a red box: accept and go on with the
+settings in force, or put back the last file that worked or the defaults, keeping the broken one as
+`<file>.broken`. Once any mo fixes it, the box closes in all of them. A project file changed outside
+mo that sets more than its harmless part asks first: trust it and load it all, load the harmless
+part, or ignore it.
+
 
 ```toml
 provider = "llama-server"
@@ -662,5 +676,5 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | click on the branch | the files changed, each with its kind |
 | right click | a small menu by the pointer, over the screen (↑↓ or j k, enter or a click, esc or a click outside closes it): the mode: all modes to pick · a task: change its state or delete it · a job in the panel, or a bash call still running: watch its output live, its last lines, send it to the background, kill it |
 | wheel over the side panel | scroll its tasks and jobs |
-| `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact [instruction]` `/cache clear` `/settings` `/providers` `/mcp` `/plugins` `/agents` `/view [file]` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
+| `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact [instruction]` `/cache clear` `/settings` `/reload` `/providers` `/mcp` `/plugins` `/agents` `/view [file]` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
 | `/<name> text` | a plugin command |

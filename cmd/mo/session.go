@@ -180,17 +180,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	assistant := newAgent(cfg, chosen, registry, system, confirm, policy)
 	assistant.RewritePrompt = loaded.plugins.RewritePrompt
 	assistant.BlockToolCall = loaded.plugins.BlockToolCall
-	reload := func(userLayer config.Config, projectLayer *config.Config) (tui.Session, error) {
-		if _, err := chooseProvider(context.Background(), config.UserSettings(userLayer), "", ""); err != nil {
-			return tui.Session{}, fmt.Errorf("outside this project: %w", err)
-		}
-		fresh, err := config.LoadWithUserLayer(workDir, userLayer)
-		if projectLayer != nil {
-			fresh, err = config.LoadLayers(workDir, userLayer, *projectLayer)
-		}
-		if err != nil {
-			return tui.Session{}, err
-		}
+	rebuild := func(fresh config.Config) (tui.Session, error) {
 		if reflect.DeepEqual(fresh.ActiveMCP(), cfg.ActiveMCP()) {
 			return buildSession(context.Background(), workDir, fresh, sessionChoice{yes: choice.yes}, loaded)
 		}
@@ -207,6 +197,19 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		session.Discard = func() { next.mcp.CloseExcept(hub) }
 		return session, nil
 	}
+	reload := func(userLayer config.Config, projectLayer *config.Config) (tui.Session, error) {
+		if _, err := chooseProvider(context.Background(), config.UserSettings(userLayer), "", ""); err != nil {
+			return tui.Session{}, fmt.Errorf("outside this project: %w", err)
+		}
+		fresh, err := config.LoadWithUserLayer(workDir, userLayer)
+		if projectLayer != nil {
+			fresh, err = config.LoadLayers(workDir, userLayer, *projectLayer)
+		}
+		if err != nil {
+			return tui.Session{}, err
+		}
+		return rebuild(fresh)
+	}
 	return tui.Session{
 		Agent:        assistant,
 		Provider:     chosen.name,
@@ -215,6 +218,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		Config:       cfg,
 		WorkDir:      workDir,
 		Reload:       reload,
+		Rebuild:      rebuild,
 		MCP:          hub.Status(),
 		Plugins:      loaded.plugins,
 		ToolNames:    allToolNames(hub, loaded.plugins),
