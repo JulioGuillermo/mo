@@ -48,9 +48,26 @@ func (m *model) live(id int) *uiLive {
 	return state
 }
 
-// openUI shows an interface as a dialog over the screen.
+// dialogUIs are the interfaces the open dialog is among: the model's, or
+// those of the plugins.
+func (m model) dialogUIs() *tools.UIs {
+	if m.uiStore != nil {
+		return m.uiStore
+	}
+	return m.uis()
+}
+
+// openUI shows an interface of the model as a dialog over the screen.
 func (m model) openUI(id int) (tea.Model, tea.Cmd) {
-	uis := m.uis()
+	return m.openUIIn(m.uis(), id)
+}
+
+// openPluginDialog shows a dialog a plugin opened.
+func (m model) openPluginDialog(id int) (tea.Model, tea.Cmd) {
+	return m.openUIIn(m.session.Plugins.Dialogs(), id)
+}
+
+func (m model) openUIIn(uis *tools.UIs, id int) (tea.Model, tea.Cmd) {
 	if uis == nil {
 		return m, nil
 	}
@@ -59,6 +76,7 @@ func (m model) openUI(id int) (tea.Model, tea.Cmd) {
 		return m.emit(m.printer.Note(fmt.Sprintf("UI %d is gone", id)))
 	}
 	uis.MarkSeen(id)
+	m.uiStore = uis
 	state := m.live(id)
 	if ids := focusable(ui.Shown()); len(ids) > 0 && !slices.Contains(ids, state.focus) {
 		state.focus = ids[0]
@@ -76,7 +94,7 @@ type uiFrame struct {
 }
 
 func (m model) uiFrame() (uiFrame, bool) {
-	uis := m.uis()
+	uis := m.dialogUIs()
 	if uis == nil {
 		return uiFrame{}, false
 	}
@@ -99,6 +117,9 @@ func (m model) uiFrame() (uiFrame, bool) {
 		title = ""
 	}
 	tag := fmt.Sprintf(" UI %d · ", ui.ID)
+	if ui.Owner != "" {
+		tag = " " + ui.Owner + " · "
+	}
 	inner := body.width
 	if title != "" {
 		inner = max(inner, min(ansi.StringWidth(title)+ansi.StringWidth(tag)+6, most-4))
@@ -221,7 +242,7 @@ func (m model) overUI(screen string) string {
 
 // updateUI is the open dialog taking keys and clicks.
 func (m model) updateUI(msg tea.Msg) (tea.Model, tea.Cmd) {
-	uis := m.uis()
+	uis := m.dialogUIs()
 	ui, ok := uis.Get(m.uiOpen)
 	if !ok {
 		m.uiOpen = 0
@@ -370,7 +391,7 @@ func (m model) uiKey(ui tools.UI, state *uiLive, msg tea.KeyPressMsg) (tea.Model
 		}
 		value += msg.Text
 	}
-	m.uis().SetValue(ui.ID, node.ID, value)
+	m.dialogUIs().SetValue(ui.ID, node.ID, value)
 	return m.uiFire(ui.ID, node.ID, "input")
 }
 
@@ -385,7 +406,7 @@ func (m model) uiChange(id int, node tools.UINode, value string) (tea.Model, tea
 	if value == node.Current() {
 		return m, nil
 	}
-	m.uis().SetValue(id, node.ID, value)
+	m.dialogUIs().SetValue(id, node.ID, value)
 	return m.uiFire(id, node.ID, "change")
 }
 
@@ -404,7 +425,7 @@ func (m model) selectList(id int, node tools.UINode) (tea.Model, tea.Cmd) {
 	}
 	title := orDefault(node.Label, node.ID)
 	updated, cmd := m.openPopup(title, "", options, func(m model, choice string) (tea.Model, tea.Cmd) {
-		ui, ok := m.uis().Get(id)
+		ui, ok := m.dialogUIs().Get(id)
 		if !ok {
 			return m, nil
 		}
@@ -442,7 +463,7 @@ func clickedValue(node tools.UINode, hit uiHit, x int) string {
 
 // focusNext moves the focus one place on, as tab does.
 func (m model) focusNext(id int) (tea.Model, tea.Cmd) {
-	ui, ok := m.uis().Get(id)
+	ui, ok := m.dialogUIs().Get(id)
 	if !ok {
 		return m, nil
 	}
@@ -471,7 +492,7 @@ func (m model) leaveInput(ui tools.UI, from, to string) (tea.Model, tea.Cmd) {
 // follows: a submitted or closed one hides, a removed one goes, and an
 // idle model gets a turn to hear what it was told.
 func (m model) uiFire(id int, element, event string) (tea.Model, tea.Cmd) {
-	return m.uiFollow(id, m.uis().Fire(id, element, event))
+	return m.uiFollow(id, m.dialogUIs().Fire(id, element, event))
 }
 
 // clickSVG tells an svg's on_click where it was clicked, in the svg's own
@@ -484,7 +505,7 @@ func (m model) clickSVG(id int, node tools.UINode, hit uiHit, x, y int) (tea.Mod
 	if !inside {
 		return m, nil
 	}
-	return m.uiFollow(id, m.uis().FireAt(id, node.ID, "click", at, down))
+	return m.uiFollow(id, m.dialogUIs().FireAt(id, node.ID, "click", at, down))
 }
 
 // uiFollow follows what an event led to.

@@ -182,6 +182,8 @@ type model struct {
 	// the user did in each.
 	uiOpen  int
 	uiLives map[int]*uiLive
+	// uiStore holds the open dialog's interface: the model's or a plugin's.
+	uiStore *tools.UIs
 	// svgs draws the svg nodes of interfaces, away from the screen.
 	svgs             *svgFrames
 	clickedAt        point
@@ -291,6 +293,7 @@ func Run(session Session) error {
 	if uis := session.Agent.Tools.UIs(); uis != nil {
 		uis.OnChange(func() { bridge.send(uiChangedMsg{}) })
 	}
+	session.Plugins.Follow(func() { bridge.send(uiChangedMsg{}) }, func(id int) { bridge.send(pluginDialogMsg(id)) })
 	if session.Team != nil {
 		session.Team.Follow(func(team.Info) agent.Hooks { return agent.Hooks{Interact: bridge.interact} },
 			func() { bridge.send(agentsChangedMsg{}) }, func() { bridge.send(agentEndedMsg{}) })
@@ -434,10 +437,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateSettings(msg)
 	}
 	if _, changed := msg.(uiChangedMsg); changed {
-		if _, ok := m.uis().Get(m.uiOpen); !ok {
+		if _, ok := m.dialogUIs().Get(m.uiOpen); !ok {
 			m.uiOpen = 0
 		}
 		return m, nil
+	}
+	if clicked, ok := msg.(pluginClickMsg); ok {
+		return m.pluginClicked(clicked)
+	}
+	if opened, ok := msg.(pluginDialogMsg); ok {
+		if m.settings != nil || m.popup != nil {
+			return m, nil
+		}
+		return m.openPluginDialog(int(opened))
 	}
 	if m.popup != nil && !isAgentMsg(msg) {
 		if _, tick := msg.(viewerTickMsg); !tick {

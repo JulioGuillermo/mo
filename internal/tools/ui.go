@@ -190,7 +190,9 @@ type UI struct {
 	Version      int    `json:"version"`
 	Seen         bool   `json:"seen"`
 	Conversation string `json:"-"`
-	script       *uiScript
+	// Owner is the plugin that opened the interface, "" for the model's.
+	Owner  string `json:"-"`
+	script *uiScript
 }
 
 // Shown is the tree as it is now: the script's changes and what the user
@@ -289,7 +291,11 @@ type UIs struct {
 	conversation string
 	uis          []*UI
 	events       []UIEvent
-	onChange     func()
+	// firstID is the number the first interface takes; deliver, when set,
+	// takes what the user does instead of the model, as for plugins.
+	firstID  int
+	deliver  chan UIEvent
+	onChange func()
 }
 
 func NewUIs(root string) *UIs {
@@ -446,7 +452,7 @@ func (u *UIs) create(title, script string, tree UINode) (int, error) {
 	if u.conversation == "" {
 		return 0, errors.New("interfaces are not available here")
 	}
-	next := 1
+	next := max(u.firstID, 1)
 	for _, each := range u.uis {
 		if each.Conversation == u.conversation {
 			next = max(next, each.ID+1)
@@ -578,10 +584,12 @@ func (u *UIs) fire(id int, element, event string, at *[2]float64) UIOutcome {
 		base.Value = FormatNumber(at[0]) + "," + FormatNumber(at[1])
 	}
 	var outcome UIOutcome
-	switch handler {
-	case "":
+	switch {
+	case handler == "":
 		return outcome
-	case UINotify, UISubmit, UIClose, UIRemove:
+	case u.deliver != nil:
+		outcome = u.toPlugin(ui, base, handler)
+	case slices.Contains([]string{UINotify, UISubmit, UIClose, UIRemove}, handler):
 		outcome = u.act(ui, base, handler, "")
 	default:
 		outcome = u.runHandler(ui, base, handler)

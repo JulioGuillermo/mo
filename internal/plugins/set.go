@@ -29,6 +29,7 @@ const (
 
 type Set struct {
 	plugins []*Plugin
+	surface *surface
 
 	toolsOnce sync.Once
 	tools     []tools.Tool
@@ -48,7 +49,7 @@ type Status struct {
 // command name already taken by an earlier plugin is left out with a
 // warning.
 func Load(dir, workDir, logDir string) *Set {
-	set := &Set{}
+	set := &Set{surface: newSurface()}
 	libDir := filepath.Join(filepath.Dir(dir), "lib")
 	paths, _ := filepath.Glob(filepath.Join(dir, "*.lua"))
 	slices.Sort(paths)
@@ -58,7 +59,7 @@ func Load(dir, workDir, logDir string) *Set {
 		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
-		plugin := load(path, workDir, logDir, libDir)
+		plugin := load(path, workDir, logDir, libDir, set.surface)
 		plugin.commands = slices.DeleteFunc(plugin.commands, func(command commandDefinition) bool {
 			if commands[command.name] {
 				plugin.warnings = append(plugin.warnings, "command /"+command.name+" left out: the name is taken")

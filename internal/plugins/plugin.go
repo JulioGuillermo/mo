@@ -40,6 +40,7 @@ type Plugin struct {
 	workDir string
 	libDir  string
 	logPath string
+	surface *surface
 	source  string
 
 	// turn holds one token: whoever has it may use the Lua state.
@@ -71,13 +72,14 @@ type commandDefinition struct {
 // load runs a plugin file, which declares its tools, commands and hooks
 // through the mo table. A file that fails keeps its error for Status and
 // offers nothing.
-func load(path, workDir, logDir, libDir string) *Plugin {
+func load(path, workDir, logDir, libDir string, surface *surface) *Plugin {
 	name := strings.TrimSuffix(filepath.Base(path), ".lua")
 	source, _ := os.ReadFile(path)
 	plugin := &Plugin{
 		name:    name,
 		workDir: workDir,
 		libDir:  libDir,
+		surface: surface,
 		logPath: filepath.Join(logDir, "plugin-"+name+".log"),
 		source:  string(source),
 		turn:    make(chan struct{}, 1),

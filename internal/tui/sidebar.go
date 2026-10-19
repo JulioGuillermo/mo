@@ -198,6 +198,13 @@ func (m model) sidebarLines() ([]string, []region) {
 			}
 		}
 	}
+	pluginItems := m.session.Plugins.SidebarItems()
+	if len(pluginItems) > 0 || len(m.pluginDialogs()) > 0 {
+		section(paint(colors.title).Bold(true).Render("Plugins"))
+		rows, rowRegions := m.pluginRows(pluginItems, width, len(lines), base, colors)
+		regions = append(regions, rowRegions...)
+		lines = append(lines, rows...)
+	}
 	if m.team() != nil {
 		infos, below := m.team().List(), 0
 		if m.lensOf != 0 {

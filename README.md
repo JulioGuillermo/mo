@@ -789,6 +789,34 @@ A plugin is your own code and has your rights: all of Lua's libraries are there 
 | `mo.base64_encode`, `mo.base64_decode`, `mo.sha256`, `mo.hmac_sha256(key, text)`, `mo.url_encode` | encodings (hashes in hex) |
 | `mo.sleep(seconds)`, `mo.env(name)`, `mo.workdir`, `mo.log` | the rest; `print` and `io.write` go to the log too, in `~/.local/share/mo/logs/plugin-<name>.log` |
 
+A plugin can also show things to you, under **Plugins** in the side panel:
+
+```lua
+mo.sidebar.set{ id = "jira", text = "Jira · logged in", detail = "12 open", color = "success",
+                icon = "●", on_click = function() return "text to show" end }
+mo.sidebar.remove("jira")
+
+local dialog
+dialog = mo.dialog{
+  title = "New issue",
+  tree = { type = "card", title = "New issue", children = {
+    { type = "input", id = "summary" },
+    { type = "button", id = "save", label = "Save" } } },
+  on_event = function(event)          -- { dialog, element, event, action, value, values }
+    if event.element == "save" then dialog.close() end
+  end,
+}
+-- dialog.id, dialog.update{ title, tree }, dialog.close()
+```
+
+`set` adds an item, or changes the one with the same id; `color` is `text`, `dim`, `accent`,
+`success`, `warning` or `error`. A click on an item runs `on_click`, and the text it returns shows
+as a note. `mo.dialog` takes the same nodes as the model's `ui` tool (`{"action":"help"}` of `ui`
+lists them) and opens at once over the screen; what you do in it goes to `on_event`, never to the
+model: a button's click, an input's `on_input` and `on_change`, with every value; an element whose
+`on_click` is `close` or `submit` hides the dialog, which stays in the side panel to open again until
+the plugin closes it. An error in `on_event` shows under the dialog.
+
 `require("name")` loads `~/.config/mo/lib/name.lua` or `~/.config/mo/lib/name/init.lua`, to share
 code between plugins (a `.lua` file in `plugins/` is a plugin, run at start). What would break the
 terminal is turned aside: `io.read` reads nothing, `os.exit` raises an error, and `os.execute` runs
