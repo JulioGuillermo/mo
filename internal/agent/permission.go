@@ -128,9 +128,10 @@ func (a *Agent) judge(ctx context.Context, commands []string) (bool, string) {
 		request = string(runes[:judgedRequestLength]) + "…"
 	}
 	response, err := a.Provider.Stream(ctx, llm.Request{
-		Model:     a.Model,
-		System:    judgeSystem,
-		MaxTokens: judgeMaxTokens,
+		Model:      a.Model,
+		System:     judgeSystem,
+		MaxTokens:  judgeMaxTokens,
+		NoThinking: true,
 		Messages: []llm.Message{{Role: llm.RoleUser, Text: fmt.Sprintf(
 			"Working directory: %s\nThe user asked: %s\n\nTo run:\n%s", a.Tools.WorkDir(), request, key)}},
 	}, func(llm.Event) {})

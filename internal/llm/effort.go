@@ -116,12 +116,16 @@ func (p *OpenAI) ChatTemplate(ctx context.Context) string {
 	return props.ChatTemplate
 }
 
-// Efforts are the levels Anthropic's models take.
+// Efforts are the levels an Anthropic model takes, as Claude Code knows
+// them; a model it does not know is offered every level.
 func (p *Anthropic) Efforts(_ context.Context, model string) ([]string, bool) {
 	if p.refused.refused(model) {
 		return nil, true
 	}
-	return []string{"low", "medium", "high", "max"}, true
+	if known, ok := lookupAnthropicModel(model); ok {
+		return known.levels, true
+	}
+	return anthropicAllLevels, false
 }
 
 // Efforts are the levels the Responses API takes for Codex's models.

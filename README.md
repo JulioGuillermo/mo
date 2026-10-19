@@ -66,12 +66,20 @@ With no provider set, mo tries llama-server, ollama and lmstudio in that order.
 With no model set on an openai-type provider, it uses the first model the server lists.
 
 `/effort` sets how hard the model thinks, saved as `/model` saves a model; `/effort` alone opens
-a menu, and tab after `/effort ` offers `default` (the model's own, nothing sent) and the levels
+a menu, and tab after `/effort ` offers `default` (the model's own) and the levels
 the model takes. The status line shows the one set, beside the model. Which levels: llama-server
 says through its chat template (gpt-oss's low to high, or `none` for a model whose thinking only
 turns off, sent as `enable_thinking: false`); Anthropic, Codex, Gemini and OpenAI's reasoning
 models are known; for any other every level is offered, saying the provider does not tell. A
 server that refuses the effort gets the request again without it, and none from then on.
+To Anthropic the effort goes as Claude Code sends it, in `output_config.effort`: with `default`
+the model's own level is sent (medium for Opus, Sonnet and Haiku 5.5, xhigh for Opus 4.7, high
+for the rest), a level the model lacks goes as `high`, and a model without effort (Haiku 4.5,
+Sonnet 4.5 and older) gets none.
+Anthropic's requests also carry Claude Code's `max_tokens` for the model (32000 to 128000) when
+`max_tokens` is 0, and its thinking: `adaptive` where the model has it, else a budget of tokens.
+Thinking blocks go back to the model with their signature, as the API asks; when it refuses
+them (a history changed by compaction), the request goes again without them.
 `antigravity` and `claude-code` start the system prompt as Antigravity's and Claude Code's own
 requests do, then say the model runs inside mo; `preamble = false` under the provider, or its form
 in `/providers`, sends mo's prompt alone (Claude accounts' tokens may be refused without it).
@@ -153,7 +161,7 @@ Providers with URLs or keys always go in the user file.
 ```toml
 provider = "llama-server"
 model = ""                 # empty: first model the server lists
-max_tokens = 0             # 0: provider default
+max_tokens = 0             # 0: provider default (Anthropic: Claude Code's for the model)
 effort = ""                # empty: the model's default · low | medium | high | xhigh | max (Anthropic)
                            # · none | minimal | low | medium | high | xhigh (OpenAI's reasoning_effort)
 system_prompt = ""         # empty: built-in prompt (~80 tokens)

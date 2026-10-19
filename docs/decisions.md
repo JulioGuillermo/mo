@@ -912,10 +912,9 @@
 
 ## Effort
 
-- `effort` is one setting for every provider, sent only when set: Anthropic's
-  `output_config.effort`, `reasoning_effort` to OpenAI-compatible servers. mo does not keep a
-  list of which model takes which level, as it would age with every release; a model that does
-  not take the one set answers with an error, which mo shows. It applies to the turns only:
+- `effort` is one setting for every provider: Anthropic's `output_config.effort` (sent as
+  Claude Code sends it, see the second Effort section), `reasoning_effort` to OpenAI-compatible
+  servers, sent only when set. It applies to the turns only:
   compaction and the auto-mode judge keep the model's default.
 - A project may set it like the model, so a large repository can think harder than a script.
 
@@ -1206,6 +1205,15 @@
 - A request an effort is refused for (400 naming the effort, reasoning or thinking) is sent once
   more without it, and the model is remembered as taking none for the run: no turn is lost to an
   effort a server does not know.
+- Anthropic's effort follows Claude Code (read from its 2.1.303 bundle and its requests): a table
+  of the models it knows gives their levels and default. With no effort set the default is sent,
+  as Claude Code always sends one; a level the model lacks is sent as `high`; a model without
+  effort gets none, so no request is lost to a 400. A model not in the table gets what is set.
+- The same table gives Claude Code's `max_tokens` and thinking: `adaptive` with `display:
+  summarized` (so the reasoning is shown), or `enabled` with a budget of `max_tokens - 1`. Titles
+  and the auto-mode judge go without thinking. Thinking blocks are kept in the message, signature
+  and all, and sent back unchanged; a 400 about them sends the request again without any, as
+  compaction and dropped turns change what came before them.
 - On llama-server `none` turns thinking off through `chat_template_kwargs.enable_thinking`, which
   Qwen3 and the like read; a level goes there too, as `reasoning_effort`, for gpt-oss.
 

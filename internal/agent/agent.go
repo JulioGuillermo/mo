@@ -448,7 +448,7 @@ const (
 // sentHistory is the history as the model gets it: with the reasoning it is
 // kept, none, that of the turn in progress, or all.
 func (a *Agent) sentHistory() []llm.Message {
-	if a.KeepReasoning == ReasoningAll || !slices.ContainsFunc(a.History, func(message llm.Message) bool { return message.Reasoning != "" }) {
+	if a.KeepReasoning == ReasoningAll || !slices.ContainsFunc(a.History, func(message llm.Message) bool { return message.Reasoning != "" || len(message.Thinking) > 0 }) {
 		return a.History
 	}
 	// Reasoning goes from this message on.
@@ -459,6 +459,7 @@ func (a *Agent) sentHistory() []llm.Message {
 	sent := slices.Clone(a.History)
 	for i := range min(from, len(sent)) {
 		sent[i].Reasoning = ""
+		sent[i].Thinking = nil
 	}
 	return sent
 }

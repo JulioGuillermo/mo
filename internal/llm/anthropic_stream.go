@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -14,8 +15,11 @@ type anthropicStream struct {
 	thinking strings.Builder
 	toolUses []*pendingToolUse
 	byIndex  map[int]*pendingToolUse
-	cutOff   bool
-	usage    Usage
+	// blocks are the thinking blocks, as they came, by index.
+	blocks          []*pendingThinking
+	thinkingByIndex map[int]*pendingThinking
+	cutOff          bool
+	usage           Usage
 }
 
 type pendingToolUse struct {
@@ -24,8 +28,15 @@ type pendingToolUse struct {
 	args strings.Builder
 }
 
+type pendingThinking struct {
+	kind      string
+	text      strings.Builder
+	signature string
+	data      string
+}
+
 func newAnthropicStream(onEvent func(Event)) *anthropicStream {
-	return &anthropicStream{onEvent: onEvent, byIndex: map[int]*pendingToolUse{}}
+	return &anthropicStream{onEvent: onEvent, byIndex: map[int]*pendingToolUse{}, thinkingByIndex: map[int]*pendingThinking{}}
 }
 
 func (s *anthropicStream) handle(event anthropicEvent) error {
@@ -34,6 +45,13 @@ func (s *anthropicStream) handle(event anthropicEvent) error {
 		usage := event.Message.Usage
 		s.usage.InputTokens = usage.InputTokens + usage.CacheReadInputTokens + usage.CacheCreationInputTokens
 	case "content_block_start":
+		switch event.ContentBlock.Type {
+		case "thinking", "redacted_thinking":
+			block := &pendingThinking{kind: event.ContentBlock.Type, signature: event.ContentBlock.Signature, data: event.ContentBlock.Data}
+			block.text.WriteString(event.ContentBlock.Thinking)
+			s.blocks = append(s.blocks, block)
+			s.thinkingByIndex[event.Index] = block
+		}
 		if event.ContentBlock.Type == "tool_use" {
 			toolUse := &pendingToolUse{id: event.ContentBlock.ID, name: event.ContentBlock.Name}
 			s.toolUses = append(s.toolUses, toolUse)
@@ -59,8 +77,17 @@ func (s *anthropicStream) handleDelta(event anthropicEvent) {
 		s.text.WriteString(event.Delta.Text)
 		s.onEvent(Event{Kind: EventText, Text: event.Delta.Text})
 	case "thinking_delta":
-		s.thinking.WriteString(event.Delta.Thinking)
-		s.onEvent(Event{Kind: EventReasoning, Text: event.Delta.Thinking})
+		if block, ok := s.thinkingByIndex[event.Index]; ok {
+			block.text.WriteString(event.Delta.Thinking)
+		}
+		if event.Delta.Thinking != "" {
+			s.thinking.WriteString(event.Delta.Thinking)
+			s.onEvent(Event{Kind: EventReasoning, Text: event.Delta.Thinking})
+		}
+	case "signature_delta":
+		if block, ok := s.thinkingByIndex[event.Index]; ok {
+			block.signature += event.Delta.Signature
+		}
 	case "input_json_delta":
 		if toolUse, ok := s.byIndex[event.Index]; ok {
 			toolUse.args.WriteString(event.Delta.PartialJSON)
@@ -75,8 +102,34 @@ func (s *anthropicStream) message() Message {
 		message.Text += cutOffTextNote
 		s.onEvent(Event{Kind: EventText, Text: cutOffTextNote})
 	}
+	message.Thinking = s.thinkingBlocks()
 	for _, toolUse := range s.toolUses {
 		message.ToolCalls = append(message.ToolCalls, newToolCall(toolUse.id, toolUse.name, toolUse.args.String()))
 	}
 	return message
+}
+
+// thinkingBlocks are the thinking blocks to send back as they came; one
+// without its signature cannot go back, and none is kept then.
+func (s *anthropicStream) thinkingBlocks() json.RawMessage {
+	var blocks []anthropicBlock
+	for _, block := range s.blocks {
+		switch {
+		case block.kind == "redacted_thinking" && block.data != "":
+			blocks = append(blocks, anthropicBlock{Type: block.kind, Data: block.data})
+		case block.kind == "thinking" && block.signature != "":
+			text := block.text.String()
+			blocks = append(blocks, anthropicBlock{Type: block.kind, Thinking: &text, Signature: block.signature})
+		default:
+			return nil
+		}
+	}
+	if len(blocks) == 0 {
+		return nil
+	}
+	data, err := json.Marshal(blocks)
+	if err != nil {
+		return nil
+	}
+	return data
 }

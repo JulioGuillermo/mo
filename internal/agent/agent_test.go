@@ -287,8 +287,8 @@ func TestReasoningSentBack(t *testing.T) {
 		// Turn one answers with a reasoning; turn two reasons, calls a tool and answers.
 		sentWith := func(keep Reasoning) (older, midTurn, inHistory string) {
 			provider := &scriptedProvider{replies: []llm.Message{
-				{Role: llm.RoleAssistant, Text: "one", Reasoning: "old thought"},
-				{Role: llm.RoleAssistant, Reasoning: "mid thought", ToolCalls: []llm.ToolCall{toolCall("c1", "read", `{"path":"a.txt"}`)}},
+				{Role: llm.RoleAssistant, Text: "one", Reasoning: "old thought", Thinking: []byte(`["old"]`)},
+				{Role: llm.RoleAssistant, Reasoning: "mid thought", Thinking: []byte(`["mid"]`), ToolCalls: []llm.ToolCall{toolCall("c1", "read", `{"path":"a.txt"}`)}},
 				{Role: llm.RoleAssistant, Text: "two"},
 			}}
 			agent := newAgent(t, provider)
@@ -297,6 +297,9 @@ func TestReasoningSentBack(t *testing.T) {
 			_ = agent.Run(context.Background(), "b", Hooks{})
 			// The request after the tool result: a, one, b, the call, its result.
 			last := provider.requests[2].Messages
+			if (last[1].Reasoning == "") != (len(last[1].Thinking) == 0) || (last[3].Reasoning == "") != (len(last[3].Thinking) == 0) {
+				t.Errorf("%q: reasoning and thinking blocks not sent together: %+v", keep, last)
+			}
 			return last[1].Reasoning, last[3].Reasoning, agent.History[1].Reasoning
 		}
 

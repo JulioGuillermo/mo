@@ -16,9 +16,12 @@ const (
 )
 
 type Message struct {
-	Role       Role
-	Text       string
-	Reasoning  string
+	Role      Role
+	Text      string
+	Reasoning string
+	// Thinking are the provider's reasoning blocks as they came, signature
+	// and all, to send back unchanged; never read.
+	Thinking   json.RawMessage `json:",omitempty"`
 	Images     []Image
 	ToolCalls  []ToolCall
 	ToolCallID string
@@ -57,6 +60,9 @@ type Request struct {
 	// for Anthropic, none to xhigh for OpenAI's. Empty leaves the model's
 	// default, and nothing is sent.
 	Effort string
+	// NoThinking leaves thinking at the model's default, for the short
+	// requests of titles and the auto-mode judge.
+	NoThinking bool
 }
 
 // Usage is what a reply cost, and how fast the prompt was read and the

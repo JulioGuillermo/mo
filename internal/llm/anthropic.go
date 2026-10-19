@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 )
 
@@ -25,6 +26,8 @@ type Anthropic struct {
 	NoPreamble bool
 	// refused are the models the API took no effort for.
 	refused refusedEfforts
+	// unthinking are the models the API took no thinking for.
+	unthinking refusedEfforts
 }
 
 const (
@@ -36,7 +39,11 @@ const (
 	claudeCodeAgent  = "claude-cli/2.1.299 (external, cli)"
 )
 
-const anthropicDefaultMaxTokens = 8192
+const (
+	anthropicDefaultMaxTokens = 8192
+	// anthropicMinThinkingBudget is the least budget_tokens the API takes.
+	anthropicMinThinkingBudget = 1024
+)
 
 type anthropicBlock struct {
 	Type         string          `json:"type"`
@@ -49,6 +56,10 @@ type anthropicBlock struct {
 	IsError      bool            `json:"is_error,omitempty"`
 	Source       *imageSource    `json:"source,omitempty"`
 	CacheControl *cacheControl   `json:"cache_control,omitempty"`
+	// Thinking and Signature are a thinking block's; Data a redacted one's.
+	Thinking  *string `json:"thinking,omitempty"`
+	Signature string  `json:"signature,omitempty"`
+	Data      string  `json:"data,omitempty"`
 }
 
 type imageSource struct {
@@ -82,6 +93,15 @@ type anthropicRequest struct {
 	Stream    bool               `json:"stream"`
 	// OutputConfig carries the effort, for the models that take it.
 	OutputConfig *anthropicOutputConfig `json:"output_config,omitempty"`
+	Thinking     *anthropicThinking     `json:"thinking,omitempty"`
+}
+
+// anthropicThinking turns thinking on as Claude Code does: adaptive where
+// the model has it, else with a budget of tokens.
+type anthropicThinking struct {
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens,omitempty"`
+	Display      string `json:"display,omitempty"`
 }
 
 type anthropicOutputConfig struct {
@@ -102,15 +122,19 @@ type anthropicEvent struct {
 		Usage anthropicUsage `json:"usage"`
 	} `json:"message"`
 	ContentBlock struct {
-		Type string `json:"type"`
-		ID   string `json:"id"`
-		Name string `json:"name"`
+		Type      string `json:"type"`
+		ID        string `json:"id"`
+		Name      string `json:"name"`
+		Thinking  string `json:"thinking"`
+		Signature string `json:"signature"`
+		Data      string `json:"data"`
 	} `json:"content_block"`
 	Delta struct {
 		Type        string `json:"type"`
 		Text        string `json:"text"`
 		PartialJSON string `json:"partial_json"`
 		Thinking    string `json:"thinking"`
+		Signature   string `json:"signature"`
 		StopReason  string `json:"stop_reason"`
 	} `json:"delta"`
 	Usage anthropicUsage `json:"usage"`
@@ -127,8 +151,12 @@ func (p *Anthropic) Stream(ctx context.Context, req Request, onEvent func(Event)
 	}
 	url := strings.TrimRight(p.BaseURL, "/") + "/v1/messages"
 	build := func() anthropicRequest {
+		req.Effort = anthropicSentEffort(req.Model, req.Effort)
 		if p.refused.refused(req.Model) {
 			req.Effort = ""
+		}
+		if p.unthinking.refused(req.Model) {
+			req.NoThinking = true
 		}
 		body := buildAnthropicRequest(req)
 		if p.Subscription && !p.NoPreamble {
@@ -137,7 +165,15 @@ func (p *Anthropic) Stream(ctx context.Context, req Request, onEvent func(Event)
 		return body
 	}
 	resp, err := postJSON(ctx, clientOrDefault(p.Client), url, headers, build())
-	if err != nil && req.Effort != "" && refusesEffort(err) {
+	if err != nil && refusesThinkingBlocks(err) {
+		req.Messages = withoutThinking(req.Messages)
+		resp, err = postJSON(ctx, clientOrDefault(p.Client), url, headers, build())
+	}
+	if err != nil && !req.NoThinking && refusesThinking(err) {
+		p.unthinking.refuse(req.Model)
+		resp, err = postJSON(ctx, clientOrDefault(p.Client), url, headers, build())
+	}
+	if err != nil && req.Effort != "" && !refusesThinkingBlocks(err) && refusesEffort(err) {
 		p.refused.refuse(req.Model)
 		resp, err = postJSON(ctx, clientOrDefault(p.Client), url, headers, build())
 	}
@@ -168,8 +204,20 @@ func (p *Anthropic) Stream(ctx context.Context, req Request, onEvent func(Event)
 func buildAnthropicRequest(req Request) anthropicRequest {
 	ephemeral := &cacheControl{Type: "ephemeral"}
 	out := anthropicRequest{Model: req.Model, MaxTokens: req.MaxTokens, Stream: true}
+	known, isKnown := lookupAnthropicModel(req.Model)
 	if out.MaxTokens == 0 {
 		out.MaxTokens = anthropicDefaultMaxTokens
+		if isKnown {
+			out.MaxTokens = known.maxTokens
+		}
+	}
+	if isKnown && !req.NoThinking && !strings.HasPrefix(canonicalAnthropicModel(req.Model), "claude-3") {
+		switch {
+		case known.adaptive:
+			out.Thinking = &anthropicThinking{Type: "adaptive", Display: "summarized"}
+		case out.MaxTokens > anthropicMinThinkingBudget:
+			out.Thinking = &anthropicThinking{Type: "enabled", BudgetTokens: out.MaxTokens - 1, Display: "summarized"}
+		}
 	}
 	if req.Effort != "" {
 		out.OutputConfig = &anthropicOutputConfig{Effort: req.Effort}
@@ -211,6 +259,12 @@ func toAnthropicMessages(messages []Message) []anthropicMessage {
 			}
 		case RoleAssistant:
 			var blocks []anthropicBlock
+			if len(message.Thinking) > 0 {
+				var thinking []anthropicBlock
+				if json.Unmarshal(message.Thinking, &thinking) == nil {
+					blocks = append(blocks, thinking...)
+				}
+			}
 			if strings.TrimSpace(message.Text) != "" {
 				blocks = append(blocks, anthropicBlock{Type: "text", Text: message.Text})
 			}
@@ -318,4 +372,29 @@ func (p *Anthropic) ModelWindow(ctx context.Context, model string) int {
 		return 0
 	}
 	return info.MaxInputTokens
+}
+
+// refusesThinkingBlocks tells the 400 the API answers when thinking blocks
+// sent back no longer match what came before them, as after a compaction.
+func refusesThinkingBlocks(err error) bool {
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "400") && (strings.Contains(text, "signature") || strings.Contains(text, "thinking` block") ||
+		strings.Contains(text, "thinking block") || strings.Contains(text, "redacted_thinking"))
+}
+
+// refusesThinking tells a 400 about the thinking asked for, not about the
+// blocks sent back nor the effort: the model or a proxy takes none.
+func refusesThinking(err error) bool {
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "400") && strings.Contains(text, "thinking") &&
+		!strings.Contains(text, "effort") && !refusesThinkingBlocks(err)
+}
+
+// withoutThinking is the history without the thinking blocks sent back.
+func withoutThinking(messages []Message) []Message {
+	out := slices.Clone(messages)
+	for i := range out {
+		out[i].Thinking = nil
+	}
+	return out
 }

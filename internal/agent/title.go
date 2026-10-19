@@ -49,10 +49,11 @@ func (a *Agent) SuggestTitle(ctx context.Context, onEvent func(llm.Event)) (stri
 	ctx, cancel := context.WithTimeout(ctx, titleTimeout)
 	defer cancel()
 	response, err := a.Provider.Stream(ctx, llm.Request{
-		Model:     a.modelName(),
-		System:    titleSystem,
-		MaxTokens: titleMaxTokens,
-		Messages:  []llm.Message{{Role: llm.RoleUser, Text: "Name this conversation:\n\n" + text}},
+		Model:      a.modelName(),
+		System:     titleSystem,
+		MaxTokens:  titleMaxTokens,
+		NoThinking: true,
+		Messages:   []llm.Message{{Role: llm.RoleUser, Text: "Name this conversation:\n\n" + text}},
 	}, func(event llm.Event) {
 		if onEvent != nil {
 			onEvent(event)
