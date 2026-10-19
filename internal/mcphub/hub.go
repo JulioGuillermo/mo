@@ -20,6 +20,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jg/mo/internal/config"
+	"github.com/jg/mo/internal/netx"
 )
 
 const (
@@ -148,7 +149,7 @@ func connectWith(ctx context.Context, transport mcp.Transport) (*mcp.ClientSessi
 func transportFor(name string, settings config.MCPServer, logDir string) (mcp.Transport, *exec.Cmd, error) {
 	switch {
 	case settings.URL != "":
-		base, err := httpTransport(settings)
+		base, err := netx.Transport(settings.CA, settings.Insecure)
 		if err != nil {
 			return nil, nil, err
 		}

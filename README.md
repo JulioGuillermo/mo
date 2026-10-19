@@ -764,10 +764,25 @@ mo.on("tool_call", function(call)                                    -- return a
 end)
 ```
 
-They get `mo.exec(cmd)` (output, exit code), `mo.read(path)`, `mo.write(path, text)`,
-`mo.json_encode`, `mo.json_decode`, `mo.env(name)`, `mo.workdir` and `mo.log` (`print` goes to the
-log too, in `~/.local/share/mo/logs/plugin-<name>.log`). The Lua `io`, `os` and `require` are not
-there. A full example is in `docs/examples/plugins/git.lua`.
+A plugin is your own code and has your rights: all of Lua's libraries are there (`io`, `os`,
+`package`, `debug`, `coroutine`), and `mo` adds what a script needs to work with the system:
+
+| | |
+|---|---|
+| `mo.exec(cmd)` | run a shell command in the working directory: its output (errors too) and exit code |
+| `mo.run{ command = "...", argv = {...}, cwd, env, stdin, timeout }` | the same with what a command may need: `argv` runs with no shell, `env` adds to the environment, `timeout` is in seconds; gives `{ stdout, stderr, code, ok }` |
+| `mo.http.get(url, opts)`, `mo.http.post(url, body, opts)`, `mo.http.request{ url, method, headers, body, json, timeout, ca, insecure, redirects }` | HTTP: `json` is a table sent as JSON; `ca` is a PEM file trusted besides the system's, `insecure = true` takes any certificate, `redirects = false` stops at the first answer; gives `{ status, ok, headers, body }` (header names in lower case), or `nil` and the reason; a 404 is an answer, not an error |
+| `mo.fs.list(dir)`, `stat`, `mkdir` (with parents), `remove(path, recursive)`, `rename`, `glob` | what `io` lacks of the file system; `mo.read(path)` and `mo.write(path, text)` for whole files; relative paths start in the working directory |
+| `mo.json_encode`, `mo.json_decode` | JSON |
+| `mo.base64_encode`, `mo.base64_decode`, `mo.sha256`, `mo.hmac_sha256(key, text)`, `mo.url_encode` | encodings (hashes in hex) |
+| `mo.sleep(seconds)`, `mo.env(name)`, `mo.workdir`, `mo.log` | the rest; `print` and `io.write` go to the log too, in `~/.local/share/mo/logs/plugin-<name>.log` |
+
+`require("name")` loads `~/.config/mo/lib/name.lua` or `~/.config/mo/lib/name/init.lua`, to share
+code between plugins (a `.lua` file in `plugins/` is a plugin, run at start). What would break the
+terminal is turned aside: `io.read` reads nothing, `os.exit` raises an error, and `os.execute` runs
+with no terminal, its output in the log. A call stops at its time limit (a tool, 2 minutes; a hook, 5
+seconds), also in the middle of a request or a command. A full example is in
+`docs/examples/plugins/git.lua`.
 
 The language is Lua 5.1 as gopher-lua implements it: patterns have no `%f` frontier (it finds
 nothing, without an error), and there is no `goto` or integer division.

@@ -41,11 +41,13 @@ type Status struct {
 	Warnings []string
 }
 
-// Load runs every .lua file in dir, in name order. A missing dir is no
-// plugins. A command name already taken by an earlier plugin is left out
-// with a warning.
+// Load runs every .lua file in dir, in name order, with the Lua modules of
+// the lib folder beside it to require. A missing dir is no plugins. A
+// command name already taken by an earlier plugin is left out with a
+// warning.
 func Load(dir, workDir, logDir string) *Set {
 	set := &Set{}
+	libDir := filepath.Join(filepath.Dir(dir), "lib")
 	paths, _ := filepath.Glob(filepath.Join(dir, "*.lua"))
 	slices.Sort(paths)
 	commands := map[string]bool{}
@@ -54,7 +56,7 @@ func Load(dir, workDir, logDir string) *Set {
 		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
-		plugin := load(path, workDir, logDir)
+		plugin := load(path, workDir, logDir, libDir)
 		plugin.commands = slices.DeleteFunc(plugin.commands, func(command commandDefinition) bool {
 			if commands[command.name] {
 				plugin.warnings = append(plugin.warnings, "command /"+command.name+" left out: the name is taken")

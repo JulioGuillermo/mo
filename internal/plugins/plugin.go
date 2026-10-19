@@ -16,8 +16,6 @@ import (
 	"time"
 
 	lua "github.com/yuin/gopher-lua"
-
-	"github.com/jg/mo/internal/luabox"
 )
 
 const (
@@ -38,6 +36,7 @@ var (
 type Plugin struct {
 	name    string
 	workDir string
+	libDir  string
 	logPath string
 	source  string
 
@@ -70,17 +69,18 @@ type commandDefinition struct {
 // load runs a plugin file, which declares its tools, commands and hooks
 // through the mo table. A file that fails keeps its error for Status and
 // offers nothing.
-func load(path, workDir, logDir string) *Plugin {
+func load(path, workDir, logDir, libDir string) *Plugin {
 	name := strings.TrimSuffix(filepath.Base(path), ".lua")
 	source, _ := os.ReadFile(path)
 	plugin := &Plugin{
 		name:    name,
 		workDir: workDir,
+		libDir:  libDir,
 		logPath: filepath.Join(logDir, "plugin-"+name+".log"),
 		source:  string(source),
 		turn:    make(chan struct{}, 1),
 		hooks:   map[string][]*lua.LFunction{},
-		state:   lua.NewState(lua.Options{SkipOpenLibs: true}),
+		state:   lua.NewState(),
 		loading: true,
 	}
 	plugin.turn <- struct{}{}
@@ -93,12 +93,6 @@ func load(path, workDir, logDir string) *Plugin {
 	})
 	plugin.loading = false
 	return plugin
-}
-
-// openLibraries opens only base, table, string and math: plugins reach the
-// system through the mo table.
-func (p *Plugin) openLibraries() {
-	luabox.Sandbox(p.state)
 }
 
 // call runs work on the plugin's Lua state within timeout, waiting for its

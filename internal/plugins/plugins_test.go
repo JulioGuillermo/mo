@@ -9,7 +9,7 @@ package plugins
 // | PL-05 | Security | A tool_call hook returning a reason blocks the call                | P0       |
 // | PL-06 | Security | A tool_call hook that fails blocks the call                        | P0       |
 // | PL-07 | Error    | A file that fails to load is reported and offers nothing           | P1       |
-// | PL-08 | Security | io, os, require, dofile and loadfile are not available             | P0       |
+// | PL-08 | Security | io, os and require are there; os.exit is refused, io.read reads nothing, io.write goes to the log | P0 |
 // | PL-09 | Error    | A tool stuck in a loop stops when its context ends                 | P0       |
 // | PL-10 | Edge     | A tool whose name is taken is left out with a warning              | P1       |
 // | PL-11 | Happy    | mo.exec gives output and exit code; mo.read and mo.write use workdir | P1     |
@@ -198,16 +198,22 @@ func TestLoadingAndSandbox(t *testing.T) {
 		}
 	})
 
-	t.Run("PL-08 io, os, require, dofile and loadfile are not available", func(t *testing.T) {
-		set := loadSource(t, map[string]string{"probe": `
+	t.Run("PL-08 io, os and require are there; os.exit is refused, io.read reads nothing, io.write goes to the log", func(t *testing.T) {
+		f := loadSource(t, map[string]string{"probe": `
 mo.tool{ name = "probe", run = function()
-  return tostring(io) .. tostring(os) .. tostring(require) .. tostring(dofile) .. tostring(loadfile)
-end }`}).set
+  io.write("to the log")
+  local read = io.read("*l")
+  local ok, why = pcall(os.exit, 3)
+  return { libs = type(io) .. type(os) .. type(require) .. type(package) .. type(debug), read = tostring(read), exit = tostring(ok) .. ": " .. tostring(why) }
+end }`})
 
-		output, err := set.Tools(nil)[0].Run(context.Background(), tools.Env{}, json.RawMessage(`{}`))
+		output, err := f.set.Tools(nil)[0].Run(context.Background(), tools.Env{}, json.RawMessage(`{}`))
 
-		if err != nil || output != "nilnilnilnilnil" {
-			t.Errorf("output = %q err = %v", output, err)
+		var result map[string]string
+		json.Unmarshal([]byte(output), &result)
+		log, _ := os.ReadFile(filepath.Join(f.logDir, "plugin-probe.log"))
+		if err != nil || result["libs"] != "tabletablefunctiontabletable" || result["read"] != "nil" || !strings.Contains(result["exit"], "os.exit would stop mo") || !strings.Contains(string(log), "to the log") {
+			t.Errorf("result = %v err = %v log = %q", result, err, log)
 		}
 	})
 

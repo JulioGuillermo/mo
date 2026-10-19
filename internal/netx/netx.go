@@ -1,4 +1,5 @@
-package mcphub
+// Package netx makes the HTTP transports mo's clients share.
+package netx
 
 import (
 	"crypto/tls"
@@ -8,20 +9,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/jg/mo/internal/config"
 )
 
-// httpTransport is how mo reaches a server over HTTP: the system's
-// certificate authorities, with the server's own ca added, or any
-// certificate when it is insecure.
-func httpTransport(settings config.MCPServer) (http.RoundTripper, error) {
-	if settings.CA == "" && !settings.Insecure {
+// Transport is how mo reaches a server over HTTP: the system's certificate
+// authorities, with the PEM file ca added when set, or any certificate
+// when insecure.
+func Transport(ca string, insecure bool) (http.RoundTripper, error) {
+	if ca == "" && !insecure {
 		return http.DefaultTransport, nil
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
-	if settings.Insecure {
+	if insecure {
 		transport.TLSClientConfig.InsecureSkipVerify = true
 		return transport, nil
 	}
@@ -29,7 +28,7 @@ func httpTransport(settings config.MCPServer) (http.RoundTripper, error) {
 	if err != nil {
 		pool = x509.NewCertPool()
 	}
-	path := homePath(settings.CA)
+	path := HomePath(ca)
 	pem, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("ca: %w", err)
@@ -41,7 +40,8 @@ func httpTransport(settings config.MCPServer) (http.RoundTripper, error) {
 	return transport, nil
 }
 
-func homePath(path string) string {
+// HomePath turns a leading ~/ into the home folder.
+func HomePath(path string) string {
 	rest, found := strings.CutPrefix(path, "~/")
 	if !found {
 		return path

@@ -1,27 +1,17 @@
 package plugins
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"syscall"
-	"time"
 
 	lua "github.com/yuin/gopher-lua"
-
-	"github.com/jg/mo/internal/tools"
-)
-
-const (
-	execTimeout    = 2 * time.Minute
-	execKeptOutput = 1 << 20
 )
 
 // openAPI installs the mo table: what a plugin declares (tool, command, on)
-// and what it may use (exec, read, write, json, env, log, workdir).
+// and what it may use besides Lua's own libraries: exec and run for
+// commands, http, fs, read and write for files, json, encodings, sleep,
+// env, log and workdir.
 func (p *Plugin) openAPI() {
 	state := p.state
 	api := state.NewTable()
@@ -30,6 +20,8 @@ func (p *Plugin) openAPI() {
 		"command":     p.declareCommand,
 		"on":          p.declareHook,
 		"exec":        p.exec,
+		"run":         p.run,
+		"sleep":       sleep,
 		"read":        p.read,
 		"write":       p.write,
 		"json_encode": jsonEncode,
@@ -40,39 +32,12 @@ func (p *Plugin) openAPI() {
 	for name, function := range functions {
 		api.RawSetString(name, state.NewFunction(function))
 	}
+	api.RawSetString("http", p.httpTable())
+	api.RawSetString("fs", p.fsTable())
+	openEncodings(state, api)
 	api.RawSetString("workdir", lua.LString(p.workDir))
 	state.SetGlobal("mo", api)
 	state.SetGlobal("print", state.NewFunction(p.logLine))
-}
-
-// exec runs a bash command in the working directory and returns its output,
-// cut to its first and last bytes when long, and its exit code. Background
-// processes it starts may keep running, as with the bash tool.
-func (p *Plugin) exec(state *lua.LState) int {
-	ctx, cancel := context.WithTimeout(state.Context(), execTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "bash", "-c", state.CheckString(1))
-	cmd.Dir = p.workDir
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
-	cmd.WaitDelay = time.Second
-	output := tools.NewHeadTailBuffer(execKeptOutput)
-	cmd.Stdout, cmd.Stderr = output, output
-	err := cmd.Run()
-	text := output.String()
-	code := 0
-	var exitErr *exec.ExitError
-	switch {
-	case errors.Is(err, exec.ErrWaitDelay):
-	case errors.As(err, &exitErr):
-		code = exitErr.ExitCode()
-	case err != nil:
-		code = -1
-		text += err.Error()
-	}
-	state.Push(lua.LString(text))
-	state.Push(lua.LNumber(code))
-	return 2
 }
 
 func (p *Plugin) read(state *lua.LState) int {

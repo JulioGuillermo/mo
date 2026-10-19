@@ -138,6 +138,11 @@ func Sandbox(state *lua.LState) {
 	for _, unsafe := range []string{"dofile", "loadfile", "require", "module", "_printregs"} {
 		state.SetGlobal(unsafe, lua.LNil)
 	}
+	CapRepeat(state)
+}
+
+// CapRepeat makes string.rep refuse a result that would exhaust memory.
+func CapRepeat(state *lua.LState) {
 	stringTable, ok := state.GetGlobal("string").(*lua.LTable)
 	if !ok {
 		return
