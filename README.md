@@ -407,6 +407,11 @@ stash, stash_apply, stash_pop and stash_drop are kept as git keeps them; tag and
 hard, which asks) are there too. Untracked files are never touched. A merge or cherry-pick
 with conflicts leaves markers in the files for the model to resolve, then `continue`; `commit` and
 `continue` refuse while a marker is left, and `check` says where. Hooks do not run.
+Every action takes `repo`, the repository's folder, relative or absolute; without it, the working
+directory's. A repository outside the working directory asks, in every mode but all. Outside a
+repository the error lists those in the 2 levels below; `repos` lists them, and every one opened so
+far however deep, each with its branches. That list lives while mo runs and is never saved.
+`init` makes a repository in `repo` (the folder too) on git's `init.defaultBranch`, else `main`.
 
 `memory` keeps notes across sessions, per project or global. They are not put in the prompt:
 its `search` looks through them and the saved conversations (BM25, by words), and `read` gives one
@@ -682,6 +687,14 @@ alone again. ↑↓ move a cursor, and `c`, `d` and `a` comment lines and attach
 `/view` opened: the model gets each comment with its line in the new file, or in the old one for a
 line taken out. Tab after `/git compare ` offers the branches.
 
+Each takes a repository folder, relative or absolute, for when mo runs above the repositories, as in
+a workspace: `/git show ./mo`, `/git compare ./mo master` (repository first, the branch alone means
+this folder's). Tab offers the repositories first, then the other folders to go into. Outside a
+repository with none named, the one in the 2 levels below opens, or a list offers them.
+`/git branch [repo]` lists the branches, the current one marked, to filter (`/`) and switch to one
+(not while the model works). `/git repos` lists the repositories found and every one opened, each
+with its branches; enter lists the branches of the one picked.
+
 ```toml
 [render]
 images = "auto"   # auto | kitty | blocks | off
@@ -755,5 +768,5 @@ Plugins are your code and run with your rights; they are never loaded from a pro
 | click on the branch | the files changed, each with its kind |
 | right click | a small menu by the pointer, over the screen (↑↓ or j k, enter or a click, esc or a click outside closes it): the mode: all modes to pick · a task: change its state or delete it · a job in the panel, or a bash call still running: watch its output live, its last lines, send it to the background, kill it |
 | wheel over the side panel | scroll its tasks and jobs |
-| `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact [instruction]` `/cache clear` `/settings` `/reload` `/providers` `/mcp` `/plugins` `/agents` `/view [file]` `/git show` `/git compare <branch>` `/peers` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
+| `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact [instruction]` `/cache clear` `/settings` `/reload` `/providers` `/mcp` `/plugins` `/agents` `/view [file]` `/git show [repo]` `/git compare [repo] <branch>` `/git branch [repo]` `/git repos` `/peers` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
 | `/<name> text` | a plugin command |

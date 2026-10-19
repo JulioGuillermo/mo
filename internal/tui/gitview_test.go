@@ -7,7 +7,7 @@ package tui
 // | GV-03 | Happy    | A file picked in the tree shows its diff, the tree kept, and t hides and shows it | P1  |
 // | GV-04 | Happy    | /git compare <branch> shows what this branch adds over it                   | P0       |
 // | GV-05 | Edge     | Nothing to show, or no action, says so instead of opening                   | P1       |
-// | GV-06 | Happy    | /git suggests its actions, then the other branches                          | P2       |
+// | GV-06 | Happy    | /git suggests its actions, then for compare the other branches before folders | P2     |
 // | GV-07 | Happy    | Lines far from a change fold into one row; e shows 20 of them, E all        | P0       |
 // | GV-08 | Happy    | f shows the whole file and back, the cursor kept on its line                | P0       |
 // | GV-09 | Happy    | A comment on a diff line goes to the model with its line, kept as lines unfold | P0    |
@@ -158,7 +158,7 @@ func TestGitView(t *testing.T) {
 		}
 	})
 
-	t.Run("GV-06 /git suggests its actions, then the other branches", func(t *testing.T) {
+	t.Run("GV-06 /git suggests its actions, then for compare the other branches before folders", func(t *testing.T) {
 		m, dir := gitModel(t)
 		repo, _ := gitops.Open(dir)
 		repo.Switch("feature", true)
@@ -166,7 +166,7 @@ func TestGitView(t *testing.T) {
 		actions := m.gitSuggestions("co")
 		branches := m.gitSuggestions("compare ")
 
-		if len(actions) != 1 || actions[0].name != "git compare " || len(branches) != 1 || branches[0].name != "git compare master" {
+		if len(actions) != 1 || actions[0].name != "git compare " || len(branches) != 2 || branches[0].name != "git compare master" || branches[1].name != "git compare src/" {
 			t.Errorf("actions %v branches %v", actions, branches)
 		}
 	})

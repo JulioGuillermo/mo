@@ -101,3 +101,26 @@ func (r *Repo) BranchNames() []string {
 	slices.Sort(names)
 	return names
 }
+
+// BranchesLine is the current branch, then the others, up to
+// shownBranches of them: "main · also dev, feature".
+func (r *Repo) BranchesLine() string {
+	current := r.CurrentBranch()
+	line := current
+	if current == "" {
+		line = "no branch"
+	}
+	var others []string
+	for _, name := range r.BranchNames() {
+		if name != current {
+			others = append(others, name)
+		}
+	}
+	if len(others) == 0 {
+		return line
+	}
+	if len(others) > shownBranches {
+		return fmt.Sprintf("%s · also %s and %d more", line, strings.Join(others[:shownBranches], ", "), len(others)-shownBranches)
+	}
+	return line + " · also " + strings.Join(others, ", ")
+}

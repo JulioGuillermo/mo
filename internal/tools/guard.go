@@ -19,8 +19,9 @@ const (
 
 // Warning names the risk of a call that changes a path outside the working
 // directory or a protected one (mo's config, a .git directory, a hidden entry
-// of the home directory), or that changes a global memory. Such calls are
-// confirmed every time.
+// of the home directory), that changes a global memory, or that runs git on
+// a repository outside the working directory. Such calls are confirmed
+// every time.
 func (r *Registry) Warning(call llm.ToolCall) string {
 	tool, ok := r.find(call.Name)
 	if !ok || checkArgNames(tool, call.Args) != nil {
@@ -33,6 +34,9 @@ func (r *Registry) Warning(call llm.ToolCall) string {
 	}
 	if tool.Name == "memory" && changesGlobalMemory(call.Args) {
 		return warningGlobalMemory
+	}
+	if tool.Name == "git" && r.repoOutside(call.Args) {
+		return warningOutsideWorkDir
 	}
 	if !tool.ChangesPathArg {
 		return ""
@@ -51,6 +55,14 @@ func (r *Registry) Warning(call llm.ToolCall) string {
 		}
 	}
 	return ""
+}
+
+func (r *Registry) repoOutside(args json.RawMessage) bool {
+	repo := argField(args, "repo")
+	if repo == "" {
+		return false
+	}
+	return !isInside(physicalPath(r.env.Resolve(repo)), physicalPath(r.env.WorkDir))
 }
 
 func changesGlobalMemory(args json.RawMessage) bool {

@@ -30,6 +30,7 @@ const (
 	writtenFile    = "MO_WRITTEN"
 	rebaseFile     = "MO_REBASE"
 	shownLog       = 20
+	shownBranches  = 8
 	fallbackName   = "mo"
 	fallbackEmail  = "mo@localhost"
 )
@@ -63,6 +64,7 @@ func Open(dir string) (*Repo, error) {
 	if storage, ok := repo.Storer.(*filesystem.Storage); ok {
 		gitDir = storage.Filesystem().Root()
 	}
+	remember(tree.Filesystem.Root())
 	return &Repo{repo: repo, tree: tree, root: tree.Filesystem.Root(), gitDir: gitDir}, nil
 }
 
@@ -136,14 +138,14 @@ func (r *Repo) Root() string {
 	return r.root
 }
 
-// CurrentBranch is the branch checked out, or "" with HEAD detached or no
-// commit yet.
+// CurrentBranch is the branch checked out, even with no commit yet, or ""
+// with HEAD detached.
 func (r *Repo) CurrentBranch() string {
-	ref, err := r.repo.Head()
-	if err != nil || !ref.Name().IsBranch() {
+	head, err := r.repo.Storer.Reference(plumbing.HEAD)
+	if err != nil || head.Type() != plumbing.SymbolicReference || !head.Target().IsBranch() {
 		return ""
 	}
-	return ref.Name().Short()
+	return head.Target().Short()
 }
 
 func (r *Repo) commitOf(revision string) (*object.Commit, error) {

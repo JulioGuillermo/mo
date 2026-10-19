@@ -13,7 +13,7 @@ type helpTopic struct {
 
 // helpAbouts are the topics that are no action, marked as topics where
 // help lists them beside the actions.
-var helpAbouts = []string{"view", "conflicts", "nodes", "events", "script", "example"}
+var helpAbouts = []string{"view", "repo", "conflicts", "nodes", "events", "script", "example"}
 
 // viewHelp says how to see a part of a tool's text output, in help's view
 // topic; ViewGuide says it once in the system prompt, so no tool's

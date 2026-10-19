@@ -46,7 +46,7 @@ var builtinCommands = []command{
 	{name: "cache", argument: "clear", description: "llama-server: erase what every slot holds, its KV cache"},
 	{name: "compact", argument: "[instruction]", description: "summarize the conversation to free context; an instruction is added under the summary prompt, as yours"},
 	{name: "skill", argument: "[name] [text]", description: "load a skill with your message, as $name does; no name lists them"},
-	{name: "git", argument: "show | compare <branch>", description: "see the changes not committed, or what this branch adds over another as a pull request: their files in a tree, each file's diff beside it"},
+	{name: "git", argument: "show | compare | branch | repos", description: "the changes not committed, what this branch adds over another as a pull request, the branches to switch, the repositories known; a repository folder after the action, of another"},
 	{name: "peers", argument: "[name|incoming|outgoing|on|off]", description: "the other mo windows the model can message, when peers are on; and how this session takes their messages"},
 	{name: "settings", description: "global settings, and what this project overrides · /settings project"},
 	{name: "reload", description: "load the settings files again, provider, model, effort and permission mode included"},

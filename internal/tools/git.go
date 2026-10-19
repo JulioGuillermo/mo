@@ -3,7 +3,9 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -12,10 +14,15 @@ import (
 
 // gitChanges are the actions that change the repository: they ask like
 // file changes do; the others only read.
-var gitChanges = []string{"add", "commit", "branch", "switch", "merge", "cherry_pick", "rebase", "continue", "abort", "pull", "push",
+var gitChanges = []string{"init", "add", "commit", "branch", "switch", "merge", "cherry_pick", "rebase", "continue", "abort", "pull", "push",
 	"stash", "stash_apply", "stash_pop", "stash_drop", "tag", "reset"}
 
 var gitHelp = []helpTopic{
+	{"repo", "every action takes it: the repository folder, relative (mo, ./mo, ../x) or absolute; left out, the working directory. " +
+		"path and paths are relative to it. Outside the working directory it asks first."},
+	{"repos", fmt.Sprintf("the repositories %d folder levels below the working directory, and any opened with repo however deep; "+
+		"each with its branch and the others. Outside a repository, the error lists them too.", gitops.SearchDepth)},
+	{"init", "repo: make a repository there, the folder too when missing; its first branch is git's init.defaultBranch, else main."},
 	{"status", "branch, what is staged, changed and untracked."},
 	{"diff", "changes not staged; staged: true, those staged. paths: only these."},
 	{"log", "commits, the latest first. count: how many (20). path: only those touching it."},
@@ -49,18 +56,18 @@ var gitHelp = []helpTopic{
 func gitTool() Tool {
 	return Tool{
 		Name: "git",
-		Description: "Git in the working directory, its output kept short; hooks do not run. " +
-			`{"action":"help"} explains each action; for what they do not do, run git with bash.`,
+		Description: "Git without hooks, its output kept short. repo: the repository folder (mo, ../x, /abs); left out, the working directory. " +
+			`{"action":"repos"} lists the repositories; {"action":"help"} explains each action. For what it lacks, run git with bash.`,
 		Schema: json.RawMessage(`{"type":"object","properties":{
-"action":{"type":"string","enum":["status","diff","log","show","blame","branches","check","fetch","stash_list","tags","add","commit","branch","switch","merge","cherry_pick","rebase","continue","abort","pull","push","stash","stash_apply","stash_pop","stash_drop","tag","reset","help"]},
-"paths":{"type":"array","items":{"type":"string"}},"path":{"type":"string"},"revision":{"type":"string"},"name":{"type":"string"},"message":{"type":"string"},
+"action":{"type":"string","enum":["repos","init","status","diff","log","show","blame","branches","check","fetch","stash_list","tags","add","commit","branch","switch","merge","cherry_pick","rebase","continue","abort","pull","push","stash","stash_apply","stash_pop","stash_drop","tag","reset","help"]},
+"repo":{"type":"string"},"paths":{"type":"array","items":{"type":"string"}},"path":{"type":"string"},"revision":{"type":"string"},"name":{"type":"string"},"message":{"type":"string"},
 "remote":{"type":"string"},"staged":{"type":"boolean"},"create":{"type":"boolean"},"rebase":{"type":"boolean"},"mode":{"type":"string","enum":["soft","mixed","hard"]},
 "index":{"type":"integer"},"count":{"type":"integer"},"topic":{"type":"string"}},"required":["action"]}`),
 		Run:  runGit,
 		View: true,
 		Summary: func(args json.RawMessage) string {
 			parts := []string{argField(args, "action")}
-			for _, field := range []string{"revision", "name", "path", "message", "topic"} {
+			for _, field := range []string{"repo", "revision", "name", "path", "message", "topic"} {
 				if value := argField(args, field); value != "" {
 					parts = append(parts, value)
 				}
@@ -84,19 +91,24 @@ func gitTool() Tool {
 
 func runGit(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	var args struct {
-		Action, Path, Revision, Message, Name, Remote, Mode, Topic string
-		Index, Count                                               int
-		Paths                                                      []string
-		Create, Staged                                             bool
-		Rebase                                                     *bool
+		Action, Repo, Path, Revision, Message, Name, Remote, Mode, Topic string
+		Index, Count                                                     int
+		Paths                                                            []string
+		Create, Staged                                                   bool
+		Rebase                                                           *bool
 	}
 	if err := decodeArgs(raw, &args); err != nil {
 		return "", err
 	}
-	if args.Action == "help" {
+	switch args.Action {
+	case "help":
 		return help(gitHelp, args.Topic)
+	case "repos":
+		return knownRepos(env.WorkDir), nil
+	case "init":
+		return gitops.Init(env.Resolve(firstNonEmpty(args.Repo, ".")))
 	}
-	repo, err := gitops.Open(env.WorkDir)
+	repo, err := openRepo(env, args.Repo)
 	if err != nil {
 		return "", err
 	}
@@ -157,6 +169,61 @@ func runGit(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 		return repo.Abort()
 	}
 	return "", fmt.Errorf("action %q is not one git takes", args.Action)
+}
+
+// knownRepos lists the repositories known, each with its branches, as paths
+// from the working directory when inside it.
+func knownRepos(workDir string) string {
+	var out strings.Builder
+	for _, root := range gitops.KnownRepos(workDir) {
+		repo, err := gitops.Open(root)
+		if err != nil {
+			continue
+		}
+		fmt.Fprintf(&out, "%s  %s\n", shortRepoPath(workDir, root), repo.BranchesLine())
+	}
+	if out.Len() == 0 {
+		out.WriteString("no repositories known\n")
+	}
+	fmt.Fprintf(&out, "searched %d levels below the working directory; deeper ones are listed once opened with repo", gitops.SearchDepth)
+	return out.String()
+}
+
+func shortRepoPath(workDir, root string) string {
+	relative, err := filepath.Rel(workDir, root)
+	if err != nil || strings.HasPrefix(relative, "..") {
+		return root
+	}
+	return filepath.ToSlash(relative)
+}
+
+// openRepo opens the repository the call names, else the working
+// directory's; outside one, the error lists the repositories below.
+func openRepo(env Env, named string) (*gitops.Repo, error) {
+	dir := env.WorkDir
+	if named != "" {
+		dir = env.Resolve(named)
+	}
+	repo, err := gitops.Open(dir)
+	if !errors.Is(err, gitops.ErrNotRepository) {
+		return repo, err
+	}
+	return nil, notRepository(dir)
+}
+
+func notRepository(dir string) error {
+	message := "not a git repository: " + dir
+	repos, more := gitops.ReposBelow(dir)
+	if len(repos) == 0 {
+		return fmt.Errorf("%s\nno repositories in the %d levels below it; deeper ones are not searched. Pass repo with the repository's path",
+			message, gitops.SearchDepth)
+	}
+	listed := "repositories below it: " + strings.Join(repos, ", ")
+	if more {
+		listed = fmt.Sprintf("the first %d repositories below it: %s", len(repos), strings.Join(repos, ", "))
+	}
+	return fmt.Errorf("%s\n%s\nsearched %d levels below; deeper ones are not listed.\nPass repo, e.g. {\"action\":\"status\",\"repo\":%q}",
+		message, listed, gitops.SearchDepth, repos[0])
 }
 
 func firstNonEmpty(values ...string) string {

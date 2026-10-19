@@ -13,7 +13,6 @@ import (
 )
 
 const (
-	gitUsage   = "usage: /git show, the changes not committed · /git compare <branch>, what this branch adds over it, as a pull request"
 	changeHelp = "↑↓ move · e E on ⋯ show lines · f whole file · c comment · a attach · / search · y copy · t tree · esc close"
 )
 
@@ -45,26 +44,19 @@ func changeStyle(kind rune, current bool) lipgloss.Style {
 	return style.Bold(current)
 }
 
-// gitCommand is /git show and /git compare <branch>.
-func (m model) gitCommand(argument string) (tea.Model, tea.Cmd) {
-	action, branch, _ := strings.Cut(strings.TrimSpace(argument), " ")
-	branch = strings.TrimSpace(branch)
-	repo, err := gitops.Open(m.session.WorkDir)
-	if err != nil {
-		return m.emitError(err)
-	}
+// showComparison is /git show and /git compare in the viewer: the files
+// in a tree, the diff of the first beside it.
+func (m model) showComparison(repo *gitops.Repo, request gitRequest) (tea.Model, tea.Cmd) {
 	var comparison gitops.Comparison
+	var err error
 	var title, nothing string
-	switch {
-	case action == "show" && branch == "":
+	if request.action == "show" {
 		comparison, err = repo.Uncommitted()
 		title, nothing = "Changes not committed", "nothing changed since the last commit"
-	case action == "compare" && branch != "":
-		comparison, err = repo.Compare(branch)
-		title = branch + " → " + orDefault(repo.CurrentBranch(), "HEAD")
-		nothing = "this branch adds nothing over " + branch
-	default:
-		return m.emit(m.printer.Note(gitUsage))
+	} else {
+		comparison, err = repo.Compare(request.branch)
+		title = request.branch + " → " + orDefault(repo.CurrentBranch(), "HEAD")
+		nothing = "this branch adds nothing over " + request.branch
 	}
 	if err != nil {
 		return m.emitError(err)
@@ -150,33 +142,4 @@ func (v *outputViewer) changeHeader(width int, comments string) string {
 	}
 	about += comments
 	return toolName.Render(oneLine(v.diffFile, width/2)) + " " + dimStyle.Render(about+" · only you see it")
-}
-
-// gitSuggestions are what /git takes, then the branches /git compare does,
-// those that start with what was typed.
-func (m model) gitSuggestions(partial string) []command {
-	if branch, comparing := strings.CutPrefix(partial, "compare "); comparing {
-		repo, err := gitops.Open(m.session.WorkDir)
-		if err != nil {
-			return nil
-		}
-		var matches []command
-		for _, name := range repo.BranchNames() {
-			if strings.HasPrefix(name, branch) && name != repo.CurrentBranch() {
-				matches = append(matches, command{name: "git compare " + name, description: "what this branch adds over " + name})
-			}
-		}
-		return matches
-	}
-	actions := []command{
-		{name: "git show", description: "the changes not committed, staged or not"},
-		{name: "git compare ", description: "what this branch adds over another, as a pull request", more: true},
-	}
-	var matches []command
-	for _, action := range actions {
-		if strings.HasPrefix(action.name, "git "+partial) {
-			matches = append(matches, action)
-		}
-	}
-	return matches
 }
