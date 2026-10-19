@@ -12,6 +12,8 @@ package plugins
 // | PS-08 | Happy    | base64, sha256, hmac and url escaping match the standard ones            | P1       |
 // | PS-09 | Edge     | os.execute runs with no terminal, output in the log, and gives the exit status | P1 |
 // | PS-10 | Edge     | mo.sleep stops when the call is stopped                                  | P1       |
+// | PS-11 | Happy    | mo.http.listen takes the one request to its path, gives its query, answers the browser, and closes | P0 |
+// | PS-12 | Edge     | A listener that is waited on past its time gives up with the reason      | P1       |
 
 import (
 	"context"
@@ -203,6 +205,42 @@ end }`})
 		}
 		if result["followed"] != "secret" || result["stopped"] != float64(302) || result["where"] != "/new" {
 			t.Errorf("redirects: %v", result)
+		}
+	})
+}
+
+func TestListening(t *testing.T) {
+	t.Run("PS-11 mo.http.listen takes the one request to its path, gives its query, answers the browser, and closes", func(t *testing.T) {
+		f := loadSource(t, map[string]string{"cb": `
+mo.tool{ name = "go", run = function()
+  local server = mo.http.listen{ path = "/callback", reply = "all done" }
+  local url = "http://127.0.0.1:" .. server.port
+  mo.run{ command = "(sleep 0.2; curl -s " .. url .. "/favicon.ico >/dev/null; curl -s '" .. url .. "/callback?code=abc&state=x%20y' > reply.txt) &" }
+  local request = server.wait(5)
+  mo.sleep(0.5)
+  local again, why = mo.http.get(url .. "/callback", { timeout = 2 })
+  return { code = request.query.code, state = request.query.state, path = request.path, method = request.method, reply = mo.read("reply.txt"), closed = tostring(again) }
+end }`})
+
+		result := runTool(t, f)
+
+		if result["code"] != "abc" || result["state"] != "x y" || result["path"] != "/callback" || result["method"] != "GET" || result["reply"] != "all done" || result["closed"] != "nil" {
+			t.Errorf("result = %v", result)
+		}
+	})
+
+	t.Run("PS-12 a listener that is waited on past its time gives up with the reason", func(t *testing.T) {
+		f := loadSource(t, map[string]string{"cb": `
+mo.tool{ name = "go", run = function()
+  local server = mo.http.listen()
+  local ok, why = server.wait(0.2)
+  return { got = tostring(ok), why = why }
+end }`})
+
+		result := runTool(t, f)
+
+		if result["got"] != "nil" || !strings.Contains(result["why"].(string), "deadline") {
+			t.Errorf("result = %v", result)
 		}
 	})
 }

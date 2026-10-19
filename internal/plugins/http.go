@@ -20,7 +20,7 @@ const (
 	jsonMimeType = "application/json"
 )
 
-// httpTable is mo.http: request, get and post.
+// httpTable is mo.http: request, get, post and listen.
 func (p *Plugin) httpTable() *lua.LTable {
 	table := p.state.NewTable()
 	table.RawSetString("request", p.state.NewFunction(func(state *lua.LState) int {
@@ -39,6 +39,7 @@ func (p *Plugin) httpTable() *lua.LTable {
 		options.RawSetString("body", lua.LString(state.OptString(2, "")))
 		return doRequest(state, options)
 	}))
+	table.RawSetString("listen", p.state.NewFunction(p.httpListen))
 	return table
 }
 
