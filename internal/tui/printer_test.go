@@ -121,3 +121,22 @@ func TestTerminalText(t *testing.T) {
 		}
 	})
 }
+
+func TestUserBand(t *testing.T) {
+	t.Run("a line too wide wraps under the text, not under the marker", func(t *testing.T) {
+		p := newPrinter()
+		p.setWidth(30)
+
+		band := ansi.Strip(p.User("one two three four five six seven eight nine"))
+		lines := strings.Split(strings.TrimPrefix(band, "\n"), "\n")
+
+		if len(lines) < 2 || !strings.HasPrefix(lines[0], " › one") {
+			t.Fatalf("lines = %q", lines)
+		}
+		for _, line := range lines[1:] {
+			if !strings.HasPrefix(line, "   ") || strings.HasPrefix(line, "    ") {
+				t.Errorf("not aligned with the text: %q", line)
+			}
+		}
+	})
+}

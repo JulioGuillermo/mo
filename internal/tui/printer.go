@@ -534,14 +534,18 @@ func (p *printer) User(text string) string {
 	p.mu.Lock()
 	width, dark := p.width, p.dark
 	p.mu.Unlock()
-	band := panel(dark).Width(max(width, 20)).Padding(0, 1)
-	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
-	for i, line := range lines {
-		prefix := "  "
-		if i == 0 {
-			prefix = "› "
+	bandWidth := max(width, 20)
+	band := panel(dark).Width(bandWidth).Padding(0, 1)
+	textWidth := bandWidth - 2 - 2
+	var lines []string
+	for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+		for _, piece := range strings.Split(ansi.Wrap(line, textWidth, " "), "\n") {
+			prefix := "  "
+			if len(lines) == 0 {
+				prefix = "› "
+			}
+			lines = append(lines, prefix+piece)
 		}
-		lines[i] = prefix + line
 	}
 	return "\n" + band.Render(strings.Join(lines, "\n"))
 }
