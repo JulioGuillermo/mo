@@ -70,14 +70,15 @@ func (a *Agent) deliverQueued(hooks Hooks) {
 	if len(queued) == 0 {
 		return
 	}
-	var texts, typed []string
+	var texts, own, typed []string
 	for _, each := range queued {
 		texts = append(texts, each.Text)
+		own = append(own, ownText(each.Text))
 		typed = append(typed, each.Typed)
 	}
 	joined := strings.Join(texts, "\n\n")
 	joinedTyped := strings.Join(typed, "\n\n")
-	message := withInput(a.promptMessage(joined, hooks), joinedTyped)
+	message := withInput(a.promptMessageNaming(joined, strings.Join(own, "\n\n"), hooks), joinedTyped)
 	if last := len(a.History) - 1; last >= 0 && a.History[last].Role == llm.RoleUser {
 		previous := a.History[last]
 		merged := previous

@@ -74,6 +74,14 @@ func SkillBlock(name, loaded string) string {
 		"[MO SKILL: " + name + "]\n" + loaded + "\n[END MO SKILL: " + name + "]"
 }
 
+// ShellNote tells the model of a command the user ran in the shell, so it
+// does not take it for one of its own: the command, how it ended and what
+// it printed.
+func ShellNote(command, ending, output string) string {
+	return moNotePrefix + "The user ran this command in the shell themselves; you did not run it.\n$ " + command +
+		"\n" + ending + "\n<output>\n" + strings.TrimRight(output, "\n") + "\n</output>"
+}
+
 // SkillRef stands in a prompt for a skill the user named with $name.
 func SkillRef(name string) string {
 	return "[SKILL REF: " + name + "]"

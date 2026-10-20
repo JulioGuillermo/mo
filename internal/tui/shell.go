@@ -9,26 +9,30 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/tools"
 )
 
 const (
-	shellUsage = "!<command> runs it in the shell, in this folder, without a terminal; the model reads it with your next message"
+	shellUsage = "!<command> runs it in the shell, in this folder, for you alone; !!<command> also gives the model what it printed, with your next message"
 	// shellNoteLimit is how much of a command's output the model is given,
 	// its start and end kept.
 	shellNoteLimit = 8000
 )
 
-// shellDoneMsg brings what a command run with ! printed.
+// shellDoneMsg brings what a command run with ! printed; told is whether
+// the model is told of it, as !! asks.
 type shellDoneMsg struct {
 	id, command, output string
 	err                 error
+	told                bool
 }
 
 // runShell is !command: run in the working directory, shown as a bash call,
-// stopped by esc; what it printed goes to the model with the next message.
-func (m model) runShell(command string) (tea.Model, tea.Cmd) {
+// stopped by esc. With told, as !! asks, what it printed goes to the model
+// with the next message; else only the user sees it.
+func (m model) runShell(command string, told bool) (tea.Model, tea.Cmd) {
 	if command == "" {
 		return m.emit(m.printer.Note(shellUsage))
 	}
@@ -47,7 +51,7 @@ func (m model) runShell(command string) (tea.Model, tea.Cmd) {
 		if ctx.Err() != nil {
 			err = errors.New("stopped with esc")
 		}
-		return shellDoneMsg{id: id, command: command, output: output, err: err}
+		return shellDoneMsg{id: id, command: command, output: output, err: err, told: told}
 	}
 }
 
@@ -57,15 +61,28 @@ func (m model) finishShell(msg shellDoneMsg) (tea.Model, tea.Cmd) {
 		delete(m.shells, msg.id)
 	}
 	output := msg.output
-	ending := "it ended well"
+	ending := shellEnding(msg.err)
 	if msg.err != nil {
 		output = strings.TrimSpace(output + "\n" + msg.err.Error())
-		ending = msg.err.Error()
 	}
 	m.finishTool(msg.id, output, msg.err != nil)
-	note := fmt.Sprintf("I ran `%s` in the shell; %s. It printed:\n```\n%s\n```", msg.command, ending, headAndTail(msg.output, shellNoteLimit))
-	m.shellNotes = append(m.shellNotes, note)
-	return m, m.readRepo()
+	if !msg.told {
+		return m, m.readRepo()
+	}
+	m.shellNotes = append(m.shellNotes, agent.ShellNote(msg.command, ending, headAndTail(msg.output, shellNoteLimit)))
+	return m, tea.Batch(m.readRepo(), printText(m.printer.Note("the model reads this with your next message")))
+}
+
+// shellEnding says how a command ended, for the model: its exit code, or
+// why it ended otherwise.
+func shellEnding(err error) string {
+	if err == nil {
+		return "exit code 0"
+	}
+	if code, isExit := strings.CutPrefix(err.Error(), "exit status "); isExit {
+		return "exit code " + code
+	}
+	return "ended: " + err.Error()
 }
 
 // stopShells stops the commands run with ! still going, telling whether
@@ -77,15 +94,16 @@ func (m model) stopShells() bool {
 	return len(m.shells) > 0
 }
 
-// withShellNotes puts the commands run with ! since the last message, and
-// what they printed, before the message, for the model to read.
+// withShellNotes puts the commands run with !! since the last message, and
+// what they printed, after the message as notes of mo's, for the model to
+// read.
 func (m *model) withShellNotes(prompt string) string {
 	if len(m.shellNotes) == 0 {
 		return prompt
 	}
 	notes := strings.Join(m.shellNotes, "\n\n")
 	m.shellNotes = nil
-	return notes + "\n\n" + prompt
+	return prompt + "\n\n" + notes
 }
 
 func headAndTail(text string, limit int) string {

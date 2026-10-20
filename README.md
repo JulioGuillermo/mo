@@ -751,8 +751,9 @@ the branches of the one picked.
 
 `!command` runs a command in the shell, in the working directory, without a terminal (an editor or a
 pager will not work there): `!make test`. It shows as a bash call with its output, and esc or ctrl+c
-stops it. The model reads the command and what it printed (its start and end, 8 KB) with your next
-message.
+stops it. Only you see it. `!!command` runs it the same way and gives the model the command, its exit
+code and what it printed (its start and end, 8 KB) with your next message, marked as run by you,
+not by the model. Files the output names are never taken as attached; only those you write are.
 
 ```toml
 [render]
@@ -816,7 +817,7 @@ examples; [docs/examples/plugins/git.lua](docs/examples/plugins/git.lua) is a co
 |---|---|
 | enter | send; while the model works, queue it: it waits over the status line, shaded, each message after an icon (💬 or Nerd Font's bubble, » in text), with an amber edge on the left (`⧗ queued · N · ↑ edit` under them) and goes into the conversation when the model reads it, at its next step; a long one wraps over several lines, up to eight; several messages queued together are one entry and the model reads them as one message; ↑ with nothing typed brings them all back into the input to edit, without stopping the model; ctrl+s sends them (and what is typed) now: the model stops where it is and answers them, instead of reading them at its next step; esc gives them back in the input too, but stops the model |
 | shift+enter, ctrl+j, alt+enter | new line, in the input and in the boxes of forms |
-| `!command` | run it in the shell, in this folder; the model reads it with your next message |
+| `!command`, `!!command` | run it in the shell, in this folder: for you alone, or with the model reading it with your next message |
 | esc, ctrl+c | stop the current run, or the commands run with `!`; esc with suggestions open (commands, paths, @) closes them first and leaves the run going |
 | ctrl+b | send the command that blocks the model to the background |
 | `/vim`, or `keys = "vim"` under `[render]` | vim keys: esc to normal mode, i a A I o to write; ctrl+h/j/k/l move between the conversation, the input and the side panel; in the conversation j k gg G ctrl+d ctrl+u move a cursor, l and h open and fold what it is on, v selects lines and y copies them; in the panel j k pick a task or job and l opens its menu; in the input h l w b 0 $ x D dd edit, v selects, u and ctrl+r undo and redo; y yy dd x D copy to the clipboard and p P paste from it; `:` starts a command; in settings lists l goes in and h back. The mode shows before the status line |

@@ -923,8 +923,11 @@ func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 	if strings.HasPrefix(prompt, "/") {
 		return m.runCommand(prompt)
 	}
+	if command, told := strings.CutPrefix(prompt, "!!"); told {
+		return m.runShell(strings.TrimSpace(command), true)
+	}
 	if command, isShell := strings.CutPrefix(prompt, "!"); isShell {
-		return m.runShell(strings.TrimSpace(command))
+		return m.runShell(strings.TrimSpace(command), false)
 	}
 	typed := prompt
 	prompt, err := m.withSkill(prompt)

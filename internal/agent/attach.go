@@ -22,13 +22,30 @@ const (
 
 var imageMIME = map[string]string{".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}
 
+// ownText is what the user wrote of a message: its text before mo's first
+// note, none when it is a note. Files are looked for only there, never in
+// what mo added, as a command's output.
+func ownText(text string) string {
+	if strings.HasPrefix(text, moNotePrefix) {
+		return ""
+	}
+	own, _, _ := strings.Cut(text, "\n\n"+moNotePrefix)
+	return own
+}
+
 // promptMessage is the user's prompt with the files it names, as pasted or
 // dropped paths: images go with it, other files are listed for the model to
 // read.
 func (a *Agent) promptMessage(prompt string, hooks Hooks) llm.Message {
+	return a.promptMessageNaming(prompt, ownText(prompt), hooks)
+}
+
+// promptMessageNaming is promptMessage with the files of own, the text the
+// user wrote.
+func (a *Agent) promptMessageNaming(prompt, own string, hooks Hooks) llm.Message {
 	message := llm.Message{Role: llm.RoleUser, Text: prompt}
 	var others, names []string
-	for _, path := range namedFiles(prompt, a.Tools.WorkDir()) {
+	for _, path := range namedFiles(own, a.Tools.WorkDir()) {
 		names = append(names, filepath.Base(path))
 		if image, err := loadImage(path); err == nil {
 			message.Images = append(message.Images, image)
