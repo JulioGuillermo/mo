@@ -57,6 +57,7 @@ type settingsDraft struct {
 	savedKey     bool
 	forgetKey    bool
 	images       string
+	cellSize     string
 	background   string
 	sidebar      string
 	statusStyle  string
@@ -173,6 +174,7 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		searchKeyEnv:     cfg.Web.SearchKeyEnv,
 		savedKey:         cfg.Web.SearchKey != "",
 		images:           string(cfg.Render.Images),
+		cellSize:         cfg.Render.CellSize,
 		background:       cfg.Render.Background,
 		sidebar:          cfg.Render.Sidebar,
 		statusStyle:      cfg.Render.Status,
@@ -393,6 +395,11 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 		return layer, fmt.Errorf("plugin UIs frames a second: %w", err)
 	}
 	layer.Render.UIFPS = unlessDefault(uiFPS, defaults.Render.UIFPS)
+	cellSize, err := cellSizeSetting(d.cellSize)
+	if err != nil {
+		return layer, err
+	}
+	layer.Render.CellSize = unlessDefault(cellSize, defaults.Render.CellSize)
 	layer.Render.ReplyEveryMS = unlessDefault(everyMS, defaults.Render.ReplyEveryMS)
 	layer.Render.ReplyEveryTokens = unlessDefault(everyTokens, defaults.Render.ReplyEveryTokens)
 	layer.Render.Icons = unlessDefault(d.icons, defaults.Render.Icons)

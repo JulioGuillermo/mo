@@ -758,6 +758,7 @@ not by the model. Files the output names are never taken as attached; only those
 ```toml
 [render]
 images = "auto"   # auto | kitty | blocks | off
+cell_size = "auto" # pixels of a character cell, e.g. "8x16", to size kitty images; auto asks the terminal
 ```
 
 `auto` uses kitty graphics in kitty and ghostty (also inside tmux with `set -g allow-passthrough on`),

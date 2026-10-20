@@ -264,6 +264,7 @@ const agentShutdownWait = 3 * time.Second
 func Run(session Session) error {
 	printer := newPrinter()
 	printer.setImages(render.Detect(session.Config.Render.Images))
+	useCellSize(session.Config.Render.CellSize)
 	if screen := screenFor(session.Config.Render.Background); screen.set {
 		printer.setDark(screen.dark)
 	}

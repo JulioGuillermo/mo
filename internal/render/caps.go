@@ -9,8 +9,6 @@ import (
 	"os/exec"
 	"strings"
 	"time"
-
-	"golang.org/x/sys/unix"
 )
 
 type Mode string
@@ -22,11 +20,7 @@ const (
 	ModeOff    Mode = "off"
 )
 
-const (
-	fallbackCellWidth  = 8
-	fallbackCellHeight = 16
-	tmuxQueryTimeout   = time.Second
-)
+const tmuxQueryTimeout = time.Second
 
 // Detect turns auto into what the terminal supports, judging by its
 // environment: kitty and ghostty speak kitty graphics, unless tmux sits in
@@ -59,16 +53,6 @@ func tmuxPassesThrough() bool {
 	output, err := query.Output()
 	setting := strings.TrimSpace(string(output))
 	return err == nil && (setting == "on" || setting == "all")
-}
-
-// CellSize is the size of a terminal cell in pixels, as the terminal
-// reports it, or a common guess when it does not.
-func CellSize() (width, height int) {
-	size, err := unix.IoctlGetWinsize(int(os.Stdout.Fd()), unix.TIOCGWINSZ)
-	if err != nil || size.Col == 0 || size.Row == 0 || size.Xpixel < size.Col || size.Ypixel < size.Row {
-		return fallbackCellWidth, fallbackCellHeight
-	}
-	return int(size.Xpixel) / int(size.Col), int(size.Ypixel) / int(size.Row)
 }
 
 func insideTmux() bool {

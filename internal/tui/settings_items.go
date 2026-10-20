@@ -806,6 +806,12 @@ func appearanceItems(_ model, menu *settingsMenu) []settingItem {
 				huh.NewOption("off: only the file path", string(render.ModeOff)),
 			).Value(&d.images)
 		}},
+		{"Cell size", func(d *settingsDraft) string { return d.cellSize }, func(d *settingsDraft) huh.Field {
+			width, height := render.CellSize()
+			return huh.NewInput().Title("Cell size").
+				Description(fmt.Sprintf("pixels of a character cell, WIDTHxHEIGHT, to size kitty images; auto asks the terminal\nnow %dx%d; set it if images look stretched or blurry", width, height)).
+				Validate(validCellSize).Value(&d.cellSize)
+		}},
 	}, replyItems(menu)...)
 }
 
