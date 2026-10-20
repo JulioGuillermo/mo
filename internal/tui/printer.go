@@ -75,6 +75,9 @@ type printer struct {
 	// open whole when clicked, by their text.
 	drawings     []drawing
 	drawingIndex map[string]int
+	// files are the files drawn, as images, SVGs or diagrams, by the lines
+	// they show, for a right click on them to offer the file.
+	files []drawnFile
 	// kind tells what a tool call does, for the colour of its mark.
 	kind func(call llm.ToolCall) toolKind
 }
@@ -175,7 +178,9 @@ func (p *printer) segment(segment render.Segment) string {
 		if err != nil {
 			return p.Error(err)
 		}
-		return drawn + "\n" + p.caption(segment.Name, segment.Content, answerIndent)
+		caption := p.caption(segment.Name, segment.Content, answerIndent)
+		p.keepFile(p.absolute(segment.Content), caption)
+		return drawn + "\n" + caption
 	}
 	return p.Markdown(segment.Content)
 }
@@ -415,6 +420,7 @@ func (p *printer) drawFile(path string, indent int) (string, error) {
 		return "", err
 	}
 	drawn = indentLines(drawn, indent)
+	p.keepFile(path, drawn)
 	// A file drawn from code keeps it, for its menu to show or copy.
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".svg":

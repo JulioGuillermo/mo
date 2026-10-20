@@ -469,6 +469,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.pluginRetried()
 	case pluginViewMsg:
 		return m.viewArgument(string(msg))
+	case fileCopiedMsg:
+		return m.fileCopied(msg)
 	}
 	if opened, ok := msg.(pluginDialogMsg); ok {
 		if m.settings != nil || m.popup != nil {

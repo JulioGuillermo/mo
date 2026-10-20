@@ -78,6 +78,7 @@ var keyHelp = [][2]string{
 	{"pgup, pgdown, wheel, ctrl+↑↓", "scroll the conversation; with nothing typed, ctrl+j k too"},
 	{"ctrl+←→", "with nothing typed, move the wide diagrams across; ctrl+h l too"},
 	{"right click on a diagram", "its code, the drawing, whole, copy; /diagrams for all"},
+	{"right click on an image or a file path", "copy the file as a file manager does, the image, the path; open it"},
 	{"shift+tab", "change the permission mode"},
 	{"ctrl+o, click", "open or fold reasoning and tool calls"},
 	{"ctrl+v", "paste a copied image or files as attachments"},

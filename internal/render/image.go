@@ -7,6 +7,8 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"path/filepath"
+	"strings"
 
 	_ "golang.org/x/image/bmp"
 	"golang.org/x/image/draw"
@@ -67,4 +69,16 @@ func shrink(img image.Image, width, height int) image.Image {
 
 func ceilDiv(a, b int) int {
 	return (a + b - 1) / b
+}
+
+// svgCopySide is the longest side, in pixels, of an SVG drawn to be copied.
+const svgCopySide = 1600
+
+// DecodeFile reads a picture file: an image as it is, an SVG drawn at
+// svgCopySide pixels on its longest side.
+func DecodeFile(path string, data []byte) (image.Image, error) {
+	if strings.EqualFold(filepath.Ext(path), ".svg") {
+		return rasterizeSVG(data, svgCopySide, svgCopySide)
+	}
+	return Decode(data)
 }

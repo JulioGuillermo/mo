@@ -69,9 +69,9 @@ func (m model) click(x, y int) (tea.Model, tea.Cmd) {
 
 // drawingMenu is what a right click on a diagram offers: its code in place
 // of its drawing or back, seeing it whole, copying its code.
-func (m model) drawingMenu(drawn drawing) (tea.Model, tea.Cmd) {
+func (m model) drawingMenu(drawn drawing, path string) (tea.Model, tea.Cmd) {
 	if drawn.picture != "" {
-		return m.pictureMenu(drawn)
+		return m.pictureMenu(drawn, path)
 	}
 	toggle := huh.NewOption("show its code", "code")
 	if drawn.code {
@@ -82,7 +82,11 @@ func (m model) drawingMenu(drawn drawing) (tea.Model, tea.Cmd) {
 		all = huh.NewOption("draw all", "all")
 	}
 	options := []huh.Option[string]{toggle, all, huh.NewOption("see it whole", "whole"), huh.NewOption("copy its code", "copy")}
-	return m.showChoices("Diagram", "", options, func(m model, choice string) (tea.Model, tea.Cmd) {
+	options = append(options, fileOptions(path)...)
+	return m.showChoices("Diagram", path, options, func(m model, choice string) (tea.Model, tea.Cmd) {
+		if done, next, cmd := m.fileChoice(path, choice); done {
+			return next, cmd
+		}
 		switch choice {
 		case "code":
 			m.printer.toggleCode(drawn.source)
@@ -101,13 +105,17 @@ func (m model) drawingMenu(drawn drawing) (tea.Model, tea.Cmd) {
 
 // pictureMenu is what a right click on an image drawn from code offers:
 // its code in its place, or the picture again, and copying its code.
-func (m model) pictureMenu(drawn drawing) (tea.Model, tea.Cmd) {
+func (m model) pictureMenu(drawn drawing, path string) (tea.Model, tea.Cmd) {
 	toggle := huh.NewOption("show its code", "code")
 	if drawn.code {
 		toggle = huh.NewOption("show the picture", "code")
 	}
 	options := []huh.Option[string]{toggle, huh.NewOption("copy its code", "copy")}
-	return m.showChoices("Picture", "", options, func(m model, choice string) (tea.Model, tea.Cmd) {
+	options = append(options, fileOptions(path)...)
+	return m.showChoices("Picture", path, options, func(m model, choice string) (tea.Model, tea.Cmd) {
+		if done, next, cmd := m.fileChoice(path, choice); done {
+			return next, cmd
+		}
 		if choice == "copy" {
 			return m.copyCode(drawn.source)
 		}
@@ -163,8 +171,12 @@ func (m model) rightClick(x, y int) (tea.Model, tea.Cmd) {
 		if id, running := m.runningCommandAt(y); running {
 			return m.jobMenu(id)
 		}
+		path, isFile := m.fileUnder(x, y)
 		if drawn, ok := m.drawingAt(y); ok {
-			return m.drawingMenu(drawn)
+			return m.drawingMenu(drawn, path)
+		}
+		if isFile {
+			return m.fileMenu(path)
 		}
 	}
 	return m, nil
