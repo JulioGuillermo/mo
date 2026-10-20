@@ -279,6 +279,9 @@ func toolItems(m model, menu *settingsMenu) []settingItem {
 // turned off already, so ticking one off never loses it.
 func mcpNames(m model, menu *settingsMenu) []string {
 	names := slices.Collect(maps.Keys(m.session.Config.MCP))
+	for _, status := range m.session.MCP {
+		names = append(names, status.Name)
+	}
 	if menu != nil {
 		names = append(names, slices.Collect(maps.Keys(menu.layer.MCP))...)
 		names = append(names, menu.draft.mcpDisabled...)

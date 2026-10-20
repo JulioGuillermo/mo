@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"sync"
 
 	"github.com/jg/mo/internal/config"
@@ -47,4 +49,17 @@ func loadPlugins(workDir string, settings map[string]map[string]any) *plugins.Se
 		}
 	}
 	return loaded
+}
+
+// activeServers are the MCP servers of the settings and those the plugins
+// declare, a plugin's left out when a server of the settings has its name,
+// without those turned off.
+func activeServers(cfg config.Config, loaded *plugins.Set) map[string]config.MCPServer {
+	servers := cfg.ActiveMCP()
+	for name, server := range loaded.MCPServers(slices.Collect(maps.Keys(cfg.MCP))) {
+		if !slices.Contains(cfg.Tools.MCPDisabled, name) {
+			servers[name] = server
+		}
+	}
+	return servers
 }

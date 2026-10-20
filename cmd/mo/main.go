@@ -76,14 +76,15 @@ func run() error {
 		return nil
 	}
 
+	loadedPlugins := &openPlugins{current: loadPlugins(workDir, cfg.Plugins)}
+	defer loadedPlugins.Close()
 	hubs := &openHubs{}
-	connecting := connectInBackground(func() *mcphub.Hub { return connectMCP(ctx, cfg) }, hubs)
+	servers := activeServers(cfg, loadedPlugins.current)
+	connecting := connectInBackground(func() *mcphub.Hub { return connectMCP(ctx, servers, loadedPlugins.current.MCPHeaders) }, hubs)
 	defer hubs.Close()
 	// What never took the connection still has to close it.
 	defer func() { connecting.get() }()
 	defer render.RemoveSavedImages()
-	loadedPlugins := &openPlugins{current: loadPlugins(workDir, cfg.Plugins)}
-	defer loadedPlugins.Close()
 	choice := sessionChoice{provider: *providerFlag, model: *modelFlag, yes: *yesFlag}
 	loaded := extensions{connecting: connecting, plugins: loadedPlugins.current, pluginSets: loadedPlugins, hubs: hubs, recall: tools.NewRecall(config.SessionDir())}
 
@@ -127,16 +128,15 @@ func startJobs(loaded *extensions) func() {
 	}
 }
 
-// connectMCP connects to the configured servers before the UI starts and
-// reports the ones that failed. They are connected once per run: settings
-// changes keep the same servers.
-func connectMCP(ctx context.Context, cfg config.Config) *mcphub.Hub {
-	servers := cfg.ActiveMCP()
+// connectMCP connects to the servers before the UI starts and reports the
+// ones that failed. A settings change connects again only those that
+// changed.
+func connectMCP(ctx context.Context, servers map[string]config.MCPServer, headers mcphub.PluginHeaders) *mcphub.Hub {
 	if len(servers) == 0 {
-		return mcphub.Connect(ctx, nil, "")
+		return mcphub.Connect(ctx, nil, "", nil)
 	}
 	fmt.Fprintf(os.Stderr, "connecting to %d MCP server(s)…\n", len(servers))
-	hub := mcphub.Connect(ctx, servers, config.LogDir())
+	hub := mcphub.Connect(ctx, servers, config.LogDir(), headers)
 	for _, status := range hub.Status() {
 		if status.Err != nil {
 			fmt.Fprintf(os.Stderr, "mo: MCP %s: %v\n", status.Name, status.Err)

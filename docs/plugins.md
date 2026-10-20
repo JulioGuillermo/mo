@@ -19,6 +19,7 @@ Restart mo, then type `/hello ana`.
 - [Tools for the model](#tools-for-the-model)
 - [Commands for you](#commands-for-you)
 - [Hooks](#hooks)
+- [MCP servers](#mcp-servers)
 - [Settings](#settings)
 - [The side panel](#the-side-panel)
 - [Dialogs](#dialogs)
@@ -128,6 +129,38 @@ How each one behaves when something goes wrong:
   turn ends.
 - `turn_end` runs once per turn, also when esc stopped it (`stopped = true`). `error` is `nil` when
   the turn ended well.
+
+## MCP servers
+
+`mo.mcp{...}` adds an MCP server, connected with those of your settings. It takes what
+`[mcp.name]` does, and `headers` may be a function: mo asks it for the headers of every request,
+so a plugin can sign each one, or refresh a token it keeps.
+
+```lua
+mo.setting{ name = "token", secret = true }
+
+mo.mcp{
+  name = "board",
+  url = "https://board.example/mcp",
+  headers = function(request)            -- { method, url }
+    return { Authorization = "Bearer " .. mo.settings.get("token") }
+  end,
+}
+mo.mcp{ name = "local", command = "board-mcp", args = { "--stdio" }, env = { LEVEL = "debug" } }
+```
+
+| Field | What |
+|---|---|
+| `name` | its name, as in `[mcp.name]`; its tools are `mcp__name__tool` |
+| `url` or `command` | where it is: one of them |
+| `headers` | a table, or a function of `{ method, url }` giving a table, for a `url` |
+| `args`, `env` | for a `command` |
+| `ca`, `insecure`, `trust` | as in `[mcp.name]` |
+
+A server of your settings with the same name wins, and the plugin's is left out with a warning in
+`/plugins`. `tools.mcp_disabled` turns it off, and its tools take modes in **Settings › Tools** like
+any server's. A header function has 5 seconds, and an error in it fails the request. When the
+plugins load again, their servers connect again.
 
 ## Settings
 

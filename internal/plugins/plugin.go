@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -52,11 +53,14 @@ type Plugin struct {
 	commands []commandDefinition
 	hooks    map[string][]*lua.LFunction
 	loadErr  error
+	warnMu   sync.Mutex
 	warnings []string
 	settings []Setting
 	// keys listen to keys while the user works in the plugin's dialogs;
 	// globalKeys anywhere in mo, once the user allows it.
 	keys, globalKeys []keyListener
+	// servers are the MCP servers it declares.
+	servers []mcpServer
 	// components are the plugin's own node types, by name.
 	components map[string]*lua.LFunction
 	// values are what the user set for the plugin, by setting name.
@@ -276,6 +280,21 @@ func (p *Plugin) mustBeLoading(state *lua.LState, function string) {
 // tool_call hook.
 func (p *Plugin) guardsToolCalls() bool {
 	return len(p.hooks[hookToolCall]) > 0 || toolCallHook.MatchString(p.source)
+}
+
+// warn keeps a warning for Status, once however often it is given.
+func (p *Plugin) warn(warning string) {
+	p.warnMu.Lock()
+	defer p.warnMu.Unlock()
+	if !slices.Contains(p.warnings, warning) {
+		p.warnings = append(p.warnings, warning)
+	}
+}
+
+func (p *Plugin) warningsNow() []string {
+	p.warnMu.Lock()
+	defer p.warnMu.Unlock()
+	return slices.Clone(p.warnings)
 }
 
 func (p *Plugin) log(parts ...string) {

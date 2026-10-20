@@ -196,11 +196,18 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		if !samePlugins {
 			next.plugins = plugins.Load(config.PluginDir(), workDir, config.LogDir(), fresh.Plugins)
 		}
-		sameMCP := reflect.DeepEqual(fresh.ActiveMCP(), cfg.ActiveMCP())
+		servers := activeServers(fresh, next.plugins)
+		sameMCP := samePlugins && reflect.DeepEqual(servers, activeServers(cfg, loaded.plugins))
 		if !sameMCP {
 			// Only the servers that changed connect again; the others keep
-			// their connection, shared until one of the two hubs goes.
-			next.mcp = mcphub.Reconnect(context.Background(), hub, fresh.ActiveMCP(), config.LogDir())
+			// their connection, shared until one of the two hubs goes. The
+			// plugins' all connect again when the plugins load again, their
+			// headers coming from the new ones.
+			previous := hub
+			if !samePlugins {
+				previous = hub.WithoutPluginServers()
+			}
+			next.mcp = mcphub.Reconnect(context.Background(), previous, servers, config.LogDir(), next.plugins.MCPHeaders)
 		}
 		discard := func() {
 			if !sameMCP {

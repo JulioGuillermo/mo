@@ -35,6 +35,10 @@ type Hub struct {
 	servers []*server
 }
 
+// PluginHeaders gives the headers of one request to a server a plugin
+// declared, as the plugin's function computes them.
+type PluginHeaders func(ctx context.Context, plugin, server, method, url string) (map[string]string, error)
+
 type server struct {
 	name     string
 	trust    bool
@@ -61,14 +65,14 @@ type Status struct {
 // Connect starts or reaches every server at once. A server that fails is
 // kept with its error, so Status can report it; its tools are left out.
 // logDir receives what stdio servers write to stderr.
-func Connect(ctx context.Context, servers map[string]config.MCPServer, logDir string) *Hub {
+func Connect(ctx context.Context, servers map[string]config.MCPServer, logDir string, headers PluginHeaders) *Hub {
 	hub := &Hub{}
 	var wg sync.WaitGroup
 	for _, name := range slices.Sorted(maps.Keys(servers)) {
 		entry := &server{name: name, trust: servers[name].Trust, settings: servers[name]}
 		hub.servers = append(hub.servers, entry)
 		wg.Go(func() {
-			entry.connect(ctx, servers[name], logDir)
+			entry.connect(ctx, servers[name], logDir, headers)
 		})
 	}
 	wg.Wait()
@@ -80,7 +84,7 @@ func Connect(ctx context.Context, servers map[string]config.MCPServer, logDir st
 // servers whose settings are the same and that answered, and connects the
 // rest: turning one server on or off leaves the others as they are. The
 // two hubs share those connections until one is closed with CloseExcept.
-func Reconnect(ctx context.Context, previous *Hub, servers map[string]config.MCPServer, logDir string) *Hub {
+func Reconnect(ctx context.Context, previous *Hub, servers map[string]config.MCPServer, logDir string, headers PluginHeaders) *Hub {
 	kept := map[string]*server{}
 	if previous != nil {
 		for _, entry := range previous.servers {
@@ -100,7 +104,7 @@ func Reconnect(ctx context.Context, previous *Hub, servers map[string]config.MCP
 		entry := &server{name: name, trust: servers[name].Trust, settings: servers[name]}
 		hub.servers = append(hub.servers, entry)
 		wg.Go(func() {
-			entry.connect(ctx, servers[name], logDir)
+			entry.connect(ctx, servers[name], logDir, headers)
 		})
 	}
 	wg.Wait()
@@ -108,10 +112,10 @@ func Reconnect(ctx context.Context, previous *Hub, servers map[string]config.MCP
 	return hub
 }
 
-func (s *server) connect(ctx context.Context, settings config.MCPServer, logDir string) {
+func (s *server) connect(ctx context.Context, settings config.MCPServer, logDir string, headers PluginHeaders) {
 	ctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
-	transport, command, signIn, err := transportFor(s.name, settings, logDir)
+	transport, command, signIn, err := transportFor(s.name, settings, logDir, headers)
 	if err != nil {
 		s.err = err
 		return
@@ -146,7 +150,7 @@ func connectWith(ctx context.Context, transport mcp.Transport) (*mcp.ClientSessi
 	return session, tools, nil
 }
 
-func transportFor(name string, settings config.MCPServer, logDir string) (mcp.Transport, *exec.Cmd, *signIn, error) {
+func transportFor(name string, settings config.MCPServer, logDir string, headers PluginHeaders) (mcp.Transport, *exec.Cmd, *signIn, error) {
 	switch {
 	case settings.URL != "":
 		base, err := netx.Transport(settings.CA, settings.Insecure)
@@ -154,7 +158,13 @@ func transportFor(name string, settings config.MCPServer, logDir string) (mcp.Tr
 			return nil, nil, nil, err
 		}
 		signIn := newSignIn(name, settings, base)
-		client := &http.Client{Transport: headerTransport{headers: expanded(settings.Headers), base: base, signIn: signIn}}
+		transport := headerTransport{headers: expanded(settings.Headers), base: base, signIn: signIn}
+		if settings.Plugin != "" && headers != nil {
+			transport.dynamic = func(req *http.Request) (map[string]string, error) {
+				return headers(req.Context(), settings.Plugin, name, req.Method, req.URL.String())
+			}
+		}
+		client := &http.Client{Transport: transport}
 		return &mcp.StreamableClientTransport{Endpoint: settings.URL, HTTPClient: client}, nil, signIn, nil
 	case settings.Command != "":
 		cmd := exec.Command(settings.Command, settings.Args...)
@@ -194,8 +204,12 @@ func expanded(values map[string]string) map[string]string {
 	return out
 }
 
+// headerTransport sets on each request the server's headers, then those a
+// plugin's function gives for it, then the sign-in's token unless one of
+// them was an Authorization.
 type headerTransport struct {
 	headers map[string]string
+	dynamic func(*http.Request) (map[string]string, error)
 	base    http.RoundTripper
 	signIn  *signIn
 }
@@ -204,6 +218,15 @@ func (t headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	req = req.Clone(req.Context())
 	for name, value := range t.headers {
 		req.Header.Set(name, value)
+	}
+	if t.dynamic != nil {
+		headers, err := t.dynamic(req)
+		if err != nil {
+			return nil, err
+		}
+		for name, value := range headers {
+			req.Header.Set(name, value)
+		}
 	}
 	t.signIn.authorize(req)
 	response, err := t.base.RoundTrip(req)
@@ -219,6 +242,18 @@ func (h *Hub) Status() []Status {
 		statuses = append(statuses, Status{Name: entry.name, Tools: len(entry.tools), Err: entry.failure()})
 	}
 	return statuses
+}
+
+// WithoutPluginServers is the hub without the servers plugins declared,
+// sharing the connections of the rest.
+func (h *Hub) WithoutPluginServers() *Hub {
+	kept := &Hub{}
+	for _, entry := range h.servers {
+		if entry.settings.Plugin == "" {
+			kept.servers = append(kept.servers, entry)
+		}
+	}
+	return kept
 }
 
 func (s *server) failure() error {
@@ -291,7 +326,7 @@ func (s *server) stopProcesses() {
 // saved.
 func Test(ctx context.Context, name string, settings config.MCPServer, logDir string) ([]string, error) {
 	entry := &server{name: name}
-	entry.connect(ctx, settings, logDir)
+	entry.connect(ctx, settings, logDir, nil)
 	defer func() {
 		if entry.session != nil {
 			entry.session.Close()

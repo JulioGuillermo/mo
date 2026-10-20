@@ -312,6 +312,9 @@ type MCPServer struct {
 	// already registered, the scopes, more parameters. Without it, a server
 	// that asks for a sign-in is found out and registered with.
 	OAuth *OAuth `toml:"oauth,omitempty"`
+	// Plugin is the plugin that declared the server, which gives its
+	// headers; never in a file.
+	Plugin string `toml:"-"`
 }
 
 // BarStyles are the looks of the context bar, the first the default.

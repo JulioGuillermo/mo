@@ -78,7 +78,7 @@ func Load(dir, workDir, logDir string, settings map[string]map[string]any) *Set 
 		plugin := load(path, workDir, logDir, libDir, set.surface, settings[name])
 		plugin.commands = slices.DeleteFunc(plugin.commands, func(command commandDefinition) bool {
 			if commands[command.name] {
-				plugin.warnings = append(plugin.warnings, "command /"+command.name+" left out: the name is taken")
+				plugin.warn("command /" + command.name + " left out: the name is taken")
 				return true
 			}
 			commands[command.name] = true
@@ -101,7 +101,7 @@ func (s *Set) Tools(taken []string) []tools.Tool {
 		for _, plugin := range s.loaded() {
 			for _, definition := range plugin.tools {
 				if slices.Contains(taken, definition.name) {
-					plugin.warnings = append(plugin.warnings, "tool "+definition.name+" left out: the name is taken")
+					plugin.warn("tool " + definition.name + " left out: the name is taken")
 					continue
 				}
 				taken = append(taken, definition.name)
@@ -289,7 +289,7 @@ func (s *Set) Status() []Status {
 	}
 	var statuses []Status
 	for _, plugin := range s.plugins {
-		status := Status{Name: plugin.name, Err: plugin.loadErr, Warnings: slices.Clone(plugin.warnings), Settings: slices.Clone(plugin.settings)}
+		status := Status{Name: plugin.name, Err: plugin.loadErr, Warnings: plugin.warningsNow(), Settings: slices.Clone(plugin.settings)}
 		if plugin.stuck.Load() {
 			status.Err = errPluginStuck
 		}

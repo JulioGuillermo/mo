@@ -122,7 +122,7 @@ func TestHubTools(t *testing.T) {
 	})
 
 	t.Run("MH-05 a server that fails to start is reported and adds no tools", func(t *testing.T) {
-		hub := Connect(ctx, map[string]config.MCPServer{"broken": {Command: "/nonexistent/server"}}, t.TempDir())
+		hub := Connect(ctx, map[string]config.MCPServer{"broken": {Command: "/nonexistent/server"}}, t.TempDir(), nil)
 		defer hub.Close()
 
 		status := hub.Status()
@@ -201,7 +201,7 @@ func TestProcesses(t *testing.T) {
 		marker := filepath.Join(t.TempDir(), "child.pid")
 		script := fmt.Sprintf("sleep 300 & echo $! > %s; exec %s", marker, os.Args[0])
 		settings := config.MCPServer{Command: "sh", Args: []string{"-c", script}, Env: map[string]string{"MO_TEST_MCP_SERVER": "1"}}
-		hub := Connect(context.Background(), map[string]config.MCPServer{"helper": settings}, t.TempDir())
+		hub := Connect(context.Background(), map[string]config.MCPServer{"helper": settings}, t.TempDir(), nil)
 		if status := hub.Status(); status[0].Err != nil {
 			t.Fatal(status[0].Err)
 		}
@@ -269,10 +269,10 @@ func TestReconnect(t *testing.T) {
 	demo := config.MCPServer{URL: web.URL}
 
 	t.Run("MH-14 Reconnect keeps unchanged servers' connections and connects the new", func(t *testing.T) {
-		first := Connect(context.Background(), map[string]config.MCPServer{"demo": demo}, t.TempDir())
+		first := Connect(context.Background(), map[string]config.MCPServer{"demo": demo}, t.TempDir(), nil)
 		defer first.Close()
 
-		second := Reconnect(context.Background(), first, map[string]config.MCPServer{"demo": demo, "helper": helper}, t.TempDir())
+		second := Reconnect(context.Background(), first, map[string]config.MCPServer{"demo": demo, "helper": helper}, t.TempDir(), nil)
 		defer second.CloseExcept(first)
 
 		if second.servers[0].session != first.servers[0].session {
@@ -284,8 +284,8 @@ func TestReconnect(t *testing.T) {
 	})
 
 	t.Run("MH-15 CloseExcept leaves what the other hub shares and stops the rest", func(t *testing.T) {
-		first := Connect(context.Background(), map[string]config.MCPServer{"demo": demo, "helper": helper}, t.TempDir())
-		second := Reconnect(context.Background(), first, map[string]config.MCPServer{"demo": demo}, t.TempDir())
+		first := Connect(context.Background(), map[string]config.MCPServer{"demo": demo, "helper": helper}, t.TempDir(), nil)
+		second := Reconnect(context.Background(), first, map[string]config.MCPServer{"demo": demo}, t.TempDir(), nil)
 		defer second.Close()
 		process := first.servers[1].command.Process.Pid
 

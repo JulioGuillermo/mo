@@ -13,6 +13,8 @@ package main
 // | ST-09 | Edge     | A built pick that does not answer is what going on keeps and saves | P1       |
 // | ST-10 | Happy    | A changed MCP server connects on reload, in use only once activated | P0      |
 // | ST-11 | Edge     | A hub that arrives after the run closed its hubs is closed too     | P1       |
+// | ST-13 | Happy    | A plugin's MCP server connects with the others, unless one of the settings has its name or it is turned off | P0 |
+// | ST-14 | Happy    | Loading the plugins again connects their servers again, with the new plugins' headers; the settings' are kept | P0 |
 // | ST-12 | Happy    | Changed plugin settings load the plugins again, in use once activated; the same keep them | P0 |
 
 import (
@@ -23,7 +25,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/mcphub"
@@ -73,7 +78,7 @@ func isolated(t *testing.T, userFile string) string {
 
 func testExtensions(t *testing.T, workDir string) extensions {
 	t.Helper()
-	hub := mcphub.Connect(context.Background(), nil, "")
+	hub := mcphub.Connect(context.Background(), nil, "", nil)
 	loaded := plugins.Load(t.TempDir(), workDir, t.TempDir(), nil)
 	pluginSets := &openPlugins{current: loaded}
 	t.Cleanup(pluginSets.Close)
@@ -271,11 +276,11 @@ func TestMCPReload(t *testing.T) {
 	})
 
 	t.Run("ST-11 a hub that arrives after the run closed its hubs is closed too", func(t *testing.T) {
-		first := mcphub.Connect(context.Background(), nil, "")
+		first := mcphub.Connect(context.Background(), nil, "", nil)
 		hubs := &openHubs{current: first}
 		hubs.Close()
 
-		hubs.replace(mcphub.Connect(context.Background(), nil, ""))
+		hubs.replace(mcphub.Connect(context.Background(), nil, "", nil))
 
 		if hubs.current != first || !hubs.closed {
 			t.Errorf("current replaced after close")
@@ -316,6 +321,86 @@ func TestPluginReload(t *testing.T) {
 		}
 		if strings.Contains(strings.Join(fresh.ToolNames, ","), "demo_tool") || !strings.Contains(strings.Join(same.ToolNames, ","), "demo_tool") {
 			t.Errorf("tools: same = %v fresh = %v", same.ToolNames, fresh.ToolNames)
+		}
+	})
+}
+
+func TestPluginMCPServers(t *testing.T) {
+	var mu sync.Mutex
+	tokens := map[string]int{}
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
+		server := mcp.NewServer(&mcp.Implementation{Name: "board"}, nil)
+		mcp.AddTool(server, &mcp.Tool{Name: "ping"}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "pong"}}}, nil, nil
+		})
+		return server
+	}, nil)
+	web := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		tokens[r.Header.Get("Authorization")]++
+		mu.Unlock()
+		handler.ServeHTTP(w, r)
+	}))
+	t.Cleanup(web.Close)
+	plugin := func(token string) string {
+		return `mo.mcp{ name = "board", url = "` + web.URL + `", headers = function() return { Authorization = "` + token + `" } end }
+mo.mcp{ name = "own", url = "https://never.example/mcp" }`
+	}
+
+	t.Run("ST-13 a plugin's MCP server connects with the others, unless one of the settings has its name or it is turned off", func(t *testing.T) {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "jira.lua"), []byte(plugin("a")), 0o600)
+		loaded := plugins.Load(dir, t.TempDir(), t.TempDir(), nil)
+		t.Cleanup(loaded.Close)
+		cfg := config.Config{MCP: map[string]config.MCPServer{"own": {Command: "own-mcp"}}}
+		off := cfg
+		off.Tools.MCPDisabled = []string{"board"}
+
+		servers, without := activeServers(cfg, loaded), activeServers(off, loaded)
+
+		if servers["board"].Plugin != "jira" || servers["own"].Command != "own-mcp" || len(servers) != 2 {
+			t.Errorf("servers = %+v", servers)
+		}
+		if _, ok := without["board"]; ok {
+			t.Error("a server turned off connects")
+		}
+	})
+
+	t.Run("ST-14 loading the plugins again connects their servers again, with the new plugins' headers; the settings' are kept", func(t *testing.T) {
+		workDir := isolated(t, providerFile(modelServer(t)))
+		if err := os.MkdirAll(config.PluginDir(), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		os.WriteFile(filepath.Join(config.PluginDir(), "jira.lua"), []byte(plugin("a")), 0o600)
+		cfg, _ := config.Load(workDir)
+		loaded := testExtensions(t, workDir)
+		loaded.plugins = plugins.Load(config.PluginDir(), workDir, t.TempDir(), nil)
+		loaded.pluginSets.current = loaded.plugins
+		loaded.mcp = mcphub.Connect(context.Background(), activeServers(cfg, loaded.plugins), t.TempDir(), loaded.plugins.MCPHeaders)
+		loaded.hubs.current = loaded.mcp
+		session, err := buildSession(context.Background(), workDir, cfg, sessionChoice{}, loaded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		layer, _ := config.ReadUserLayer()
+		layer.Plugins = map[string]map[string]any{"jira": {"x": "y"}}
+		os.WriteFile(filepath.Join(config.PluginDir(), "jira.lua"), []byte(plugin("b")), 0o600)
+		mu.Lock()
+		before := tokens["b"]
+		mu.Unlock()
+
+		fresh, err := session.Reload(layer, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fresh.Activate()
+
+		names := strings.Join(fresh.ToolNames, ",")
+		mu.Lock()
+		after := tokens["b"]
+		mu.Unlock()
+		if !strings.Contains(names, "mcp__board__ping") || loaded.hubs.current == loaded.mcp || before != 0 || after == 0 {
+			t.Errorf("tools %s, hub replaced %v, requests with the new token %d then %d", names, loaded.hubs.current != loaded.mcp, before, after)
 		}
 	})
 }
