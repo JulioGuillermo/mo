@@ -561,11 +561,13 @@ tool is sent. `/settings › Skills` picks the default mode; `Each skill ›` li
 it off or give it its own mode, globally or per project. Compact mode comes with `skill_list` and
 `skill_search` too.
 
-You load one yourself by starting a message with `$name` (`$pdf fill form.pdf`) or with
-`/skill name text`; both complete the name as you type. Your message stays as you wrote it, and the
-model is asked to load the skill with its `skill` tool; a skill turned off for the model goes
-whole with the message instead.
-`/skill` alone lists them. A `$` that names no skill, like `$HOME`, is sent as it is.
+You point the model at skills by writing `$name` anywhere in a message (`fill form.pdf with $pdf,
+then $deploy`), or with `/skill name text`; `$` completes the name as you type. Your message stays
+as you wrote it; the model gets `[SKILL REF: pdf]` in its place and a note asking it to load the
+skills with its `skill` tool unless it already did. A skill turned off for the model, so yours to
+call by hand only, keeps its reference and goes whole after the message, between
+`[MO SKILL: name]` and `[END MO SKILL: name]`, hidden from you. Only the exact name of a skill counts, and never inside `` `code` ``, so
+`$HOME` or `` `echo $pdf` `` are sent as they are. `/skill` alone lists them.
 
 ## Conversations
 

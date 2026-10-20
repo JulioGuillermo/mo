@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"regexp"
 	"slices"
 	"strings"
 
@@ -51,19 +52,33 @@ func Summary(message llm.Message) string {
 }
 
 // PromptText is a prompt as the user typed it, without what mo added to
-// it: the list of attached files, a skill loaded with it, its notes.
+// it: the list of attached files, the skills loaded with it, its notes,
+// and its skill references back as $name.
 func PromptText(message llm.Message) string {
 	text, _, _ := strings.Cut(message.Text, "\n\n"+moNotePrefix)
-	return text
+	return skillRefShown.ReplaceAllString(text, "$$$1")
 }
 
-// SkillNote starts, after a prompt, a skill the user loaded with it.
-const SkillNote = moNotePrefix + "The user loaded this skill for this message; follow it:"
+// SkillBlock is a skill the user referenced that the model cannot load with
+// its skill tool, sent whole after the prompt: what the skill says, its
+// folder and its other files, between [MO SKILL: name] and its end.
+func SkillBlock(name, loaded string) string {
+	return moNotePrefix + "The user referenced the skill " + name + ", which you cannot load with the skill tool; here it is, follow it:\n" +
+		"[MO SKILL: " + name + "]\n" + loaded + "\n[END MO SKILL: " + name + "]"
+}
+
+// SkillRef stands in a prompt for a skill the user named with $name.
+func SkillRef(name string) string {
+	return "[SKILL REF: " + name + "]"
+}
+
+var skillRefShown = regexp.MustCompile(`\[SKILL REF: ([^\]]+)\]`)
 
 // SkillRequest asks the model, after a prompt, to load with its skill tool
-// the skill the user named.
-func SkillRequest(name string) string {
-	return moNotePrefix + "The user asks for the skill " + name + " with this message: load it with the skill tool first and follow it."
+// the skills the user referenced.
+func SkillRequest(names []string) string {
+	return moNotePrefix + "The user referenced skills: " + strings.Join(names, ", ") +
+		". Load each one with the skill tool unless you already loaded it in this conversation, and follow them."
 }
 
 // Rewind drops the history from index on, to go on from before that prompt.

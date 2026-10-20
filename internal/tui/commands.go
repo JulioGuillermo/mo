@@ -109,7 +109,7 @@ func (m model) suggestions() []command {
 	if typed, ok := m.mention(); ok {
 		return m.mentionSuggestions(typed)
 	}
-	if typed, ok := strings.CutPrefix(m.input.Value(), "$"); ok && !strings.ContainsAny(typed, " \n") {
+	if typed, ok := m.typedSkill(); ok {
 		return m.skillSuggestions(typed, "$")
 	}
 	typed, isCommand := strings.CutPrefix(m.input.Value(), "/")
@@ -182,7 +182,11 @@ func (m *model) completeCommand(chosen command) bool {
 		return false
 	}
 	if chosen.skill {
-		m.input.SetValue(chosen.name + " ")
+		value := chosen.name
+		if strings.HasPrefix(chosen.name, "$") {
+			value = m.input.Value()[:strings.LastIndexAny(m.input.Value(), " \n\t")+1] + chosen.name
+		}
+		m.input.SetValue(value + " ")
 		m.input.CursorEnd()
 		m.suggestion = 0
 		return false
