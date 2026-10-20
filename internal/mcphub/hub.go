@@ -111,7 +111,7 @@ func Reconnect(ctx context.Context, previous *Hub, servers map[string]config.MCP
 func (s *server) connect(ctx context.Context, settings config.MCPServer, logDir string) {
 	ctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
-	transport, command, err := transportFor(s.name, settings, logDir)
+	transport, command, signIn, err := transportFor(s.name, settings, logDir)
 	if err != nil {
 		s.err = err
 		return
@@ -119,7 +119,7 @@ func (s *server) connect(ctx context.Context, settings config.MCPServer, logDir 
 	s.command = command
 	session, tools, err := connectWith(ctx, transport)
 	if err != nil {
-		s.err = err
+		s.err = signIn.explain(s.name, err)
 		s.stopProcesses()
 		return
 	}
@@ -146,15 +146,16 @@ func connectWith(ctx context.Context, transport mcp.Transport) (*mcp.ClientSessi
 	return session, tools, nil
 }
 
-func transportFor(name string, settings config.MCPServer, logDir string) (mcp.Transport, *exec.Cmd, error) {
+func transportFor(name string, settings config.MCPServer, logDir string) (mcp.Transport, *exec.Cmd, *signIn, error) {
 	switch {
 	case settings.URL != "":
 		base, err := netx.Transport(settings.CA, settings.Insecure)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
-		client := &http.Client{Transport: headerTransport{headers: expanded(settings.Headers), base: base}}
-		return &mcp.StreamableClientTransport{Endpoint: settings.URL, HTTPClient: client}, nil, nil
+		signIn := newSignIn(name, settings, base)
+		client := &http.Client{Transport: headerTransport{headers: expanded(settings.Headers), base: base, signIn: signIn}}
+		return &mcp.StreamableClientTransport{Endpoint: settings.URL, HTTPClient: client}, nil, signIn, nil
 	case settings.Command != "":
 		cmd := exec.Command(settings.Command, settings.Args...)
 		cmd.Env = os.Environ()
@@ -164,12 +165,12 @@ func transportFor(name string, settings config.MCPServer, logDir string) (mcp.Tr
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 		logFile, err := openLog(logDir, name)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		cmd.Stderr = logFile
-		return &mcp.CommandTransport{Command: cmd}, cmd, nil
+		return &mcp.CommandTransport{Command: cmd}, cmd, nil, nil
 	}
-	return nil, nil, fmt.Errorf("set command or url")
+	return nil, nil, nil, fmt.Errorf("set command or url")
 }
 
 // openLog keeps a stdio server's stderr out of the terminal.
@@ -196,6 +197,7 @@ func expanded(values map[string]string) map[string]string {
 type headerTransport struct {
 	headers map[string]string
 	base    http.RoundTripper
+	signIn  *signIn
 }
 
 func (t headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -203,7 +205,12 @@ func (t headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	for name, value := range t.headers {
 		req.Header.Set(name, value)
 	}
-	return t.base.RoundTrip(req)
+	t.signIn.authorize(req)
+	response, err := t.base.RoundTrip(req)
+	if err == nil {
+		t.signIn.saw(response)
+	}
+	return response, err
 }
 
 func (h *Hub) Status() []Status {

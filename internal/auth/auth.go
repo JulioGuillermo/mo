@@ -39,15 +39,24 @@ func tokenPath(provider string) string {
 	return filepath.Join(Dir(), provider+".json")
 }
 
+// oauthConfig is the client of settings; one with no secret, a public
+// client, names itself in the request's body, as the standard says.
 func oauthConfig(settings config.OAuth, redirect string) *oauth2.Config {
+	endpoint := oauth2.Endpoint{AuthURL: settings.AuthURL, TokenURL: settings.TokenURL, DeviceAuthURL: settings.DeviceURL}
+	if settings.Secret() == "" {
+		endpoint.AuthStyle = oauth2.AuthStyleInParams
+	}
 	return &oauth2.Config{
 		ClientID: settings.ClientID, ClientSecret: settings.Secret(), Scopes: settings.Scopes, RedirectURL: redirect,
-		Endpoint: oauth2.Endpoint{AuthURL: settings.AuthURL, TokenURL: settings.TokenURL, DeviceAuthURL: settings.DeviceURL},
+		Endpoint: endpoint,
 	}
 }
 
 func params(settings config.OAuth) []oauth2.AuthCodeOption {
 	var options []oauth2.AuthCodeOption
+	if settings.Resource != "" {
+		options = append(options, oauth2.SetAuthURLParam("resource", settings.Resource))
+	}
 	for key, value := range settings.Params {
 		options = append(options, oauth2.SetAuthURLParam(key, value))
 	}
@@ -97,6 +106,8 @@ func Logout(provider string) error {
 // get a new one without the user.
 type Source struct {
 	provider string
+	// login is the command that signs in again, told when it is needed.
+	login    string
 	settings config.OAuth
 	headers  map[string]string
 	mu       sync.Mutex
@@ -108,7 +119,7 @@ type Source struct {
 }
 
 func NewSource(provider string, settings config.OAuth) *Source {
-	return &Source{provider: provider, settings: settings}
+	return &Source{provider: provider, settings: settings, login: "/login " + provider}
 }
 
 // WithHeaders sets the headers the exchange for the bearer is asked with.
@@ -148,15 +159,15 @@ func (s *Source) accessToken(ctx context.Context) (string, error) {
 	}
 	switch {
 	case s.token == nil:
-		return "", fmt.Errorf("%s: %w: /login %s", s.provider, ErrNeedsLogin, s.provider)
+		return "", fmt.Errorf("%s: %w: %s", s.provider, ErrNeedsLogin, s.login)
 	case s.token.Valid():
 		return s.token.AccessToken, nil
 	case s.token.RefreshToken == "":
-		return "", fmt.Errorf("%s: the token expired: %w again: /login %s", s.provider, ErrNeedsLogin, s.provider)
+		return "", fmt.Errorf("%s: the token expired: %w again: %s", s.provider, ErrNeedsLogin, s.login)
 	}
 	renewed, err := renew(ctx, s.settings, s.token)
 	if err != nil {
-		return "", fmt.Errorf("%s: renewing the token: %v: /login %s", s.provider, err, s.provider)
+		return "", fmt.Errorf("%s: renewing the token: %w: %v: %s", s.provider, ErrNeedsLogin, err, s.login)
 	}
 	if renewed.RefreshToken == "" {
 		renewed.RefreshToken = s.token.RefreshToken
@@ -262,7 +273,13 @@ func browserLogin(ctx context.Context, settings config.OAuth, show func(Prompt))
 	})}
 	go func() { _ = server.Serve(listener) }()
 	defer server.Close()
-	url := conf.AuthCodeURL(state, append(params(settings), oauth2.AccessTypeOffline, oauth2.S256ChallengeOption(verifier))...)
+	options := append(params(settings), oauth2.S256ChallengeOption(verifier))
+	if settings.Resource == "" {
+		// Google's way to ask for a refresh token; an MCP server asks for
+		// the standard offline_access scope instead, and may refuse it.
+		options = append(options, oauth2.AccessTypeOffline)
+	}
+	url := conf.AuthCodeURL(state, options...)
 	show(Prompt{URL: url})
 	openBrowser(url)
 	select {
@@ -273,7 +290,11 @@ func browserLogin(ctx context.Context, settings config.OAuth, show func(Prompt))
 				"code_verifier": verifier, "state": state,
 			})
 		}
-		return conf.Exchange(ctx, code, oauth2.VerifierOption(verifier))
+		exchange := []oauth2.AuthCodeOption{oauth2.VerifierOption(verifier)}
+		if settings.Resource != "" {
+			exchange = append(exchange, oauth2.SetAuthURLParam("resource", settings.Resource))
+		}
+		return conf.Exchange(ctx, code, exchange...)
 	case err := <-failures:
 		return nil, err
 	case <-ctx.Done():

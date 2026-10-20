@@ -43,6 +43,8 @@ type mcpDraft struct {
 	remove       bool
 	savedEnv     map[string]string
 	savedHeaders map[string]string
+	// savedOAuth is the sign-in the config sets, which the form keeps.
+	savedOAuth *config.OAuth
 	// switches shows whether the server is on and its tools' mode as
 	// fields, as /mcp opens it; the settings menu has them under Tools.
 	switches bool
@@ -73,6 +75,7 @@ func newMCPDraft(name string, server config.MCPServer) *mcpDraft {
 		trust:        server.Trust,
 		savedEnv:     server.Env,
 		savedHeaders: server.Headers,
+		savedOAuth:   server.OAuth,
 	}
 }
 
@@ -164,6 +167,9 @@ func (d *mcpDraft) applyTo(layer config.Config) (config.Config, error) {
 		CA:       strings.TrimSpace(d.ca),
 		Insecure: d.insecure,
 		Trust:    d.trust,
+	}
+	if server.URL != "" {
+		server.OAuth = d.savedOAuth
 	}
 	if (server.Command == "") == (server.URL == "") {
 		return layer, fmt.Errorf("MCP %s: set either a command or a URL", name)
@@ -449,6 +455,9 @@ func (m model) mcpState(name string) string {
 	for _, status := range m.session.MCP {
 		if status.Name != name {
 			continue
+		}
+		if mcphub.NeedsLogin(status.Err) {
+			return lipgloss.NewStyle().Foreground(warning).Render("! needs a sign-in · /mcp login " + name)
 		}
 		if status.Err != nil {
 			return errorStyle.Render("✗ " + oneLine(status.Err.Error(), 50))

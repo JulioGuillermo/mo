@@ -126,6 +126,8 @@ func (m model) suggestions() []command {
 			return m.gitSuggestions(partial)
 		case "peers":
 			return m.peerSuggestions(partial)
+		case "mcp":
+			return m.mcpSignInSuggestions(partial)
 		case "skill":
 			if strings.Contains(partial, " ") {
 				return nil

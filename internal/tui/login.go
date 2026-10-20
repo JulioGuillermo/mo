@@ -35,14 +35,9 @@ func (m model) login(argument string) (tea.Model, tea.Cmd) {
 // form's not saved yet.
 func (m model) loginTo(provider string, oauth config.OAuth) (tea.Model, tea.Cmd) {
 	bridge := m.bridge
-	printer := m.printer
 	show := func(prompt auth.Prompt) {
-		text := "open " + prompt.URL
-		if prompt.Code != "" {
-			text += "\nand enter the code " + prompt.Code
-		}
 		if bridge != nil {
-			bridge.send(printMsg(printer.Note(text)))
+			bridge.send(signInPageMsg{url: prompt.URL, code: prompt.Code})
 		}
 	}
 	note := printText(m.printer.Note("signing in to " + provider + "…"))

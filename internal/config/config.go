@@ -305,6 +305,10 @@ type MCPServer struct {
 	// Insecure accepts any certificate from url, self-signed too, so
 	// anyone between could read and change the traffic.
 	Insecure bool `toml:"insecure,omitempty"`
+	// OAuth sets what the sign-in to url cannot find on its own: a client
+	// already registered, the scopes, more parameters. Without it, a server
+	// that asks for a sign-in is found out and registered with.
+	OAuth *OAuth `toml:"oauth,omitempty"`
 }
 
 // BarStyles are the looks of the context bar, the first the default.
@@ -431,6 +435,9 @@ type OAuth struct {
 	// access token, with the provider's headers: GitHub Copilot gives a
 	// short-lived token of its own that way.
 	ExchangeURL string `toml:"exchange_url,omitempty"`
+	// Resource is the address the token is for (RFC 8707), sent with the
+	// sign-in and the code, as MCP servers ask.
+	Resource string `toml:"resource,omitempty"`
 }
 
 // Secret is the client secret, written or from its variable.

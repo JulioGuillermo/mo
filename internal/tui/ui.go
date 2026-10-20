@@ -445,6 +445,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if page, ok := msg.(signInPageMsg); ok {
+		return m.showSignInPage(page)
+	}
+	if signed, ok := msg.(mcpSignedInMsg); ok {
+		return m.mcpSignedIn(signed)
+	}
 	if clicked, ok := msg.(pluginClickMsg); ok {
 		return m.pluginClicked(clicked)
 	}
@@ -1056,6 +1062,9 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		asked, ask := m.askPostponedPlugin()
 		return asked, tea.Batch(printText(m.printer.Note(pluginReport(m.session.Plugins))), ask)
 	case "mcp":
+		if action, server, _ := strings.Cut(argument, " "); action == "login" || action == "logout" {
+			return m.mcpSignIn(action, strings.TrimSpace(server))
+		}
 		m.settingsInFlight = true
 		return m, tea.Sequence(printText(m.printer.Note(mcpReport(m.session.MCP, m.session.Config))), loadSettings(m.session, mcpSettings))
 	case "skill":
@@ -1564,6 +1573,10 @@ func mcpReport(statuses []mcphub.Status, cfg config.Config) string {
 		return "no MCP servers yet"
 	}
 	for _, status := range statuses {
+		if mcphub.NeedsLogin(status.Err) {
+			lines = append(lines, fmt.Sprintf("! %s: needs a sign-in · /mcp login %s", status.Name, status.Name))
+			continue
+		}
 		if status.Err != nil {
 			lines = append(lines, fmt.Sprintf("✗ %s: %v", status.Name, status.Err))
 			continue

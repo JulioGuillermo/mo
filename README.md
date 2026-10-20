@@ -658,6 +658,23 @@ stops, the others keep their connection. **Test connection** in a server's edito
 connects to it as it is filled in, saved or not, and says how many tools it offers or why it failed
 (a command server is started and stopped again). `/settings › Tools › MCP servers off` stops
 one without deleting it, everywhere or only in a project. A server's stderr goes to `~/.local/share/mo/logs/mcp-<name>.log`.
+A server reached by URL that asks for a sign-in (it answers 401) shows `! needs a sign-in` in
+`/mcp`. `/mcp login <server>` signs in as the MCP standard says: mo reads where the server signs in
+from its answer and metadata, registers itself there as a client (dynamic client registration), and
+opens the browser with PKCE, asking for the token for that server (`resource`). The token is kept in
+`~/.local/share/mo/oauth/mcp-<server>.json`, readable by you only, and renewed when it expires;
+`/mcp logout <server>` forgets it and the client. A URL is enough for most servers (Atlassian,
+GitHub, Linear…); `[mcp.<server>.oauth]` sets what the server cannot say: `scopes` (else those the
+server offers), `client_id` and `client_secret` of a client registered by hand, `auth_url`,
+`token_url`, `redirect_url`, and `params` for the sign-in page. An `Authorization` header in
+`headers` wins over the sign-in.
+
+```toml
+[mcp.jira]
+url = "https://mcp.atlassian.com/v2/mcp"
+oauth = { scopes = ["read:jira:agent-interface", "write:jira:agent-interface", "offline_access"] }
+```
+
 `[web]` and `[mcp]` are read from the user file only, never from a project's `.mo/settings.toml`.
 
 ## Images and diagrams
