@@ -486,6 +486,8 @@ func detectedOptions(findings []detect.Finding) []huh.Option[string] {
 
 func providerLabel(name string, settings config.ProviderConfig) string {
 	switch {
+	case settings.Plugin != "":
+		return name + "  · plugin " + settings.Plugin
 	case !settings.NeedsKey():
 		return name + "  · " + settings.BaseURL
 	case settings.TokenFrom != "":

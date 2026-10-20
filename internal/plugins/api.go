@@ -22,6 +22,7 @@ func (p *Plugin) openAPI() {
 		"setting":     p.declareSetting,
 		"component":   p.declareComponent,
 		"mcp":         p.declareMCP,
+		"provider":    p.declareProvider,
 		"view":        p.viewFile,
 		"screen":      p.screenSize,
 		"style":       styleText,

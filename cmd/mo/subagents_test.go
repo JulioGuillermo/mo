@@ -48,7 +48,7 @@ func TestSubagents(t *testing.T) {
 		cfg := config.Defaults()
 		policy, _ := permissions.New(permissions.ModeEdits, nil, nil)
 		env := tools.Env{WorkDir: t.TempDir(), Titles: tools.NewTitles()}
-		build, err := subagentBuilder(context.Background(), cfg, chosenProvider{model: "m"}, env, tools.Options{}, policy, nil, "BASE")
+		build, err := subagentBuilder(context.Background(), cfg, chosenProvider{model: "m"}, env, tools.Options{}, policy, nil, "BASE", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -77,7 +77,7 @@ func TestSubagents(t *testing.T) {
 		t.Cleanup(loaded.team.Close)
 		session, err := buildSession(context.Background(), workDir, cfg, sessionChoice{}, loaded)
 		policy, _ := permissions.New(permissions.ModeEdits, nil, nil)
-		build, _ := subagentBuilder(context.Background(), cfg, chosenProvider{model: "m"}, tools.Env{WorkDir: workDir}, tools.Options{}, policy, nil, "")
+		build, _ := subagentBuilder(context.Background(), cfg, chosenProvider{model: "m"}, tools.Env{WorkDir: workDir}, tools.Options{}, policy, nil, "", nil)
 		subagent, _ := build(team.Info{ID: 1, Depth: 1, Name: "s"}, nil, parentStub{})
 
 		if err != nil || slices.Contains(toolNamesOf(session.Agent.Tools), tools.TellParentName) || !slices.Contains(toolNamesOf(subagent.Tools), tools.TellParentName) {

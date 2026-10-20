@@ -7,6 +7,7 @@ import (
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/permissions"
+	"github.com/jg/mo/internal/plugins"
 	"github.com/jg/mo/internal/team"
 	"github.com/jg/mo/internal/tools"
 )
@@ -17,11 +18,11 @@ import (
 // no background jobs, which belong to the conversation; a subagent at the
 // deepest level has no agent tool.
 func subagentBuilder(ctx context.Context, cfg config.Config, main chosenProvider, env tools.Env, options tools.Options,
-	policy *permissions.Policy, confirm []string, system string) (team.Builder, error) {
+	policy *permissions.Policy, confirm []string, system string, loaded *plugins.Set) (team.Builder, error) {
 	chosen := main
 	if provider, model, ok := strings.Cut(cfg.Agents.Model, "/"); ok {
 		var err error
-		if chosen, err = chooseProvider(ctx, cfg, provider, model); err != nil {
+		if chosen, err = chooseProvider(ctx, cfg, provider, model, loaded); err != nil {
 			return nil, err
 		}
 	}

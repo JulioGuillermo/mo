@@ -141,7 +141,7 @@ func (m model) applyFiles(files config.Files, whole bool) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, printText(m.printer.Note("settings changed on disk · provider, model, effort and permission mode apply with /reload")))
 		}
 		disk = keepSessionSettings(disk, current)
-		if reflect.DeepEqual(disk, keepSessionSettings(current.Config, current)) {
+		if reflect.DeepEqual(disk, keepSessionSettings(withoutPluginProviders(current.Config), current)) {
 			if uiChanged {
 				cmds = append(cmds, printText(m.printer.Note("settings changed on disk · the look applies now")))
 			}
@@ -256,6 +256,14 @@ func (m model) askTrust(files config.Files, held []string, whole bool) (tea.Mode
 }
 
 // sessionPart is what of the settings changes only with /reload.
+// withoutPluginProviders is cfg without the providers plugins declared,
+// which are in the session's settings and never in a file.
+func withoutPluginProviders(cfg config.Config) config.Config {
+	cfg.Providers = maps.Clone(cfg.Providers)
+	maps.DeleteFunc(cfg.Providers, func(_ string, provider config.ProviderConfig) bool { return provider.Plugin != "" })
+	return cfg
+}
+
 func sessionPart(cfg config.Config) config.Config {
 	return config.Config{
 		Provider:    cfg.Provider,

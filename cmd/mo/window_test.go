@@ -73,7 +73,7 @@ func TestContextWindow(t *testing.T) {
 		provider.BaseURL = server.URL + "/v1"
 		cfg.Providers["opencode"] = provider
 
-		chosen, err := chooseProvider(context.Background(), cfg, "opencode", "m1")
+		chosen, err := chooseProvider(context.Background(), cfg, "opencode", "m1", nil)
 		if err != nil {
 			t.Fatal(err)
 		}

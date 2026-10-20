@@ -15,11 +15,14 @@ package main
 // | ST-11 | Edge     | A hub that arrives after the run closed its hubs is closed too     | P1       |
 // | ST-13 | Happy    | A plugin's MCP server connects with the others, unless one of the settings has its name or it is turned off | P0 |
 // | ST-14 | Happy    | Loading the plugins again connects their servers again, with the new plugins' headers; the settings' are kept | P0 |
+// | ST-15 | Happy    | A plugin's provider, picked in the settings, answers a turn with the headers and fields its plugin gives | P0 |
+// | ST-16 | Edge     | A provider of the settings wins over a plugin's of the same name; the settings on disk never hold a plugin's | P1 |
 // | ST-12 | Happy    | Changed plugin settings load the plugins again, in use once activated; the same keep them | P0 |
 
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -28,9 +31,12 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/BurntSushi/toml"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
+	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/mcphub"
 	"github.com/jg/mo/internal/plugins"
 	"github.com/jg/mo/internal/tui"
@@ -401,6 +407,79 @@ mo.mcp{ name = "own", url = "https://never.example/mcp" }`
 		mu.Unlock()
 		if !strings.Contains(names, "mcp__board__ping") || loaded.hubs.current == loaded.mcp || before != 0 || after == 0 {
 			t.Errorf("tools %s, hub replaced %v, requests with the new token %d then %d", names, loaded.hubs.current != loaded.mcp, before, after)
+		}
+	})
+}
+
+func TestPluginProvider(t *testing.T) {
+	t.Run("ST-15 a plugin's provider, picked in the settings, answers a turn with the headers and fields its plugin gives", func(t *testing.T) {
+		var mu sync.Mutex
+		var seen []string
+		gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			mu.Lock()
+			seen = append(seen, r.Method+" "+r.URL.Path+" "+r.Header.Get("X-Signed")+" "+string(body))
+			mu.Unlock()
+			if r.URL.Path == "/v1/models" {
+				w.Write([]byte(`{"data":[{"id":"m1"}]}`))
+				return
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"hi from the gateway\"}}]}\n\ndata: [DONE]\n\n"))
+		}))
+		t.Cleanup(gateway.Close)
+		workDir := isolated(t, "provider = \"gateway\"\n")
+		os.MkdirAll(config.PluginDir(), 0o700)
+		os.WriteFile(filepath.Join(config.PluginDir(), "gw.lua"), []byte(`
+mo.provider{ name = "gateway", base_url = "`+gateway.URL+`/v1", model = "m1",
+  headers = function(request) return { ["X-Signed"] = "sig-" .. request.method } end,
+  params = { user = "jg" } }`), 0o600)
+		cfg, err := config.Load(workDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		loaded := testExtensions(t, workDir)
+		loaded.plugins = plugins.Load(config.PluginDir(), workDir, t.TempDir(), nil)
+		loaded.pluginSets.current = loaded.plugins
+
+		session, err := buildSession(context.Background(), workDir, cfg, sessionChoice{}, loaded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		answer := ""
+		err = session.Agent.Run(context.Background(), "hello", agent.Hooks{OnEvent: func(event llm.Event) { answer += event.Text }})
+
+		mu.Lock()
+		defer mu.Unlock()
+		last := seen[len(seen)-1]
+		if err != nil || session.Provider != "gateway" || session.Config.Providers["gateway"].Plugin != "gw" || !strings.Contains(answer, "hi from the gateway") {
+			t.Fatalf("err = %v provider = %q answer = %q", err, session.Provider, answer)
+		}
+		if !strings.Contains(last, "POST /v1/chat/completions sig-POST") || !strings.Contains(last, `"user":"jg"`) {
+			t.Errorf("the gateway saw %q", last)
+		}
+	})
+}
+
+func TestPluginProviderNames(t *testing.T) {
+	t.Run("ST-16 a provider of the settings wins over a plugin's of the same name; the settings on disk never hold a plugin's", func(t *testing.T) {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "gw.lua"), []byte(`
+mo.provider{ name = "ollama", base_url = "https://plugin.example/v1" }
+mo.provider{ name = "gateway", base_url = "https://gateway.example/v1" }`), 0o600)
+		loaded := plugins.Load(dir, t.TempDir(), t.TempDir(), nil)
+		t.Cleanup(loaded.Close)
+		cfg := config.Defaults()
+
+		with := withPluginProviders(cfg, loaded)
+
+		if with.Providers["ollama"].Plugin != "" || with.Providers["gateway"].Plugin != "gw" || cfg.Providers["gateway"].BaseURL != "" {
+			t.Errorf("ollama = %+v gateway = %+v", with.Providers["ollama"], with.Providers["gateway"])
+		}
+		var saved strings.Builder
+		toml.NewEncoder(&saved).Encode(with.Providers["gateway"])
+		if strings.Contains(saved.String(), "gw") {
+			t.Errorf("a file would name the plugin: %s", saved.String())
 		}
 	})
 }

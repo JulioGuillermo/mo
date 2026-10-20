@@ -14,6 +14,7 @@ import (
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/detect"
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/plugins"
 )
 
 const (
@@ -35,7 +36,7 @@ type chosenProvider struct {
 
 // chooseProvider picks the provider from the flag or the config. With
 // neither, it uses the first local server that answers.
-func chooseProvider(ctx context.Context, cfg config.Config, name, model string) (chosenProvider, error) {
+func chooseProvider(ctx context.Context, cfg config.Config, name, model string, loaded *plugins.Set) (chosenProvider, error) {
 	if name == "" {
 		name = cfg.Provider
 	}
@@ -63,6 +64,7 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 		return chosenProvider{}, fmt.Errorf("unknown provider %q (known: %s; see mo -detect)", name, strings.Join(known, ", "))
 	}
 	token := auth.TokenFor(name, settings)
+	client := loaded.ProviderClient(name, settings)
 	if token == nil && settings.NeedsKey() && settings.Key() == "" {
 		return chosenProvider{}, fmt.Errorf("%s needs an API key and none was found (%s)", name, keyOrigin(settings))
 	}
@@ -76,7 +78,7 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 
 	switch settings.Protocol {
 	case "openai":
-		provider := &llm.OpenAI{BaseURL: settings.BaseURL, APIKey: settings.Key(), Token: token, Headers: settings.Headers}
+		provider := &llm.OpenAI{BaseURL: settings.BaseURL, APIKey: settings.Key(), Token: token, Headers: settings.Headers, Client: client}
 		if model == "" {
 			first, err := firstModel(ctx, provider)
 			if err != nil {
@@ -89,13 +91,13 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 		return chosenProvider{name: name, model: model, window: window, provider: provider, windowFrom: from}, nil
 	case "anthropic", "claude-code":
 		key := settings.Key()
-		if key == "" && token == nil {
+		if key == "" && token == nil && client == nil {
 			return chosenProvider{}, fmt.Errorf("%s needs an API key: set providers.%s.api_key, api_key_env or api_key_from", name, name)
 		}
 		if model == "" {
 			return chosenProvider{}, fmt.Errorf("%s needs a model: use -m or set model in the config", name)
 		}
-		provider := &llm.Anthropic{BaseURL: settings.BaseURL, APIKey: key, Token: token, Subscription: settings.Protocol == "claude-code",
+		provider := &llm.Anthropic{BaseURL: settings.BaseURL, APIKey: key, Token: token, Client: client, Subscription: settings.Protocol == "claude-code",
 			NoPreamble: settings.Preamble != nil && !*settings.Preamble}
 		window, from := cfg.Context.Window, windowFromSettings
 		if window == 0 {
@@ -103,7 +105,7 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 		}
 		return chosenProvider{name: name, model: model, window: window, provider: provider, windowFrom: from}, nil
 	case "responses":
-		if token == nil {
+		if token == nil && client == nil {
 			return chosenProvider{}, fmt.Errorf("%s needs a sign-in: set providers.%s.oauth", name, name)
 		}
 		if model == "" {
@@ -113,7 +115,7 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 		if window == 0 {
 			window, from = defaultResponsesWindow, windowFromDefault
 		}
-		return chosenProvider{name: name, model: model, window: window, provider: &llm.Responses{BaseURL: settings.BaseURL, Token: token}, windowFrom: from}, nil
+		return chosenProvider{name: name, model: model, window: window, provider: &llm.Responses{BaseURL: settings.BaseURL, Token: token, Client: client}, windowFrom: from}, nil
 	case "cloudcode":
 		if model == "" {
 			return chosenProvider{}, fmt.Errorf("%s needs a model: use -m or set model in the config", name)
@@ -122,7 +124,7 @@ func chooseProvider(ctx context.Context, cfg config.Config, name, model string) 
 		if window == 0 {
 			window, from = defaultCloudCodeWindow(model), windowFromDefault
 		}
-		return chosenProvider{name: name, model: model, window: window, provider: &llm.CloudCode{BaseURL: settings.BaseURL, Token: token, NoPreamble: settings.Preamble != nil && !*settings.Preamble}, windowFrom: from}, nil
+		return chosenProvider{name: name, model: model, window: window, provider: &llm.CloudCode{BaseURL: settings.BaseURL, Token: token, Client: client, NoPreamble: settings.Preamble != nil && !*settings.Preamble}, windowFrom: from}, nil
 	}
 	return chosenProvider{}, fmt.Errorf("provider %q has unknown type %q (use openai, anthropic, claude-code, responses or cloudcode)", name, settings.Protocol)
 }

@@ -59,8 +59,9 @@ type Plugin struct {
 	// keys listen to keys while the user works in the plugin's dialogs;
 	// globalKeys anywhere in mo, once the user allows it.
 	keys, globalKeys []keyListener
-	// servers are the MCP servers it declares.
-	servers []mcpServer
+	// servers are the MCP servers it declares, providers the providers.
+	servers   []mcpServer
+	providers []providerDeclared
 	// components are the plugin's own node types, by name.
 	components map[string]*lua.LFunction
 	// values are what the user set for the plugin, by setting name.

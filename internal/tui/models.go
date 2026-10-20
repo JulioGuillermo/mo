@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -43,19 +44,20 @@ type modelsMsg struct {
 
 // listModels asks a provider for its models: an OpenAI-compatible server's
 // /models, or Anthropic's Models API.
-func listModels(ctx context.Context, provider string, settings config.ProviderConfig) ([]string, error) {
+// A provider a plugin declared is asked through the plugin's client.
+func listModels(ctx context.Context, provider string, settings config.ProviderConfig, client *http.Client) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, modelsTimeout)
 	defer cancel()
 	token := auth.TokenFor(provider, settings)
 	switch settings.Protocol {
 	case "cloudcode":
-		return (&llm.CloudCode{BaseURL: settings.BaseURL, Token: token}).ListModels(ctx)
+		return (&llm.CloudCode{BaseURL: settings.BaseURL, Token: token, Client: client}).ListModels(ctx)
 	case "responses":
-		return (&llm.Responses{BaseURL: settings.BaseURL, Token: token}).ListModels(ctx)
+		return (&llm.Responses{BaseURL: settings.BaseURL, Token: token, Client: client}).ListModels(ctx)
 	case "anthropic", "claude-code":
-		return (&llm.Anthropic{BaseURL: settings.BaseURL, APIKey: settings.Key(), Token: token, Subscription: settings.Protocol == "claude-code"}).ListModels(ctx)
+		return (&llm.Anthropic{BaseURL: settings.BaseURL, APIKey: settings.Key(), Token: token, Subscription: settings.Protocol == "claude-code", Client: client}).ListModels(ctx)
 	}
-	return (&llm.OpenAI{BaseURL: settings.BaseURL, APIKey: settings.Key(), Token: token, Headers: settings.Headers}).ListModels(ctx)
+	return (&llm.OpenAI{BaseURL: settings.BaseURL, APIKey: settings.Key(), Token: token, Headers: settings.Headers, Client: client}).ListModels(ctx)
 }
 
 // chooseModel loads the models of a provider off the UI goroutine, then
@@ -63,12 +65,12 @@ func listModels(ctx context.Context, provider string, settings config.ProviderCo
 func (m model) chooseModel(settings config.ProviderConfig, choice modelChoice) (tea.Model, tea.Cmd) {
 	m.settingsInFlight = true
 	note := printText(m.printer.Note("asking " + orDefault(choice.provider, "the provider") + " for its models…"))
-	return m, tea.Batch(note, loadModels(settings, choice))
+	return m, tea.Batch(note, loadModels(settings, choice, m.session.Plugins.ProviderClient(choice.provider, settings)))
 }
 
 // loadModels asks the server what it has now, then for its models: the list
 // is never kept from an earlier time.
-func loadModels(settings config.ProviderConfig, choice modelChoice) tea.Cmd {
+func loadModels(settings config.ProviderConfig, choice modelChoice, client *http.Client) tea.Cmd {
 	return func() tea.Msg {
 		var followed *modelMsg
 		if choice.check != nil {
@@ -76,7 +78,7 @@ func loadModels(settings config.ProviderConfig, choice modelChoice) tea.Cmd {
 				OnModel: func(model string, window int) { followed = &modelMsg{model: model, window: window} },
 			}, agent.CheckModels)
 		}
-		models, err := listModels(context.Background(), choice.provider, settings)
+		models, err := listModels(context.Background(), choice.provider, settings, client)
 		return modelsMsg{choice: choice, models: models, err: err, followed: followed}
 	}
 }

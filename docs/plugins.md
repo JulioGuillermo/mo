@@ -20,6 +20,7 @@ Restart mo, then type `/hello ana`.
 - [Commands for you](#commands-for-you)
 - [Hooks](#hooks)
 - [MCP servers](#mcp-servers)
+- [Providers](#providers)
 - [Settings](#settings)
 - [The side panel](#the-side-panel)
 - [Dialogs](#dialogs)
@@ -161,6 +162,41 @@ A server of your settings with the same name wins, and the plugin's is left out 
 `/plugins`. `tools.mcp_disabled` turns it off, and its tools take modes in **Settings › Tools** like
 any server's. A header function has 5 seconds, and an error in it fails the request. When the
 plugins load again, their servers connect again.
+
+## Providers
+
+`mo.provider{...}` adds a provider, as one of `[providers.name]`: it shows among the others in
+**Settings › Model**, `/model` and `-p name`, and is never written to your file. `headers` and
+`params` may be functions mo asks on every request, so a plugin can sign each one or add what a
+gateway wants in the body.
+
+```lua
+mo.setting{ name = "key", secret = true }
+
+mo.provider{
+  name = "gateway",
+  type = "openai",                       -- openai unless said; anthropic, claude-code, responses, cloudcode
+  base_url = "https://gateway.example/v1",
+  model = "big-model",
+  headers = function(request)            -- { method, url, model }
+    return { Authorization = "Bearer " .. mo.settings.get("key"), ["X-Request-Time"] = tostring(os.time()) }
+  end,
+  params = { user = "jg", metadata = { team = "core" } },   -- or a function of the request
+}
+```
+
+| Field | What |
+|---|---|
+| `name` | its name, as in `[providers.name]` |
+| `type` | the protocol it speaks, `openai` unless said |
+| `base_url`, `model`, `api_key` | as in `[providers.name]`; an `openai` one needs its `base_url` |
+| `headers` | a table, or a function of `{ method, url, model }` giving a table |
+| `params` | fields put in the JSON body of each request, over mo's own: a table, or a function of the request giving one |
+
+A provider of your settings, or one mo knows such as `ollama`, wins over a plugin's of the same name,
+left out with a warning in `/plugins`. A function has 5 seconds, and an error in it fails the
+request. With `headers` a function, or any `params`, a provider needs no `api_key`: the plugin gives
+what signs the request.
 
 ## Settings
 

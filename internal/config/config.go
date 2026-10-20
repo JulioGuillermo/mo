@@ -406,6 +406,9 @@ type ProviderConfig struct {
 	// app would be left with one that no longer works; off, mo only uses
 	// the token while it is valid.
 	TokenRenew bool `toml:"token_renew,omitempty"`
+	// Plugin is the plugin that declared the provider, whose functions
+	// give its headers and fields; never in a file.
+	Plugin string `toml:"-"`
 }
 
 // The apps whose sign-in a provider can borrow with token_from.

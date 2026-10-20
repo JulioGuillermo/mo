@@ -122,7 +122,8 @@ func (h *openHubs) Close() {
 // after checking that the layer works on its own, outside any project; the
 // provider and model given on the command line no longer apply then.
 func buildSession(ctx context.Context, workDir string, cfg config.Config, choice sessionChoice, loaded extensions) (tui.Session, error) {
-	chosen, err := chooseProvider(ctx, cfg, choice.provider, choice.model)
+	cfg = withPluginProviders(cfg, loaded.plugins)
+	chosen, err := chooseProvider(ctx, cfg, choice.provider, choice.model, loaded.plugins)
 	if err != nil {
 		return tui.Session{}, providerError{err}
 	}
@@ -176,7 +177,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	}
 	system := agent.SystemPrompt(cfg.SystemPrompt, workDir, instructions)
 	if loaded.team != nil && *cfg.Agents.Enabled {
-		subagents, err := subagentBuilder(ctx, cfg, chosen, env, options, policy, confirm, system)
+		subagents, err := subagentBuilder(ctx, cfg, chosen, env, options, policy, confirm, system, loaded.plugins)
 		if err != nil {
 			return tui.Session{}, err
 		}
@@ -234,7 +235,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		return session, nil
 	}
 	reload := func(userLayer config.Config, projectLayer *config.Config) (tui.Session, error) {
-		if _, err := chooseProvider(context.Background(), config.UserSettings(userLayer), "", ""); err != nil {
+		if _, err := chooseProvider(context.Background(), withPluginProviders(config.UserSettings(userLayer), loaded.plugins), "", "", loaded.plugins); err != nil {
 			return tui.Session{}, fmt.Errorf("outside this project: %w", err)
 		}
 		fresh, err := config.LoadWithUserLayer(workDir, userLayer)

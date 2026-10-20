@@ -63,3 +63,18 @@ func activeServers(cfg config.Config, loaded *plugins.Set) map[string]config.MCP
 	}
 	return servers
 }
+
+// withPluginProviders adds to cfg the providers the plugins declare, a
+// plugin's left out when one of the settings has its name.
+func withPluginProviders(cfg config.Config, loaded *plugins.Set) config.Config {
+	declared := loaded.Providers(slices.Collect(maps.Keys(cfg.Providers)))
+	if len(declared) == 0 {
+		return cfg
+	}
+	cfg.Providers = maps.Clone(cfg.Providers)
+	if cfg.Providers == nil {
+		cfg.Providers = map[string]config.ProviderConfig{}
+	}
+	maps.Copy(cfg.Providers, declared)
+	return cfg
+}

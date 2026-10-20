@@ -86,9 +86,9 @@ func TestModelCheck(t *testing.T) {
 		}}
 		choice := modelChoice{provider: "llama-server", current: "old.gguf", check: current}
 
-		first := loadModels(settings, choice)().(modelsMsg)
+		first := loadModels(settings, choice, nil)().(modelsMsg)
 		served[0] = "new.gguf"
-		second := loadModels(settings, choice)().(modelsMsg)
+		second := loadModels(settings, choice, nil)().(modelsMsg)
 
 		if lists.Load() != 2 || first.models[0] != "old.gguf" || second.models[0] != "new.gguf" || first.followed != nil || second.followed == nil || second.followed.model != "new.gguf" {
 			t.Errorf("lists %d first %+v second %+v", lists.Load(), first, second)
