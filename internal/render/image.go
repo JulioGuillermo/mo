@@ -46,10 +46,14 @@ func Decode(data []byte) (image.Image, error) {
 // fit sizes an image to at most maxCols columns and maxImageRows rows,
 // keeping its proportions, and never larger than its own pixels.
 func fit(img image.Image, maxCols, cellWidth, cellHeight int) Box {
+	return fitWithin(img, maxCols, maxImageRows, cellWidth, cellHeight)
+}
+
+func fitWithin(img image.Image, maxCols, maxRows, cellWidth, cellHeight int) Box {
 	bounds := img.Bounds()
 	cols := ceilDiv(bounds.Dx(), cellWidth)
 	rows := ceilDiv(bounds.Dy(), cellHeight)
-	scale := min(1.0, float64(maxCols)/float64(cols), float64(maxImageRows)/float64(rows))
+	scale := min(1.0, float64(maxCols)/float64(cols), float64(maxRows)/float64(rows))
 	return Box{Cols: max(1, int(float64(cols)*scale)), Rows: max(1, int(float64(rows)*scale))}
 }
 

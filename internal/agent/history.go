@@ -61,6 +61,12 @@ func PromptText(message llm.Message) string {
 	return withoutNotes(message.Text)
 }
 
+// SentPrompt is what a prompt sent to the model said, without mo's notes
+// after it: the attachments in it are their paths.
+func SentPrompt(message llm.Message) string {
+	return withoutNotes(message.Text)
+}
+
 func withoutNotes(text string) string {
 	text, _, _ = strings.Cut(text, "\n\n"+moNotePrefix)
 	return skillRefShown.ReplaceAllString(text, "$$$1")

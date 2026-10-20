@@ -9,6 +9,9 @@ package tui
 // | CB-05 | Happy    | A pasted path to a file becomes a label; other text is typed as is    | P1       |
 // | CB-06 | Happy    | Backspace after a label or delete before it takes it out whole, file and all | P0 |
 // | CB-07 | Happy    | The files in the input show as chips over it; a click on one drops it | P1      |
+// | CB-08 | Happy    | A drawn thumbnail sits over its chip, and the chip still drops it on a click | P1 |
+// | CB-09 | Happy    | The images of a sent prompt are its full paths, bare or quoted, to image files there | P1 |
+// | CB-10 | Edge     | Without kitty images a prompt shows no thumbnails                     | P1       |
 // | TB-01 | Happy    | Tables are drawn apart, code blocks with bars are left to markdown    | P0       |
 // | TB-02 | Edge     | Bars inside code and escaped bars stay in their cell                 | P1       |
 
@@ -16,6 +19,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -179,6 +183,49 @@ func TestAttachmentEditing(t *testing.T) {
 		}
 		if strings.Contains(m.input.Value(), "[image a.png]") || m.attachments["[image a.png]"] != "" || !strings.Contains(m.input.Value(), "[file notes.txt]") {
 			t.Errorf("input = %q attachments = %v", m.input.Value(), m.attachments)
+		}
+	})
+
+	t.Run("CB-08 a drawn thumbnail sits over its chip, and the chip still drops it on a click", func(t *testing.T) {
+		m := sidebarModel(t, 140)
+		m = typed(m, "look ")
+		m.attach([]string{"/tmp/a.png"}, false)
+		m.thumbnails = map[string][]string{"/tmp/a.png": {"THUMBTOP", "THUMBEND"}}
+
+		lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+		chip := slices.IndexFunc(lines, func(line string) bool { return strings.Contains(line, "image a.png ×") })
+		m = clickOn(t, m, "image a.png")
+
+		if chip < 2 || !strings.Contains(lines[chip-1], "THUMBEND") || !strings.Contains(lines[chip-2], "THUMBTOP") {
+			t.Errorf("thumbnail not over the chip in:\n%s", strings.Join(lines, "\n"))
+		}
+		if m.attachments["[image a.png]"] != "" {
+			t.Errorf("attachments = %v", m.attachments)
+		}
+	})
+
+	t.Run("CB-09 the images of a sent prompt are its full paths, bare or quoted, to image files there", func(t *testing.T) {
+		dir := t.TempDir()
+		plain := filepath.Join(dir, "a.png")
+		spaced := filepath.Join(dir, "my shot.jpg")
+		text := filepath.Join(dir, "notes.txt")
+		for _, path := range []string{plain, spaced, text} {
+			os.WriteFile(path, []byte("x"), 0o600)
+		}
+
+		got := promptImages("see " + plain + " and \"" + spaced + "\" with " + text + " and " + filepath.Join(dir, "gone.png") + " and a.png")
+
+		if !slices.Equal(got, []string{plain, spaced}) {
+			t.Errorf("images = %q", got)
+		}
+	})
+
+	t.Run("CB-10 without kitty images a prompt shows no thumbnails", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "a.png")
+		os.WriteFile(path, []byte("x"), 0o600)
+
+		if drawn := (&printer{}).Thumbnails([]string{path}); drawn != "" {
+			t.Errorf("drawn = %q", drawn)
 		}
 	})
 }
