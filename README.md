@@ -668,13 +668,15 @@ GitHub, Linear…); `[mcp.<server>.oauth]` sets what the server cannot say: `sco
 server offers), `client_id` and `client_secret` of a client registered by hand, `auth_url`,
 `token_url`, `redirect_url`, and `params` for the sign-in page. A `client_id` that is an `https`
 address is a client metadata document the server reads instead of registering mo; the browser then
-comes back to any port of localhost. An `Authorization` header in `headers` wins over the sign-in,
+comes back to any port of localhost. mo's own document lives in the `oauth/` submodule
+([mo-oauth](https://github.com/JulioGuillermo/mo-oauth)), served by GitHub Pages at the address above;
+Atlassian's v2 server takes only such clients. An `Authorization` header in `headers` wins over the sign-in,
 and such a server is not offered by `/mcp login`.
 
 ```toml
 [mcp.jira]
-url = "https://mcp.atlassian.com/v1/mcp/authv2"   # v2 takes no registered clients at the consent
-oauth = { scopes = ["read:jira-work", "write:jira-work", "read:me", "offline_access"] }
+url = "https://mcp.atlassian.com/v2/mcp"
+oauth = { client_id = "https://julioguillermo.github.io/mo-oauth/client-metadata.json" }
 ```
 
 `[web]` and `[mcp]` are read from the user file only, never from a project's `.mo/settings.toml`.
