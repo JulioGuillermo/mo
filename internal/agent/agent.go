@@ -166,11 +166,18 @@ type Hooks struct {
 }
 
 func (a *Agent) Run(ctx context.Context, prompt string, hooks Hooks) error {
+	return a.RunTyped(ctx, prompt, prompt, hooks)
+}
+
+// RunTyped is Run with what the user typed, kept with the message when
+// what reaches the model differs from it.
+func (a *Agent) RunTyped(ctx context.Context, prompt, typed string, hooks Hooks) error {
 	a.settleUnanswered()
 	if a.RewritePrompt != nil {
 		prompt = a.RewritePrompt(ctx, prompt)
 	}
-	a.History = append(a.History, a.promptMessage(prompt, hooks))
+	message := a.promptMessage(prompt, hooks)
+	a.History = append(a.History, withInput(message, typed))
 	a.currentRequest = prompt
 	a.loops = 0
 	return a.turn(ctx, hooks)

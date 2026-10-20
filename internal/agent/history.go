@@ -51,11 +51,18 @@ func Summary(message llm.Message) string {
 	return summary
 }
 
-// PromptText is a prompt as the user typed it, without what mo added to
-// it: the list of attached files, the skills loaded with it, its notes,
-// and its skill references back as $name.
+// PromptText is a prompt as the user typed it: its Input when mo kept one,
+// else its text. Conversations from before Input are read without mo's
+// notes and with the skill references back as $name.
 func PromptText(message llm.Message) string {
-	text, _, _ := strings.Cut(message.Text, "\n\n"+moNotePrefix)
+	if message.Input != "" {
+		return message.Input
+	}
+	return withoutNotes(message.Text)
+}
+
+func withoutNotes(text string) string {
+	text, _, _ = strings.Cut(text, "\n\n"+moNotePrefix)
 	return skillRefShown.ReplaceAllString(text, "$$$1")
 }
 
@@ -97,4 +104,15 @@ func (a *Agent) Restore(history []llm.Message, usage llm.Usage) {
 	a.History = history
 	a.LastUsage = usage
 	a.historyAtUsage = len(history)
+}
+
+// withInput keeps typed as the message's Input when its text is not typed
+// as it is, or would not read back as it: typed text that looks like mo's
+// notes or skill references.
+func withInput(message llm.Message, typed string) llm.Message {
+	message.Input = ""
+	if message.Text != typed || withoutNotes(message.Text) != typed {
+		message.Input = typed
+	}
+	return message
 }

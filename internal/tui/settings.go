@@ -307,8 +307,8 @@ func saveSettings(screen *settingsScreen, current Session, wait bool) tea.Cmd {
 func takeOver(fresh, current Session) {
 	fresh.activate()
 	fresh.Agent.TakeConversation(current.Agent)
-	for _, text := range current.Agent.TakeQueued() {
-		fresh.Agent.Queue(text)
+	for _, queued := range current.Agent.TakeQueued() {
+		fresh.Agent.QueueTyped(queued)
 	}
 	keepMode(fresh, current)
 }

@@ -93,8 +93,12 @@ func (a *Agent) withoutImages() bool {
 			continue
 		}
 		found = true
+		typed := PromptText(a.History[i])
 		a.History[i].Images = nil
 		a.History[i].Text += "\n" + noVisionNote
+		if isPrompt(a.History[i]) {
+			a.History[i] = withInput(a.History[i], typed)
+		}
 	}
 	return found
 }

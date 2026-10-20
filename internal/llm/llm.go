@@ -16,8 +16,11 @@ const (
 )
 
 type Message struct {
-	Role      Role
-	Text      string
+	Role Role
+	Text string
+	// Input is what the user typed, kept when mo sent Text changed from
+	// it; never sent to the model.
+	Input     string `json:",omitempty"`
 	Reasoning string
 	// Thinking are the provider's reasoning blocks as they came, signature
 	// and all, to send back unchanged; never read.

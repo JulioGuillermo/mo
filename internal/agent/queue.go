@@ -11,40 +11,52 @@ import (
 // queue holds what the user wrote while the agent worked, for its next
 // step. The UI adds to it while the agent's goroutine takes from it.
 type queue struct {
-	mu    sync.Mutex
-	texts []string
+	mu       sync.Mutex
+	messages []Queued
+}
+
+// Queued is a message waiting for the model: Text as it goes to it, and
+// Typed as the user wrote it.
+type Queued struct {
+	Text, Typed string
 }
 
 // Queue keeps a message the user wrote while the agent works; the model
 // reads it at its next step.
 func (a *Agent) Queue(text string) {
+	a.QueueTyped(Queued{Text: text, Typed: text})
+}
+
+// QueueTyped is Queue with what the user typed, kept with the message when
+// what reaches the model differs from it.
+func (a *Agent) QueueTyped(message Queued) {
 	a.queued.mu.Lock()
 	defer a.queued.mu.Unlock()
-	a.queued.texts = append(a.queued.texts, text)
+	a.queued.messages = append(a.queued.messages, message)
 }
 
 // TakeQueued returns the messages not read yet and forgets them, as when
 // the user stops the agent and gets them back.
-func (a *Agent) TakeQueued() []string {
+func (a *Agent) TakeQueued() []Queued {
 	a.queued.mu.Lock()
 	defer a.queued.mu.Unlock()
-	texts := a.queued.texts
-	a.queued.texts = nil
-	return texts
+	messages := a.queued.messages
+	a.queued.messages = nil
+	return messages
 }
 
 // QueuedCount is how many messages wait for the model.
 func (a *Agent) QueuedCount() int {
 	a.queued.mu.Lock()
 	defer a.queued.mu.Unlock()
-	return len(a.queued.texts)
+	return len(a.queued.messages)
 }
 
 // HasQueued tells whether a message waits for the model.
 func (a *Agent) HasQueued() bool {
 	a.queued.mu.Lock()
 	defer a.queued.mu.Unlock()
-	return len(a.queued.texts) > 0
+	return len(a.queued.messages) > 0
 }
 
 // deliverQueued puts the waiting messages in the conversation as one message
@@ -54,25 +66,36 @@ func (a *Agent) HasQueued() bool {
 // its end; before a note of mo's, so the message still begins with what the
 // user wrote and is taken for the prompt.
 func (a *Agent) deliverQueued(hooks Hooks) {
-	texts := a.TakeQueued()
-	if len(texts) == 0 {
+	queued := a.TakeQueued()
+	if len(queued) == 0 {
 		return
 	}
+	var texts, typed []string
+	for _, each := range queued {
+		texts = append(texts, each.Text)
+		typed = append(typed, each.Typed)
+	}
 	joined := strings.Join(texts, "\n\n")
-	message := a.promptMessage(joined, hooks)
+	joinedTyped := strings.Join(typed, "\n\n")
+	message := withInput(a.promptMessage(joined, hooks), joinedTyped)
 	if last := len(a.History) - 1; last >= 0 && a.History[last].Role == llm.RoleUser {
-		if isPrompt(a.History[last]) {
-			a.History[last].Text += "\n\n" + message.Text
+		previous := a.History[last]
+		merged := previous
+		if isPrompt(previous) {
+			merged.Text = previous.Text + "\n\n" + message.Text
+			merged = withInput(merged, PromptText(previous)+"\n\n"+joinedTyped)
 		} else {
-			a.History[last].Text = message.Text + "\n\n" + a.History[last].Text
+			merged.Text = message.Text + "\n\n" + previous.Text
+			merged = withInput(merged, joinedTyped)
 		}
-		a.History[last].Images = append(a.History[last].Images, message.Images...)
+		merged.Images = append(merged.Images, message.Images...)
+		a.History[last] = merged
 	} else {
 		a.History = append(a.History, message)
 	}
 	a.currentRequest = joined
 	if hooks.OnQueued != nil {
-		hooks.OnQueued(len(texts))
+		hooks.OnQueued(len(queued))
 	}
 }
 

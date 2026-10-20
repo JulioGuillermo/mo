@@ -218,10 +218,13 @@ type model struct {
 	blocks              []block
 	redraws             int
 	attachments         map[string]string
-	pastedImages        int
-	showDetails         bool
-	thread              conversation
-	lastEsc             time.Time
+	// queuedAttachments are the labels of the queued messages, by the path
+	// they stand for, to have them back with the messages in the input.
+	queuedAttachments map[string]string
+	pastedImages      int
+	showDetails       bool
+	thread            conversation
+	lastEsc           time.Time
 	// focused is whether the terminal has the focus, as it reports it; mo
 	// starts as if it had.
 	focused bool
@@ -903,7 +906,8 @@ func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 	if command, isShell := strings.CutPrefix(prompt, "!"); isShell {
 		return m.runShell(strings.TrimSpace(command))
 	}
-	withSkill, err := m.withSkill(prompt)
+	typed := prompt
+	prompt, err := m.withSkill(prompt)
 	if err != nil {
 		return m.emit(m.printer.Note(err.Error()))
 	}
@@ -914,7 +918,7 @@ func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 		m.pluginSends.streak = 0
 	}
 	if m.running {
-		return m.queue(prompt, withSkill)
+		return m.queue(typed, prompt)
 	}
 	m.checkConfig()
 
@@ -923,10 +927,10 @@ func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 	if m.session.Team != nil {
 		m.session.Team.BeginTurn()
 	}
-	echo := drawText(func() string { return m.printer.User(prompt) })
-	sent := m.withShellNotes(m.withAttachments(withSkill))
+	echo := drawText(func() string { return m.printer.User(typed) })
+	sent := m.withShellNotes(m.withAttachments(prompt))
 	return m.start(echo, func(ctx context.Context, hooks agent.Hooks) error {
-		return m.session.Agent.Run(ctx, sent, hooks)
+		return m.session.Agent.RunTyped(ctx, sent, typed, hooks)
 	})
 }
 
@@ -1145,7 +1149,7 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 		save = tea.Batch(save, m.turnEnded(err))
 	}
 	if stopped && !sendingNow && m.session.Agent != nil {
-		if queued := m.session.Agent.TakeQueued(); len(queued) > 0 {
+		if queued := m.takeQueuedBack(); len(queued) > 0 {
 			if typed := strings.TrimSpace(m.input.Value()); typed != "" {
 				queued = append(queued, typed)
 			}

@@ -99,7 +99,7 @@ func (m model) historyKey(key string) (bool, tea.Model, tea.Cmd) {
 	// Up on an empty input brings back what waits for the model, all of it,
 	// to edit and send again: it goes first, as what is in view is that.
 	if key == "up" && m.input.Value() == "" && len(m.queued) > 0 && m.session.Agent != nil {
-		if taken := m.session.Agent.TakeQueued(); len(taken) > 0 {
+		if taken := m.takeQueuedBack(); len(taken) > 0 {
 			m.input.SetValue(joinQueued(taken))
 			m.input.CursorEnd()
 			m.queued = nil

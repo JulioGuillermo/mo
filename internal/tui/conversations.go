@@ -453,7 +453,14 @@ var whileRunning = map[string]bool{
 // It waits over the status line, where it is in view whatever the model
 // is writing, and goes into the conversation where the model reads it.
 func (m model) queue(typed, prompt string) (tea.Model, tea.Cmd) {
-	m.session.Agent.Queue(m.withShellNotes(m.withAttachments(prompt)))
+	for label, path := range m.attachments {
+		if m.queuedAttachments == nil {
+			m.queuedAttachments = map[string]string{}
+		}
+		m.queuedAttachments[label] = path
+	}
+	sent := m.withShellNotes(m.withAttachments(prompt))
+	m.session.Agent.QueueTyped(agent.Queued{Text: sent, Typed: typed})
 	m.queued = append(m.queued, typed)
 	m.scrolled = false
 	return m, nil
@@ -492,6 +499,26 @@ func (m model) queuedRead(count int) (tea.Model, tea.Cmd) {
 
 // joinQueued is the messages waiting as the model reads them: one, a blank
 // line between them.
+// takeQueuedBack takes from the agent the messages it has not read, as the
+// user typed them, with the attachments they name, to edit them again.
+func (m *model) takeQueuedBack() []string {
+	var typed []string
+	for _, queued := range m.session.Agent.TakeQueued() {
+		typed = append(typed, queued.Typed)
+	}
+	if len(typed) == 0 {
+		return nil
+	}
+	for label, path := range m.queuedAttachments {
+		if m.attachments == nil {
+			m.attachments = map[string]string{}
+		}
+		m.attachments[label] = path
+	}
+	m.queuedAttachments = nil
+	return typed
+}
+
 func joinQueued(prompts []string) string {
 	return strings.Join(prompts, "\n\n")
 }

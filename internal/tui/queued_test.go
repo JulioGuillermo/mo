@@ -18,6 +18,7 @@ package tui
 // | QM-15 | Happy    | ctrl+s while the model works stops it to answer what is queued, and what is typed with it | P0 |
 // | QM-16 | Edge     | ctrl+s with nothing queued or typed, or with the model idle, does nothing | P1       |
 // | QM-11 | Edge     | A queued message of many lines is cut with a count of those not shown    | P1       |
+// | QM-17 | Happy    | Stopped, a queued message comes back as typed, its attachment still attached | P0   |
 
 import (
 	"context"
@@ -77,6 +78,22 @@ func TestQueuedMessages(t *testing.T) {
 
 		if m.input.Value() != "please also do X" || len(m.queued) != 0 {
 			t.Errorf("input %q queued %v", m.input.Value(), m.queued)
+		}
+	})
+
+	t.Run("QM-17 stopped, a queued message comes back as typed, its attachment still attached", func(t *testing.T) {
+		m := conversationModel()
+		m.running, m.cancel = true, func() {}
+		m.attachments = map[string]string{}
+		label := m.attachmentLabel("/tmp/shot.png", false)
+		m.input.SetValue("look at " + label)
+		m = enter(t, m)
+
+		updated, _ := m.finishRun(context.Canceled)
+		m = updated.(model)
+
+		if m.input.Value() != "look at "+label || m.attachments[label] != "/tmp/shot.png" {
+			t.Errorf("input %q attachments %v", m.input.Value(), m.attachments)
 		}
 	})
 
