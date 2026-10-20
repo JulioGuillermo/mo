@@ -110,3 +110,45 @@ func (m model) pluginRows(items []plugins.SidebarItem, width, first int, base li
 	}
 	return lines, regions
 }
+
+// pluginsTookKey tells the plugins listening of a key, and whether one took
+// it: the plugin of the dialog open first, then those allowed to hear keys
+// anywhere. mo's own screens, settings, menus and questions, are never
+// heard: secrets are typed there.
+func (m model) pluginsTookKey(key tea.KeyPressMsg) bool {
+	if m.session.Plugins == nil || m.settings != nil || m.popup != nil || m.dialog != nil {
+		return false
+	}
+	return m.session.Plugins.Key(m.focusedPlugin(), key.String(), key.Text)
+}
+
+// focusedPlugin is the plugin whose dialog is open, "" when none is.
+func (m model) focusedPlugin() string {
+	dialogs := m.session.Plugins.Dialogs()
+	if m.uiOpen == 0 || dialogs == nil || m.uiStore != dialogs {
+		return ""
+	}
+	ui, _ := dialogs.Get(m.uiOpen)
+	return ui.Owner
+}
+
+// globalEventsDot is the dot the status line shows when plugins ask to hear
+// keys anywhere in mo: red when one hears them, yellow when some ask and
+// none is allowed.
+func (m model) globalEventsDot() (string, bool) {
+	asked, heard := m.session.Plugins.GlobalEvents()
+	switch {
+	case heard:
+		return lipgloss.NewStyle().Foreground(uiColor("error")).Render("●"), true
+	case asked:
+		return lipgloss.NewStyle().Foreground(uiColor("warning")).Render("●"), true
+	}
+	return "", false
+}
+
+// openPluginSettings opens Settings › Plugins.
+func openPluginSettings(m model) (tea.Model, tea.Cmd) {
+	m.openSection = groupPrefix + pluginsKey
+	m.settingsInFlight = true
+	return m, loadSettings(m.session, generalSettings)
+}

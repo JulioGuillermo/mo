@@ -789,6 +789,7 @@ is your own code, with your rights and all of Lua's libraries, and it can:
 | node types of its own for dialogs, from mo's nodes or drawn cell by cell | `mo.component{ name, render }` |
 | a canvas it draws itself, with the keys and the mouse | `{ type = "canvas", draw = function(w, h) ... end }` |
 | a file shown in mo's viewer | `mo.view(path)` |
+| keys in its dialogs, or anywhere in mo once you allow it | `mo.on("key", [keys], fn)`, `mo.global.on("key", [keys], fn)` |
 | messages to the model, through the permission mode | `mo.send{ title, message, wake }` |
 | settings you set in **/settings › Plugins**, where each also turns on and off | `mo.setting{ name, type, default, description, secret }`, `mo.settings.get(name)` |
 

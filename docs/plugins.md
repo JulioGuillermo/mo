@@ -22,6 +22,7 @@ Restart mo, then type `/hello ana`.
 - [Settings](#settings)
 - [The side panel](#the-side-panel)
 - [Dialogs](#dialogs)
+- [Keys](#keys)
 - [Sending to the model](#sending-to-the-model)
 - [What a plugin can use](#what-a-plugin-can-use)
 - [Limits and errors](#limits-and-errors)
@@ -393,6 +394,32 @@ end }
 `mo.view(path)` opens a file or folder in mo's viewer, as `/view` does, over what is on screen; a
 relative path is in the working directory. It gives `false` when there is no screen to show it on,
 as when mo answers once.
+
+## Keys
+
+`mo.on("key", [keys], function)` hears the keys you press while one of the plugin's dialogs is
+open, before the dialog gets them. `mo.global.on("key", [keys], function)` hears them anywhere in
+mo, the input included, but only once you allow it.
+
+```lua
+mo.on("key", { "ctrl+s", "ctrl+q" }, function(e) ... end)   -- these keys
+mo.global.on("key", "ctrl+*", function(e)                    -- every ctrl+ key
+  if e.key == "ctrl+e" then open_editor() return true end
+end)
+mo.global.on("key", function(e) ... end)                     -- every key
+```
+
+The function gets `{ key, text }`: the key as mo names it (`j`, `ctrl+x`, `alt+enter`, `f5`,
+`pgdown`) and what it types. Returning `true` takes the key: it goes no further, to no other
+plugin, the dialog or the input. A key ends in `+*` for every key with those modifiers. The plugin
+whose dialog is open hears first, then those allowed to hear globally, in name order.
+
+- A plugin with `mo.global.on` gets **Global events** in **/settings › Plugins › name**, off until
+  you turn it on, saying which keys it asks for. Plugins that ask for none never show it.
+- The status line ends in a dot, after the folder, while any plugin asks: yellow when none is allowed,
+  red when one hears. A click on it opens **Settings › Plugins**.
+- Esc and ctrl+c reach no plugin, nor anything typed in mo's own settings, menus and questions.
+- A function has 50 ms: a key it holds longer goes on as if it took nothing.
 
 ## Sending to the model
 

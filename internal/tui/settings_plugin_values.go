@@ -70,6 +70,26 @@ func (p *pluginOn) Set(on bool) {
 	p.draft.setPluginValue(p.plugin, plugins.EnabledKey, false)
 }
 
+// pluginGlobal edits whether a plugin hears keys anywhere in mo; only on
+// is written down.
+type pluginGlobal struct {
+	draft  *settingsDraft
+	plugin string
+}
+
+func (p *pluginGlobal) Get() bool {
+	on, _ := p.draft.plugins[p.plugin][plugins.GlobalEventsKey].(bool)
+	return on
+}
+
+func (p *pluginGlobal) Set(on bool) {
+	if !on {
+		p.draft.unsetPluginValue(p.plugin, plugins.GlobalEventsKey)
+		return
+	}
+	p.draft.setPluginValue(p.plugin, plugins.GlobalEventsKey, true)
+}
+
 // pluginValue edits one setting of a plugin as text. What equals the
 // default, or is left empty, is not written down.
 type pluginValue struct {

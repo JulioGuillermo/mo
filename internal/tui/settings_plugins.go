@@ -38,7 +38,7 @@ func pluginsNote(model, *settingsMenu) string {
 func pluginItems(m model, menu *settingsMenu) []settingItem {
 	var items []settingItem
 	for _, status := range m.session.Plugins.Status() {
-		if len(status.Settings) > 0 {
+		if len(status.Settings) > 0 || len(status.GlobalKeys) > 0 {
 			menu.opens(itemKey(settingsSection{key: pluginsKey}, status.Name), pluginSection(status))
 		}
 		items = append(items, settingItem{
@@ -62,6 +62,9 @@ func pluginSection(status plugins.Status) settingsSection {
 				value: func(d *settingsDraft) string { return onOff(plugins.Enabled(d.plugins[status.Name])) },
 				field: func(d *settingsDraft) huh.Field { return pluginSwitch(d, status.Name) },
 			}}
+			if len(status.GlobalKeys) > 0 {
+				items = append(items, globalEventsItem(status))
+			}
 			for _, setting := range status.Settings {
 				items = append(items, pluginSettingItem(status.Name, setting))
 			}
@@ -131,6 +134,12 @@ func pluginState(d *settingsDraft, status plugins.Status) string {
 			offers = append(offers, fmt.Sprintf("%d %ss", count.n, count.what))
 		}
 	}
+	switch {
+	case status.GlobalHeard:
+		offers = append(offers, "hears keys anywhere")
+	case len(status.GlobalKeys) > 0:
+		offers = append(offers, "asks for keys anywhere")
+	}
 	return strings.Join(offers, " · ")
 }
 
@@ -147,8 +156,41 @@ func pluginDetails(status plugins.Status) string {
 	if len(offers) > 0 {
 		lines = append(lines, strings.Join(offers, ", "))
 	}
+	if line := globalKeysLine(status); line != "" {
+		lines = append(lines, "! "+line)
+	}
 	for _, warning := range status.Warnings {
 		lines = append(lines, "! "+warning)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// globalKeysLine says what a plugin asks to hear anywhere in mo and whether
+// it hears it, "" when it asks for nothing.
+func globalKeysLine(status plugins.Status) string {
+	if len(status.GlobalKeys) == 0 {
+		return ""
+	}
+	keys := strings.Join(status.GlobalKeys, "; ")
+	if status.GlobalHeard {
+		return "hears keys anywhere in mo (" + keys + ")"
+	}
+	return "asks to hear keys anywhere in mo (" + keys + "): off · /settings › Plugins › " + status.Name
+}
+
+// globalEventsItem turns on or off what a plugin hears anywhere in mo.
+func globalEventsItem(status plugins.Status) settingItem {
+	return settingItem{
+		title: "Global events",
+		value: func(d *settingsDraft) string {
+			on, _ := d.plugins[status.Name][plugins.GlobalEventsKey].(bool)
+			return onOff(on) + " · asks for " + strings.Join(status.GlobalKeys, "; ")
+		},
+		field: func(d *settingsDraft) huh.Field {
+			return huh.NewConfirm().Title("Global events").
+				Description(status.Name + " asks to hear keys anywhere in mo, not only in its own dialogs: " + strings.Join(status.GlobalKeys, "; ") +
+					"\non, it sees what you type in the input too; turn it on only for a plugin you trust. mo's settings and menus are never heard").
+				Affirmative("On").Negative("Off").Accessor(&pluginGlobal{draft: d, plugin: status.Name})
+		},
+	}
 }

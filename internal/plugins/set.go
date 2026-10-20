@@ -44,11 +44,15 @@ type Status struct {
 	Name     string
 	Disabled bool
 	Settings []Setting
-	Tools    []string
-	Commands []string
-	Hooks    []string
-	Err      error
-	Warnings []string
+	// GlobalKeys are what the plugin asks to hear anywhere in mo, none
+	// when it asks for nothing; GlobalHeard whether the user allows it.
+	GlobalKeys  []string
+	GlobalHeard bool
+	Tools       []string
+	Commands    []string
+	Hooks       []string
+	Err         error
+	Warnings    []string
 }
 
 // Load runs every .lua file in dir, in name order, with the Lua modules of
@@ -289,6 +293,10 @@ func (s *Set) Status() []Status {
 		if plugin.stuck.Load() {
 			status.Err = errPluginStuck
 		}
+		for _, listener := range plugin.globalKeys {
+			status.GlobalKeys = append(status.GlobalKeys, listener.described())
+		}
+		status.GlobalHeard = len(status.GlobalKeys) > 0 && plugin.hearsGlobally()
 		for _, definition := range plugin.tools {
 			status.Tools = append(status.Tools, definition.name)
 		}
@@ -297,6 +305,9 @@ func (s *Set) Status() []Status {
 		}
 		for event, hooks := range plugin.hooks {
 			status.Hooks = append(status.Hooks, fmt.Sprintf("%s×%d", event, len(hooks)))
+		}
+		if len(plugin.keys) > 0 {
+			status.Hooks = append(status.Hooks, fmt.Sprintf("%s×%d", eventKey, len(plugin.keys)))
 		}
 		slices.Sort(status.Hooks)
 		statuses = append(statuses, status)

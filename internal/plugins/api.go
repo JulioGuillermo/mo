@@ -44,6 +44,7 @@ func (p *Plugin) openAPI() {
 	api.RawSetString("dialog", state.NewFunction(p.openDialog))
 	api.RawSetString("send", state.NewFunction(p.sendToModel))
 	api.RawSetString("settings", p.settingsTable())
+	api.RawSetString("global", p.globalTable())
 	openEncodings(state, api)
 	api.RawSetString("workdir", lua.LString(p.workDir))
 	state.SetGlobal("mo", api)

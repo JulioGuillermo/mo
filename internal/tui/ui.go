@@ -476,6 +476,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m.openPluginDialog(int(opened))
 	}
+	if key, ok := msg.(tea.KeyPressMsg); ok && m.pluginsTookKey(key) {
+		return m, nil
+	}
 	if m.popup != nil && !isAgentMsg(msg) {
 		if _, tick := msg.(viewerTickMsg); !tick {
 			return m.updatePopup(msg)
@@ -1566,6 +1569,9 @@ func pluginReport(loaded *plugins.Set) string {
 		parts = append(parts, status.Commands...)
 		parts = append(parts, status.Hooks...)
 		lines = append(lines, fmt.Sprintf("✓ %s: %s", status.Name, strings.Join(parts, ", ")))
+		if line := globalKeysLine(status); line != "" {
+			lines = append(lines, "  ! "+line)
+		}
 		for _, warning := range status.Warnings {
 			lines = append(lines, "  ! "+warning)
 		}

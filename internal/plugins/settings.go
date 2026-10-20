@@ -58,8 +58,8 @@ func (p *Plugin) declareSetting(state *lua.LState) int {
 	p.mustBeLoading(state, "mo.setting")
 	spec := state.CheckTable(1)
 	name := luaString(spec.RawGetString("name"))
-	if !validName(name) || name == EnabledKey {
-		state.RaiseError("mo.setting needs a name (a letter or _, then letters, digits, _ or -) other than enabled")
+	if !validName(name) || name == EnabledKey || name == GlobalEventsKey {
+		state.RaiseError("mo.setting needs a name (a letter or _, then letters, digits, _ or -) other than enabled or global_events")
 	}
 	if p.setting(name) != nil {
 		state.RaiseError("mo.setting: %s is declared twice", name)

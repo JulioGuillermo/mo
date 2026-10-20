@@ -54,6 +54,9 @@ type Plugin struct {
 	loadErr  error
 	warnings []string
 	settings []Setting
+	// keys listen to keys while the user works in the plugin's dialogs;
+	// globalKeys anywhere in mo, once the user allows it.
+	keys, globalKeys []keyListener
 	// components are the plugin's own node types, by name.
 	components map[string]*lua.LFunction
 	// values are what the user set for the plugin, by setting name.
@@ -250,8 +253,12 @@ func (p *Plugin) declareCommand(state *lua.LState) int {
 func (p *Plugin) declareHook(state *lua.LState) int {
 	p.mustBeLoading(state, "mo.on")
 	event := state.CheckString(1)
+	if event == eventKey {
+		p.keys = append(p.keys, declareKey(state, "mo.on"))
+		return 0
+	}
 	if !slices.Contains(hookEvents, event) {
-		state.RaiseError("mo.on: unknown event %q (use %s)", event, strings.Join(hookEvents, ", "))
+		state.RaiseError("mo.on: unknown event %q (use %s or key)", event, strings.Join(hookEvents, ", "))
 	}
 	p.hooks[event] = append(p.hooks[event], state.CheckFunction(2))
 	return 0

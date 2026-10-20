@@ -190,6 +190,11 @@ func firstLetter(name string) string {
 func (m model) suffixSegments(show int) []segment {
 	colors := statusPalette(m.printer == nil || m.printer.isDark())
 	folder := segment{text: lipgloss.NewStyle().Foreground(colors.text).Render(filepath.Base(m.session.WorkDir)), bg: colors.segmentDim}
+	if dot, ok := m.globalEventsDot(); ok {
+		at := ansi.StringWidth(folder.text) + 1
+		folder.text += " " + dot
+		folder.inner = []region{{x0: at, x1: at + 1, do: openPluginSettings, item: "global events"}}
+	}
 	hasBranch := m.branch != ""
 	switch {
 	case show == 0:
