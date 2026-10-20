@@ -11,6 +11,7 @@ package tui
 // | SM-07 | Edge     | Esc in a setting puts its old value back; enter keeps the new one    | P0       |
 // | SM-09 | Happy    | An MCP server is one row of the tool modes; its list has its mode, and its tools unless it is a group | P0 |
 // | SM-10 | Happy    | A choice opens in a box over the list it came from; a click outside it cancels | P1 |
+// | SM-12 | Edge     | A wrong value shows its error right under the field, the box as tall as it holds | P1 |
 // | SM-11 | Edge     | Every section with items of its own is in a group of the menu, Subagents too | P0  |
 // | SM-08 | Happy    | The menu opens groups; a group lists its sections; esc goes back a level at a time | P0 |
 
@@ -202,6 +203,34 @@ func TestSettingsMenu(t *testing.T) {
 		closed, _ := opened.Update(tea.MouseClickMsg(tea.Mouse{X: 1, Y: 1, Button: tea.MouseLeft}))
 		if after := closed.(model); after.settings == nil || after.settings.floating || menu.draft.keys != before {
 			t.Errorf("a click outside should cancel back to the list: keys = %q", menu.draft.keys)
+		}
+	})
+
+	t.Run("SM-12 a wrong value shows its error right under the field, the box as tall as it holds", func(t *testing.T) {
+		m, menu := menuModel()
+		m.width, m.height = 110, 40
+		section, _ := sectionByKey("pluginuis")
+		opened, _ := m.editItem(menu, section, section.items(m, menu)[0])
+		typed := opened.(model)
+		for _, key := range []tea.KeyPressMsg{{Code: tea.KeyBackspace}, {Code: tea.KeyBackspace}, {Code: '9', Text: "9"}, {Code: '9', Text: "9"}, {Code: '9', Text: "9"}} {
+			updated, _ := typed.Update(key)
+			typed = updated.(model)
+		}
+
+		refused, _ := typed.Update(keyEnter)
+
+		lines := strings.Split(ansi.Strip(refused.(model).floatingContent()), "\n")
+		field, problem := -1, -1
+		for i, line := range lines {
+			if strings.Contains(line, "> 999") {
+				field = i
+			}
+			if strings.Contains(line, "use 1 to") {
+				problem = i
+			}
+		}
+		if field < 0 || problem < 0 || problem-field > 3 || len(lines) > 12 {
+			t.Errorf("field at %d, error at %d, %d lines:\n%s", field, problem, len(lines), strings.Join(lines, "\n"))
 		}
 	})
 }

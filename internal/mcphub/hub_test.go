@@ -166,7 +166,6 @@ func TestNamesAndContent(t *testing.T) {
 	})
 
 	t.Run("MH-07 images are saved and marked, resource links named, in the text result", func(t *testing.T) {
-		t.Setenv("TMPDIR", t.TempDir())
 		text := contentText([]mcp.Content{
 			&mcp.TextContent{Text: "see"},
 			&mcp.ImageContent{MIMEType: "image/png", Data: []byte("abc")},
@@ -192,7 +191,9 @@ func TestMain(m *testing.M) {
 		server.Run(context.Background(), &mcp.StdioTransport{})
 		return
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	render.RemoveSavedImages()
+	os.Exit(code)
 }
 
 func TestProcesses(t *testing.T) {

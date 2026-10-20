@@ -20,8 +20,25 @@ func floatingSize(width, height int) (int, int) {
 }
 
 // floatingContent is what the box holds: the form, and its help under it.
+// The form fills the height it is given, so the rows it leaves empty are
+// dropped, and an error shows right under the field.
 func (m model) floatingContent() string {
-	return strings.TrimRight(m.settings.form.View(), "\n ") + "\n\n" + dimStyle.Render(m.settings.helpLine())
+	return withoutEmptyRuns(strings.TrimRight(m.settings.form.View(), "\n ")) + "\n\n" + dimStyle.Render(m.settings.helpLine())
+}
+
+// withoutEmptyRuns keeps one empty row where text has several in a row.
+func withoutEmptyRuns(text string) string {
+	var kept []string
+	empty := false
+	for _, line := range strings.Split(text, "\n") {
+		blank := strings.TrimSpace(ansi.Strip(line)) == ""
+		if blank && empty {
+			continue
+		}
+		kept = append(kept, line)
+		empty = blank
+	}
+	return strings.Join(kept, "\n")
 }
 
 // floatingBox is where the box goes, in the middle of the screen, as a
