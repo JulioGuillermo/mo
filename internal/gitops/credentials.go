@@ -68,7 +68,7 @@ func (r *Repo) helperAuth(raw string) *http.BasicAuth {
 }
 
 func askHelper(helper string, remote *url.URL) (string, string) {
-	name, options, _ := strings.Cut(strings.TrimSpace(helper), " ")
+	name, options := helperName(helper)
 	switch {
 	case name == "cache":
 		return "", ""
@@ -80,7 +80,10 @@ func askHelper(helper string, remote *url.URL) (string, string) {
 	defer cancel()
 	switch {
 	case strings.HasPrefix(helper, "!"):
-		command = exec.CommandContext(ctx, "sh", "-c", strings.TrimPrefix(helper, "!")+" get")
+		command = shellCommand(ctx, strings.TrimPrefix(strings.TrimSpace(helper), "!")+" get")
+		if command == nil {
+			return "", ""
+		}
 	case filepath.IsAbs(name):
 		command = exec.CommandContext(ctx, name, append(strings.Fields(options), "get")...)
 	default:
@@ -101,6 +104,20 @@ func askHelper(helper string, remote *url.URL) (string, string) {
 		return "", ""
 	}
 	return readCredential(string(output))
+}
+
+// helperName splits a credential helper into its program and options: a
+// program in quotes, as Windows paths with spaces are written, is taken
+// whole.
+func helperName(helper string) (name, options string) {
+	helper = strings.TrimSpace(helper)
+	if quoted, found := strings.CutPrefix(helper, `"`); found {
+		if name, rest, closed := strings.Cut(quoted, `"`); closed {
+			return name, strings.TrimSpace(rest)
+		}
+	}
+	name, options, _ = strings.Cut(helper, " ")
+	return name, options
 }
 
 func readCredential(output string) (user, password string) {

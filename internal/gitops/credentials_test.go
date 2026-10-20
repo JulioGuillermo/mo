@@ -5,6 +5,8 @@ package gitops
 // | GC-01 | Happy    | The store helper's file gives the login of the remote's host          | P0       |
 // | GC-02 | Happy    | Another helper is asked as git asks it, by its program, for the host  | P0       |
 // | GC-03 | Edge     | A helper set for another URL is not asked; cache is left to git      | P1       |
+// | GC-04 | Happy    | A helper in quotes, a path with spaces as Windows has, runs whole      | P1       |
+// | GC-05 | Happy    | A helper written as a shell command, !..., runs in sh with get after it | P1      |
 
 import (
 	"os"
@@ -61,6 +63,35 @@ func TestCredentialHelpers(t *testing.T) {
 		gitConfig(t, "[credential \"https://elsewhere.example\"]\n\thelper = store --file="+store+"\n[credential]\n\thelper = cache\n")
 
 		if login := tr.r.helperAuth("https://git.example/x.git"); login != nil {
+			t.Errorf("login = %+v", login)
+		}
+	})
+
+	t.Run("GC-04 a helper in quotes, a path with spaces as Windows has, runs whole", func(t *testing.T) {
+		tr := newRepo(t)
+		dir := filepath.Join(t.TempDir(), "Program Files", "Git")
+		_ = os.MkdirAll(dir, 0o755)
+		helper := filepath.Join(dir, "credential manager")
+		if err := os.WriteFile(helper, []byte("#!/bin/sh\n[ \"$1 $2\" = \"--x get\" ] && echo password=quoted\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		gitConfig(t, "[credential]\n\thelper = \"\\\""+helper+"\\\" --x\"\n")
+
+		login := tr.r.helperAuth("https://code.example/x.git")
+		name, options := helperName(`"C:/Program Files/Git/gcm.exe" --flag`)
+
+		if login == nil || login.Password != "quoted" || name != "C:/Program Files/Git/gcm.exe" || options != "--flag" {
+			t.Errorf("login = %+v name %q options %q", login, name, options)
+		}
+	})
+
+	t.Run("GC-05 a helper written as a shell command, !..., runs in sh with get after it", func(t *testing.T) {
+		tr := newRepo(t)
+		gitConfig(t, "[credential]\n\thelper = \"!f() { [ \\\"$1\\\" = get ] && echo username=eve && echo password=sh; }; f\"\n")
+
+		login := tr.r.helperAuth("https://code.example/x.git")
+
+		if login == nil || login.Username != "eve" || login.Password != "sh" {
 			t.Errorf("login = %+v", login)
 		}
 	})
