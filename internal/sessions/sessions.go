@@ -31,18 +31,20 @@ type Record struct {
 // AgentRecord is a subagent as it was saved: who started it, its task,
 // how it ended and its whole conversation.
 type AgentRecord struct {
-	ID      int           `json:"id"`
-	Parent  int           `json:"parent"`
-	Depth   int           `json:"depth"`
-	Name    string        `json:"name"`
-	Task    string        `json:"task"`
-	State   string        `json:"state"`
-	Error   string        `json:"error,omitempty"`
-	Result  string        `json:"result,omitempty"`
-	History []llm.Message `json:"history"`
-	Usage   llm.Usage     `json:"usage"`
-	Model   string        `json:"model,omitempty"`
-	Window  int           `json:"window,omitempty"`
+	ID       int           `json:"id"`
+	Parent   int           `json:"parent"`
+	Depth    int           `json:"depth"`
+	Name     string        `json:"name"`
+	Type     string        `json:"type,omitempty"`
+	Task     string        `json:"task"`
+	State    string        `json:"state"`
+	Error    string        `json:"error,omitempty"`
+	Result   string        `json:"result,omitempty"`
+	History  []llm.Message `json:"history"`
+	Usage    llm.Usage     `json:"usage"`
+	Provider string        `json:"provider,omitempty"`
+	Model    string        `json:"model,omitempty"`
+	Window   int           `json:"window,omitempty"`
 	// StartedBy is the id of the parent's call that started it.
 	StartedBy string `json:"started_by,omitempty"`
 	// Background is set when it was started in the background, and

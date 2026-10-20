@@ -50,6 +50,9 @@ type editor struct {
 	actions []editorAction
 	// models, when set, lists the models for the Model field to pick from.
 	models func() (string, config.ProviderConfig, string, func(name string))
+	// open, when set, opens the fields it takes its own way, as lists that
+	// lead to others; back returns to the editor.
+	open func(m model, field string, back func(m model) (tea.Model, tea.Cmd)) (tea.Model, tea.Cmd, bool)
 }
 
 func (m model) showEditor(e *editor, last string) (tea.Model, tea.Cmd) {
@@ -115,6 +118,12 @@ func (m model) editEntry(e *editor, field entry) (tea.Model, tea.Cmd) {
 				set(name)
 				return toList(m)
 			}})
+	}
+	toEditor := func(m model) (tea.Model, tea.Cmd) { return m.showEditor(e, field.title) }
+	if e.open != nil {
+		if shown, cmd, opened := e.open(m, field.title, toEditor); opened {
+			return shown, cmd
+		}
 	}
 	restore := e.snapshot()
 	input := field.field()

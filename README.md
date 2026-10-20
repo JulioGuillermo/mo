@@ -249,6 +249,19 @@ max_parallel = 3           # working at once; one waiting for its own subagents 
 max_agents = 20            # started in one of your turns
 max_steps = 50             # replies of the model before a subagent is stopped
 model = ""                 # "provider/model" for them; empty for the main agent's
+                           # /settings › Agents picks the provider, then a model it lists
+
+[agents.types.reviewer]    # a type of subagent the model picks by name; /settings › Agents › Types
+description = "reviews a diff and reports bugs"   # what the model reads to pick it
+model = "anthropic/claude-sonnet-4-5"             # empty: the subagents' model
+effort = "high"
+prompt = "Review strictly; report each bug with its file and line."
+can_start = false          # it may start subagents of its own, while depth allows
+tools = ["read", "grep", "ls", "git", "mcp__github__*"]   # the only ones it has; empty: all
+skills = []                # the only ones it may load; empty: all
+permissions = "ask"        # used when stricter than the session's; never looser
+deny = ["git push *"]      # added to the session's deny rules
+max_steps = 40             # empty: max_steps above
 
 [peers]                    # user file only; /settings › Peers
 enabled = false            # let the main agent see the other mo windows and message them
@@ -450,6 +463,13 @@ its own: the same tools and permissions (no title, interfaces or background jobs
 conversation that starts from its task, and a system prompt that tells it to end with a report. Its
 parent reads only that report, so long searches or test runs stay out of its context.
 
+- Types of subagent, under `[agents.types.NAME]` or in `/settings` › Agents › Types, give one its
+  own model and effort, instructions added to its prompt, the tools and skills it has (`*` stands
+  for any characters, as `mcp__github__*`), whether it starts subagents (`can_start`, while `depth`
+  allows) and its steps. Its permissions are never looser than the session's: the stricter of its
+  mode and yours, and its `deny` rules besides yours; a rule you allow while it asks is the
+  session's. The `agent` tool lists the types with their description and takes `type`; without
+  it a subagent is as above. The side panel and its view show its type, its menu its model.
 - `run` takes a `task` and a `name`, or several in `tasks`, which work at once; it waits for their
   reports, or with `background: true` gives their ids at once and the model hears each report when
   it ends, as it does of background jobs.
@@ -843,7 +863,7 @@ examples; [docs/examples/plugins/git.lua](docs/examples/plugins/git.lua) is a co
 | drag | select text and copy it; the shared indent is taken off. Held at the top or bottom of the conversation, it scrolls on and keeps selecting |
 | click | buttons, options and tabs of a dialog, a suggested command, the mode (next), the provider (its settings), the model (a list to pick from), a job (its last lines), a settings option |
 | click on the branch | the files changed, each with its kind |
-| right click | a small menu by the pointer, over the screen (↑↓ or j k, enter or a click, esc or a click outside closes it): the mode: all modes to pick · a task: change its state or delete it · a job in the panel, or a bash call still running: watch its output live, its last lines, send it to the background, kill it · an image drawn, its caption, or a path of a file written anywhere: copy the file as a file manager does (to paste it in one, a browser or a chat), copy the image as PNG, copy its path, open it in mo or with the system's app |
+| right click | a small menu by the pointer, over the screen (↑↓ or j k, enter or a click, esc or a click outside closes it): the mode: all modes to pick · a task: change its state or delete it · a job in the panel, or a bash call still running: watch its output live, its last lines, send it to the background, kill it · an image drawn, its caption, or a path of a file written anywhere: copy the file as a file manager does (to paste it in one, a browser or a chat), copy the image as PNG, copy its path, open it in mo or with the system's app · a link, its words or an address written anywhere: open it in the browser, copy the link, copy its words |
 | wheel over the side panel | scroll its tasks and jobs |
 | `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/compact [instruction]` `/cache clear` `/settings` `/reload` `/providers` `/mcp` `/plugins` `/agents` `/view [file]` `/git <action> [repo]` `/peers` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
 | `/<name> text` | a plugin command |

@@ -567,9 +567,8 @@ func agentItems(model, *settingsMenu) []settingItem {
 		count("Working at once", "one waiting for its own does not count", func(d *settingsDraft) *string { return &d.agentsParallel }),
 		count("Most per turn", "subagents started in one of your turns", func(d *settingsDraft) *string { return &d.agentsMax }),
 		count("Steps each", "replies of the model before a subagent is stopped", func(d *settingsDraft) *string { return &d.agentsSteps }),
-		{"Subagents' model", func(d *settingsDraft) string { return orDefault(d.agentsModel, "the main agent's") }, func(d *settingsDraft) huh.Field {
-			return huh.NewInput().Title("Subagents' model").Description("provider/model, e.g. llama-server/qwen3; empty for the main agent's").Value(&d.agentsModel)
-		}},
+		{subagentsProvider, func(d *settingsDraft) string { return orDefault(d.agentsModel.provider, "the main agent's") }, nil},
+		{subagentsModel, func(d *settingsDraft) string { return orDefault(d.agentsModel.model, "the main agent's") }, nil},
 	}
 }
 

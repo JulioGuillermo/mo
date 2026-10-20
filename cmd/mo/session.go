@@ -170,6 +170,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		MaxOutput:    cfg.Tools.MaxOutput,
 		ReadMaxSize:  readMaxSize,
 		Descriptions: cfg.Tools.Descriptions,
+		AgentKinds:   agentKinds(cfg.Agents.Types),
 	}
 	policy, err := permissions.New(permissions.Mode(cfg.Permissions.Mode), cfg.Permissions.Allow, cfg.Permissions.Deny)
 	if err != nil {
@@ -348,6 +349,7 @@ func newAgent(cfg config.Config, chosen chosenProvider, registry *tools.Registry
 	return &agent.Agent{
 		Refresh:       modelRefresher(chosen, cfg.Context.Window),
 		Provider:      chosen.provider,
+		ProviderName:  chosen.name,
 		Model:         chosen.model,
 		System:        system,
 		MaxTokens:     cfg.MaxTokens,

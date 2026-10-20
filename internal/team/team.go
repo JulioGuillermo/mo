@@ -15,6 +15,7 @@ import (
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/permissions"
 	"github.com/jg/mo/internal/sessions"
 	"github.com/jg/mo/internal/tools"
 )
@@ -57,16 +58,20 @@ type Info struct {
 	Parent int
 	Depth  int
 	Name   string
-	Task   string
-	State  State
-	Err    string
-	Steps  int
-	Usage  llm.Usage
+	// Type is the kind of subagent it is, from the settings; empty for
+	// the plain one.
+	Type  string
+	Task  string
+	State State
+	Err   string
+	Steps int
+	Usage llm.Usage
 	// AskingBelow counts the subagents under it that wait for the user.
 	AskingBelow int
-	// Model and Window are what it runs on, once it was made.
-	Model  string
-	Window int
+	// Provider, Model and Window are what it runs on, once it was made.
+	Provider string
+	Model    string
+	Window   int
 	// Tool is the call it runs now, if any.
 	Tool *llm.ToolCall
 }
@@ -186,6 +191,17 @@ func (t *Team) List() []Info {
 	}
 	walk(0)
 	return infos
+}
+
+// Permissions are the mode and rules a subagent runs under, nil before it
+// was made.
+func (t *Team) Permissions(id int) *permissions.Policy {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if m := t.find(id); m != nil && m.agent != nil {
+		return m.agent.Permissions
+	}
+	return nil
 }
 
 // History is what a subagent did, as last seen.
@@ -348,8 +364,8 @@ func (t *Team) Records() []sessions.AgentRecord {
 	var records []sessions.AgentRecord
 	for _, m := range t.members {
 		records = append(records, sessions.AgentRecord{
-			ID: m.ID, Parent: m.Parent, Depth: m.Depth, Name: m.Name, Task: m.Task, State: string(m.State),
-			Error: m.Err, Result: m.result, History: slices.Clone(m.history), Usage: m.Usage, Model: m.Model, Window: m.Window,
+			ID: m.ID, Parent: m.Parent, Depth: m.Depth, Name: m.Name, Type: m.Type, Task: m.Task, State: string(m.State),
+			Error: m.Err, Result: m.result, History: slices.Clone(m.history), Usage: m.Usage, Provider: m.Provider, Model: m.Model, Window: m.Window,
 			StartedBy: m.startedBy, Interrupted: m.interrupted, Background: m.background,
 		})
 	}
@@ -371,8 +387,8 @@ func (t *Team) Restore(records []sessions.AgentRecord) {
 		}
 		t.members = append(t.members, &member{
 			interrupted: record.Interrupted || !State(record.State).Ended(), background: record.Background,
-			Info: Info{ID: record.ID, Parent: record.Parent, Depth: record.Depth, Name: record.Name, Task: record.Task,
-				State: state, Err: record.Error, Steps: steps(record.History), Usage: record.Usage, Model: record.Model, Window: record.Window},
+			Info: Info{ID: record.ID, Parent: record.Parent, Depth: record.Depth, Name: record.Name, Type: record.Type, Task: record.Task,
+				State: state, Err: record.Error, Steps: steps(record.History), Usage: record.Usage, Provider: record.Provider, Model: record.Model, Window: record.Window},
 			history: record.History, result: record.Result, startedBy: record.StartedBy,
 		})
 	}
@@ -720,7 +736,7 @@ func (t *Team) ensureAgent(m *member) error {
 	}
 	agent.History = slices.Clone(m.history)
 	m.agent = agent
-	m.Model, m.Window = agent.Model, agent.Window
+	m.Provider, m.Model, m.Window = agent.ProviderName, agent.Model, agent.Window
 	return nil
 }
 
@@ -739,7 +755,7 @@ func (t *Team) makeAgent(info Info) (*agent.Agent, error) {
 		return nil, err
 	}
 	if m := t.find(info.ID); m != nil {
-		m.Model, m.Window = made.Model, made.Window
+		m.Provider, m.Model, m.Window = made.ProviderName, made.Model, made.Window
 	}
 	return made, nil
 }

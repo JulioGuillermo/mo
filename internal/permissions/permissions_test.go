@@ -10,6 +10,8 @@ package permissions
 // | PM-06 | Security | Writing to a file is marked, to /dev/null or 2>&1 is not             | P0       |
 // | PM-07 | Edge     | Quotes are removed from plain words; expansions stay as written      | P1       |
 // | PM-08 | Edge     | Modes go round in order and the stricter of two is kept              | P2       |
+// | PM-40 | Security | A narrowed policy keeps the stricter mode, follows the session's, adds its deny | P0 |
+// | PM-41 | Happy    | A rule allowed through a narrowed policy is added to the session's   | P1       |
 
 import (
 	"testing"
@@ -154,6 +156,41 @@ func TestFetchRulesAfterTheRename(t *testing.T) {
 
 		if allowed != Allowed || denied != Denied {
 			t.Errorf("allowed %v denied %v", allowed, denied)
+		}
+	})
+}
+
+func TestNarrowed(t *testing.T) {
+	t.Run("PM-40 a narrowed policy keeps the stricter mode, follows the session's, adds its deny", func(t *testing.T) {
+		session, _ := New(ModeAll, []string{"git *"}, []string{"rm *"})
+		narrowed, err := session.Narrowed(ModeEdits, []string{"git push *"})
+
+		startMode := narrowed.Mode()
+		session.SetMode(ModeAsk)
+		followed := narrowed.Mode()
+		pushed, rule := narrowed.Check("git push origin")
+		status, _ := narrowed.Check("git status")
+		removed, _ := narrowed.Check("rm x")
+		sessionPush, _ := session.Check("git push origin")
+
+		if err != nil || startMode != ModeEdits || followed != ModeAsk {
+			t.Errorf("err %v start %s followed %s", err, startMode, followed)
+		}
+		if pushed != Denied || rule != "git push *" || status != Allowed || removed != Denied || sessionPush != Allowed {
+			t.Errorf("push %v %q status %v rm %v session push %v", pushed, rule, status, removed, sessionPush)
+		}
+	})
+
+	t.Run("PM-41 a rule allowed through a narrowed policy is added to the session's", func(t *testing.T) {
+		session, _ := New(ModeEdits, nil, nil)
+		narrowed, _ := session.Narrowed("", nil)
+
+		err := narrowed.Allow("make *")
+
+		inSession, _ := session.Check("make build")
+		inNarrowed, _ := narrowed.Check("make build")
+		if err != nil || inSession != Allowed || inNarrowed != Allowed || narrowed.Mode() != ModeEdits {
+			t.Errorf("err %v session %v narrowed %v mode %s", err, inSession, inNarrowed, narrowed.Mode())
 		}
 	})
 }

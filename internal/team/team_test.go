@@ -24,6 +24,7 @@ package team
 // | TM-20 | Happy    | A run call resumed goes on with the subagents it started, from where they were, none new | P0 |
 // | TM-21 | Happy    | Those started in the background go on when everything stopped them, not when stopped on their own | P0 |
 // | TM-22 | Happy    | Saved and restored, a resumed call still finds its subagents and goes on with them | P0 |
+// | TM-23 | Happy    | A subagent is built with its type, kept with its provider when saved and restored; its permissions are its agent's | P0 |
 
 import (
 	"context"
@@ -37,6 +38,7 @@ import (
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/permissions"
 	"github.com/jg/mo/internal/tools"
 )
 
@@ -538,4 +540,44 @@ func waitState(t *testing.T, team *Team, id int, state State) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("agent %d never %s: %+v", id, state, team.List())
+}
+
+func TestTypes(t *testing.T) {
+	t.Run("TM-23 a subagent is built with its type, kept with its provider when saved and restored; its permissions are its agent's", func(t *testing.T) {
+		model := &fakeModel{release: make(chan struct{})}
+		policy, _ := permissions.New(permissions.ModeAsk, nil, nil)
+		var built []string
+		var mu sync.Mutex
+		configure := func(team *Team) {
+			team.Configure(wide, func(info Info, below tools.Subagents, parent tools.Parent) (*agent.Agent, error) {
+				mu.Lock()
+				built = append(built, info.Type)
+				mu.Unlock()
+				registry := tools.NewRegistry(tools.Env{WorkDir: t.TempDir(), Agents: below, Parent: parent}, tools.Options{MaxOutput: 10000})
+				return &agent.Agent{Provider: model, ProviderName: "lab", Model: "m1", Tools: registry, MaxSteps: 10, Permissions: policy}, nil
+			})
+		}
+		team := New()
+		t.Cleanup(team.Close)
+		configure(team)
+
+		_, err := team.Main().Run(context.Background(), []tools.SubTask{{Task: "leaf a", Name: "a", Type: "reviewer"}}, false)
+		records := team.Records()
+		restored := New()
+		t.Cleanup(restored.Close)
+		configure(restored)
+		restored.Restore(records)
+		_, sendErr := restored.Main().Send(context.Background(), 1, "again", false)
+
+		info := restored.List()[0]
+		if err != nil || sendErr != nil || records[0].Type != "reviewer" || records[0].Provider != "lab" || info.Type != "reviewer" || info.Provider != "lab" {
+			t.Errorf("err %v %v record %+v info %+v", err, sendErr, records[0], info)
+		}
+		if restored.Permissions(1) != policy || restored.Permissions(99) != nil {
+			t.Error("the permissions are not the subagent's")
+		}
+		if len(built) != 2 || built[0] != "reviewer" || built[1] != "reviewer" {
+			t.Errorf("built %v", built)
+		}
+	})
 }

@@ -166,11 +166,13 @@ func (m model) lens() model {
 	v.renderStream(true)
 	session := m.session
 	session.Model = orDefault(info.Model, session.Model)
-	if provider, _, ok := strings.Cut(session.Config.Agents.Model, "/"); ok {
-		session.Provider = provider
-	}
+	session.Provider = orDefault(info.Provider, session.Provider)
 	main := m.session.Agent
-	session.Agent = &agent.Agent{Window: info.Window, Permissions: main.Permissions}
+	policy := m.team().Permissions(view.id)
+	if policy == nil {
+		policy = main.Permissions
+	}
+	session.Agent = &agent.Agent{Window: info.Window, Permissions: policy}
 	v.session = session
 	return v
 }
@@ -217,7 +219,7 @@ func (m model) agentRows(infos []team.Info, below int, width int, base lipgloss.
 	for _, info := range infos {
 		mark, tint := agentMark(info, dark)
 		indent := strings.Repeat("  ", max(info.Depth-below-1, 0))
-		note, noteStyle := " · "+string(info.State), base.Foreground(colors.dim)
+		note, noteStyle := " · "+agentKindAndState(info), base.Foreground(colors.dim)
 		if info.AskingBelow > 0 && info.State != team.Asking {
 			note, noteStyle = fmt.Sprintf(" · %d asks", info.AskingBelow), base.Foreground(lipgloss.Color("#e0af68"))
 		}
@@ -238,6 +240,30 @@ func (m model) agentRows(infos []team.Info, below int, width int, base lipgloss.
 	return lines, regions
 }
 
+// agentKindAndState is a subagent's type, when it has one, and its state.
+func agentKindAndState(info team.Info) string {
+	if info.Type == "" {
+		return string(info.State)
+	}
+	return info.Type + " · " + string(info.State)
+}
+
+// typeLead is a subagent's type before what else is said of it.
+func typeLead(info team.Info) string {
+	if info.Type == "" {
+		return ""
+	}
+	return info.Type + " · "
+}
+
+// modelTail is the model a subagent runs on, after what else is said.
+func modelTail(info team.Info) string {
+	if info.Model == "" {
+		return ""
+	}
+	return " · " + strings.TrimPrefix(info.Provider+"/"+info.Model, "/")
+}
+
 // agentMenu is what a right click on a subagent offers.
 func (m model) agentMenu(id int) (tea.Model, tea.Cmd) {
 	info, ok := m.agentInfo(id)
@@ -250,7 +276,7 @@ func (m model) agentMenu(id int) (tea.Model, tea.Cmd) {
 	} else {
 		options = append(options, huh.NewOption("stop it, with those under it", "stop"))
 	}
-	description := fmt.Sprintf("level %d · %s · %d steps\n%s", info.Depth, info.State, info.Steps, oneLine(info.Task, max(m.width-8, 20)))
+	description := fmt.Sprintf("%slevel %d · %s · %d steps%s\n%s", typeLead(info), info.Depth, info.State, info.Steps, modelTail(info), oneLine(info.Task, max(m.width-8, 20)))
 	return m.showChoices("Subagent "+info.Name, description, options, func(m model, choice string) (tea.Model, tea.Cmd) {
 		switch choice {
 		case "open":
@@ -316,7 +342,7 @@ func (m model) agentViewLayout() (string, []region) {
 		id := step.ID
 		crumb(step.Name, func(m model) (tea.Model, tea.Cmd) { return m.openAgentView(id) })
 	}
-	title += bar.Render(fmt.Sprintf("  ·  %s  ·  level %d  ·  %d steps", info.State, info.Depth, info.Steps))
+	title += bar.Render(fmt.Sprintf("  ·  %s%s  ·  level %d  ·  %d steps", typeLead(info), info.State, info.Depth, info.Steps))
 	closer := " ctrl+x ✕ "
 	if view.notice != "" {
 		closer = " " + view.notice + "  ·" + closer

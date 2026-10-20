@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -196,6 +197,33 @@ type Agents struct {
 	// main agent's.
 	Model    string `toml:"model,omitempty"`
 	MaxSteps int    `toml:"max_steps,omitzero"`
+	// Types are kinds of subagent the model picks by name, each with its
+	// own model, tools and limits; one without a type is as above.
+	Types map[string]AgentType `toml:"types,omitempty"`
+}
+
+// AgentType is a kind of subagent. What it leaves empty is as for any
+// subagent; it never gets more than the main agent: its tools and skills
+// are among the session's, and its permissions only stricter.
+type AgentType struct {
+	// Description tells the model what the type is for, to pick it.
+	Description string `toml:"description,omitempty"`
+	// Model is "provider/model"; empty for the subagents' model.
+	Model  string `toml:"model,omitempty"`
+	Effort string `toml:"effort,omitempty"`
+	// Prompt is added to the subagent's system prompt.
+	Prompt string `toml:"prompt,omitempty"`
+	// CanStart lets it start subagents of its own, while the levels allow.
+	CanStart bool `toml:"can_start,omitempty"`
+	// Tools and Skills are the only ones it has, by name; * stands for any
+	// characters, as mcp__github__*. Empty for all the session has.
+	Tools  []string `toml:"tools,omitempty"`
+	Skills []string `toml:"skills,omitempty"`
+	// Permissions is a mode it runs in when stricter than the session's;
+	// Deny adds rules to the session's.
+	Permissions string   `toml:"permissions,omitempty"`
+	Deny        []string `toml:"deny,omitempty"`
+	MaxSteps    int      `toml:"max_steps,omitzero"`
 }
 
 // Peers let the main agent see the other mo instances of this user that
@@ -685,6 +713,35 @@ func validateAgents(agents Agents) error {
 	if agents.Model != "" && !strings.Contains(agents.Model, "/") {
 		return fmt.Errorf("agents.model %q: use provider/model, or leave it empty for the main agent's", agents.Model)
 	}
+	for name, kind := range agents.Types {
+		if err := ValidateAgentType(name, kind); err != nil {
+			return fmt.Errorf("agents.types.%s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+var agentTypeName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
+
+// ValidateAgentType checks a type of subagent and its name.
+func ValidateAgentType(name string, kind AgentType) error {
+	switch {
+	case !agentTypeName.MatchString(name):
+		return errors.New("name it with lowercase letters, digits, - and _")
+	case kind.Model != "" && !strings.Contains(kind.Model, "/"):
+		return fmt.Errorf("model %q: use provider/model, or leave it empty for the subagents' model", kind.Model)
+	case !slices.Contains(Efforts, kind.Effort):
+		return fmt.Errorf("effort %q: use %s, or leave it empty", kind.Effort, strings.Join(Efforts[1:], ", "))
+	case kind.Permissions != "" && !permissions.Mode(kind.Permissions).Valid():
+		return fmt.Errorf("permissions %q: use ask, edits, auto or all, or leave it empty for the session's", kind.Permissions)
+	case kind.MaxSteps < 0:
+		return fmt.Errorf("max_steps %d: use 1 or more, or leave it out", kind.MaxSteps)
+	}
+	for _, rule := range kind.Deny {
+		if err := permissions.Compile(rule); err != nil {
+			return fmt.Errorf("deny: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -973,6 +1030,9 @@ func mergeAgents(base, layer Agents) Agents {
 	base.MaxAgents = override(base.MaxAgents, layer.MaxAgents)
 	base.Model = override(base.Model, layer.Model)
 	base.MaxSteps = override(base.MaxSteps, layer.MaxSteps)
+	if layer.Types != nil {
+		base.Types = layer.Types
+	}
 	return base
 }
 
@@ -1098,6 +1158,11 @@ func normalizeToolNames(cfg Config) Config {
 	cfg.Tools.AlwaysLoaded = rename(cfg.Tools.AlwaysLoaded)
 	cfg.Tools.Confirm = rename(cfg.Tools.Confirm)
 	cfg.Tools.Disabled = rename(cfg.Tools.Disabled)
+	cfg.Agents.Types = maps.Clone(cfg.Agents.Types)
+	for name, kind := range cfg.Agents.Types {
+		kind.Tools = rename(kind.Tools)
+		cfg.Agents.Types[name] = kind
+	}
 	if cfg.Tools.Modes != nil {
 		modes := make(map[string]tools.Mode, len(cfg.Tools.Modes))
 		for name, mode := range cfg.Tools.Modes {

@@ -60,14 +60,14 @@ func (c caller) Run(ctx context.Context, tasks []tools.SubTask, background bool)
 		if name == "" {
 			name = fmt.Sprintf("agent-%d", id)
 		}
-		m := &member{Info: Info{ID: id, Parent: c.id, Depth: depth, Name: name, Task: task.Task}, startedBy: tools.CallID(ctx)}
+		m := &member{Info: Info{ID: id, Parent: c.id, Depth: depth, Name: name, Type: task.Type, Task: task.Task}, startedBy: tools.CallID(ctx)}
 		agent, err := t.makeAgent(m.Info)
 		if err != nil {
 			t.mu.Unlock()
 			return "", err
 		}
 		m.agent = agent
-		m.Model, m.Window = agent.Model, agent.Window
+		m.Provider, m.Model, m.Window = agent.ProviderName, agent.Model, agent.Window
 		t.members = append(t.members, m)
 		t.started++
 		started = append(started, m)

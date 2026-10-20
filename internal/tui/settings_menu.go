@@ -205,6 +205,8 @@ func (m model) openMenuChoice(menu *settingsMenu, choice string) (tea.Model, tea
 		return m.pickProvider(menu.loadedNow(), menu)
 	case menuMCP:
 		return m.pickMCPServer(menu.loadedNow(), menu)
+	case menuAgentTypes:
+		return m.pickAgentType(menu, "")
 	}
 	for _, group := range settingsGroups {
 		if group.key == choice {
@@ -297,6 +299,13 @@ func (m model) showSection(menu *settingsMenu, section settingsSection, last str
 func (m model) editItem(menu *settingsMenu, section settingsSection, item settingItem) (tea.Model, tea.Cmd) {
 	if item.title == "Model" {
 		return m.pickDraftModel(menu, section, item)
+	}
+	back := func(m model) (tea.Model, tea.Cmd) { return m.showSection(menu, section, item.title) }
+	switch item.title {
+	case subagentsProvider:
+		return m.pickProviderThenModel(menu, subagentsProvider, "the main agent's: its provider and model", &menu.draft.agentsModel, back)
+	case subagentsModel:
+		return m.pickModelOf(menu, &menu.draft.agentsModel, back)
 	}
 	draft := menu.sectionDraft(section)
 	restore := draft.snapshot()

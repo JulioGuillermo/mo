@@ -88,7 +88,7 @@ type settingsDraft struct {
 	agentsParallel string
 	agentsMax      string
 	agentsSteps    string
-	agentsModel    string
+	agentsModel    providerModel
 	peersEnabled   bool
 	peersName      string
 	peersIncoming  string
@@ -204,7 +204,7 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		agentsParallel:    strconv.Itoa(cfg.Agents.MaxParallel),
 		agentsMax:         strconv.Itoa(cfg.Agents.MaxAgents),
 		agentsSteps:       strconv.Itoa(cfg.Agents.MaxSteps),
-		agentsModel:       cfg.Agents.Model,
+		agentsModel:       splitProviderModel(cfg.Agents.Model),
 		peersEnabled:      *cfg.Peers.Enabled,
 		peersName:         cfg.Peers.Name,
 		peersIncoming:     cfg.Peers.Incoming,
@@ -285,6 +285,7 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	if err != nil {
 		return layer, err
 	}
+	agents.Types = layer.Agents.Types
 	layer.Agents = agents
 	peers, err := d.peers(layer.Peers.Projects)
 	if err != nil {
@@ -518,9 +519,9 @@ func (d *settingsDraft) agents() (config.Agents, error) {
 		}
 		counts[i] = value
 	}
-	model := strings.TrimSpace(d.agentsModel)
-	if model != "" && !strings.Contains(model, "/") {
-		return config.Agents{}, fmt.Errorf("subagents' model: use provider/model, or leave it empty")
+	model, err := d.agentsModel.joined("subagents' model")
+	if err != nil {
+		return config.Agents{}, err
 	}
 	agents := config.Agents{
 		Depth:       unlessDefault(counts[0], defaults.Depth),

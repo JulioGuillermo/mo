@@ -58,7 +58,7 @@ func pick(t *testing.T, m model, text string) model {
 		for range len(m.popup.options) {
 			if strings.Contains(ansi.Strip(m.popup.options[m.popup.selected].Key), text) {
 				updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-				return deliver(updated.(model), cmd, 3)
+				return deliver(updated.(model), cmd, 5)
 			}
 			updated, _ := m.Update(keyDown)
 			m = updated.(model)
@@ -71,7 +71,7 @@ func pick(t *testing.T, m model, text string) model {
 	for range 12 {
 		if strings.Contains(menuView(m), "> "+text) {
 			updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-			return deliver(updated.(model), cmd, 3)
+			return deliver(updated.(model), cmd, 5)
 		}
 		updated, _ := m.Update(keyDown)
 		m = updated.(model)

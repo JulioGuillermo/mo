@@ -46,10 +46,12 @@ type ApprovalRequest struct {
 }
 
 type Agent struct {
-	Provider  llm.Provider
-	Model     string
-	System    string
-	MaxTokens int
+	Provider llm.Provider
+	// ProviderName names Provider in the settings, to show.
+	ProviderName string
+	Model        string
+	System       string
+	MaxTokens    int
 	// Effort is how hard a model that reasons thinks in the turns; empty
 	// is its default. Compaction and the auto-mode judge keep the default.
 	Effort       string

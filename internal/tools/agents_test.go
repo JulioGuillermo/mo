@@ -14,7 +14,7 @@ import (
 
 func TestAgentTools(t *testing.T) {
 	t.Run("AT-01 the agent tool's help explains every action, and its description only points to it", func(t *testing.T) {
-		tool := agentTool()
+		tool := agentTool(nil)
 		var schema struct {
 			Properties struct {
 				Action struct {

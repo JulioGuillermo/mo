@@ -26,7 +26,7 @@ var settingsGroups = []settingsGroup{
 	{key: groupPrefix + "conversation", title: "Conversation", sections: []string{"context", "instructions", "memory"}},
 	{key: groupPrefix + "tools", title: "Tools", sections: []string{"tools", "toolmodes", "descriptions", "web"}, extras: []string{menuMCP}},
 	{key: groupPrefix + "skills", title: "Skills", sections: []string{"skills", "skillmodes"}},
-	{key: groupPrefix + "agents", title: "Agents", sections: []string{"agents"}},
+	{key: groupPrefix + "agents", title: "Agents", sections: []string{"agents"}, extras: []string{menuAgentTypes}},
 	{key: groupPrefix + "peers", title: "Peers", sections: []string{"peers"}},
 	{key: groupPrefix + "safety", title: "Safety", sections: []string{"permissions", "loop"}},
 	{key: groupPrefix + "interface", title: "Interface", sections: []string{"appearance", "animations", "pluginuis", "notify"}},
@@ -130,6 +130,8 @@ func (m model) showGroup(menu *settingsMenu, group settingsGroup, last string) (
 			lists = append(lists, row{"Providers ›", "add, edit, delete", menuProviders})
 		case menuMCP:
 			lists = append(lists, row{"MCP servers ›", fmt.Sprintf("%d set up · add, edit, delete", len(menu.layer.MCP)), menuMCP})
+		case menuAgentTypes:
+			lists = append(lists, row{"Types ›", fmt.Sprintf("%d · add, edit, delete", len(menu.layer.Agents.Types)), menuAgentTypes})
 		}
 	}
 	rows = append(rows, lists...)

@@ -112,6 +112,27 @@ type Policy struct {
 	mode  Mode
 	allow []rule
 	deny  []rule
+	// within is the policy a narrowed one never goes past: its mode when
+	// stricter, its rules, and the rules added to it later.
+	within *Policy
+}
+
+// Narrowed is a policy never looser than p: the stricter of p's mode and
+// mode, which may be empty, and p's rules with deny added. It follows the
+// changes to p; rules allowed through it are added to p.
+func (p *Policy) Narrowed(mode Mode, deny []string) (*Policy, error) {
+	if mode != "" && !mode.Valid() {
+		return nil, fmt.Errorf("permissions %q: use ask, edits, auto or all", mode)
+	}
+	narrowed := &Policy{mode: mode, within: p}
+	for _, text := range deny {
+		compiled, err := compile(text)
+		if err != nil {
+			return nil, err
+		}
+		narrowed.deny = append(narrowed.deny, compiled)
+	}
+	return narrowed, nil
 }
 
 // New builds a policy, refusing a rule that does not compile.
@@ -137,8 +158,12 @@ func New(mode Mode, allow, deny []string) (*Policy, error) {
 
 func (p *Policy) Mode() Mode {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.mode
+	mode := p.mode
+	p.mu.Unlock()
+	if p.within != nil {
+		return Stricter(p.within.Mode(), mode)
+	}
+	return mode
 }
 
 func (p *Policy) SetMode(mode Mode) {
@@ -149,6 +174,9 @@ func (p *Policy) SetMode(mode Mode) {
 
 // Allow adds a rule that lets a command through from now on.
 func (p *Policy) Allow(text string) error {
+	if p.within != nil {
+		return p.within.Allow(text)
+	}
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
@@ -180,6 +208,9 @@ func (p *Policy) Check(command string) (Verdict, string) {
 				return Denied, denied.text
 			}
 		}
+	}
+	if p.within != nil {
+		return p.within.Check(command)
 	}
 	for _, allowed := range p.allow {
 		for _, form := range forms {

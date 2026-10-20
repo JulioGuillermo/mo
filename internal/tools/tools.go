@@ -142,6 +142,8 @@ type Options struct {
 	Skills     []skills.Skill
 	SkillMode  Mode
 	SkillModes map[string]Mode
+	// AgentKinds are the kinds of subagent the agent tool offers.
+	AgentKinds []AgentKind
 }
 
 type Registry struct {
@@ -157,6 +159,9 @@ func NewRegistry(env Env, options Options) *Registry {
 	for _, tool := range append(builtinsWith(options.Searcher), options.Extra...) {
 		if slices.Contains(options.Disabled, tool.Name) || (tool.Name == titleToolName && env.Titles == nil) || (tool.Name == "ui" && env.UIs == nil) || (tool.Name == AgentName && env.Agents == nil) || (tool.Name == TellParentName && env.Parent == nil) || (tool.Name == PeersName && env.Peers == nil) {
 			continue
+		}
+		if tool.Name == AgentName && len(options.AgentKinds) > 0 {
+			tool = agentTool(options.AgentKinds)
 		}
 		if description, ok := options.Descriptions[tool.Name]; ok {
 			tool.Description = description
@@ -203,7 +208,7 @@ func builtins() []Tool {
 func builtinsWith(searcher web.Searcher) []Tool {
 	return []Tool{
 		bashTool(), readTool(), writeTool(), editTool(), lsTool(), mkdirTool(), rmTool(), grepTool(),
-		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), gitTool(), titleTool(), uiTool(), agentTool(), tellParentTool(), peersTool(),
+		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), gitTool(), titleTool(), uiTool(), agentTool(nil), tellParentTool(), peersTool(),
 	}
 }
 

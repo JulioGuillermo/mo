@@ -14,6 +14,9 @@ const AgentName = "agent"
 type SubTask struct {
 	Task string `json:"task"`
 	Name string `json:"name"`
+	// Type is the kind of subagent, from the settings; empty for the
+	// plain one.
+	Type string `json:"type,omitempty"`
 }
 
 // Subagents are the subagents an agent may start and look into: its own
@@ -48,15 +51,34 @@ var agentHelp = []helpTopic{
 	{"stop", "id: stops it and those under it."},
 }
 
-func agentTool() Tool {
+// AgentKind is a kind of subagent the model may pick, as the settings
+// describe it.
+type AgentKind struct {
+	Name        string
+	Description string
+}
+
+func agentTool(kinds []AgentKind) Tool {
+	description := "Hand tasks to subagents: agents of their own with your tools and an empty conversation; you get only their report. " +
+		`{"action":"help"} explains each action.`
+	typeProperty := ""
+	if len(kinds) > 0 {
+		description += " type picks a kind of subagent, each with its own model and tools; without it, one like you:"
+		var names []string
+		for _, kind := range kinds {
+			description += "\n- " + kind.Name + ": " + orDefaultString(kind.Description, "no description")
+			quoted, _ := json.Marshal(kind.Name)
+			names = append(names, string(quoted))
+		}
+		typeProperty = `"type":{"type":"string","enum":[` + strings.Join(names, ",") + `]},`
+	}
 	return Tool{
-		Name: AgentName,
-		Description: "Hand tasks to subagents: agents of their own with your tools and an empty conversation; you get only their report. " +
-			`{"action":"help"} explains each action.`,
+		Name:        AgentName,
+		Description: description,
 		Schema: json.RawMessage(`{"type":"object","properties":{
 "action":{"type":"string","enum":["run","send","wait","log","status","stop","help"]},"topic":{"type":"string"},
-"task":{"type":"string"},"name":{"type":"string"},
-"tasks":{"type":"array","items":{"type":"object","properties":{"task":{"type":"string"},"name":{"type":"string"}},"required":["task"]}},
+"task":{"type":"string"},"name":{"type":"string"},` + typeProperty + `
+"tasks":{"type":"array","items":{"type":"object","properties":{` + typeProperty + `"task":{"type":"string"},"name":{"type":"string"}},"required":["task"]}},
 "background":{"type":"boolean"},"wait":{"type":"boolean"},"id":{"type":"integer"},"ids":{"type":"array","items":{"type":"integer"}},"message":{"type":"string"}}}`),
 		Run:       runAgent,
 		View:      true,
@@ -98,6 +120,7 @@ func runAgent(ctx context.Context, env Env, raw json.RawMessage) (string, error)
 		Action     string    `json:"action"`
 		Task       string    `json:"task"`
 		Name       string    `json:"name"`
+		Type       string    `json:"type"`
 		Tasks      []SubTask `json:"tasks"`
 		Background bool      `json:"background"`
 		Wait       *bool     `json:"wait"`
@@ -130,7 +153,7 @@ func runAgent(ctx context.Context, env Env, raw json.RawMessage) (string, error)
 	case "", "run":
 		tasks := args.Tasks
 		if strings.TrimSpace(args.Task) != "" {
-			tasks = append([]SubTask{{Task: args.Task, Name: args.Name}}, tasks...)
+			tasks = append([]SubTask{{Task: args.Task, Name: args.Name, Type: args.Type}}, tasks...)
 		}
 		for _, task := range tasks {
 			if strings.TrimSpace(task.Task) == "" {
@@ -205,3 +228,7 @@ func tellParentTool() Tool {
 		Summary: func(args json.RawMessage) string { return argField(args, "message") },
 	}
 }
+
+// MainOnly are the tools only the main agent has: they belong to the
+// conversation, so no subagent gets them.
+var MainOnly = []string{titleToolName, "ui", PeersName}

@@ -6,6 +6,7 @@ package tui
 // | SU-02 | Happy    | The Subagents settings are saved as they differ from the defaults, and wrong ones refused | P1 |
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -30,16 +31,16 @@ func TestSubagentsUI(t *testing.T) {
 
 	t.Run("SU-02 the Subagents settings are saved as they differ from the defaults, and wrong ones refused", func(t *testing.T) {
 		draft := defaultDraft()
-		draft.agentsEnabled, draft.agentsDepth, draft.agentsModel = true, "3", "llama-server/qwen3"
+		draft.agentsEnabled, draft.agentsDepth, draft.agentsModel = true, "3", providerModel{"llama-server", "qwen3"}
 		layer, err := draft.applyTo(config.Config{}, nil)
 		untouched, _ := defaultDraft().applyTo(config.Config{}, nil)
-		draft.agentsModel = "qwen3"
+		draft.agentsModel = providerModel{provider: "llama-server"}
 		_, wrong := draft.applyTo(config.Config{}, nil)
 
 		if err != nil || layer.Agents.Enabled == nil || !*layer.Agents.Enabled || layer.Agents.Depth != 3 || layer.Agents.MaxParallel != 0 || layer.Agents.Model != "llama-server/qwen3" {
 			t.Errorf("err %v agents %+v", err, layer.Agents)
 		}
-		if untouched.Agents != (config.Agents{}) || wrong == nil {
+		if !reflect.DeepEqual(untouched.Agents, config.Agents{}) || wrong == nil {
 			t.Errorf("untouched %+v wrong %v", untouched.Agents, wrong)
 		}
 	})
