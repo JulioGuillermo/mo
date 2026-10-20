@@ -570,32 +570,6 @@ when there is no answer. A 404 is an answer, with `ok = false`, not an error.
 Relative paths start in the working directory. Lua's `io.open` takes paths from where mo was
 started, which is usually the same folder.
 
-### WebAssembly
-
-For heavy work Lua is slow at, a plugin loads a WebAssembly module, written in Rust, Go, Zig, C or
-anything that compiles to it: `mo.wasm(path)`, a relative path in `~/.config/mo/lib/`.
-
-```lua
-local math = mo.wasm("fast.wasm")
-mo.command{ name = "sum", run = function(text)
-  return tostring(math.call("add", 40, 2))          -- an export, with numbers
-end }
-
-local tool = mo.wasm("parse.wasm")                  -- a WASI program
-local out, err, code = tool.run(mo.read("big.json"), { args = { "--pretty" }, env = { MODE = "fast" } })
-```
-
-| | |
-|---|---|
-| `module.call(name, ...)` | calls an export with numbers (i32, i64, f32, f64) and gives what it returns; the module's memory stays between calls, as a library's |
-| `module.run(input, { args, env })` | runs it as a WASI program, fresh each time, `input` on its stdin; gives stdout, stderr and the exit code |
-| `module.exports` | each export with its signature, as `(i32, i32) -> (i32)` |
-
-A module has no files, network or anything of the system but the clock, 256 MB of memory at most,
-and stops when the plugin's call runs out of time, as a tool's after 2 minutes. Text goes in and
-out through `run`: a Go program built with `GOOS=wasip1 GOARCH=wasm`, or Rust's
-`--target wasm32-wasip1`, reads stdin and writes stdout as usual.
-
 ### The rest
 
 | | |

@@ -330,7 +330,6 @@ func (s *Set) Close() {
 			select {
 			case <-plugin.turn:
 				plugin.state.Close()
-				plugin.closeWasm()
 			case <-time.After(closeWait):
 			}
 		}

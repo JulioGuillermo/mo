@@ -23,7 +23,6 @@ func (p *Plugin) openAPI() {
 		"component":   p.declareComponent,
 		"mcp":         p.declareMCP,
 		"provider":    p.declareProvider,
-		"wasm":        p.loadWasm,
 		"view":        p.viewFile,
 		"screen":      p.screenSize,
 		"style":       styleText,

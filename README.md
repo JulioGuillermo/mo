@@ -790,7 +790,6 @@ is your own code, with your rights and all of Lua's libraries, and it can:
 | a canvas it draws itself, with the keys and the mouse | `{ type = "canvas", draw = function(w, h) ... end }` |
 | a file shown in mo's viewer | `mo.view(path)` |
 | MCP servers, with headers it computes for each request | `mo.mcp{ name, url, headers, command, args, env }` |
-| WebAssembly modules for heavy work, called with numbers or run as WASI programs | `mo.wasm(path)` |
 | providers, with headers and body fields it computes for each request | `mo.provider{ name, type, base_url, model, headers, params }` |
 | keys in its dialogs, or anywhere in mo once you allow it | `mo.on("key", [keys], fn)`, `mo.global.on("key", [keys], fn)` |
 | messages to the model, through the permission mode | `mo.send{ title, message, wake }` |
