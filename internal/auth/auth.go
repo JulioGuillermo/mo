@@ -39,11 +39,12 @@ func tokenPath(provider string) string {
 	return filepath.Join(Dir(), provider+".json")
 }
 
-// oauthConfig is the client of settings; one with no secret, a public
-// client, names itself in the request's body, as the standard says.
+// oauthConfig is the client of settings. One with no secret, a public
+// client, names itself in the request's body, as the standard says; so does
+// an MCP server's client, registered to send its secret there.
 func oauthConfig(settings config.OAuth, redirect string) *oauth2.Config {
 	endpoint := oauth2.Endpoint{AuthURL: settings.AuthURL, TokenURL: settings.TokenURL, DeviceAuthURL: settings.DeviceURL}
-	if settings.Secret() == "" {
+	if settings.Secret() == "" || settings.Resource != "" {
 		endpoint.AuthStyle = oauth2.AuthStyleInParams
 	}
 	return &oauth2.Config{

@@ -9,6 +9,7 @@ package auth
 // | AM-05 | Edge     | The scopes are the challenge's, else the metadata's, with offline_access when offered | P1 |
 // | AM-06 | Happy    | Logout forgets the token and the client; without them there is no source | P1      |
 // | AM-07 | Happy    | A client_id that is an https address is a metadata document: nothing registered, the browser back to localhost | P1 |
+// | AM-08 | Happy    | A server that offers client_secret_post gets mo registered with a secret, sent in the token request's body | P0 |
 
 import (
 	"context"
@@ -34,6 +35,8 @@ import (
 // server on another path as Atlassian's is, and what each was asked.
 type fakeMCPAuth struct {
 	*httptest.Server
+	// authMethods are the ways its token endpoint takes clients' proof.
+	authMethods   string
 	mu            sync.Mutex
 	registrations []map[string]any
 	authorized    url.Values
@@ -68,13 +71,14 @@ func (f *fakeMCPAuth) handle(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/.well-known/oauth-protected-resource/v2/mcp" && f.metadata:
 		fmt.Fprintf(w, `{"resource":%q,"authorization_servers":[%q],"scopes_supported":["read:jira","write:jira","offline_access","read:goals"]}`, base+"/v2/mcp", issuer)
 	case r.URL.Path == "/tenant-1/.well-known/oauth-authorization-server" && f.metadata:
-		fmt.Fprintf(w, `{"issuer":%q,"authorization_endpoint":%q,"token_endpoint":%q,"registration_endpoint":%q}`, issuer, base+"/authorize", base+"/token", base+"/register")
+		fmt.Fprintf(w, `{"issuer":%q,"authorization_endpoint":%q,"token_endpoint":%q,"registration_endpoint":%q,"token_endpoint_auth_methods_supported":[%s]}`,
+			issuer, base+"/authorize", base+"/token", base+"/register", f.authMethods)
 	case r.URL.Path == "/register":
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		f.registrations = append(f.registrations, body)
 		w.WriteHeader(http.StatusCreated)
-		fmt.Fprintf(w, `{"client_id":"client-%d","client_secret":"unused","token_endpoint_auth_method":"none"}`, len(f.registrations))
+		fmt.Fprintf(w, `{"client_id":"client-%d","client_secret":"secret-%d","token_endpoint_auth_method":%q}`, len(f.registrations), len(f.registrations), body["token_endpoint_auth_method"])
 	case r.URL.Path == "/token":
 		_ = r.ParseForm()
 		f.grants = append(f.grants, r.PostForm)
@@ -218,6 +222,27 @@ func TestMCPLogin(t *testing.T) {
 		asked := fake.authorized
 		if err != nil || len(fake.registrations) != 0 || asked.Get("client_id") != document || !strings.HasPrefix(asked.Get("redirect_uri"), "http://localhost:") {
 			t.Errorf("err = %v registrations = %d authorize = %v", err, len(fake.registrations), asked)
+		}
+	})
+
+	t.Run("AM-08 a server that offers client_secret_post gets mo registered with a secret, sent in the token request's body", func(t *testing.T) {
+		t.Setenv("XDG_DATA_HOME", t.TempDir())
+		fake := newFakeMCPAuth(t, true)
+		fake.authMethods = `"none","client_secret_post","client_secret_basic"`
+		fake.browser(t)
+		resource := fake.URL + "/v2/mcp"
+
+		err := MCPLogin(ctx, "jira", resource, nil, http.DefaultClient, func(Prompt) {})
+		Save(MCPKey("jira"), &oauth2.Token{AccessToken: "old", RefreshToken: "refresh-1", Expiry: time.Now().Add(-time.Hour)})
+		_, renewErr := MCPSource("jira", resource, nil).Token(ctx)
+
+		if err != nil || renewErr != nil || fake.registrations[0]["token_endpoint_auth_method"] != "client_secret_post" {
+			t.Fatalf("err = %v renew = %v registration = %v", err, renewErr, fake.registrations[0])
+		}
+		for _, grant := range fake.grants {
+			if grant.Get("client_id") != "client-1" || grant.Get("client_secret") != "secret-1" {
+				t.Errorf("%s went with %v", grant.Get("grant_type"), grant)
+			}
 		}
 	})
 }

@@ -179,7 +179,7 @@ func mcpClientFor(ctx context.Context, server, resource string, overrides *confi
 				return mcpClient{}, err
 			}
 		}
-		client.ClientID, client.ClientSecret, err = register(ctx, httpClient, found.RegistrationURL, client.RedirectURL)
+		client.ClientID, client.ClientSecret, err = register(ctx, httpClient, found.RegistrationURL, client.RedirectURL, authMethod(found.AuthMethods))
 		if err != nil {
 			return mcpClient{}, err
 		}
@@ -206,10 +206,11 @@ func freeRedirect() (string, error) {
 	return fmt.Sprintf("http://localhost:%d/callback", listener.Addr().(*net.TCPAddr).Port), nil
 }
 
-// discovered is where an MCP server signs in, and the scopes it offers.
+// discovered is where an MCP server signs in, the scopes it offers and
+// how its clients may prove who they are at the token endpoint.
 type discovered struct {
 	AuthURL, TokenURL, RegistrationURL string
-	Scopes                             []string
+	Scopes, AuthMethods                []string
 }
 
 type protectedResource struct {
@@ -222,6 +223,7 @@ type authorizationServer struct {
 	TokenEndpoint         string   `json:"token_endpoint"`
 	RegistrationEndpoint  string   `json:"registration_endpoint"`
 	ScopesSupported       []string `json:"scopes_supported"`
+	AuthMethods           []string `json:"token_endpoint_auth_methods_supported"`
 }
 
 // discoverMCP finds where the server at resource signs in: the server's
@@ -259,7 +261,7 @@ func discoverMCP(ctx context.Context, resource string, client *http.Client) (dis
 	if err != nil {
 		server = authorizationServer{AuthorizationEndpoint: origin + "/authorize", TokenEndpoint: origin + "/token", RegistrationEndpoint: origin + "/register"}
 	}
-	result := discovered{AuthURL: server.AuthorizationEndpoint, TokenURL: server.TokenEndpoint, RegistrationURL: server.RegistrationEndpoint}
+	result := discovered{AuthURL: server.AuthorizationEndpoint, TokenURL: server.TokenEndpoint, RegistrationURL: server.RegistrationEndpoint, AuthMethods: server.AuthMethods}
 	result.Scopes = chosenScopes(challenge["scope"], metadata.ScopesSupported, server.ScopesSupported)
 	return result, nil
 }
@@ -346,15 +348,25 @@ func getJSON(ctx context.Context, client *http.Client, url string, into any) err
 	return json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(into)
 }
 
+// authMethod is how mo proves who it is at the token endpoint: with the
+// secret it is given, in the request's body, when the server offers it, as
+// Claude Code signs in to Atlassian; else as a public client, PKCE alone.
+func authMethod(offered []string) string {
+	if slices.Contains(offered, "client_secret_post") {
+		return "client_secret_post"
+	}
+	return "none"
+}
+
 // register signs mo up as a client of the authorization server (RFC 7591),
-// a public one with PKCE, coming back to redirect.
-func register(ctx context.Context, client *http.Client, url, redirect string) (string, string, error) {
+// with PKCE, coming back to redirect, proving itself as method says.
+func register(ctx context.Context, client *http.Client, url, redirect, method string) (string, string, error) {
 	body, _ := json.Marshal(map[string]any{
 		"client_name":                mcpClientName,
 		"redirect_uris":              []string{redirect},
 		"grant_types":                []string{"authorization_code", "refresh_token"},
 		"response_types":             []string{"code"},
-		"token_endpoint_auth_method": "none",
+		"token_endpoint_auth_method": method,
 	})
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
