@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"image/png"
-	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -15,6 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/jg/mo/internal/render"
+	"github.com/jg/mo/internal/sysopen"
 )
 
 // fileCopiedMsg says whether a file or its picture reached the clipboard.
@@ -104,19 +104,13 @@ func pngOf(path string) ([]byte, error) {
 	return encoded.Bytes(), nil
 }
 
-// openOutside opens a file with the app the system has for it.
-func openOutside(path string) tea.Cmd {
+// openOutside opens a file or an address with the app the system has for
+// it.
+func openOutside(target string) tea.Cmd {
 	return func() tea.Msg {
-		name := "xdg-open"
-		if runtime.GOOS == "darwin" {
-			name = "open"
-		}
-		command := exec.Command(name, path)
-		command.Stdout, command.Stderr = io.Discard, io.Discard
-		if err := command.Start(); err != nil {
+		if err := sysopen.Open(target); err != nil {
 			return fileCopiedMsg{what: "open", err: err}
 		}
-		go command.Wait()
 		return nil
 	}
 }

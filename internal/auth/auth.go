@@ -13,9 +13,7 @@ import (
 	"net/http"
 	neturl "net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"time"
 
@@ -23,6 +21,7 @@ import (
 	"golang.org/x/oauth2/clientcredentials"
 
 	"github.com/jg/mo/internal/config"
+	"github.com/jg/mo/internal/sysopen"
 )
 
 const loginTimeout = 10 * time.Minute
@@ -305,14 +304,5 @@ func browserLogin(ctx context.Context, settings config.OAuth, show func(Prompt))
 
 // openBrowser opens a page in the user's browser; tests replace it.
 var openBrowser = func(url string) {
-	command := "xdg-open"
-	switch runtime.GOOS {
-	case "darwin":
-		command = "open"
-	case "windows":
-		command = "rundll32"
-		_ = exec.Command(command, "url.dll,FileProtocolHandler", url).Start()
-		return
-	}
-	_ = exec.Command(command, url).Start()
+	_ = sysopen.Open(url)
 }
