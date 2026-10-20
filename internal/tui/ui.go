@@ -137,6 +137,9 @@ type model struct {
 	userRuns   int
 	shells     map[string]context.CancelFunc
 	shellNotes []string
+	// ranByUser are the commands run with ! that ended, by their call's
+	// id, to give one to the model later with a right click.
+	ranByUser map[string]*userRun
 	// history is what was sent before, for the arrows to bring back.
 	history inputHistory
 	// titling is the title the model is working out, after /title auto.
@@ -944,15 +947,18 @@ func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 	if m.running {
 		return m.queue(typed, prompt)
 	}
-	m.checkConfig()
+	return m.beginTurn(typed, m.withShellNotes(m.withAttachments(prompt)))
+}
 
+// beginTurn starts a turn that sends the model sent, shown as typed.
+func (m model) beginTurn(typed, sent string) (tea.Model, tea.Cmd) {
+	m.checkConfig()
 	m.scrolled = false
 	m.newPrompt = true
 	if m.session.Team != nil {
 		m.session.Team.BeginTurn()
 	}
 	echo := drawText(func() string { return m.printer.User(typed) })
-	sent := m.withShellNotes(m.withAttachments(prompt))
 	return m.start(echo, func(ctx context.Context, hooks agent.Hooks) error {
 		return m.session.Agent.RunTyped(ctx, sent, typed, hooks)
 	})

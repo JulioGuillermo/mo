@@ -66,10 +66,15 @@ func (m model) finishShell(msg shellDoneMsg) (tea.Model, tea.Cmd) {
 		output = strings.TrimSpace(output + "\n" + msg.err.Error())
 	}
 	m.finishTool(msg.id, output, msg.err != nil)
+	run := &userRun{command: msg.command, output: msg.output, note: agent.ShellNote(msg.command, ending, headAndTail(msg.output, shellNoteLimit))}
+	if m.ranByUser == nil {
+		m.ranByUser = map[string]*userRun{}
+	}
+	m.ranByUser[msg.id] = run
 	if !msg.told {
 		return m, m.readRepo()
 	}
-	m.shellNotes = append(m.shellNotes, agent.ShellNote(msg.command, ending, headAndTail(msg.output, shellNoteLimit)))
+	m.tellLater(run)
 	return m, tea.Batch(m.readRepo(), printText(m.printer.Note("the model reads this with your next message")))
 }
 
@@ -101,9 +106,15 @@ func (m *model) withShellNotes(prompt string) string {
 	if len(m.shellNotes) == 0 {
 		return prompt
 	}
+	return prompt + "\n\n" + m.takeShellNotes()
+}
+
+// takeShellNotes are the notes of the commands run with !! since the last
+// message, which are then gone.
+func (m *model) takeShellNotes() string {
 	notes := strings.Join(m.shellNotes, "\n\n")
 	m.shellNotes = nil
-	return prompt + "\n\n" + notes
+	return notes
 }
 
 func headAndTail(text string, limit int) string {

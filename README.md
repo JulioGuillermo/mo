@@ -785,6 +785,8 @@ pager will not work there): `!make test`. It shows as a bash call with its outpu
 stops it. Only you see it. `!!command` runs it the same way and gives the model the command, its exit
 code and what it printed (its start and end, 8 KB) with your next message, marked as run by you,
 not by the model. Files the output names are never taken as attached; only those you write are.
+A right click on a command run with `!`, once it ended, gives it to the model the same way, with
+your next message or at once in a turn of its own, or copies the command or what it printed.
 
 ```toml
 [render]
