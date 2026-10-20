@@ -376,9 +376,15 @@ On Windows `bash` runs in a POSIX shell when there is one: bash in the `PATH`, e
 Windows' bash, else `sh` or `zsh`; WSL's bash does not count, as it runs in Linux. Without any,
 commands run in PowerShell 7 (`pwsh`), else Windows PowerShell 5.1, and the model and you see the
 tool as `powershell`, described as PowerShell so the model writes PowerShell. In the config it is
-still `bash` (`confirm`, `always_loaded`, `disabled`, `modes`). Rules cannot split PowerShell into
-its commands yet, so every PowerShell command asks, except in `all` mode, or when the model judges
-it safe in `auto`; `deny` rules still apply to the whole command.
+still `bash` (`confirm`, `always_loaded`, `disabled`, `modes`). PowerShell commands are split into
+their parts as bash ones are (pipelines, `;`, `&&`, `||`, blocks, `$(...)`, strings, and the script
+of a `pwsh -Command`, `cmd /c` or `bash -c` written out), and rules match them in any case, an alias
+as its cmdlet: `Get-ChildItem *` also allows `ls`, `dir` and `gci`, and `!!rm *` holds back
+`Remove-Item`. A redirection to a file (`>`, `>>`, `*>`, `3>`; not `$null` nor `2>&1`) asks as in
+bash. What runs code mo cannot read, `Invoke-Expression`, `Start-Process`, `& $variable`, a .NET
+method `[IO.File]::Delete()`, `pwsh -EncodedCommand`, is never allowed by a rule: the mode decides.
+mo's own PowerShell rules allow what only reads: `Get-ChildItem`, `Get-Content`, `Select-String`,
+`Select-Object`, `Where-Object`, `Measure-Object`, `Test-Path`, `Write-Output` and the like.
 
 `bash` with `background: true` runs a command as a job, for servers, watchers and long builds, and
 returns at once; with `until: "listening|ready"` or `wait: 5` it first waits for a line that

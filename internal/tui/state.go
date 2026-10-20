@@ -290,10 +290,7 @@ const programsShown = 3
 // the first ones, all of them whatever they are, and how many more.
 func programs(command string) string {
 	var names []string
-	if tools.CurrentShell().PowerShell() {
-		return orDefault(programName(strings.Fields(command)), tools.Shown("bash"))
-	}
-	if commands, err := permissions.Commands(command); err == nil {
+	if commands, err := permissions.CommandsIn(command, tools.CurrentShell().PowerShell()); err == nil {
 		for _, each := range commands {
 			names = append(names, programName(strings.Fields(each.Text)))
 		}

@@ -708,7 +708,7 @@ func permissionItems(model, *settingsMenu) []settingItem {
 		{"Permission mode", func(d *settingsDraft) string { return d.permMode }, func(d *settingsDraft) huh.Field {
 			return huh.NewSelect[string]().Title("Permission mode").Description("shift+tab changes it too; it is kept").Options(modeOptions...).Value(&d.permMode)
 		}},
-		rules("Allowed commands", "run without asking in every project, besides mo's own, which only read:\n"+strings.Join(config.DefaultAllow, " · "), func(d *settingsDraft) *string { return &d.allow }),
+		rules("Allowed commands", "run without asking in every project, besides mo's own, which only read:\n"+strings.Join(defaultRulesShown(), " · "), func(d *settingsDraft) *string { return &d.allow }),
 		rules("Never without asking", "ask in every mode, also in all; wins over allowed", func(d *settingsDraft) *string { return &d.deny }),
 	}
 	return append(items, tryItem)
@@ -943,4 +943,12 @@ func typesListed(listed bool) string {
 		return "names"
 	}
 	return "off: action types lists them"
+}
+
+// defaultRulesShown are mo's own rules for the shell commands run in.
+func defaultRulesShown() []string {
+	if tools.CurrentShell().PowerShell() {
+		return config.DefaultAllowPowerShell
+	}
+	return config.DefaultAllow
 }

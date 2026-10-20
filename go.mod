@@ -19,6 +19,7 @@ require (
 	github.com/go-git/go-git/v5 v5.16.2
 	github.com/kanrichan/resvg-go v0.0.1
 	github.com/modelcontextprotocol/go-sdk v1.8.0
+	github.com/odvcencio/gotreesitter v0.56.0
 	github.com/yuin/gopher-lua v1.1.2
 	golang.org/x/image v0.47.0
 	golang.org/x/net v0.55.0

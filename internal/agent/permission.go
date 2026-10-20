@@ -54,12 +54,12 @@ func (a *Agent) approvalFor(ctx context.Context, call llm.ToolCall, hooks Hooks)
 	}
 	subjects, ruled, splitErr := ruledSubjects(call)
 	for _, subject := range subjects {
-		if verdict, rule := policy.Check(subject.Text); verdict == permissions.Blocked {
+		if verdict, rule := policy.CheckCommand(subject); verdict == permissions.Blocked {
 			return approval{blocked: fmt.Sprintf(blockedResult, rule, subject.Text)}
 		}
 	}
 	for _, subject := range subjects {
-		if verdict, rule := policy.Check(subject.Text); verdict == permissions.Denied {
+		if verdict, rule := policy.CheckCommand(subject); verdict == permissions.Denied {
 			return approval{ask: true, warning: "deny rule: " + rule, ruled: ruled}
 		}
 	}
@@ -82,7 +82,7 @@ func (a *Agent) approvalFor(ctx context.Context, call llm.ToolCall, hooks Hooks)
 	}
 	var unknown []string
 	for _, subject := range subjects {
-		if verdict, _ := policy.Check(subject.Text); verdict != permissions.Allowed || subject.Writes {
+		if verdict, _ := policy.CheckCommand(subject); verdict != permissions.Allowed || subject.HeldBack() {
 			unknown = append(unknown, subject.Text)
 		}
 	}
@@ -120,23 +120,12 @@ func ruledSubjects(call llm.ToolCall) (subjects []permissions.Command, ruled boo
 		case action != "" && action != "run", argText(call, "command") == "":
 			return nil, false, nil
 		}
-		if tools.CurrentShell().PowerShell() {
-			return wholePowerShellCommand(argText(call, "command")), true, nil
-		}
-		subjects, err = permissions.Commands(argText(call, "command"))
+		subjects, err = permissions.CommandsIn(argText(call, "command"), tools.CurrentShell().PowerShell())
 		return subjects, true, err
 	case "web_fetch", "fetch":
 		return []permissions.Command{{Text: "web_fetch " + argText(call, "url")}}, true, nil
 	}
 	return nil, false, nil
-}
-
-// wholePowerShellCommand is a PowerShell command as one subject that no
-// allow rule lets through: mo cannot split PowerShell into its commands
-// yet, so it always asks, or the model judges it in auto mode. Deny rules
-// still match the whole command.
-func wholePowerShellCommand(command string) []permissions.Command {
-	return []permissions.Command{{Text: command, Source: command, Writes: true}}
 }
 
 // judge asks the model whether commands are safe for the user's request.

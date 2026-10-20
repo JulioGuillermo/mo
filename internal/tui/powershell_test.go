@@ -4,8 +4,8 @@ package tui
 // | ID    | Category | Description                                                              | Priority |
 // | PS-01 | Happy    | With PowerShell a shell call is headed powershell, by either name         | P0       |
 // | PS-02 | Happy    | Its command is highlighted as PowerShell                                 | P2       |
-// | PS-03 | Security | Approving a PowerShell command offers Yes and No, no rule to add          | P0       |
-// | PS-04 | Happy    | The status line names the program a PowerShell command starts with       | P2       |
+// | PS-03 | Happy    | Approving a PowerShell command offers adding a rule, as for bash          | P0       |
+// | PS-04 | Happy    | The status line names the cmdlets a PowerShell command runs, aliases as such | P2    |
 // | PS-05 | Happy    | With bash, the header stays bash and rules can be added                  | P1       |
 
 import (
@@ -52,19 +52,19 @@ func TestPowerShellCalls(t *testing.T) {
 		}
 	})
 
-	t.Run("PS-03 Approving a PowerShell command offers Yes and No, no rule to add", func(t *testing.T) {
+	t.Run("PS-03 Approving a PowerShell command offers adding a rule, as for bash", func(t *testing.T) {
 		defer tools.UseShell(tools.PowerShellForTests(false))()
 		d, item := approvalDialog(ruled)
 
-		if buttons := d.buttonsFor(item); !slices.Equal(buttons, []string{"Yes", "No"}) {
+		if buttons := d.buttonsFor(item); !slices.Equal(buttons, []string{"Yes", "Always… add a rule", "No"}) {
 			t.Errorf("buttons = %v", buttons)
 		}
 	})
 
-	t.Run("PS-04 The status line names the program a PowerShell command starts with", func(t *testing.T) {
+	t.Run("PS-04 The status line names the cmdlets a PowerShell command runs, aliases as such", func(t *testing.T) {
 		defer tools.UseShell(tools.PowerShellForTests(false))()
 
-		if shown := programs("Get-ChildItem -Force | Select-Object Name"); shown != "Get-ChildItem" {
+		if shown := programs("ls -Force | select Name"); shown != "Get-ChildItem, Select-Object" {
 			t.Errorf("programs = %q", shown)
 		}
 	})

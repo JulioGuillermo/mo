@@ -164,7 +164,7 @@ type Permissions struct {
 // Rules are the rules in force: mo's own that only read, then the user's,
 // which may take them back with !.
 func (p Permissions) Rules() []string {
-	return slices.Concat(DefaultAllow, p.Allow)
+	return slices.Concat(DefaultAllow, DefaultAllowPowerShell, p.Allow)
 }
 
 // ProjectRules add to the user's rules in one project, and may pick another
@@ -185,6 +185,14 @@ var Efforts = []string{"", "none", "minimal", "low", "medium", "high", "xhigh", 
 var DefaultAllow = []string{
 	"ls *", "pwd", "cat *", "head *", "tail *", "wc *", "grep *", "rg *", "tree *", "file *", "stat *",
 	"which *", "echo *", "git status *", "git diff *", "git log *", "git show *", "git branch",
+}
+
+// DefaultAllowPowerShell are PowerShell's commands that only read, which
+// cover their aliases too: Get-ChildItem is also ls, dir and gci.
+var DefaultAllowPowerShell = []string{
+	"Get-ChildItem *", "Get-Content *", "Get-Location", "Get-Item *", "Test-Path *", "Resolve-Path *",
+	"Select-String *", "Select-Object *", "Sort-Object *", "Where-Object *", "Measure-Object *", "Group-Object *",
+	"Format-Table *", "Format-List *", "Out-String *", "Get-Command *", "Write-Output *", "Write-Host *",
 }
 
 // Agents lets the model hand tasks to subagents: agents of their own,

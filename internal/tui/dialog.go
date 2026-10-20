@@ -13,7 +13,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/agent"
-	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/permissions"
 	"github.com/jg/mo/internal/tools"
 )
@@ -146,7 +145,7 @@ func (d *dialog) sendAnswered(cancelled ...bool) {
 func (d *dialog) buttonsFor(item dialogItem) []string {
 	request := d.request(item)
 	switch {
-	case request.Warning != "", unsplitPowerShell(request.Call):
+	case request.Warning != "":
 		return []string{"Yes", "No"}
 	case request.Ruled && len(request.Commands) > 0:
 		return []string{"Yes", "Always… add a rule", "No"}
@@ -156,10 +155,10 @@ func (d *dialog) buttonsFor(item dialogItem) []string {
 	return []string{"Yes", "Always this session", "No"}
 }
 
-// unsplitPowerShell tells a PowerShell command, which no rule can allow
-// until mo splits PowerShell into its commands.
-func unsplitPowerShell(call llm.ToolCall) bool {
-	return tools.IsShell(call.Name) && tools.CurrentShell().PowerShell()
+// shellCommand is a part of a command as the rules check it, in the shell
+// commands run in.
+func shellCommand(text string) permissions.Command {
+	return permissions.Command{Text: text, PowerShell: tools.CurrentShell().PowerShell()}
 }
 
 // openDialog shows what the agent asks, starting at the first part; with
@@ -351,7 +350,7 @@ func (m *model) allowByRules(policy *permissions.Policy) {
 		}
 		covered := true
 		for _, command := range request.Commands {
-			if verdict, _ := policy.Check(command); verdict != permissions.Allowed {
+			if verdict, _ := policy.CheckCommand(shellCommand(command)); verdict != permissions.Allowed {
 				covered = false
 			}
 		}
@@ -634,14 +633,14 @@ func (m model) scrollCommand(item *dialogItem, pressed string) {
 // rules say of each: allowed and by which rule, denied, not covered yet,
 // or writing a file.
 func (m model) commandParts(request agent.ApprovalRequest, body lipgloss.Style, colors dialogColors, width int) []string {
-	if !tools.IsShell(request.Call.Name) || unsplitPowerShell(request.Call) {
+	if !tools.IsShell(request.Call.Name) {
 		return nil
 	}
-	parts, err := permissions.Commands(request.Summary)
+	parts, err := permissions.CommandsIn(request.Summary, tools.CurrentShell().PowerShell())
 	if err != nil {
 		return []string{"", body.Foreground(warning).Render("could not split it into parts: " + oneLine(err.Error(), width-30))}
 	}
-	if len(parts) < 2 && !slices.ContainsFunc(parts, func(part permissions.Command) bool { return part.Writes }) {
+	if len(parts) < 2 && !slices.ContainsFunc(parts, permissions.Command.HeldBack) {
 		return nil
 	}
 	policy := m.session.Agent.Permissions
@@ -649,7 +648,7 @@ func (m model) commandParts(request agent.ApprovalRequest, body lipgloss.Style, 
 	for _, part := range parts {
 		mark, note, tint := "●", "no rule allows it", warning
 		if policy != nil {
-			switch verdict, rule := policy.Check(part.Text); verdict {
+			switch verdict, rule := policy.CheckCommand(part); verdict {
 			case permissions.Allowed:
 				mark, note, tint = "✓", "allowed: "+rule, lipgloss.Color("#9ece6a")
 			case permissions.Denied:
@@ -661,8 +660,11 @@ func (m model) commandParts(request agent.ApprovalRequest, body lipgloss.Style, 
 		if part.Writes {
 			mark, note = "✎", note+" · writes a file"
 		}
+		if part.Hidden {
+			mark, note = "?", "runs code mo cannot read, so no rule allows it"
+		}
 		shown := orDefault(part.Source, part.Text)
-		for j, line := range highlightLines(shown, "bash", max(width-4, 12), colors.body, m.printer == nil || m.printer.isDark()) {
+		for j, line := range highlightLines(shown, tools.CurrentShell().Language, max(width-4, 12), colors.body, m.printer == nil || m.printer.isDark()) {
 			lead := "    "
 			if j == 0 {
 				lead = "  " + mark + " "

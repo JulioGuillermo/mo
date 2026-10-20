@@ -10,8 +10,8 @@ package agent
 // | AP-06 | Security | A command writing to a file asks though a rule allows it             | P1       |
 // | AP-07 | Edge     | A fetch is checked as "fetch <url>"                                  | P1       |
 // | AP-08 | Security | A tool reached through tool_call asks as itself; the UI sees the tool | P0      |
-// | AP-09 | Security | A PowerShell command asks though a rule allows it; deny rules apply  | P0       |
-// | AP-10 | Happy    | In auto mode the model judges a PowerShell command as a whole        | P1       |
+// | AP-09 | Security | PowerShell parts follow the rules, in any case and through aliases; a deny rule asks | P0 |
+// | AP-10 | Happy    | In auto mode the model judges only the PowerShell parts no rule allows | P1     |
 // | AP-11 | Security | A !!! rule refuses the call without asking, in every mode, and tells the model why | P0 |
 // | AP-12 | Happy    | A ! exception asks in edits, goes to the judge in auto, runs in all; !! asks in all | P0 |
 // | AP-13 | Happy    | mo's own rules and the user's add up                                 | P1       |
@@ -174,36 +174,37 @@ func TestPermissions(t *testing.T) {
 		}
 	})
 
-	t.Run("AP-09 a PowerShell command asks though a rule allows it; deny rules apply", func(t *testing.T) {
+	t.Run("AP-09 PowerShell parts follow the rules, in any case and through aliases; a deny rule asks", func(t *testing.T) {
 		defer tools.UseShell(tools.PowerShellForTests(false))()
 		provider := &scriptedProvider{replies: []llm.Message{
 			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
-				{ID: "l", Name: "powershell", Args: json.RawMessage(`{"command":"Get-ChildItem -Force"}`)},
-				{ID: "r", Name: "powershell", Args: json.RawMessage(`{"command":"Remove-Item -Recurse build"}`)},
+				{ID: "l", Name: "powershell", Args: json.RawMessage(`{"command":"ls -Force | get-content"}`)},
+				{ID: "r", Name: "powershell", Args: json.RawMessage(`{"command":"rm -Recurse build"}`)},
 			}},
 			{Role: llm.RoleAssistant, Text: "done"},
 		}}
 		agent, _ := newAgentIn(t, provider, "bash")
-		agent.Permissions, _ = permissions.New(permissions.ModeEdits, []string{"Get-ChildItem *", "*"}, []string{"Remove-Item *"})
+		agent.Permissions, _ = permissions.New(permissions.ModeEdits, []string{"Get-ChildItem *", "cat *"}, []string{"Remove-Item *"})
 		var asked []ApprovalRequest
 		hooks := Hooks{Approve: func(_ context.Context, request ApprovalRequest) Decision { asked = append(asked, request); return Deny }}
 
 		_ = agent.Run(ctx, "list the files", hooks)
 
-		if len(asked) != 2 || asked[0].Call.Name != "bash" || strings.Join(asked[0].Commands, "|") != "Get-ChildItem -Force" || asked[1].Warning != "deny rule: Remove-Item *" {
+		if len(asked) != 1 || asked[0].Call.ID != "r" || asked[0].Warning != "deny rule: Remove-Item *" {
 			t.Errorf("asked = %+v", asked)
 		}
 	})
 
-	t.Run("AP-10 in auto mode the model judges a PowerShell command as a whole", func(t *testing.T) {
+	t.Run("AP-10 in auto mode the model judges only the PowerShell parts no rule allows", func(t *testing.T) {
 		defer tools.UseShell(tools.PowerShellForTests(false))()
-		judge := &scriptedProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Text: "SAFE - lists files"}}}
-		agent := ruledAgent(t, permissions.ModeAuto, nil, nil, judge)
+		judge := &scriptedProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Text: "SAFE - runs the tests"}}}
+		agent := ruledAgent(t, permissions.ModeAuto, []string{"Get-ChildItem *"}, nil, judge)
 
-		listed := agent.approvalFor(ctx, bashCall("Get-ChildItem | Select-Object Name"), Hooks{})
+		listed := agent.approvalFor(ctx, bashCall("gci -Name; npm test"), Hooks{})
 
-		if listed.ask || len(judge.requests) != 1 || !strings.Contains(judge.requests[0].Messages[0].Text, "Get-ChildItem | Select-Object Name") {
-			t.Errorf("listed = %+v requests = %d", listed, len(judge.requests))
+		asked := judge.requests[0].Messages[0].Text
+		if listed.ask || len(judge.requests) != 1 || !strings.Contains(asked, "npm test") || strings.Contains(asked, "Get-ChildItem") {
+			t.Errorf("listed = %+v asked %q", listed, asked)
 		}
 	})
 

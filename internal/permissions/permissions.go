@@ -77,6 +77,9 @@ type rule struct {
 	text    string
 	level   Verdict
 	pattern *regexp.Regexp
+	// powershell is the pattern as PowerShell commands are matched: in any
+	// case, an alias first as its cmdlet.
+	powershell *regexp.Regexp
 }
 
 // Compile checks a rule. A rule is a command where * stands for anything:
@@ -106,7 +109,12 @@ func compile(text string) (rule, error) {
 	if err != nil {
 		return rule{}, fmt.Errorf("rule %q: %w", text, err)
 	}
-	return rule{text: text, level: level, pattern: compiled}, nil
+	anyCase, err := compilePattern(powershellRule(body))
+	if err != nil {
+		return rule{}, fmt.Errorf("rule %q: %w", text, err)
+	}
+	anyCase = regexp.MustCompile("(?i)" + anyCase.String())
+	return rule{text: text, level: level, pattern: compiled, powershell: anyCase}, nil
 }
 
 // compileAtLeast compiles a rule that does at least what level does, as
@@ -230,27 +238,38 @@ func (p *Policy) Allow(text string) error {
 	return nil
 }
 
-// Check returns what the rules say about a command and the rule that says
-// it: the strongest that matches, so !!! blocks over !! asking, over a !
-// exception, over an allowing rule.
+// Check returns what the rules say about a command of bash, or a fetch,
+// as CheckCommand does.
 func (p *Policy) Check(command string) (Verdict, string) {
-	command = strings.Join(strings.Fields(command), " ")
+	return p.CheckCommand(Command{Text: command})
+}
+
+// CheckCommand returns what the rules say about a command and the rule
+// that says it: the strongest that matches, so !!! blocking wins over !!
+// asking, over a ! exception, over an allowing rule. A PowerShell command
+// matches in any case, with aliases read as their cmdlets.
+func (p *Policy) CheckCommand(command Command) (Verdict, string) {
+	text := strings.Join(strings.Fields(command.Text), " ")
 	// A fetch is also written as it was before the tool was renamed, so the
 	// rules of that time, a deny among them, still apply.
-	forms := []string{command}
-	if url, fetch := strings.CutPrefix(command, "web_fetch "); fetch {
+	forms := []string{text}
+	if url, fetch := strings.CutPrefix(text, "web_fetch "); fetch {
 		forms = append(forms, "fetch "+url)
 	}
 	p.mu.Lock()
 	verdict, decided := Unknown, ""
 	for _, each := range p.rules {
-		if each.level > verdict && matchesAny(each.pattern, forms) {
+		pattern := each.pattern
+		if command.PowerShell {
+			pattern = each.powershell
+		}
+		if each.level > verdict && matchesAny(pattern, forms) {
 			verdict, decided = each.level, each.text
 		}
 	}
 	p.mu.Unlock()
 	if p.within != nil {
-		if within, rule := p.within.Check(command); within > verdict {
+		if within, rule := p.within.CheckCommand(command); within > verdict {
 			return within, rule
 		}
 	}

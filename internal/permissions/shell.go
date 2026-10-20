@@ -18,6 +18,25 @@ type Command struct {
 	// Writes is set when the command sends its output to a file: such a
 	// command is never let through by a rule alone.
 	Writes bool
+	// Hidden is set when it runs code mo cannot read, as a string given to
+	// Invoke-Expression or a .NET method: no rule lets it through either.
+	Hidden bool
+	// PowerShell matches the rules as PowerShell reads commands: in any
+	// case, an alias as its cmdlet.
+	PowerShell bool
+}
+
+// CommandsIn splits a script of PowerShell, or else of bash.
+func CommandsIn(script string, powershell bool) ([]Command, error) {
+	if powershell {
+		return PowerShellCommands(script)
+	}
+	return Commands(script)
+}
+
+// HeldBack tells whether a rule alone never lets the command through.
+func (c Command) HeldBack() bool {
+	return c.Writes || c.Hidden
 }
 
 // Commands splits a script into its simple commands: those joined with

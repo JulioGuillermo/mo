@@ -477,13 +477,13 @@ func (d *settingsDraft) tryRules() string {
 	if err != nil {
 		return err.Error()
 	}
-	commands, err := permissions.Commands(d.tryCommand)
+	commands, err := permissions.CommandsIn(d.tryCommand, tools.CurrentShell().PowerShell())
 	if err != nil {
 		return "does not parse, so it asks: " + err.Error()
 	}
 	var lines []string
 	for _, command := range commands {
-		verdict, rule := policy.Check(command.Text)
+		verdict, rule := policy.CheckCommand(command)
 		line := command.Text + " → "
 		switch {
 		case verdict == permissions.Blocked:
@@ -496,6 +496,8 @@ func (d *settingsDraft) tryRules() string {
 			line += "the model judges it (exception " + rule + ")"
 		case verdict == permissions.Excepted:
 			line += "asks (exception " + rule + ")"
+		case command.Hidden:
+			line += "the mode decides: it runs code mo cannot read"
 		case verdict == permissions.Allowed && command.Writes:
 			line += "asks: it writes to a file (allow: " + rule + ")"
 		case verdict == permissions.Allowed:
