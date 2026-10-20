@@ -4,6 +4,7 @@ package tools
 // | ID    | Category | Description                                                              | Priority |
 // | AT-01 | Happy    | The agent tool's help explains every action, and its description only points to it | P1 |
 // | AT-02 | Error    | tell_parent needs a message, and a parent                                | P2       |
+// | AT-03 | Happy    | With kinds, the description lists each with its own line and type takes only them | P0 |
 
 import (
 	"context"
@@ -45,6 +46,19 @@ func TestAgentTools(t *testing.T) {
 
 		if empty == nil || orphan == nil || err != nil || told != "told" {
 			t.Errorf("empty %v orphan %v told %q %v", empty, orphan, told, err)
+		}
+	})
+
+	t.Run("AT-03 with kinds, the description lists each with its own line and type takes only them", func(t *testing.T) {
+		plain := agentTool(nil)
+		kinds := agentTool([]AgentKind{{Name: "Explore", Description: "read-only recon"}, {Name: "fixer"}})
+
+		if strings.Contains(plain.Description, "type") || strings.Contains(string(plain.Schema), `"type":{"type":"string","enum"`) {
+			t.Errorf("plain %q", plain.Description)
+		}
+		if !strings.Contains(kinds.Description, "\n- Explore: read-only recon\n- fixer: no description") ||
+			!strings.Contains(string(kinds.Schema), `"enum":["Explore","fixer"]`) {
+			t.Errorf("kinds %q\n%s", kinds.Description, kinds.Schema)
 		}
 	})
 }

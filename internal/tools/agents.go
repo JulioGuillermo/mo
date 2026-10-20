@@ -42,7 +42,7 @@ type Subagents interface {
 }
 
 var agentHelp = []helpTopic{
-	{"run", "the default. task and name, or tasks [{task,name}] that work at once; waits for their reports. background (or wait false): their ids at once, and you hear each report when it ends. " +
+	{"run", "the default. task and name, or tasks [{task,name}] that work at once; waits for their reports. type: a kind the description lists, else one like you. background (or wait false): their ids at once, and you hear each report when it ends. " +
 		"A subagent reads what it is sent and waits for those it started in the background before it reports."},
 	{"send", "id, message: queued while it works; once it ended or stopped, it goes on with all it did. background as for run."},
 	{"wait", "ids, or id; none: those you started in the background. Their reports."},
@@ -59,11 +59,11 @@ type AgentKind struct {
 }
 
 func agentTool(kinds []AgentKind) Tool {
-	description := "Hand tasks to subagents: agents of their own with your tools and an empty conversation; you get only their report. " +
+	description := "Hand tasks to subagents: each starts with only its task and an empty conversation, and you get only its report. " +
 		`{"action":"help"} explains each action.`
 	typeProperty := ""
 	if len(kinds) > 0 {
-		description += " type picks a kind of subagent, each with its own model and tools; without it, one like you:"
+		description += "\ntype picks a kind, each with its own model and tools; without it, one like you with your tools:"
 		var names []string
 		for _, kind := range kinds {
 			description += "\n- " + kind.Name + ": " + orDefaultString(kind.Description, "no description")

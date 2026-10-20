@@ -113,7 +113,7 @@ func (d *agentTypeDraft) entries(toolOptions, skillOptions []string, taken map[s
 	var entries []entry
 	if d.isNew {
 		entries = append(entries, entry{"Name", func() string { return valueOr(d.name, "required") }, func() huh.Field {
-			return huh.NewInput().Title("Name").Description("what the model asks for, e.g. reviewer; lowercase, digits, - and _").
+			return huh.NewInput().Title("Name").Description("what the model asks for, e.g. reviewer; letters, digits, - and _").
 				Validate(validTypeName(taken)).Value(&d.name)
 		}})
 	}

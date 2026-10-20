@@ -4,7 +4,7 @@ package config
 // | ID    | Category | Description                                                              | Priority |
 // | AT-01 | Happy    | The user file sets types of subagent with every field                    | P0       |
 // | AT-02 | Security | No project file sets types, trusted or not                               | P0       |
-// | AT-03 | Error    | A bad name, model, effort, mode or deny rule is refused, naming the type | P1       |
+// | AT-03 | Error    | A name with spaces, model, effort, mode or deny rule is refused, naming the type | P1       |
 // | AT-04 | Happy    | The tools of a type are named as now, the config passed in left alone    | P2       |
 
 import (
@@ -54,9 +54,9 @@ max_steps = 9
 		}
 	})
 
-	t.Run("AT-03 a bad name, model, effort, mode or deny rule is refused, naming the type", func(t *testing.T) {
+	t.Run("AT-03 a name with spaces, model, effort, mode or deny rule is refused, naming the type", func(t *testing.T) {
 		cases := map[string]string{
-			"[agents.types.Bad_Name]\n":                  "agents.types.Bad_Name",
+			"[agents.types.\"bad name\"]\n":              "agents.types.bad name",
 			"[agents.types.r]\nmodel = \"opus\"\n":       "agents.types.r: model",
 			"[agents.types.r]\neffort = \"huge\"\n":      "agents.types.r: effort",
 			"[agents.types.r]\npermissions = \"some\"\n": "agents.types.r: permissions",

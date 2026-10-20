@@ -721,13 +721,13 @@ func validateAgents(agents Agents) error {
 	return nil
 }
 
-var agentTypeName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
+var agentTypeName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
 // ValidateAgentType checks a type of subagent and its name.
 func ValidateAgentType(name string, kind AgentType) error {
 	switch {
 	case !agentTypeName.MatchString(name):
-		return errors.New("name it with lowercase letters, digits, - and _")
+		return errors.New("name it with letters, digits, - and _")
 	case kind.Model != "" && !strings.Contains(kind.Model, "/"):
 		return fmt.Errorf("model %q: use provider/model, or leave it empty for the subagents' model", kind.Model)
 	case !slices.Contains(Efforts, kind.Effort):
