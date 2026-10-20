@@ -6,6 +6,8 @@ package tui
 // | SB-02 | Happy    | A narrow terminal, /sidebar or the setting off keep the tasks above the input | P1 |
 // | SB-03 | Happy    | A job ending while idle starts a turn; while working it is only noted | P0       |
 // | SB-04 | Happy    | After a stop, /jobs tell lets the model hear the jobs that ended      | P1       |
+// | SB-06 | Happy    | on shows the panel in a narrow terminal while the conversation keeps its minimum; /sidebar alone turns it on and off | P0 |
+// | SB-07 | Edge     | /sidebar takes auto, on or off and suggests them; anything else only gets a note | P1 |
 // | SB-05 | Happy    | A job that ended in a turn stopped with esc still starts a turn, with a note | P0 |
 
 import (
@@ -61,6 +63,44 @@ func TestSidebar(t *testing.T) {
 			if m.sidebarShown() || !strings.Contains(ansi.Strip(m.bottom()), "todo 1/2") || m.mainWidth() != m.width {
 				t.Errorf("%s: sidebar shown = %v", name, m.sidebarShown())
 			}
+		}
+	})
+
+	t.Run("SB-06 on shows the panel in a narrow terminal while the conversation keeps its minimum; /sidebar alone turns it on and off", func(t *testing.T) {
+		vertical := sidebarModel(t, 80)
+		vertical.session.Config.Render.Sidebar = sidebarOn
+		tooNarrow := sidebarModel(t, sidebarWidth+mainMinWidth)
+		tooNarrow.session.Config.Render.Sidebar = sidebarOn
+		turnedOn, _ := sidebarModel(t, 90).runCommand("/sidebar")
+		turnedOff, _ := turnedOn.(model).runCommand("/sidebar")
+
+		if !vertical.sidebarShown() || vertical.mainWidth() != 80-sidebarWidth-1 || !strings.Contains(steady(ansi.Strip(vertical.View().Content)), "Tasks  1/2") {
+			t.Errorf("on in 80 columns: shown = %v main = %d", vertical.sidebarShown(), vertical.mainWidth())
+		}
+		if tooNarrow.sidebarShown() {
+			t.Error("on left the conversation narrower than its minimum")
+		}
+		if !turnedOn.(model).sidebarShown() || turnedOff.(model).sidebarShown() || turnedOff.(model).sidebarSession != sidebarOff {
+			t.Errorf("/sidebar: on = %v off = %v", turnedOn.(model).sidebarShown(), turnedOff.(model).sidebarShown())
+		}
+	})
+
+	t.Run("SB-07 /sidebar takes auto, on or off and suggests them; anything else only gets a note", func(t *testing.T) {
+		m := sidebarModel(t, 140)
+		auto, _ := m.runCommand("/sidebar auto")
+		wrong, _ := m.runCommand("/sidebar maybe")
+		m.input.SetValue("/sidebar ")
+
+		var names []string
+		for _, suggestion := range m.suggestions() {
+			names = append(names, suggestion.name)
+		}
+
+		if auto.(model).sidebarSession != sidebarAuto || !auto.(model).sidebarShown() || wrong.(model).sidebarSession != "" {
+			t.Errorf("auto = %q wrong = %q", auto.(model).sidebarSession, wrong.(model).sidebarSession)
+		}
+		if strings.Join(names, ",") != "sidebar auto,sidebar on,sidebar off" {
+			t.Errorf("suggestions = %v", names)
 		}
 	})
 

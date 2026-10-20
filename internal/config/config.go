@@ -323,7 +323,7 @@ type Render struct {
 	// it looks the same in any terminal; "terminal" keeps the terminal's.
 	Background string `toml:"background,omitempty"`
 	// Sidebar shows the side panel of tasks and background jobs when the
-	// terminal is wide enough ("auto"), or never ("off").
+	// terminal is wide enough ("auto"), always ("on") or never ("off").
 	Sidebar string `toml:"sidebar,omitempty"`
 	// Status draws the status line as powerline segments, which need a
 	// font with their arrows, or "plain".
@@ -596,8 +596,8 @@ func validate(cfg Config) error {
 	if cfg.Render.Keys != "default" && cfg.Render.Keys != "vim" {
 		return fmt.Errorf("render.keys %q: use default or vim", cfg.Render.Keys)
 	}
-	if cfg.Render.Sidebar != "auto" && cfg.Render.Sidebar != "off" {
-		return fmt.Errorf("render.sidebar %q: use auto or off", cfg.Render.Sidebar)
+	if !slices.Contains([]string{"auto", "on", "off"}, cfg.Render.Sidebar) {
+		return fmt.Errorf("render.sidebar %q: use auto, on or off", cfg.Render.Sidebar)
 	}
 	if !ValidBackground(cfg.Render.Background) {
 		return fmt.Errorf("render.background %q: use #rrggbb or terminal", cfg.Render.Background)

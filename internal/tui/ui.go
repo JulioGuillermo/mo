@@ -227,8 +227,9 @@ type model struct {
 	focused bool
 	// todos is the model's task list, from its latest todo call.
 	todos []tools.Todo
-	// sidebarHidden is /sidebar turning the side panel off for the session.
-	sidebarHidden bool
+	// sidebarSession is the side panel's mode /sidebar set for the session;
+	// empty follows the setting.
+	sidebarSession string
 	// sidebarScroll is how many of the panel's lines the wheel scrolled past.
 	sidebarScroll int
 	// openSection is the settings section to open once settings load, as
@@ -1008,11 +1009,7 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		}
 		return m.emit(m.printer.Note("vim keys " + state))
 	case "sidebar":
-		m.sidebarHidden = !m.sidebarHidden
-		if m.session.Config.Render.Sidebar == sidebarOff {
-			return m, printText(m.printer.Note("the side panel is off in /settings › Interface › Look and keys"))
-		}
-		return m, m.fitWidth()
+		return m.sidebarCommand(argument)
 	case "jobs":
 		if argument == "tell" {
 			return m.tellJobs()

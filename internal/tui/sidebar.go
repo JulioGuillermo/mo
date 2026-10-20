@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"image/color"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,9 +16,14 @@ import (
 )
 
 const (
-	sidebarWidth      = 36
-	sidebarMinScreen  = 110
-	sidebarOff        = "off"
+	sidebarWidth     = 36
+	sidebarMinScreen = 110
+	sidebarAuto      = "auto"
+	sidebarOn        = "on"
+	sidebarOff       = "off"
+	// mainMinWidth is the narrowest the conversation gets beside a panel
+	// that is always on.
+	mainMinWidth      = 30
 	shownJobs         = 8
 	jobRefresh        = time.Second
 	jobShownLines     = 20
@@ -32,10 +38,66 @@ type jobTickMsg struct{}
 // jobStartedMsg says a command started, to show it in the panel at once.
 type jobStartedMsg tools.JobStatus
 
-// sidebarShown tells whether the side panel has room: it follows what is
+// sidebarShown tells whether the side panel shows: it follows what is
 // being done, the tasks and the background jobs, beside the conversation.
+// auto shows it when the terminal is wide, on whenever the conversation
+// keeps mainMinWidth beside it.
 func (m model) sidebarShown() bool {
-	return m.session.Config.Render.Sidebar != sidebarOff && !m.sidebarHidden && m.width >= sidebarMinScreen
+	switch m.sidebarMode() {
+	case sidebarOff:
+		return false
+	case sidebarOn:
+		return m.width >= sidebarWidth+1+mainMinWidth
+	}
+	return m.width >= sidebarMinScreen
+}
+
+// sidebarMode is the side panel's mode: the one /sidebar set for the
+// session, else the setting's.
+func (m model) sidebarMode() string {
+	return orDefault(m.sidebarSession, m.session.Config.Render.Sidebar)
+}
+
+var sidebarModes = []string{sidebarAuto, sidebarOn, sidebarOff}
+
+// sidebarCommand is /sidebar: alone it shows the panel if hidden and hides
+// it if shown; with a mode it sets that one; either for the session.
+func (m model) sidebarCommand(argument string) (tea.Model, tea.Cmd) {
+	mode := strings.TrimSpace(argument)
+	switch {
+	case mode == "" && m.sidebarShown():
+		mode = sidebarOff
+	case mode == "":
+		mode = sidebarOn
+	case !slices.Contains(sidebarModes, mode):
+		return m.emit(m.printer.Note("/sidebar takes auto, on or off"))
+	}
+	m.sidebarSession = mode
+	note := "side panel " + mode + " · this session"
+	if mode == sidebarOn && !m.sidebarShown() {
+		note = fmt.Sprintf("side panel on · shows from %d columns", sidebarWidth+1+mainMinWidth)
+	}
+	return m, tea.Batch(m.fitWidth(), printText(m.printer.Note(note)))
+}
+
+func (m model) sidebarSuggestions(partial string) []command {
+	descriptions := map[string]string{
+		sidebarAuto: "beside the conversation when the terminal is wide",
+		sidebarOn:   "always, also in a narrow or vertical terminal",
+		sidebarOff:  "never: tasks above the input",
+	}
+	var matches []command
+	for _, mode := range sidebarModes {
+		if !strings.HasPrefix(mode, partial) {
+			continue
+		}
+		description := descriptions[mode]
+		if mode == m.sidebarMode() {
+			description = "now · " + description
+		}
+		matches = append(matches, command{name: "sidebar " + mode, description: description})
+	}
+	return matches
 }
 
 // mainWidth is the width of the conversation, beside the side panel when

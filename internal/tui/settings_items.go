@@ -758,6 +758,7 @@ func appearanceItems(_ model, menu *settingsMenu) []settingItem {
 		{"Side panel", func(d *settingsDraft) string { return d.sidebar }, func(d *settingsDraft) huh.Field {
 			return huh.NewSelect[string]().Title("Side panel").Options(
 				huh.NewOption("auto: tasks and background jobs beside the conversation when the terminal is wide enough", "auto"),
+				huh.NewOption("on: always beside the conversation, also in a narrow or vertical terminal", "on"),
 				huh.NewOption("off: tasks above the input instead", "off"),
 			).Value(&d.sidebar)
 		}},

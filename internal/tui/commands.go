@@ -54,7 +54,7 @@ var builtinCommands = []command{
 	{name: "mcp", description: "MCP servers: status, add, edit, delete"},
 	{name: "plugins", description: "plugins and their commands"},
 	{name: "notify", description: "send a test notification"},
-	{name: "sidebar", description: "show or hide the side panel of tasks and jobs"},
+	{name: "sidebar", description: "show or hide the side panel of tasks and jobs; auto, on or off"},
 	{name: "vim", description: "vim keys on or off for this session; render.keys in /settings keeps it"},
 	{name: "jobs", argument: "[tell]", description: "background jobs; tell: let the model hear the ones that ended now"},
 	{name: "kill", argument: "<n>", description: "stop a background job"},
@@ -126,6 +126,8 @@ func (m model) suggestions() []command {
 			return m.gitSuggestions(partial)
 		case "peers":
 			return m.peerSuggestions(partial)
+		case "sidebar":
+			return m.sidebarSuggestions(partial)
 		case "mcp":
 			return m.mcpSignInSuggestions(partial)
 		case "skill":

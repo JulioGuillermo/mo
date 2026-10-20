@@ -209,7 +209,7 @@ func TestForegroundMenus(t *testing.T) {
 
 	t.Run("CM-07 a right click on a running bash call offers to send it to the background or kill it", func(t *testing.T) {
 		m := sidebarModel(t, 140)
-		m.sidebarHidden = true
+		m.sidebarSession = sidebarOff
 		_ = m.fitWidth()
 		command := "sleep 30 # build"
 		m.addTool(llm.ToolCall{ID: "c1", Name: "bash", Args: []byte(`{"command":"` + command + `"}`)}, command)

@@ -270,7 +270,7 @@ func TestWhileRunning(t *testing.T) {
 		waiting, _ := m.finishSettings(settingsSavedMsg{session: fresh, saved: []string{"config.toml"}, waiting: true})
 		finished, _ := waiting.(model).finishRun(nil)
 
-		if !strings.Contains(shown(cleared), "wait for the model to finish") || !sidebar.sidebarHidden {
+		if !strings.Contains(shown(cleared), "wait for the model to finish") || sidebar.sidebarSession != sidebarOn {
 			t.Errorf("clear:\n%s", shown(cleared))
 		}
 		if waiting.(model).pendingSession == nil || waiting.(model).session.Provider == "fresh" {

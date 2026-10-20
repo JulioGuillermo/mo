@@ -270,7 +270,7 @@ dir = "~/.local/share/mo/memory"
 [render]
 background = "#00081a"     # painted behind everything so mo looks the same in any terminal;
                            # "terminal" keeps the terminal's own
-sidebar = "auto"           # side panel of tasks and jobs when wide enough; "off" never
+sidebar = "auto"           # side panel of tasks and jobs when wide enough; "on" always; "off" never
 keys = "default"           # "vim" for vim keys: modes, and ctrl+h/j/k/l between the panes
 status = "powerline"       # segments on backgrounds with arrows (needs a Nerd Font); "plain" for any font
 bar = "shapes"             # context bar: shapes ▰▱, braille, circles, half-circles, squares, half-squares, dots, rings, dashes, shade, blocks, halves, line
@@ -340,7 +340,9 @@ their first 8 KB, stops a file at its first match when only names are asked, and
 
 `todo` is the model's task list for work of several steps. On a terminal 110 columns or wider it
 shows in a side panel beside the conversation, whole, with the background jobs; on a narrower one,
-above the input while a task is left. `/sidebar` hides or shows the panel.
+above the input while a task is left. With `sidebar = "on"` the panel shows on a narrow or vertical
+terminal too, as long as the conversation keeps 30 columns. `/sidebar` hides or shows it for the
+session, and `/sidebar auto|on|off` picks the mode.
 
 Every `bash` command is a job of the conversation, numbered, with its whole output kept in
 `~/.local/share/mo/sessions/<conversation>/jobs/`: the first and the last 25 MB of each, and up to

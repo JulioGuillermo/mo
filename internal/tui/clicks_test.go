@@ -92,8 +92,8 @@ func TestClicks(t *testing.T) {
 
 		m = clickOn(t, m, "/sidebar")
 
-		if !m.sidebarHidden || m.input.Value() != "" {
-			t.Errorf("hidden = %v input = %q", m.sidebarHidden, m.input.Value())
+		if m.sidebarShown() || m.input.Value() != "" {
+			t.Errorf("shown = %v input = %q", m.sidebarShown(), m.input.Value())
 		}
 	})
 
