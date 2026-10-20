@@ -235,14 +235,25 @@ func (t *fileTree) lines(width, height int, focused bool, icons string) []string
 		// as it is coloured otherwise.
 		plain := ansi.Truncate(indent+mark+name, width, "…")
 		var text string
+		kind, changed := t.kinds[row.path]
 		switch {
+		case i == t.cursor && changed:
+			// A changed file keeps its colour under the cursor, the cursor
+			// shown by the colour's ground or by underlining it.
+			style := changeStyle(kind, row.path == t.current)
+			if focused {
+				style = style.Reverse(true)
+				plain = padTo(plain, width)
+			} else {
+				style = style.Underline(true)
+			}
+			text = style.Render(plain)
 		case i == t.cursor && focused:
 			text = treeFocused.Render(padTo(plain, width))
 		case i == t.cursor:
 			text = treeBlurred.Render(plain)
 		default:
 			label := name
-			kind, changed := t.kinds[row.path]
 			switch {
 			case row.dir:
 				label = treeFolder.Render(name)

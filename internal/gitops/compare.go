@@ -130,6 +130,65 @@ func (r *Repo) BranchNames() []string {
 	return names
 }
 
+// RemoteBranchNames are the branches of the remotes as last fetched, as
+// origin/main, without the HEAD each remote names.
+func (r *Repo) RemoteBranchNames() []string {
+	refs, err := r.repo.References()
+	if err != nil {
+		return nil
+	}
+	var names []string
+	_ = refs.ForEach(func(ref *plumbing.Reference) error {
+		if name := ref.Name(); name.IsRemote() && !strings.HasSuffix(name.Short(), "/HEAD") {
+			names = append(names, name.Short())
+		}
+		return nil
+	})
+	slices.Sort(names)
+	return names
+}
+
+// Upstream is the remote branch a local one follows: the one its config
+// names, or the one of the same name on origin, when it was fetched; ""
+// when there is none.
+func (r *Repo) Upstream(branch string) string {
+	if cfg, err := r.repo.Config(); err == nil {
+		if tracked, ok := cfg.Branches[branch]; ok && tracked.Remote != "" && tracked.Merge != "" {
+			name := tracked.Remote + "/" + tracked.Merge.Short()
+			if _, err := r.repo.Reference(plumbing.NewRemoteReferenceName(tracked.Remote, tracked.Merge.Short()), true); err == nil {
+				return name
+			}
+		}
+	}
+	if _, err := r.repo.Reference(plumbing.NewRemoteReferenceName(defaultRemote, branch), true); err == nil {
+		return defaultRemote + "/" + branch
+	}
+	return ""
+}
+
+// Behind is how many commits upstream has that branch does not: those from
+// upstream back to where the two parted.
+func (r *Repo) Behind(branch, upstream string) (int, error) {
+	local, err := r.commitOf(branch)
+	if err != nil {
+		return 0, err
+	}
+	remote, err := r.commitOf(upstream)
+	if err != nil {
+		return 0, err
+	}
+	bases, err := local.MergeBase(remote)
+	if err != nil || len(bases) == 0 {
+		return 0, err
+	}
+	count := 0
+	err = object.NewCommitIterBSF(remote, nil, []plumbing.Hash{bases[0].Hash}).ForEach(func(*object.Commit) error {
+		count++
+		return nil
+	})
+	return count, err
+}
+
 // BranchesLine is the current branch, then the others, up to
 // shownBranches of them: "main · also dev, feature".
 func (r *Repo) BranchesLine() string {

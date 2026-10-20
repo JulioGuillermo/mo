@@ -12,6 +12,7 @@ package gitops
 // | GN-05 | Happy    | pull follows git's pull.rebase unless told; told, it does as told    | P1       |
 // | GN-06 | Happy    | pull takes another branch of the remote when named                   | P0       |
 // | GN-07 | Happy    | pull takes the branch the current one tracks                         | P1       |
+// | GN-08 | Happy    | After a fetch, the remote branches are listed and a branch says how far behind its upstream it is | P1 |
 
 import (
 	"os/exec"
@@ -231,6 +232,34 @@ func TestRemote(t *testing.T) {
 
 		if err != nil || mine.read("trunk.txt") != "t\n" {
 			t.Errorf("err = %v", err)
+		}
+	})
+}
+
+func TestUpstream(t *testing.T) {
+	t.Run("GN-08 after a fetch, the remote branches are listed and a branch says how far behind its upstream it is", func(t *testing.T) {
+		mine, theirs := withRemote(t)
+		theirs.commit("one", map[string]string{"one.txt": "1\n"})
+		theirs.commit("two", map[string]string{"two.txt": "2\n"})
+		if _, err := theirs.r.Push(""); err != nil {
+			t.Fatal(err)
+		}
+		before := mine.r.Upstream("master")
+		if _, err := mine.r.Fetch(""); err != nil {
+			t.Fatal(err)
+		}
+
+		upstream := mine.r.Upstream("master")
+		behind, err := mine.r.Behind("master", upstream)
+
+		if before != "origin/master" || upstream != "origin/master" || err != nil || behind != 2 {
+			t.Errorf("upstream %q then %q, behind %d, err %v", before, upstream, behind, err)
+		}
+		if names := mine.r.RemoteBranchNames(); strings.Join(names, ",") != "origin/master" {
+			t.Errorf("remote branches %v", names)
+		}
+		if mine.r.Upstream("nowhere") != "" {
+			t.Error("a branch with no remote has an upstream")
 		}
 	})
 }

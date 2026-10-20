@@ -21,12 +21,12 @@ func (m model) gitSuggestions(partial string) []command {
 	case (action == "show" || action == "branch") && len(words) == 1:
 		return m.repoSuggestions(action, words[0], false)
 	case action == "compare" && len(words) == 1:
-		branches := m.branchSuggestions(m.session.WorkDir, "git compare ", words[0])
+		branches := m.branchSuggestions(m.session.WorkDir, "git compare ", words[0], true)
 		return append(branches, m.repoSuggestions(action, words[0], true)...)
 	case action == "compare" && len(words) == 2:
-		return m.branchSuggestions(m.absolutePath(words[0]), "git compare "+words[0]+" ", words[1])
+		return m.branchSuggestions(m.absolutePath(words[0]), "git compare "+words[0]+" ", words[1], true)
 	case takesBranch(action) && len(words) == 1:
-		return m.branchSuggestions(m.session.WorkDir, "git "+action+" ", words[0])
+		return m.branchSuggestions(m.session.WorkDir, "git "+action+" ", words[0], action != "switch")
 	}
 	return nil
 }
@@ -55,8 +55,9 @@ func gitActionSuggestions(typed string) []command {
 }
 
 // branchSuggestions are the branches of the repository in dir that start
-// with what was typed, but the current one.
-func (m model) branchSuggestions(dir, before, typed string) []command {
+// with what was typed, but the current one; with remotes, then those of the
+// remotes as last fetched.
+func (m model) branchSuggestions(dir, before, typed string, remotes bool) []command {
 	repo, err := gitops.Open(dir)
 	if err != nil {
 		return nil
@@ -65,6 +66,14 @@ func (m model) branchSuggestions(dir, before, typed string) []command {
 	for _, name := range repo.BranchNames() {
 		if strings.HasPrefix(name, typed) && name != repo.CurrentBranch() {
 			matches = append(matches, command{name: before + name, description: "branch"})
+		}
+	}
+	if !remotes {
+		return matches
+	}
+	for _, name := range repo.RemoteBranchNames() {
+		if strings.HasPrefix(name, typed) {
+			matches = append(matches, command{name: before + name, description: "remote branch, as last fetched"})
 		}
 	}
 	return matches

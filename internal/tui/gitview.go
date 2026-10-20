@@ -50,7 +50,7 @@ func changeStyle(kind rune, current bool) lipgloss.Style {
 func (m model) showComparison(repo *gitops.Repo, request gitRequest) (tea.Model, tea.Cmd) {
 	var comparison gitops.Comparison
 	var err error
-	var title, nothing string
+	var title, nothing, warning string
 	switch {
 	case request.action == "show" && len(request.words) == 0:
 		comparison, err = repo.Uncommitted()
@@ -64,6 +64,7 @@ func (m model) showComparison(repo *gitops.Repo, request gitRequest) (tea.Model,
 		comparison, err = repo.Compare(branch)
 		title = branch + " → " + orDefault(repo.CurrentBranch(), "HEAD")
 		nothing = "this branch adds nothing over " + branch
+		warning = behindNote(repo, branch)
 	default:
 		return m.emit(m.printer.Note(gitUsage()))
 	}
@@ -71,7 +72,7 @@ func (m model) showComparison(repo *gitops.Repo, request gitRequest) (tea.Model,
 		return m.emitError(err)
 	}
 	if len(comparison.Files) == 0 {
-		return m.emit(m.printer.Note(nothing))
+		return m.emit(m.printer.Note(strings.TrimSpace(nothing + "\n" + warning)))
 	}
 	changes := &changeView{title: title, root: repo.Root(), comparison: comparison, tree: newChangeTree(repo.Root(), comparison.Files)}
 	first := filepath.Join(changes.root, comparison.Files[0].Path)
@@ -81,7 +82,29 @@ func (m model) showComparison(repo *gitops.Repo, request gitRequest) (tea.Model,
 	if m.width < treeNarrow {
 		m.viewer.tree, m.viewer.treeFocus = nil, false
 	}
+	if warning != "" {
+		return m, printText(m.printer.Note(warning))
+	}
 	return m, nil
+}
+
+// behindNote warns when a local branch compared with lacks commits of the
+// remote branch it follows, as last fetched: the comparison may then show
+// as new what the remote has already.
+func behindNote(repo *gitops.Repo, branch string) string {
+	upstream := repo.Upstream(branch)
+	if upstream == "" {
+		return ""
+	}
+	behind, err := repo.Behind(branch, upstream)
+	if err != nil || behind == 0 {
+		return ""
+	}
+	commits := "commits"
+	if behind == 1 {
+		commits = "commit"
+	}
+	return fmt.Sprintf("%s is %d %s behind %s, as last fetched · /git compare %s compares with what the remote has", branch, behind, commits, upstream, upstream)
 }
 
 // newChangeTree lists only the files of a comparison, every folder open.
