@@ -641,7 +641,7 @@ Tool calls show their first lines; ctrl+o, or a click on one, shows the whole ca
 
 mo calls you back when a turn ends and when a call asks for permission, only while its terminal is
 not focused. `auto` uses the terminal's own notifications where it has them (Ghostty, WezTerm,
-foot, kitty, iTerm2; they work over ssh and through tmux), else `notify-send` or macOS
+foot, kitty, iTerm2; they work over ssh and through tmux), else `notify-send`, macOS or Windows
 notifications, else the bell. `/notify` sends a test. A terminal that does not report focus
 counts as focused once you type: set `focused = true` there.
 

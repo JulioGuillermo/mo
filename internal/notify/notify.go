@@ -138,6 +138,9 @@ func desktopCommand() func(title, body string) error {
 		defer cancel()
 		return exec.CommandContext(ctx, name, args...).Run()
 	}
+	if command := systemDesktop(); command != nil {
+		return command
+	}
 	switch {
 	case runtime.GOOS == "darwin":
 		return func(title, body string) error {
