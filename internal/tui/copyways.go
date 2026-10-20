@@ -70,6 +70,9 @@ func copyPrograms() []copyProgram {
 // copyWith tries each program that takes the type in turn, until one puts
 // the data on the clipboard; it gives why none could.
 func copyWith(item clipData) error {
+	if done, err := osCopy(item); done {
+		return err
+	}
 	var failures []string
 	for _, program := range copyPrograms() {
 		if item.mime != "" && !program.typed {
@@ -122,7 +125,7 @@ func osc5522(items []clipData) string {
 // copyToSystem also puts the text on the desktop's clipboard, for terminals
 // that do not take OSC 52, with the first program that works.
 func copyToSystem(text string) tea.Cmd {
-	if len(copyPrograms()) == 0 {
+	if len(copyPrograms()) == 0 && !osCopies() {
 		return nil
 	}
 	return func() tea.Msg {

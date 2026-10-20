@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 
 	tea "charm.land/bubbletea/v2"
@@ -26,7 +25,7 @@ type fileCopiedMsg struct {
 // fileURI is a path as a file manager copies it: file:// and the path,
 // its unsafe characters escaped.
 func fileURI(path string) string {
-	return (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
+	return (&url.URL{Scheme: "file", Path: uriPath(path)}).String()
 }
 
 // fileClips are what a file manager puts on the clipboard for a copied

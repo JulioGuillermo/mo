@@ -43,6 +43,11 @@ type clipboardMsg struct {
 type clipboard struct {
 	types func(ctx context.Context) ([]string, error)
 	read  func(ctx context.Context, mime string) ([]byte, error)
+	// timeout is how long reading it may take; clipboardTimeout when 0.
+	timeout time.Duration
+	// toFile is set when read writes a picture to a file and gives its
+	// path, which is then removed.
+	toFile bool
 }
 
 func systemClipboard() (clipboard, bool) {
@@ -51,6 +56,9 @@ func systemClipboard() (clipboard, bool) {
 	}
 	lines := func(out []byte, err error) ([]string, error) {
 		return strings.Fields(string(out)), err
+	}
+	if board, ok := osClipboard(); ok {
+		return board, true
 	}
 	switch {
 	case os.Getenv("WAYLAND_DISPLAY") != "" && found("wl-paste"):
@@ -78,6 +86,7 @@ func systemClipboard() (clipboard, bool) {
 // macClipboard reads pictures and copied files with AppleScript.
 func macClipboard(run func(ctx context.Context, name string, args ...string) ([]byte, error)) clipboard {
 	return clipboard{
+		toFile: true,
 		types: func(ctx context.Context) ([]string, error) {
 			info, err := run(ctx, "osascript", "-e", "clipboard info")
 			var types []string
@@ -115,7 +124,11 @@ func pasteClipboard() tea.Cmd {
 		if !ok {
 			return textarea.Paste()
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), clipboardTimeout)
+		timeout := board.timeout
+		if timeout == 0 {
+			timeout = clipboardTimeout
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		msg, attached := readAttachment(ctx, board)
 		if !attached {
@@ -149,7 +162,7 @@ func readAttachment(ctx context.Context, board clipboard) (clipboardMsg, bool) {
 		if err != nil {
 			return clipboardMsg{err: fmt.Errorf("reading the pasted image: %w", err)}, true
 		}
-		if runtime.GOOS == "darwin" {
+		if board.toFile {
 			written := strings.TrimSpace(string(data))
 			data, err = os.ReadFile(written)
 			_ = os.Remove(written)
@@ -172,8 +185,9 @@ func fileURIs(list string) []string {
 			continue
 		}
 		if parsed, err := url.Parse(line); err == nil {
-			if info, err := os.Stat(parsed.Path); err == nil && info.Mode().IsRegular() {
-				files = append(files, parsed.Path)
+			path := localPath(parsed.Path)
+			if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+				files = append(files, path)
 			}
 		}
 	}
