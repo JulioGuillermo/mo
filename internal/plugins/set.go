@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,16 +30,20 @@ const (
 )
 
 type Set struct {
-	plugins []*Plugin
-	surface *surface
-	feed    *streamFeed
+	plugins  []*Plugin
+	disabled []string
+	surface  *surface
+	feed     *streamFeed
 
 	toolsOnce sync.Once
 	tools     []tools.Tool
+	closeOnce sync.Once
 }
 
 type Status struct {
 	Name     string
+	Disabled bool
+	Settings []Setting
 	Tools    []string
 	Commands []string
 	Hooks    []string
@@ -47,10 +52,10 @@ type Status struct {
 }
 
 // Load runs every .lua file in dir, in name order, with the Lua modules of
-// the lib folder beside it to require. A missing dir is no plugins. A
-// command name already taken by an earlier plugin is left out with a
-// warning.
-func Load(dir, workDir, logDir string) *Set {
+// the lib folder beside it to require and its settings, by plugin name; a
+// plugin they turn off does not run. A missing dir is no plugins. A command
+// name already taken by an earlier plugin is left out with a warning.
+func Load(dir, workDir, logDir string, settings map[string]map[string]any) *Set {
 	set := &Set{surface: newSurface()}
 	libDir := filepath.Join(filepath.Dir(dir), "lib")
 	paths, _ := filepath.Glob(filepath.Join(dir, "*.lua"))
@@ -61,7 +66,12 @@ func Load(dir, workDir, logDir string) *Set {
 		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
-		plugin := load(path, workDir, logDir, libDir, set.surface)
+		name := strings.TrimSuffix(filepath.Base(path), ".lua")
+		if !Enabled(settings[name]) {
+			set.disabled = append(set.disabled, name)
+			continue
+		}
+		plugin := load(path, workDir, logDir, libDir, set.surface, settings[name])
 		plugin.commands = slices.DeleteFunc(plugin.commands, func(command commandDefinition) bool {
 			if commands[command.name] {
 				plugin.warnings = append(plugin.warnings, "command /"+command.name+" left out: the name is taken")
@@ -275,7 +285,7 @@ func (s *Set) Status() []Status {
 	}
 	var statuses []Status
 	for _, plugin := range s.plugins {
-		status := Status{Name: plugin.name, Err: plugin.loadErr, Warnings: slices.Clone(plugin.warnings)}
+		status := Status{Name: plugin.name, Err: plugin.loadErr, Warnings: slices.Clone(plugin.warnings), Settings: slices.Clone(plugin.settings)}
 		if plugin.stuck.Load() {
 			status.Err = errPluginStuck
 		}
@@ -291,6 +301,10 @@ func (s *Set) Status() []Status {
 		slices.Sort(status.Hooks)
 		statuses = append(statuses, status)
 	}
+	for _, name := range s.disabled {
+		statuses = append(statuses, Status{Name: name, Disabled: true})
+	}
+	slices.SortFunc(statuses, func(a, b Status) int { return strings.Compare(a.Name, b.Name) })
 	return statuses
 }
 
@@ -300,13 +314,29 @@ func (s *Set) Close() {
 	if s == nil {
 		return
 	}
-	for _, plugin := range s.plugins {
-		select {
-		case <-plugin.turn:
-			plugin.state.Close()
-		case <-time.After(closeWait):
+	s.closeOnce.Do(func() {
+		for _, plugin := range s.plugins {
+			select {
+			case <-plugin.turn:
+				plugin.state.Close()
+			case <-time.After(closeWait):
+			}
 		}
+	})
+}
+
+// TakeOver puts s in place of previous, loaded before with other settings:
+// whoever followed previous follows s, and previous closes.
+func (s *Set) TakeOver(previous *Set) {
+	if previous == nil || previous == s {
+		return
 	}
+	previous.surface.mu.Lock()
+	changed, open, send := previous.surface.changed, previous.surface.open, previous.surface.send
+	previous.surface.mu.Unlock()
+	s.Follow(changed, open)
+	s.OnSend(send)
+	go previous.Close()
 }
 
 // loaded is the plugins whose file ran without error and that still answer.

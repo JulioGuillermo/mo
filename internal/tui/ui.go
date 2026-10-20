@@ -1546,6 +1546,10 @@ func pluginReport(loaded *plugins.Set) string {
 	}
 	var lines []string
 	for _, status := range statuses {
+		if status.Disabled {
+			lines = append(lines, fmt.Sprintf("○ %s: off · /settings › Plugins turns it on", status.Name))
+			continue
+		}
 		if status.Err != nil {
 			lines = append(lines, fmt.Sprintf("✗ %s: %v", status.Name, status.Err))
 			continue

@@ -8,10 +8,10 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
-// openAPI installs the mo table: what a plugin declares (tool, command, on)
-// and what it may use besides Lua's own libraries: exec and run for
-// commands, http, fs, read and write for files, json, encodings, sleep,
-// env, log and workdir.
+// openAPI installs the mo table: what a plugin declares (tool, command, on,
+// setting), its settings, and what it may use besides Lua's own libraries:
+// exec and run for commands, http, fs, read and write for files, json,
+// encodings, sleep, env, log and workdir.
 func (p *Plugin) openAPI() {
 	state := p.state
 	api := state.NewTable()
@@ -19,6 +19,7 @@ func (p *Plugin) openAPI() {
 		"tool":        p.declareTool,
 		"command":     p.declareCommand,
 		"on":          p.declareHook,
+		"setting":     p.declareSetting,
 		"exec":        p.exec,
 		"run":         p.run,
 		"sleep":       sleep,
@@ -37,6 +38,7 @@ func (p *Plugin) openAPI() {
 	api.RawSetString("sidebar", p.sidebarTable())
 	api.RawSetString("dialog", state.NewFunction(p.openDialog))
 	api.RawSetString("send", state.NewFunction(p.sendToModel))
+	api.RawSetString("settings", p.settingsTable())
 	openEncodings(state, api)
 	api.RawSetString("workdir", lua.LString(p.workDir))
 	state.SetGlobal("mo", api)

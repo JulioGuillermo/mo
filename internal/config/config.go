@@ -44,6 +44,9 @@ type Config struct {
 	Agents       Agents                    `toml:"agents,omitempty"`
 	Peers        Peers                     `toml:"peers,omitempty"`
 	Providers    map[string]ProviderConfig `toml:"providers,omitempty"`
+	// Plugins are the settings of each plugin, by its name: what it
+	// declares with mo.setting, and enabled = false to keep it off.
+	Plugins map[string]map[string]any `toml:"plugins,omitempty"`
 }
 
 type Tools struct {
@@ -755,6 +758,9 @@ func merge(base, layer Config) Config {
 	}
 	for name, provider := range layer.Providers {
 		base.Providers[name] = mergeProvider(base.Providers[name], provider)
+	}
+	if layer.Plugins != nil {
+		base.Plugins = layer.Plugins
 	}
 	base.Permissions = mergePermissions(base.Permissions, layer.Permissions)
 	base.Notify = mergeNotify(base.Notify, layer.Notify)

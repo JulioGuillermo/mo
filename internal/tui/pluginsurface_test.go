@@ -26,7 +26,7 @@ func pluginModel(t *testing.T, source string) model {
 	if err := os.WriteFile(filepath.Join(dir, "demo.lua"), []byte(source), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	loaded := plugins.Load(dir, t.TempDir(), t.TempDir())
+	loaded := plugins.Load(dir, t.TempDir(), t.TempDir(), nil)
 	t.Cleanup(loaded.Close)
 	m := conversationModel()
 	m.session.Plugins = loaded

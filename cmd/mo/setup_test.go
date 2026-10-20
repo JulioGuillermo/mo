@@ -13,6 +13,7 @@ package main
 // | ST-09 | Edge     | A built pick that does not answer is what going on keeps and saves | P1       |
 // | ST-10 | Happy    | A changed MCP server connects on reload, in use only once activated | P0      |
 // | ST-11 | Edge     | A hub that arrives after the run closed its hubs is closed too     | P1       |
+// | ST-12 | Happy    | Changed plugin settings load the plugins again, in use once activated; the same keep them | P0 |
 
 import (
 	"context"
@@ -73,11 +74,12 @@ func isolated(t *testing.T, userFile string) string {
 func testExtensions(t *testing.T, workDir string) extensions {
 	t.Helper()
 	hub := mcphub.Connect(context.Background(), nil, "")
-	loaded := plugins.Load(t.TempDir(), workDir, t.TempDir())
-	t.Cleanup(loaded.Close)
+	loaded := plugins.Load(t.TempDir(), workDir, t.TempDir(), nil)
+	pluginSets := &openPlugins{current: loaded}
+	t.Cleanup(pluginSets.Close)
 	hubs := &openHubs{current: hub}
 	t.Cleanup(hubs.Close)
-	return extensions{mcp: hub, plugins: loaded, hubs: hubs}
+	return extensions{mcp: hub, plugins: loaded, pluginSets: pluginSets, hubs: hubs}
 }
 
 func start(t *testing.T, workDir string, ask askProvider) (tui.Session, error) {
@@ -277,6 +279,43 @@ func TestMCPReload(t *testing.T) {
 
 		if hubs.current != first || !hubs.closed {
 			t.Errorf("current replaced after close")
+		}
+	})
+}
+
+func TestPluginReload(t *testing.T) {
+	t.Run("ST-12 changed plugin settings load the plugins again, in use once activated; the same keep them", func(t *testing.T) {
+		workDir := isolated(t, providerFile(modelServer(t)))
+		if err := os.MkdirAll(config.PluginDir(), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(config.PluginDir(), "demo.lua"), []byte(`mo.tool{ name = "demo_tool", run = function() return "" end }`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cfg, _ := config.Load(workDir)
+		loaded := testExtensions(t, workDir)
+		loaded.plugins = plugins.Load(config.PluginDir(), workDir, t.TempDir(), nil)
+		loaded.pluginSets.current = loaded.plugins
+		session, err := buildSession(context.Background(), workDir, cfg, sessionChoice{}, loaded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		layer, _ := config.ReadUserLayer()
+
+		same, _ := session.Reload(layer, nil)
+		layer.Plugins = map[string]map[string]any{"demo": {"enabled": false}}
+		fresh, err := session.Reload(layer, nil)
+		before := loaded.pluginSets.current
+		fresh.Activate()
+
+		if same.Plugins != loaded.plugins {
+			t.Error("unchanged settings loaded the plugins again")
+		}
+		if err != nil || before != loaded.plugins || loaded.pluginSets.current != fresh.Plugins || !fresh.Plugins.Status()[0].Disabled {
+			t.Errorf("err = %v status = %+v", err, fresh.Plugins.Status())
+		}
+		if strings.Contains(strings.Join(fresh.ToolNames, ","), "demo_tool") || !strings.Contains(strings.Join(same.ToolNames, ","), "demo_tool") {
+			t.Errorf("tools: same = %v fresh = %v", same.ToolNames, fresh.ToolNames)
 		}
 	})
 }

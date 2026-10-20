@@ -124,6 +124,9 @@ type settingsDraft struct {
 	notifyApproval bool
 	notifyMethod   string
 	notifyFocused  bool
+
+	// plugins are the settings of each plugin, by its name.
+	plugins map[string]map[string]any
 }
 
 func newSettingsDraft(layer config.Config) *settingsDraft {
@@ -224,6 +227,8 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		permMode: cfg.Permissions.Mode,
 		allow:    strings.Join(cfg.Permissions.Allow, "\n"),
 		deny:     strings.Join(cfg.Permissions.Deny, "\n"),
+
+		plugins: clonePluginSettings(cfg.Plugins),
 	}
 	if draft.systemPrompt == "" {
 		draft.systemPrompt = agent.DefaultSystemPrompt
@@ -294,6 +299,7 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	layer.Tools.Confirm = unlessDefaultList(d.confirm, defaults.Tools.Confirm)
 	layer.Tools.Disabled = unlessDefaultList(d.disabled, defaults.Tools.Disabled)
 	layer.Tools.MCPDisabled = unlessDefaultList(d.mcpDisabled, defaults.Tools.MCPDisabled)
+	layer.Plugins = d.pluginSettingsToSave()
 	layer.Tools.Modes = d.modesOf(toolModes)
 	layer.Tools.MCPModes = d.modesOf(mcpModes)
 	layer.Instructions = config.Instructions{
@@ -742,6 +748,7 @@ func (d *settingsDraft) snapshot() func() {
 	saved.disabled = slices.Clone(d.disabled)
 	saved.mcpDisabled = slices.Clone(d.mcpDisabled)
 	saved.skillsDisabled = slices.Clone(d.skillsDisabled)
+	saved.plugins = clonePluginSettings(d.plugins)
 	texts := map[string]string{}
 	for name, text := range d.descriptions {
 		texts[name] = *text

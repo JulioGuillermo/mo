@@ -29,14 +29,15 @@ type sessionChoice struct {
 }
 
 // extensions are what a run loads once and keeps across settings changes.
-// The MCP servers are the exception: they connect again when their settings
-// change.
+// The MCP servers and the plugins are the exception: they load again when
+// their settings change.
 type extensions struct {
 	mcp *mcphub.Hub
 	// connecting is the first connection to the MCP servers, made while the
 	// provider is chosen; mcp is unset until it is taken.
 	connecting *pendingHub
 	plugins    *plugins.Set
+	pluginSets *openPlugins
 	hubs       *openHubs
 	// jobs are the background jobs of the whole run, kept across settings
 	// changes; nil when mo answers once.
@@ -190,20 +191,39 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	assistant.EndTurn = loaded.plugins.EndTurn
 	assistant.StreamPiece = loaded.plugins.StreamPiece
 	rebuild := func(fresh config.Config) (tui.Session, error) {
-		if reflect.DeepEqual(fresh.ActiveMCP(), cfg.ActiveMCP()) {
-			return buildSession(context.Background(), workDir, fresh, sessionChoice{yes: choice.yes}, loaded)
-		}
 		next := loaded
-		// Only the servers that changed connect again; the others keep
-		// their connection, shared until one of the two hubs goes.
-		next.mcp = mcphub.Reconnect(context.Background(), hub, fresh.ActiveMCP(), config.LogDir())
+		samePlugins := reflect.DeepEqual(fresh.Plugins, cfg.Plugins)
+		if !samePlugins {
+			next.plugins = plugins.Load(config.PluginDir(), workDir, config.LogDir(), fresh.Plugins)
+		}
+		sameMCP := reflect.DeepEqual(fresh.ActiveMCP(), cfg.ActiveMCP())
+		if !sameMCP {
+			// Only the servers that changed connect again; the others keep
+			// their connection, shared until one of the two hubs goes.
+			next.mcp = mcphub.Reconnect(context.Background(), hub, fresh.ActiveMCP(), config.LogDir())
+		}
+		discard := func() {
+			if !sameMCP {
+				next.mcp.CloseExcept(hub)
+			}
+			if !samePlugins {
+				next.plugins.Close()
+			}
+		}
 		session, err := buildSession(context.Background(), workDir, fresh, sessionChoice{yes: choice.yes}, next)
 		if err != nil {
-			next.mcp.CloseExcept(hub)
+			discard()
 			return tui.Session{}, err
 		}
-		session.Activate = func() { loaded.hubs.replace(next.mcp) }
-		session.Discard = func() { next.mcp.CloseExcept(hub) }
+		session.Activate = func() {
+			if !sameMCP {
+				loaded.hubs.replace(next.mcp)
+			}
+			if !samePlugins {
+				loaded.pluginSets.replace(next.plugins)
+			}
+		}
+		session.Discard = discard
 		return session, nil
 	}
 	reload := func(userLayer config.Config, projectLayer *config.Config) (tui.Session, error) {

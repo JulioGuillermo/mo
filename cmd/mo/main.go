@@ -18,7 +18,6 @@ import (
 	"github.com/jg/mo/internal/detect"
 	"github.com/jg/mo/internal/mcphub"
 	"github.com/jg/mo/internal/peers"
-	"github.com/jg/mo/internal/plugins"
 	"github.com/jg/mo/internal/render"
 	"github.com/jg/mo/internal/team"
 	"github.com/jg/mo/internal/tools"
@@ -83,10 +82,10 @@ func run() error {
 	// What never took the connection still has to close it.
 	defer func() { connecting.get() }()
 	defer render.RemoveSavedImages()
-	loadedPlugins := loadPlugins(workDir)
+	loadedPlugins := &openPlugins{current: loadPlugins(workDir, cfg.Plugins)}
 	defer loadedPlugins.Close()
 	choice := sessionChoice{provider: *providerFlag, model: *modelFlag, yes: *yesFlag}
-	loaded := extensions{connecting: connecting, plugins: loadedPlugins, hubs: hubs, recall: tools.NewRecall(config.SessionDir())}
+	loaded := extensions{connecting: connecting, plugins: loadedPlugins.current, pluginSets: loadedPlugins, hubs: hubs, recall: tools.NewRecall(config.SessionDir())}
 
 	prompt, err := oneShotPrompt(flag.Args())
 	if err != nil {
@@ -144,17 +143,6 @@ func connectMCP(ctx context.Context, cfg config.Config) *mcphub.Hub {
 		}
 	}
 	return hub
-}
-
-// loadPlugins runs the user's plugins and reports the ones that failed.
-func loadPlugins(workDir string) *plugins.Set {
-	loaded := plugins.Load(config.PluginDir(), workDir, config.LogDir())
-	for _, status := range loaded.Status() {
-		if status.Err != nil {
-			fmt.Fprintf(os.Stderr, "mo: plugin %s: %v\n", status.Name, status.Err)
-		}
-	}
-	return loaded
 }
 
 // oneShotPrompt returns the prompt from the arguments, or from stdin when it

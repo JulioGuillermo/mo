@@ -49,7 +49,7 @@ func loadTree(t *testing.T, plugins, libs map[string]string) fixture {
 		}
 	}
 	f := fixture{workDir: t.TempDir(), logDir: t.TempDir()}
-	f.set = Load(filepath.Join(root, "plugins"), f.workDir, f.logDir)
+	f.set = Load(filepath.Join(root, "plugins"), f.workDir, f.logDir, nil)
 	t.Cleanup(f.set.Close)
 	return f
 }

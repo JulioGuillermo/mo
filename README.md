@@ -780,6 +780,7 @@ is your own code, with your rights and all of Lua's libraries, and it can:
 | items under **Plugins** in the side panel | `mo.sidebar.set{ id, text, detail, color, icon, on_click }` |
 | dialogs with inputs and buttons, as the `ui` tool draws them | `mo.dialog{ title, tree, on_event }` |
 | messages to the model, through the permission mode | `mo.send{ title, message, wake }` |
+| settings you set in **/settings › Plugins**, where each also turns on and off | `mo.setting{ name, type, default, description, secret }`, `mo.settings.get(name)` |
 
 ```lua
 mo.command{ name = "standup", run = function()

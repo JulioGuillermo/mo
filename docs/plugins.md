@@ -19,6 +19,7 @@ Restart mo, then type `/hello ana`.
 - [Tools for the model](#tools-for-the-model)
 - [Commands for you](#commands-for-you)
 - [Hooks](#hooks)
+- [Settings](#settings)
 - [The side panel](#the-side-panel)
 - [Dialogs](#dialogs)
 - [Sending to the model](#sending-to-the-model)
@@ -36,7 +37,9 @@ Restart mo, then type `/hello ana`.
 | `~/.local/share/mo/logs/plugin-<name>.log` | what a plugin prints, and its errors with their stack trace |
 
 A plugin is your own code and runs with your rights. mo never loads one from a project folder.
-Changing a file takes a restart of mo.
+Changing a file takes a restart of mo. Turning a plugin off or on, or changing its settings, in
+**/settings › Plugins** loads the plugins again once saved, and so does `/reload` after you edit
+`[plugins.<name>]` by hand.
 
 ## Tools for the model
 
@@ -124,6 +127,44 @@ How each one behaves when something goes wrong:
   turn ends.
 - `turn_end` runs once per turn, also when esc stopped it (`stopped = true`). `error` is `nil` when
   the turn ended well.
+
+## Settings
+
+A plugin declares the values you set for it, and reads them with `mo.settings.get`:
+
+```lua
+mo.setting{ name = "site", default = "example.atlassian.net", description = "Your Jira site" }
+mo.setting{ name = "token", secret = true, description = "API token" }
+mo.setting{ name = "limit", type = "number", default = 20 }
+
+mo.tool{ name = "jira_search", run = function(args)
+  local site, token = mo.settings.get("site"), mo.settings.get("token")
+  -- ...
+end }
+```
+
+| Field | What |
+|---|---|
+| `name` | how the plugin reads it; any name but `enabled` |
+| `type` | `string` (the default), `number` or `boolean` |
+| `default` | what `mo.settings.get` gives while you set nothing; `nil` if left out |
+| `description` | shown when you edit it |
+| `secret` | `true` shows it as `••••••` and hides it as you type |
+
+You set them in **/settings › Plugins › name**, where each plugin also has its on/off switch. They
+are saved in your `config.toml`; a value equal to the default is not written:
+
+```toml
+[plugins.jira]
+site = "acme.atlassian.net"
+token = "..."
+
+[plugins.old_thing]
+enabled = false
+```
+
+A plugin with `enabled = false` does not run at all. `mo.settings.get` of a name the plugin did not
+declare is an error, and a value of the wrong type in the file gives the default.
 
 ## The side panel
 

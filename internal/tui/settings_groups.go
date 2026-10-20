@@ -30,6 +30,7 @@ var settingsGroups = []settingsGroup{
 	{key: groupPrefix + "peers", title: "Peers", sections: []string{"peers"}},
 	{key: groupPrefix + "safety", title: "Safety", sections: []string{"permissions", "loop"}},
 	{key: groupPrefix + "interface", title: "Interface", sections: []string{"appearance", "animations", "notify"}},
+	{key: groupPrefix + pluginsKey, title: "Plugins", sections: []string{pluginsKey}},
 }
 
 func sectionByKey(key string) (settingsSection, bool) {
@@ -116,7 +117,11 @@ func (m model) showGroup(menu *settingsMenu, group settingsGroup, last string) (
 				section settingsSection
 				item    settingItem
 			}{section, item}
-			rows = append(rows, row{item.title, item.value(menu.draft), key})
+			title := item.title
+			if _, nested := menu.nested[key]; nested {
+				title += " ›"
+			}
+			rows = append(rows, row{title, item.value(menu.draft), key})
 		}
 	}
 	for _, extra := range group.extras {
@@ -157,6 +162,9 @@ func (m model) showGroup(menu *settingsMenu, group settingsGroup, last string) (
 			menu.lastIn = map[string]string{}
 		}
 		menu.lastIn[group.key] = choice
+		if nested, ok := menu.nested[choice]; ok {
+			return m.showSection(menu, nested, "")
+		}
 		if picked, ok := items[choice]; ok {
 			return m.editItem(menu, picked.section, picked.item)
 		}

@@ -140,6 +140,7 @@ var settingsSections = []settingsSection{
 		return "milliseconds between the frames of each animation; the screen is drawn as often as the quickest needs"
 	}, items: animationItems},
 	{key: "memory", title: "Memory", summary: func(d *settingsDraft) string { return d.memoryDir }, items: memoryItems},
+	pluginsSection,
 }
 
 func modelItems(m model, menu *settingsMenu) []settingItem {

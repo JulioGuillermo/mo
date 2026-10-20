@@ -58,7 +58,7 @@ func loadSource(t *testing.T, sources map[string]string) fixture {
 		}
 	}
 	f := fixture{workDir: t.TempDir(), logDir: t.TempDir()}
-	f.set = Load(dir, f.workDir, f.logDir)
+	f.set = Load(dir, f.workDir, f.logDir, nil)
 	t.Cleanup(f.set.Close)
 	return f
 }

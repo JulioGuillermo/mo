@@ -53,6 +53,9 @@ type Plugin struct {
 	hooks    map[string][]*lua.LFunction
 	loadErr  error
 	warnings []string
+	settings []Setting
+	// values are what the user set for the plugin, by setting name.
+	values map[string]any
 }
 
 type toolDefinition struct {
@@ -72,7 +75,7 @@ type commandDefinition struct {
 // load runs a plugin file, which declares its tools, commands and hooks
 // through the mo table. A file that fails keeps its error for Status and
 // offers nothing.
-func load(path, workDir, logDir, libDir string, surface *surface) *Plugin {
+func load(path, workDir, logDir, libDir string, surface *surface, values map[string]any) *Plugin {
 	name := strings.TrimSuffix(filepath.Base(path), ".lua")
 	source, _ := os.ReadFile(path)
 	plugin := &Plugin{
@@ -86,6 +89,7 @@ func load(path, workDir, logDir, libDir string, surface *surface) *Plugin {
 		hooks:   map[string][]*lua.LFunction{},
 		state:   lua.NewState(),
 		loading: true,
+		values:  values,
 	}
 	plugin.turn <- struct{}{}
 	plugin.openLibraries()
