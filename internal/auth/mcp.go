@@ -165,6 +165,9 @@ func mcpClientFor(ctx context.Context, server, resource string, overrides *confi
 		client.RedirectURL = overrides.RedirectURL
 	}
 	if overrides != nil && overrides.ClientID != "" {
+		// A client_id that is an https address is a client metadata
+		// document: the server reads it, nothing is registered, and the
+		// browser comes back to any port of localhost.
 		client.ClientID, client.ClientSecret = overrides.ClientID, overrides.Secret()
 	} else {
 		if found.RegistrationURL == "" {
@@ -192,14 +195,15 @@ func orDefault(value, fallback string) string {
 }
 
 // freeRedirect is an address on this computer whose port is free now, to
-// register as the place the browser comes back to.
+// register as the place the browser comes back to; localhost, as servers
+// such as Atlassian's take it.
 func freeRedirect() (string, error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", err
 	}
 	defer listener.Close()
-	return fmt.Sprintf("http://127.0.0.1:%d/callback", listener.Addr().(*net.TCPAddr).Port), nil
+	return fmt.Sprintf("http://localhost:%d/callback", listener.Addr().(*net.TCPAddr).Port), nil
 }
 
 // discovered is where an MCP server signs in, and the scopes it offers.
@@ -379,4 +383,10 @@ func register(ctx context.Context, client *http.Client, url, redirect string) (s
 		registered.ClientSecret = ""
 	}
 	return registered.ClientID, registered.ClientSecret, nil
+}
+
+// MCPSignedIn tells whether mo keeps a sign-in to an MCP server.
+func MCPSignedIn(server string) bool {
+	_, ok := loadMCPClient(server)
+	return ok
 }

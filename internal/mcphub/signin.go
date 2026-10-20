@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync/atomic"
 
 	"golang.org/x/oauth2"
@@ -80,6 +81,28 @@ func Login(ctx context.Context, name string, settings config.MCPServer, show fun
 		return err
 	}
 	return auth.MCPLogin(ctx, name, settings.URL, settings.OAuth, &http.Client{Transport: base}, show)
+}
+
+// SignedIn tells whether mo keeps a sign-in to a server.
+func SignedIn(name string) bool {
+	return auth.MCPSignedIn(name)
+}
+
+// SignsIn tells whether a server is one to sign in to: reached by URL,
+// with no Authorization header of its own, as a key would be.
+func SignsIn(settings config.MCPServer) bool {
+	if settings.URL == "" {
+		return false
+	}
+	if settings.OAuth != nil {
+		return true
+	}
+	for name := range settings.Headers {
+		if strings.EqualFold(name, "Authorization") {
+			return false
+		}
+	}
+	return true
 }
 
 // Logout forgets the sign-in to a server, telling whether there was one.

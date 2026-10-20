@@ -89,7 +89,7 @@ func (m model) mcpSignInSuggestions(partial string) []command {
 	if !spaced {
 		var matches []command
 		for _, each := range []command{
-			{name: "mcp login ", description: "sign in to a server reached by URL", more: true},
+			{name: "mcp login ", description: "sign in to a server that uses OAuth", more: true},
 			{name: "mcp logout ", description: "forget the sign-in to a server", more: true},
 		} {
 			if strings.HasPrefix(each.name, "mcp "+action) {
@@ -104,7 +104,11 @@ func (m model) mcpSignInSuggestions(partial string) []command {
 	var matches []command
 	for _, name := range slices.Sorted(func(yield func(string) bool) {
 		for name, server := range m.session.Config.MCP {
-			if server.URL != "" && !yield(name) {
+			offered := mcphub.SignsIn(server)
+			if action == "logout" {
+				offered = mcphub.SignedIn(name)
+			}
+			if offered && !yield(name) {
 				return
 			}
 		}
@@ -112,7 +116,10 @@ func (m model) mcpSignInSuggestions(partial string) []command {
 		if !strings.HasPrefix(name, typed) {
 			continue
 		}
-		description := "reached by URL"
+		description := "signs in with OAuth"
+		if action == "logout" {
+			description = "signed in"
+		}
 		for _, status := range m.session.MCP {
 			if status.Name == name && mcphub.NeedsLogin(status.Err) {
 				description = "needs a sign-in"

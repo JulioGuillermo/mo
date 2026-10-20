@@ -4,7 +4,7 @@ package tui
 // | ID    | Category | Description                                                              | Priority |
 // | ML-01 | Happy    | A server waiting for a sign-in shows it in /mcp, with the command        | P0       |
 // | ML-02 | Happy    | /mcp login alone takes the only server waiting; a name not configured says so | P1   |
-// | ML-03 | Happy    | Tab after /mcp login offers the servers reached by URL, the waiting one marked | P2  |
+// | ML-03 | Happy    | Tab after /mcp login offers only the servers that sign in, not those with a key; logout only those signed in | P2 |
 // | ML-04 | Edge     | /mcp logout of a server never signed in to says so                       | P2       |
 // | ML-05 | Edge     | Saving a server in its form keeps the sign-in settings the config has    | P1       |
 // | ML-06 | Happy    | The sign-in page shows whole, broken over lines, and is copied           | P1       |
@@ -24,6 +24,7 @@ func signInModel(t *testing.T) model {
 	m := conversationModel()
 	m.session.Config.MCP = map[string]config.MCPServer{
 		"jira":  {URL: "https://mcp.example.com/v2/mcp"},
+		"keyed": {URL: "https://other.example.com/mcp", Headers: map[string]string{"authorization": "Bearer key"}},
 		"local": {Command: "npx"},
 	}
 	m.session.MCP = []mcphub.Status{
@@ -58,14 +59,15 @@ func TestMCPSignIn(t *testing.T) {
 		}
 	})
 
-	t.Run("ML-03 tab after /mcp login offers the servers reached by URL, the waiting one marked", func(t *testing.T) {
+	t.Run("ML-03 tab after /mcp login offers only the servers that sign in, not those with a key; logout only those signed in", func(t *testing.T) {
 		m := signInModel(t)
 
 		actions := suggestionNames(m.mcpSignInSuggestions("lo"))
 		servers := m.mcpSignInSuggestions("login ")
+		signedOut := m.mcpSignInSuggestions("logout ")
 
-		if strings.Join(actions, ",") != "mcp login ,mcp logout " || len(servers) != 1 || servers[0].name != "mcp login jira" || servers[0].description != "needs a sign-in" {
-			t.Errorf("actions = %v servers = %v", actions, servers)
+		if strings.Join(actions, ",") != "mcp login ,mcp logout " || len(servers) != 1 || servers[0].name != "mcp login jira" || servers[0].description != "needs a sign-in" || len(signedOut) != 0 {
+			t.Errorf("actions = %v servers = %v signedOut = %v", actions, servers, signedOut)
 		}
 	})
 

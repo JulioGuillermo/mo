@@ -8,6 +8,7 @@ package auth
 // | AM-04 | Happy    | A client the config names is used instead of registering, with its scopes | P1     |
 // | AM-05 | Edge     | The scopes are the challenge's, else the metadata's, with offline_access when offered | P1 |
 // | AM-06 | Happy    | Logout forgets the token and the client; without them there is no source | P1      |
+// | AM-07 | Happy    | A client_id that is an https address is a metadata document: nothing registered, the browser back to localhost | P1 |
 
 import (
 	"context"
@@ -123,7 +124,7 @@ func TestMCPLogin(t *testing.T) {
 		}
 		registration := fake.registrations[0]
 		redirect := registration["redirect_uris"].([]any)[0].(string)
-		if !strings.HasPrefix(redirect, "http://127.0.0.1:") || registration["token_endpoint_auth_method"] != "none" {
+		if !strings.HasPrefix(redirect, "http://localhost:") || registration["token_endpoint_auth_method"] != "none" {
 			t.Errorf("registration = %v", registration)
 		}
 		asked := fake.authorized
@@ -203,6 +204,20 @@ func TestMCPLogin(t *testing.T) {
 
 		if !had || err != nil || again || MCPSource("jira", resource, nil) != nil {
 			t.Errorf("had = %v err = %v again = %v", had, err, again)
+		}
+	})
+
+	t.Run("AM-07 a client_id that is an https address is a metadata document: nothing registered, the browser back to localhost", func(t *testing.T) {
+		t.Setenv("XDG_DATA_HOME", t.TempDir())
+		fake := newFakeMCPAuth(t, true)
+		fake.browser(t)
+		document := "https://example.com/mo/client-metadata.json"
+
+		err := MCPLogin(ctx, "jira", fake.URL+"/v2/mcp", &config.OAuth{ClientID: document}, http.DefaultClient, func(Prompt) {})
+
+		asked := fake.authorized
+		if err != nil || len(fake.registrations) != 0 || asked.Get("client_id") != document || !strings.HasPrefix(asked.Get("redirect_uri"), "http://localhost:") {
+			t.Errorf("err = %v registrations = %d authorize = %v", err, len(fake.registrations), asked)
 		}
 	})
 }
