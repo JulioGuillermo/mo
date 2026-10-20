@@ -15,14 +15,14 @@ const viewShown = 50
 // whose path does, and last those holding its letters in order; the shorter
 // path first among equals. Nothing typed offers them all.
 func fuzzyFiles(files []string, typed string) []string {
-	query := strings.ToLower(typed)
+	query := strings.ToLower(filepath.ToSlash(typed))
 	type found struct {
 		path  string
 		score int
 	}
 	var matches []found
 	for _, path := range files {
-		lower := strings.ToLower(path)
+		lower := strings.ToLower(filepath.ToSlash(path))
 		base := strings.ToLower(filepath.Base(path))
 		switch {
 		case query == "":
@@ -90,7 +90,7 @@ func globRegexp(pattern string) (*regexp.Regexp, error) {
 // are listed. A pattern with no / is matched against the name of a file at
 // any depth, as *.go is; one with a / against the whole path.
 func globFiles(files []string, pattern string) []string {
-	pattern = strings.TrimPrefix(strings.TrimSpace(pattern), "./")
+	pattern = strings.TrimPrefix(filepath.ToSlash(strings.TrimSpace(pattern)), "./")
 	re, err := globRegexp(pattern)
 	if err != nil {
 		return nil
@@ -107,7 +107,7 @@ func globFiles(files []string, pattern string) []string {
 		}
 	}
 	sort.SliceStable(matches, func(i, j int) bool {
-		if depth := strings.Count(matches[i], "/") - strings.Count(matches[j], "/"); depth != 0 {
+		if depth := strings.Count(filepath.ToSlash(matches[i]), "/") - strings.Count(filepath.ToSlash(matches[j]), "/"); depth != 0 {
 			return depth < 0
 		}
 		return matches[i] < matches[j]

@@ -123,7 +123,7 @@ func isInside(path, dir string) bool {
 	if err != nil {
 		return false
 	}
-	return relative != ".." && !strings.HasPrefix(relative, "../")
+	return relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 // checkArgNames rejects any argument whose name is not exactly one of the

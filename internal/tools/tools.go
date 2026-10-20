@@ -110,7 +110,8 @@ type Env struct {
 // Resolve turns a path from the model into an absolute one, relative paths
 // being taken from the working directory.
 func (e Env) Resolve(path string) string {
-	if strings.HasPrefix(path, "~/") {
+	path = systemPath(path)
+	if strings.HasPrefix(path, "~/") || strings.HasPrefix(path, `~`+string(filepath.Separator)) {
 		home, err := os.UserHomeDir()
 		if err == nil {
 			path = filepath.Join(home, path[2:])
