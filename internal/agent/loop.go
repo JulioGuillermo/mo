@@ -59,7 +59,7 @@ type loopCall struct {
 // while the job goes on, and waiting for it is not going in circles, so a
 // poll is never stopped; a model that only polls ends at the steps.
 func isPoll(call llm.ToolCall) bool {
-	return call.Name == "bash" && tools.BashAction(call.Args) == "output"
+	return tools.IsShell(call.Name) && tools.BashAction(call.Args) == "output"
 }
 
 // mayChange tells whether a call can change something, which ends the count
@@ -68,7 +68,7 @@ func (a *Agent) mayChange(call llm.ToolCall) bool {
 	if quietTools[tools.Canonical(call.Name)] {
 		return false
 	}
-	if a.Tools != nil && (call.Name == "git" || call.Name == "memory" || call.Name == "bash") {
+	if a.Tools != nil && (call.Name == "git" || call.Name == "memory" || tools.IsShell(call.Name)) {
 		return a.Tools.Changes(call)
 	}
 	return true
@@ -190,7 +190,7 @@ func (a *Agent) repeatedCall(call llm.ToolCall) (string, bool) {
 		return "", false
 	}
 	repeats := a.Loop.Repeats
-	if call.Name == "bash" {
+	if tools.IsShell(call.Name) {
 		repeats += shellExtraRepeats
 	}
 	if earlier := earlierRuns(a.window(), call); earlier >= repeats-1 {

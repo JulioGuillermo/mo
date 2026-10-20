@@ -44,7 +44,7 @@ func toolMarkAs(kind toolKind, sign string) string {
 // toolKindOf tells what a call does; changes says whether the registry
 // counts it as a change, nil without one.
 func toolKindOf(call llm.ToolCall, changes func(llm.ToolCall) bool) toolKind {
-	if call.Name == "bash" {
+	if tools.IsShell(call.Name) {
 		switch tools.BashAction(call.Args) {
 		case "run":
 			var fields struct {

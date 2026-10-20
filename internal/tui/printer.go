@@ -598,7 +598,7 @@ func (p *printer) ToolDenied(name string, args json.RawMessage, summary string) 
 
 func (p *printer) toolLine(name string, args json.RawMessage, summary, sign string) string {
 	header := "\n" + p.toolHeaderAs(name, args, sign)
-	if !strings.Contains(summary, "\n") && len(summary) < 60 && name != "bash" {
+	if !strings.Contains(summary, "\n") && len(summary) < 60 && !tools.IsShell(name) {
 		return header + " " + summary
 	}
 	return header + "\n" + p.commandLines(summary, false, commandLanguage(name, args))
@@ -620,8 +620,8 @@ func (p *printer) fileChangeLine(run toolRun, change fileChange, sign string) st
 // highlight: a shell command of bash. What else bash shows, a job's output
 // or help, is not a command.
 func commandLanguage(name string, args json.RawMessage) string {
-	if name == "bash" && tools.BashAction(args) == "run" {
-		return "bash"
+	if tools.IsShell(name) && tools.BashAction(args) == "run" {
+		return tools.CurrentShell().Language
 	}
 	return ""
 }
@@ -641,7 +641,7 @@ func (p *printer) toolHeaderAs(name string, args json.RawMessage, sign string) s
 	if kind != nil {
 		mark = toolMarkAs(kind(call), sign)
 	}
-	return mark + toolName.Render(" "+name)
+	return mark + toolName.Render(" "+tools.Shown(tools.Canonical(name)))
 }
 
 // runSign is a call's sign of how it stands: turning while it runs,

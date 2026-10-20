@@ -70,7 +70,7 @@ func (r *Registry) Specs(history []llm.Message) []llm.ToolSpec {
 		if mode == ModeSearch && !found[tool.Name] {
 			continue
 		}
-		spec := llm.ToolSpec{Name: tool.Name, Description: tool.Description, Schema: tool.Schema}
+		spec := llm.ToolSpec{Name: Shown(tool.Name), Description: tool.Description, Schema: tool.Schema}
 		if mode == ModeCompact && !found[tool.Name] {
 			spec.Description = ""
 			spec.Schema = withoutDescriptions(tool.Schema)
@@ -273,13 +273,13 @@ func (r *Registry) list(filter string) string {
 			continue
 		}
 		group, grouped := r.options.Groups[tool.Name]
-		text := strings.ToLower(tool.Name + " " + tool.Description + " " + group + " " + strings.Join(keywordsOf(tool), " "))
+		text := strings.ToLower(Shown(tool.Name) + " " + tool.Description + " " + group + " " + strings.Join(keywordsOf(tool), " "))
 		switch {
 		case !containsAll(text, words):
 		case grouped:
 			groups[group]++
 		default:
-			names = append(names, tool.Name)
+			names = append(names, Shown(tool.Name))
 		}
 	}
 	var lines []string
@@ -312,7 +312,7 @@ func (r *Registry) search(query string) string {
 	}
 	var out strings.Builder
 	for _, tool := range found {
-		fmt.Fprintf(&out, "%s: %s\nparameters: %s\n\n", tool.Name, tool.Description, compactJSON(tool.Schema))
+		fmt.Fprintf(&out, "%s: %s\nparameters: %s\n\n", Shown(tool.Name), tool.Description, compactJSON(tool.Schema))
 	}
 	if r.options.Load == LoadDeclare {
 		out.WriteString("They are declared from your next step on; call them directly.")
@@ -358,7 +358,7 @@ func (r *Registry) match(query string) []Tool {
 	}
 	var ranked []scored
 	for _, tool := range candidates {
-		name := strings.ToLower(tool.Name)
+		name := strings.ToLower(Shown(tool.Name))
 		description := strings.ToLower(tool.Description)
 		keywords := strings.Fields(strings.ToLower(strings.Join(keywordsOf(tool), " ")))
 		score := 0

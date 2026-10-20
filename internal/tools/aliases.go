@@ -6,6 +6,9 @@ var aliases = map[string]string{"fetch": "web_fetch"}
 
 // Canonical is the name a tool has now, given one it had or has.
 func Canonical(name string) string {
+	if IsShell(name) {
+		return shellToolName
+	}
 	if current, renamed := aliases[name]; renamed {
 		return current
 	}

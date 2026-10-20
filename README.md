@@ -355,6 +355,14 @@ as the conversation. Reading output never asks; running and `kill` do. `tools.ou
 the start and end the command returned. `tools.output_turns = N` lets go of the output of
 commands older than your last N turns; 0 keeps it for the whole conversation.
 
+On Windows `bash` runs in a POSIX shell when there is one: bash in the `PATH`, else Git for
+Windows' bash, else `sh` or `zsh`; WSL's bash does not count, as it runs in Linux. Without any,
+commands run in PowerShell 7 (`pwsh`), else Windows PowerShell 5.1, and the model and you see the
+tool as `powershell`, described as PowerShell so the model writes PowerShell. In the config it is
+still `bash` (`confirm`, `always_loaded`, `disabled`, `modes`). Rules cannot split PowerShell into
+its commands yet, so every PowerShell command asks, except in `all` mode, or when the model judges
+it safe in `auto`; `deny` rules still apply to the whole command.
+
 `bash` with `background: true` runs a command as a job, for servers, watchers and long builds, and
 returns at once; with `until: "listening|ready"` or `wait: 5` it first waits for a line that
 matches, the seconds, or the command's end, and returns what it printed, so a server's start is

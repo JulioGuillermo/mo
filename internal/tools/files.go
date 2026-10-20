@@ -74,12 +74,12 @@ func runRead(ctx context.Context, env Env, raw json.RawMessage) (string, error) 
 	view, given := ViewFrom(ctx)
 	tooBig := env.ReadMaxSize > 0 && size > env.ReadMaxSize
 	if tooBig && !given {
-		return "", fmt.Errorf("file is %s, over tools.read_max_size (%s): read a part with offset and limit (offset -100 for the last lines) or match, or use bash (head, tail, grep)",
-			formatSize(size), formatSize(env.ReadMaxSize))
+		return "", fmt.Errorf("file is %s, over tools.read_max_size (%s): read a part with offset and limit (offset -100 for the last lines) or match, or use %s",
+			formatSize(size), formatSize(env.ReadMaxSize), shellHint(hintPart))
 	}
 	if order, ok := utf16Order(head); ok {
 		if tooBig {
-			return "", fmt.Errorf("file is UTF-16 and %s, over tools.read_max_size (%s): use bash, e.g. iconv -f UTF-16 -t UTF-8 | head", formatSize(size), formatSize(env.ReadMaxSize))
+			return "", fmt.Errorf("file is UTF-16 and %s, over tools.read_max_size (%s): use %s", formatSize(size), formatSize(env.ReadMaxSize), shellHint(hintUTF16))
 		}
 		rest, err := io.ReadAll(file)
 		if err != nil {
@@ -88,7 +88,7 @@ func runRead(ctx context.Context, env Env, raw json.RawMessage) (string, error) 
 		return view.Apply(decodeUTF16(append(head, rest...), order)), nil
 	}
 	if kind, binary := sniffBinary(head); binary {
-		return "", fmt.Errorf("binary file (%s, %s): read takes text; use bash, e.g. file, xxd | head or strings | head", kind, formatSize(size))
+		return "", fmt.Errorf("binary file (%s, %s): read takes text; use %s", kind, formatSize(size), shellHint(hintBinary))
 	}
 	if tooBig {
 		return readPart(ctx, file, head, view)

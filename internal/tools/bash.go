@@ -37,9 +37,8 @@ Every command is a job, [job N] after its output; a long output comes cut to its
 
 func bashTool() Tool {
 	return Tool{
-		Name: "bash",
-		Description: "Run a shell command (action run, the default). Each is a job whose whole output is kept: action output reads it, kill stops it. " +
-			`{"action":"help"} explains each action.`,
+		Name:        shellToolName,
+		Description: shellDescription(CurrentShell()),
 		Schema: json.RawMessage(`{"type":"object","properties":{
 "command":{"type":"string"},"action":{"type":"string","enum":["run","output","kill","help"]},
 "timeout":{"type":"integer"},"background":{"type":"boolean"},"until":{"type":"string"},"wait":{"type":"integer"},"id":{"type":"integer"},"topic":{"type":"string"}}}`),
@@ -63,6 +62,21 @@ func bashTool() Tool {
 		Changes:          BashChanges,
 		AlreadyConfirmed: func(args json.RawMessage) bool { return !BashChanges(args) },
 	}
+}
+
+// shellDescription tells the model which shell it writes for, so a small
+// model does not send bash to PowerShell.
+func shellDescription(shell Shell) string {
+	const jobs = "Each is a job whose whole output is kept: action output reads it, kill stops it. " +
+		`{"action":"help"} explains each action.`
+	switch {
+	case shell.Legacy:
+		return "Run a Windows PowerShell 5.1 command (action run, the default): PowerShell syntax and cmdlets, not bash; " +
+			"no && or ||, join with ; or use if ($?) { }. " + jobs
+	case shell.PowerShell():
+		return "Run a PowerShell 7 command (action run, the default): PowerShell syntax and cmdlets, not bash. " + jobs
+	}
+	return "Run a shell command (action run, the default). " + jobs
 }
 
 // BashChanges tells whether a call runs or stops something; reading output
@@ -204,7 +218,7 @@ func waitForStart(ctx context.Context, jobs *Jobs, id int, until *regexp.Regexp,
 func runAlone(ctx context.Context, env Env, command string, timeout time.Duration) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "bash", "-c", command)
+	cmd := CurrentShell().Command(ctx, command)
 	cmd.Dir = env.WorkDir
 	output := NewHeadTailBuffer(bashKeptOutput)
 	cmd.Stdout = output

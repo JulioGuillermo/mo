@@ -49,7 +49,7 @@ func runProcess(ctx context.Context, spec commandSpec) commandResult {
 	if len(spec.argv) > 0 {
 		cmd = exec.CommandContext(ctx, spec.argv[0], spec.argv[1:]...)
 	} else {
-		cmd = exec.CommandContext(ctx, "bash", "-c", spec.command)
+		cmd = tools.CurrentShell().Command(ctx, spec.command)
 	}
 	cmd.Dir = spec.dir
 	if len(spec.env) > 0 {

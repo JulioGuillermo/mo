@@ -3,7 +3,6 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/jg/mo/internal/tools"
 	"slices"
 	"strconv"
 	"strings"
@@ -11,6 +10,8 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/jg/mo/internal/tools"
 )
 
 const (
@@ -166,13 +167,13 @@ func (m model) formingCallView(name, args, sign string) string {
 			header += dimStyle.Render("  waits for the call before it")
 		}
 	}
-	switch name {
+	switch tools.Canonical(name) {
 	case "bash":
 		command, found := partialString(args, "command")
 		if !found {
 			return header
 		}
-		return header + "\n" + m.printer.commandTail(command, "bash", formingCommand)
+		return header + "\n" + m.printer.commandTail(command, tools.CurrentShell().Language, formingCommand)
 	case "write", "edit":
 		field := "content"
 		if name == "edit" {

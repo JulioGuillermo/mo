@@ -81,7 +81,7 @@ func (m model) toolState(name, args string, colors stateColors) state {
 	call := llm.ToolCall{Name: name, Args: []byte(args)}
 	call = m.unwrap(call)
 	call.Name = tools.Canonical(call.Name)
-	changes := alwaysChanging[call.Name] || (call.Name == "bash" && tools.BashChanges(call.Args))
+	changes := alwaysChanging[call.Name] || (tools.IsShell(call.Name) && tools.BashChanges(call.Args))
 	if m.session.Agent != nil && m.session.Agent.Tools != nil {
 		changes = changes || m.session.Agent.Tools.Changes(call) || m.session.Agent.Tools.Warning(call) != ""
 	}
@@ -290,6 +290,9 @@ const programsShown = 3
 // the first ones, all of them whatever they are, and how many more.
 func programs(command string) string {
 	var names []string
+	if tools.CurrentShell().PowerShell() {
+		return orDefault(programName(strings.Fields(command)), tools.Shown("bash"))
+	}
 	if commands, err := permissions.Commands(command); err == nil {
 		for _, each := range commands {
 			names = append(names, programName(strings.Fields(each.Text)))
@@ -306,7 +309,7 @@ func programs(command string) string {
 	}
 	switch {
 	case len(shown) == 0:
-		return "bash"
+		return tools.Shown("bash")
 	case len(shown) > programsShown:
 		return strings.Join(shown[:programsShown], ", ") + fmt.Sprintf(" +%d", len(shown)-programsShown)
 	}

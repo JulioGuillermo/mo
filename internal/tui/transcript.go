@@ -12,6 +12,7 @@ import (
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/tools"
 )
 
 const liveReasoningLines = 3
@@ -287,7 +288,7 @@ func (m model) runningCommandAt(y int) (int, bool) {
 	var args struct {
 		Command string `json:"command"`
 	}
-	if run.name != "bash" || run.done || json.Unmarshal(run.args, &args) != nil || args.Command == "" {
+	if !tools.IsShell(run.name) || run.done || json.Unmarshal(run.args, &args) != nil || args.Command == "" {
 		return 0, false
 	}
 	return jobs.RunningCommand(args.Command)

@@ -57,7 +57,7 @@ func gitTool() Tool {
 	return Tool{
 		Name: "git",
 		Description: "Git without hooks, its output kept short. repo: the repository folder (mo, ../x, /abs); left out, the working directory. " +
-			`{"action":"repos"} lists the repositories; {"action":"help"} explains each action. For what it lacks, run git with bash.`,
+			`{"action":"repos"} lists the repositories; {"action":"help"} explains each action. For what it lacks, run git with ` + Shown(shellToolName) + ".",
 		Schema: json.RawMessage(`{"type":"object","properties":{
 "action":{"type":"string","enum":["repos","init","status","diff","log","show","blame","branches","check","fetch","stash_list","tags","add","commit","branch","switch","merge","cherry_pick","rebase","continue","abort","pull","push","stash","stash_apply","stash_pop","stash_drop","tag","reset","help"]},
 "repo":{"type":"string"},"paths":{"type":"array","items":{"type":"string"}},"path":{"type":"string"},"revision":{"type":"string"},"name":{"type":"string"},"message":{"type":"string"},

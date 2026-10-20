@@ -10,6 +10,7 @@ import (
 
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/permissions"
+	"github.com/jg/mo/internal/tools"
 )
 
 const (
@@ -95,7 +96,7 @@ func (a *Agent) approvalFor(ctx context.Context, call llm.ToolCall, hooks Hooks)
 // ruledSubjects returns what rules are checked against: the simple commands
 // of a bash script, or "web_fetch <url>". ruled is false for other tools.
 func ruledSubjects(call llm.ToolCall) (subjects []permissions.Command, ruled bool, err error) {
-	switch call.Name {
+	switch tools.Canonical(call.Name) {
 	case "bash":
 		switch action := argText(call, "action"); {
 		case action == "kill":
@@ -107,12 +108,23 @@ func ruledSubjects(call llm.ToolCall) (subjects []permissions.Command, ruled boo
 		case action != "" && action != "run", argText(call, "command") == "":
 			return nil, false, nil
 		}
+		if tools.CurrentShell().PowerShell() {
+			return wholePowerShellCommand(argText(call, "command")), true, nil
+		}
 		subjects, err = permissions.Commands(argText(call, "command"))
 		return subjects, true, err
 	case "web_fetch", "fetch":
 		return []permissions.Command{{Text: "web_fetch " + argText(call, "url")}}, true, nil
 	}
 	return nil, false, nil
+}
+
+// wholePowerShellCommand is a PowerShell command as one subject that no
+// allow rule lets through: mo cannot split PowerShell into its commands
+// yet, so it always asks, or the model judges it in auto mode. Deny rules
+// still match the whole command.
+func wholePowerShellCommand(command string) []permissions.Command {
+	return []permissions.Command{{Text: command, Source: command, Writes: true}}
 }
 
 // judge asks the model whether commands are safe for the user's request.

@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/agent"
+	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/permissions"
 	"github.com/jg/mo/internal/tools"
 )
@@ -145,7 +146,7 @@ func (d *dialog) sendAnswered(cancelled ...bool) {
 func (d *dialog) buttonsFor(item dialogItem) []string {
 	request := d.request(item)
 	switch {
-	case request.Warning != "":
+	case request.Warning != "", unsplitPowerShell(request.Call):
 		return []string{"Yes", "No"}
 	case request.Ruled && len(request.Commands) > 0:
 		return []string{"Yes", "Always… add a rule", "No"}
@@ -153,6 +154,12 @@ func (d *dialog) buttonsFor(item dialogItem) []string {
 		return []string{"Yes", "No"}
 	}
 	return []string{"Yes", "Always this session", "No"}
+}
+
+// unsplitPowerShell tells a PowerShell command, which no rule can allow
+// until mo splits PowerShell into its commands.
+func unsplitPowerShell(call llm.ToolCall) bool {
+	return tools.IsShell(call.Name) && tools.CurrentShell().PowerShell()
 }
 
 // openDialog shows what the agent asks, starting at the first part; with
@@ -543,8 +550,8 @@ func (m model) commandRows() int {
 // commandLines is the command of a call highlighted and wrapped to width.
 func (m model) commandLines(request agent.ApprovalRequest, colors dialogColors, width int) []string {
 	language := ""
-	if request.Call.Name == "bash" {
-		language = "bash"
+	if tools.IsShell(request.Call.Name) {
+		language = tools.CurrentShell().Language
 	}
 	return highlightLines(request.Summary, language, width-2, colors.command, m.printer == nil || m.printer.isDark())
 }
@@ -627,7 +634,7 @@ func (m model) scrollCommand(item *dialogItem, pressed string) {
 // rules say of each: allowed and by which rule, denied, not covered yet,
 // or writing a file.
 func (m model) commandParts(request agent.ApprovalRequest, body lipgloss.Style, colors dialogColors, width int) []string {
-	if request.Call.Name != "bash" {
+	if !tools.IsShell(request.Call.Name) || unsplitPowerShell(request.Call) {
 		return nil
 	}
 	parts, err := permissions.Commands(request.Summary)

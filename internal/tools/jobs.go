@@ -32,7 +32,7 @@ const (
 	JobKilled        = "killed"
 	JobLost          = "lost"
 	jobsUnavailable  = "background jobs are not available here: run the command without background"
-	jobNotFound      = "no job %d; bash action output without id lists them"
+	jobNotFound      = "no job %d; %s action output without id lists them"
 	jobPrunedNote    = "the output of job %d was deleted: older than the turns kept, or past the 500 MB a conversation keeps"
 	jobStartedResult = "started job %d in the background. You are told when it ends; action output with id %d reads its output, also while it runs."
 )
@@ -337,7 +337,7 @@ func (j *Jobs) Start(env Env, command string) (JobStatus, error) {
 	if err != nil {
 		return JobStatus{}, err
 	}
-	cmd := exec.Command("bash", "-c", command)
+	cmd := CurrentShell().Command(context.Background(), command)
 	cmd.Dir = env.WorkDir
 	output := io.MultiWriter(started.log, started.summary)
 	cmd.Stdout, cmd.Stderr = output, output
@@ -375,7 +375,7 @@ func (j *Jobs) Run(ctx context.Context, env Env, command string, timeout time.Du
 		j.mu.Unlock()
 		return JobStatus{}, "", err
 	}
-	cmd := exec.Command("bash", "-c", command)
+	cmd := CurrentShell().Command(context.Background(), command)
 	cmd.Dir = env.WorkDir
 	output := io.MultiWriter(running.log, running.summary)
 	cmd.Stdout, cmd.Stderr = output, output
@@ -441,7 +441,7 @@ func (j *Jobs) DetachJob(id int) error {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if j.conversation == "" {
-		return fmt.Errorf(jobNotFound, id)
+		return fmt.Errorf(jobNotFound, id, Shown(shellToolName))
 	}
 	running := j.live(sessions.JobsDir(j.root, j.conversation), id)
 	switch {
@@ -599,7 +599,7 @@ func (j *Jobs) Status(id int) (JobStatus, error) {
 // this run has it; the lock is held.
 func (j *Jobs) lookup(id int) (JobStatus, outputLog, error) {
 	if j.conversation == "" {
-		return JobStatus{}, nil, fmt.Errorf(jobNotFound, id)
+		return JobStatus{}, nil, fmt.Errorf(jobNotFound, id, Shown(shellToolName))
 	}
 	for _, each := range j.jobs {
 		if each.status.Conversation == j.conversation && each.status.ID == id {
@@ -607,12 +607,12 @@ func (j *Jobs) lookup(id int) (JobStatus, outputLog, error) {
 		}
 	}
 	if j.root == "" {
-		return JobStatus{}, nil, fmt.Errorf(jobNotFound, id)
+		return JobStatus{}, nil, fmt.Errorf(jobNotFound, id, Shown(shellToolName))
 	}
 	dir := sessions.JobsDir(j.root, j.conversation)
 	status, err := readJobStatus(dir, id)
 	if err != nil {
-		return JobStatus{}, nil, fmt.Errorf(jobNotFound, id)
+		return JobStatus{}, nil, fmt.Errorf(jobNotFound, id, Shown(shellToolName))
 	}
 	return j.known(dir, status), nil, nil
 }

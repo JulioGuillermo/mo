@@ -10,6 +10,8 @@ package agent
 // | AP-06 | Security | A command writing to a file asks though a rule allows it             | P1       |
 // | AP-07 | Edge     | A fetch is checked as "fetch <url>"                                  | P1       |
 // | AP-08 | Security | A tool reached through tool_call asks as itself; the UI sees the tool | P0      |
+// | AP-09 | Security | A PowerShell command asks though a rule allows it; deny rules apply  | P0       |
+// | AP-10 | Happy    | In auto mode the model judges a PowerShell command as a whole        | P1       |
 
 import (
 	"context"
@@ -165,6 +167,39 @@ func TestPermissions(t *testing.T) {
 		}
 		if result := agent.History[2]; result.ToolCallID != "w" || result.Text != deniedResult {
 			t.Errorf("result = %+v", result)
+		}
+	})
+
+	t.Run("AP-09 a PowerShell command asks though a rule allows it; deny rules apply", func(t *testing.T) {
+		defer tools.UseShell(tools.PowerShellForTests(false))()
+		provider := &scriptedProvider{replies: []llm.Message{
+			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+				{ID: "l", Name: "powershell", Args: json.RawMessage(`{"command":"Get-ChildItem -Force"}`)},
+				{ID: "r", Name: "powershell", Args: json.RawMessage(`{"command":"Remove-Item -Recurse build"}`)},
+			}},
+			{Role: llm.RoleAssistant, Text: "done"},
+		}}
+		agent, _ := newAgentIn(t, provider, "bash")
+		agent.Permissions, _ = permissions.New(permissions.ModeEdits, []string{"Get-ChildItem *", "*"}, []string{"Remove-Item *"})
+		var asked []ApprovalRequest
+		hooks := Hooks{Approve: func(_ context.Context, request ApprovalRequest) Decision { asked = append(asked, request); return Deny }}
+
+		_ = agent.Run(ctx, "list the files", hooks)
+
+		if len(asked) != 2 || asked[0].Call.Name != "bash" || strings.Join(asked[0].Commands, "|") != "Get-ChildItem -Force" || asked[1].Warning != "deny rule: Remove-Item *" {
+			t.Errorf("asked = %+v", asked)
+		}
+	})
+
+	t.Run("AP-10 in auto mode the model judges a PowerShell command as a whole", func(t *testing.T) {
+		defer tools.UseShell(tools.PowerShellForTests(false))()
+		judge := &scriptedProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Text: "SAFE - lists files"}}}
+		agent := ruledAgent(t, permissions.ModeAuto, nil, nil, judge)
+
+		listed := agent.approvalFor(ctx, bashCall("Get-ChildItem | Select-Object Name"), Hooks{})
+
+		if listed.ask || len(judge.requests) != 1 || !strings.Contains(judge.requests[0].Messages[0].Text, "Get-ChildItem | Select-Object Name") {
+			t.Errorf("listed = %+v requests = %d", listed, len(judge.requests))
 		}
 	})
 }

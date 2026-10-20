@@ -27,7 +27,7 @@ func topic(names ...string) []string {
 // builtinKeywords are the words each built-in tool is found by, besides its
 // name and its description.
 var builtinKeywords = map[string][]string{
-	"bash": slices.Concat(topic("shell"), []string{"run", "run command", "script", "background", "job", "build", "compile", "make", "test",
+	"bash": slices.Concat(topic("shell"), []string{"run", "run command", "powershell", "pwsh", "cmdlet", "script", "background", "job", "build", "compile", "make", "test",
 		"install", "kill", "output", "stdout", "pipe", "sh", "zsh", "linux", "ssh", "docker", "npm", "go test", "ejecutar", "correr", "compilar", "proceso"}),
 	"read": slices.Concat(topic("files"), []string{"open", "view", "show", "cat", "print", "display", "contents", "content", "load", "image", "picture",
 		"photo", "screenshot", "png", "jpg", "pdf", "leer", "abrir", "ver", "mostrar", "imagen"}),
