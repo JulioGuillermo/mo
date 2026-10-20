@@ -352,7 +352,13 @@ type Render struct {
 	WritingMS   int `toml:"writing_ms,omitzero"`
 	ReasoningMS int `toml:"reasoning_ms,omitzero"`
 	AskingMS    int `toml:"asking_ms,omitzero"`
+	// UIFPS is the most times a second a plugin's canvas is drawn again by
+	// itself, apart from mo's own animations.
+	UIFPS int `toml:"ui_fps,omitzero"`
 }
+
+// MaxUIFPS is the most frames a second a canvas can ask for.
+const MaxUIFPS = 120
 
 // MinFrameMS is the shortest time between an animation's frames.
 const MinFrameMS = 20
@@ -490,7 +496,7 @@ func Defaults() Config {
 		Web:          Web{Search: web.SearchDuckDuckGo},
 		Render: Render{Images: render.ModeAuto, Background: "#00081a", Sidebar: "auto", Status: "powerline", Icons: "nerd", Keys: "default", Bar: "shapes",
 			ReplyRefresh: RefreshLive, ReplyEveryMS: 100, ReplyEveryTokens: 10,
-			SpinnerMS: 80, RunningMS: 150, WritingMS: 220, ReasoningMS: 160, AskingMS: 500},
+			SpinnerMS: 80, RunningMS: 150, WritingMS: 220, ReasoningMS: 160, AskingMS: 500, UIFPS: 20},
 		Loop:        Loop{Enabled: ptr(true), Replies: 30, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2), Steps: ptr(300)},
 		Agents:      Agents{Enabled: ptr(false), Depth: 1, MaxParallel: 3, MaxAgents: 20, MaxSteps: 50},
 		Peers:       Peers{Enabled: ptr(false), Incoming: "ask", Outgoing: "tools", Wake: ptr(true), Network: "off"},
@@ -577,6 +583,9 @@ func validate(cfg Config) error {
 		if ms < MinFrameMS {
 			return fmt.Errorf("render.%s %d: use %d or more", name, ms, MinFrameMS)
 		}
+	}
+	if cfg.Render.UIFPS < 1 || cfg.Render.UIFPS > MaxUIFPS {
+		return fmt.Errorf("render.ui_fps %d: use 1 to %d", cfg.Render.UIFPS, MaxUIFPS)
 	}
 	if cfg.Render.ReplyEveryMS < 10 || cfg.Render.ReplyEveryTokens < 1 {
 		return fmt.Errorf("render.reply_every_ms is 10 or more, render.reply_every_tokens 1 or more")
@@ -921,6 +930,7 @@ func mergeHarmless(base, layer Config) Config {
 	base.Render.WritingMS = override(base.Render.WritingMS, layer.Render.WritingMS)
 	base.Render.ReasoningMS = override(base.Render.ReasoningMS, layer.Render.ReasoningMS)
 	base.Render.AskingMS = override(base.Render.AskingMS, layer.Render.AskingMS)
+	base.Render.UIFPS = override(base.Render.UIFPS, layer.Render.UIFPS)
 	base.Render.Icons = override(base.Render.Icons, layer.Render.Icons)
 	base.Loop = mergeLoop(base.Loop, layer.Loop)
 	return base

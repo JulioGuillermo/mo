@@ -355,6 +355,7 @@ func (m model) useSession(session Session) (tea.Model, tea.Cmd) {
 func (m *model) applyUI() tea.Cmd {
 	settings := m.session.Config.Render
 	m.printer.setImages(render.Detect(settings.Images))
+	m.session.Plugins.SetUIFPS(settings.UIFPS)
 	if enabled := settings.Keys == "vim"; enabled != m.vim.enabled {
 		m.vim = vimState{enabled: enabled}
 	}
@@ -400,6 +401,21 @@ func atLeast(least int) func(string) error {
 		_, err := parseAtLeast(text, least)
 		return err
 	}
+}
+
+// parseUIFPS reads the frames a second of plugins' canvases: 1 to
+// config.MaxUIFPS.
+func parseUIFPS(text string) (int, error) {
+	fps, err := parseAtLeast(text, 1)
+	if err == nil && fps > config.MaxUIFPS {
+		err = fmt.Errorf("use 1 to %d", config.MaxUIFPS)
+	}
+	return fps, err
+}
+
+func validUIFPS(text string) error {
+	_, err := parseUIFPS(text)
+	return err
 }
 
 func validSize(text string) error {

@@ -66,11 +66,13 @@ type settingsDraft struct {
 	replyRefresh string
 	// The milliseconds between each animation's frames.
 	spinnerMS, runningMS, writingMS, reasoningMS, askingMS string
-	replyEveryMS                                           string
-	replyEveryTokens                                       string
-	icons                                                  string
-	keys                                                   string
-	memoryDir                                              string
+	// uiFPS is the most frames a second of a plugin's canvas.
+	uiFPS            string
+	replyEveryMS     string
+	replyEveryTokens string
+	icons            string
+	keys             string
+	memoryDir        string
 
 	instructionsOn    bool
 	instructionsFiles string
@@ -181,6 +183,7 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		writingMS:        strconv.Itoa(cfg.Render.WritingMS),
 		reasoningMS:      strconv.Itoa(cfg.Render.ReasoningMS),
 		askingMS:         strconv.Itoa(cfg.Render.AskingMS),
+		uiFPS:            strconv.Itoa(cfg.Render.UIFPS),
 		replyEveryMS:     strconv.Itoa(cfg.Render.ReplyEveryMS),
 		replyEveryTokens: strconv.Itoa(cfg.Render.ReplyEveryTokens),
 		icons:            cfg.Render.Icons,
@@ -385,6 +388,11 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 		}
 		*frame.into = unlessDefault(value, frame.initial)
 	}
+	uiFPS, err := parseUIFPS(d.uiFPS)
+	if err != nil {
+		return layer, fmt.Errorf("plugin UIs frames a second: %w", err)
+	}
+	layer.Render.UIFPS = unlessDefault(uiFPS, defaults.Render.UIFPS)
 	layer.Render.ReplyEveryMS = unlessDefault(everyMS, defaults.Render.ReplyEveryMS)
 	layer.Render.ReplyEveryTokens = unlessDefault(everyTokens, defaults.Render.ReplyEveryTokens)
 	layer.Render.Icons = unlessDefault(d.icons, defaults.Render.Icons)

@@ -22,6 +22,12 @@ type surface struct {
 	view     func(path string)
 	// screen is the terminal's width and height, zero until told.
 	screen [2]int
+	// canvases are those of the dialogs open, by dialog and id; fps is
+	// the most times a second they are drawn again by themselves, ticking
+	// whether some are.
+	canvases map[string]*canvas
+	fps      int
+	ticking  bool
 }
 
 type sidebarEntry struct {
@@ -43,9 +49,10 @@ type SidebarItem struct {
 }
 
 func newSurface() *surface {
-	s := &surface{handlers: map[int]dialogHandler{}}
+	s := &surface{handlers: map[int]dialogHandler{}, canvases: map[string]*canvas{}, fps: defaultUIFPS}
 	s.dialogs = tools.NewPluginUIs(s.deliver)
 	s.dialogs.OnChange(s.tell)
+	s.dialogs.SetCanvasSource(s.canvasLines)
 	return s
 }
 
@@ -65,6 +72,9 @@ func (s *surface) deliver(event tools.UIEvent) {
 	handler, ok := s.handlers[event.UI]
 	s.mu.Unlock()
 	defer s.forgetClosed(event.UI)
+	if canvasEvents[event.Event] {
+		defer s.redrawCanvas(event.UI, event.Element)
+	}
 	if !ok || handler.onEvent == nil {
 		return
 	}
@@ -77,13 +87,17 @@ func (s *surface) deliver(event tools.UIEvent) {
 	}
 }
 
-// forgetClosed drops the handler of a dialog that is gone.
+// canvasEvents are the events after which a canvas is drawn again.
+var canvasEvents = map[string]bool{"key": true, "click": true, "wheel": true, "focus": true, "blur": true}
+
+// forgetClosed drops the handler and the canvases of a dialog that is gone.
 func (s *surface) forgetClosed(id int) {
 	if _, open := s.dialogs.Get(id); open {
 		return
 	}
 	s.mu.Lock()
 	delete(s.handlers, id)
+	s.dropCanvases(id)
 	s.mu.Unlock()
 }
 
@@ -94,6 +108,13 @@ func eventTable(state *lua.LState, event tools.UIEvent) *lua.LTable {
 	table.RawSetString("event", lua.LString(event.Event))
 	table.RawSetString("action", lua.LString(event.Action))
 	table.RawSetString("value", lua.LString(event.Value))
+	if event.Text != "" {
+		table.RawSetString("text", lua.LString(event.Text))
+	}
+	if event.At {
+		table.RawSetString("x", lua.LNumber(event.X))
+		table.RawSetString("y", lua.LNumber(event.Y))
+	}
 	values := state.NewTable()
 	for name, value := range event.Values {
 		values.RawSetString(name, lua.LString(value))
@@ -222,7 +243,7 @@ func (p *Plugin) removeSidebarItem(state *lua.LState) int {
 // gives { id, update, close }. on_event gets what the user does in it.
 func (p *Plugin) openDialog(state *lua.LState) int {
 	spec := state.CheckTable(1)
-	tree := p.dialogTree(state, spec.RawGetString("tree"))
+	tree, canvases := p.dialogTree(state, spec.RawGetString("tree"))
 	onEvent, _ := spec.RawGetString("on_event").(*lua.LFunction)
 	options := tools.DialogOptions{
 		Size:   luaString(spec.RawGetString("size")),
@@ -234,6 +255,7 @@ func (p *Plugin) openDialog(state *lua.LState) int {
 	if err != nil {
 		state.RaiseError("mo.dialog: %v", err)
 	}
+	surface.setCanvases(p, id, canvases, *tree)
 	surface.mu.Lock()
 	surface.handlers[id] = dialogHandler{plugin: p, onEvent: onEvent}
 	open := surface.open
@@ -245,12 +267,13 @@ func (p *Plugin) openDialog(state *lua.LState) int {
 	return 1
 }
 
-func (p *Plugin) dialogTree(state *lua.LState, value lua.LValue) *tools.UINode {
-	plain, err := toGo(value)
+func (p *Plugin) dialogTree(state *lua.LState, value lua.LValue) (*tools.UINode, []canvasSpec) {
+	var canvases []canvasSpec
+	plain, err := toGo(takeCanvases(state, value, &canvases))
 	if err != nil {
 		state.RaiseError("mo.dialog: tree: %v", err)
 	}
-	plain, err = p.expandComponents(state, plain, 0)
+	plain, err = p.expandComponents(state, plain, 0, &canvases)
 	if err != nil {
 		state.RaiseError("mo.dialog: %v", err)
 	}
@@ -258,11 +281,14 @@ func (p *Plugin) dialogTree(state *lua.LState, value lua.LValue) *tools.UINode {
 	if err != nil {
 		state.RaiseError("mo.dialog: %v", err)
 	}
-	return tree
+	if err := matchCanvases(*tree, canvases); err != nil {
+		state.RaiseError("mo.dialog: %v", err)
+	}
+	return tree, canvases
 }
 
 // dialogHandle is what mo.dialog gives: the dialog's id, update{ title,
-// tree }, bounds() and close().
+// tree }, redraw(canvas), bounds() and close().
 func (p *Plugin) dialogHandle(id int) *lua.LTable {
 	state := p.state
 	handle := state.NewTable()
@@ -270,18 +296,27 @@ func (p *Plugin) dialogHandle(id int) *lua.LTable {
 	handle.RawSetString("update", state.NewFunction(func(state *lua.LState) int {
 		spec := state.CheckTable(1)
 		var tree *tools.UINode
+		var canvases []canvasSpec
 		if value := spec.RawGetString("tree"); value != lua.LNil {
-			tree = p.dialogTree(state, value)
+			tree, canvases = p.dialogTree(state, value)
 		}
 		if err := p.surface.dialogs.Replace(id, luaString(spec.RawGetString("title")), tree); err != nil {
 			state.RaiseError("dialog update: %v", err)
 		}
+		if tree != nil {
+			p.surface.setCanvases(p, id, canvases, *tree)
+		}
+		return 0
+	}))
+	handle.RawSetString("redraw", state.NewFunction(func(state *lua.LState) int {
+		p.surface.redrawCanvas(id, state.OptString(1, ""))
 		return 0
 	}))
 	handle.RawSetString("bounds", state.NewFunction(p.dialogBounds(id)))
 	handle.RawSetString("close", state.NewFunction(func(*lua.LState) int {
 		p.surface.mu.Lock()
 		delete(p.surface.handlers, id)
+		p.surface.dropCanvases(id)
 		p.surface.mu.Unlock()
 		_ = p.surface.dialogs.Close(id)
 		return 0

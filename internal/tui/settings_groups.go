@@ -29,7 +29,7 @@ var settingsGroups = []settingsGroup{
 	{key: groupPrefix + "agents", title: "Agents", sections: []string{"agents"}},
 	{key: groupPrefix + "peers", title: "Peers", sections: []string{"peers"}},
 	{key: groupPrefix + "safety", title: "Safety", sections: []string{"permissions", "loop"}},
-	{key: groupPrefix + "interface", title: "Interface", sections: []string{"appearance", "animations", "notify"}},
+	{key: groupPrefix + "interface", title: "Interface", sections: []string{"appearance", "animations", "pluginuis", "notify"}},
 	{key: groupPrefix + pluginsKey, title: "Plugins", sections: []string{pluginsKey}},
 }
 

@@ -333,9 +333,10 @@ func (s *Set) TakeOver(previous *Set) {
 	}
 	previous.surface.mu.Lock()
 	changed, open, send, view := previous.surface.changed, previous.surface.open, previous.surface.send, previous.surface.view
-	screen := previous.surface.screen
+	screen, fps := previous.surface.screen, previous.surface.fps
 	previous.surface.mu.Unlock()
 	s.SetScreen(screen[0], screen[1])
+	s.SetUIFPS(fps)
 	s.Follow(changed, open)
 	s.OnSend(send)
 	s.OnView(view)

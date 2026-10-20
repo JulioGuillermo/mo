@@ -11,7 +11,7 @@ import (
 
 // uiNodeKeys are the fields a node takes, as UINode names them.
 var uiNodeKeys = []string{
-	"type", "id", "text", "label", "value", "placeholder", "options", "min", "max", "step", "svg", "language", "title", "direction", "columns", "widths", "justify", "align", "gap", "grow",
+	"type", "id", "text", "label", "value", "placeholder", "options", "min", "max", "step", "svg", "language", "fps", "keep_esc", "focusable", "title", "direction", "columns", "widths", "justify", "align", "gap", "grow",
 	"width", "height", "min_width", "max_width", "min_height", "max_height", "padding", "margin", "bg", "fg", "border", "bold", "visible", "disabled", "on_click", "on_input",
 	"on_change", "children",
 }
@@ -56,6 +56,12 @@ const uiTreeExample = `{"type":"card","title":"Login","children":[{"type":"label
 // nodes, a node under its type's name, other names for fields and types,
 // and a missing type that the other fields tell.
 func ParseUITree(raw json.RawMessage) (*UINode, error) {
+	return parseTree(raw, false)
+}
+
+// parseTree is ParseUITree; for a plugin's tree, canvas is a canvas and
+// not taken as an svg, as a model's is.
+func parseTree(raw json.RawMessage, plugin bool) (*UINode, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, nil
 	}
@@ -68,7 +74,7 @@ func ParseUITree(raw json.RawMessage) (*UINode, error) {
 			return nil, fmt.Errorf("tree is a string that is not JSON: send it as an object, e.g. %s", uiTreeExample)
 		}
 	}
-	mended, err := mendUINode(value, "tree")
+	mended, err := mendUINode(value, "tree", plugin)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +86,7 @@ func ParseUITree(raw json.RawMessage) (*UINode, error) {
 	return &node, nil
 }
 
-func mendUINode(value any, path string) (map[string]any, error) {
+func mendUINode(value any, path string, plugin bool) (map[string]any, error) {
 	var node map[string]any
 	switch v := value.(type) {
 	case []any:
@@ -158,7 +164,9 @@ func mendUINode(value any, path string) (map[string]any, error) {
 		return nil, fmt.Errorf("%s: unknown field %s; a node takes %s", path, strings.Join(quoteAll(unknown), ", "), strings.Join(uiNodeKeys, ", "))
 	}
 	if typed, ok := mended["type"].(string); ok && typed != "" {
-		if known := uiTypeOf(typed); known != "" {
+		if plugin && strings.EqualFold(typed, UICanvas) {
+			mended["type"] = UICanvas
+		} else if known := uiTypeOf(typed); known != "" {
 			if direction := uiDirectionOf(typed); direction != "" && mended["direction"] == nil {
 				mended["direction"] = direction
 			}
@@ -221,7 +229,7 @@ func mendUINode(value any, path string) (map[string]any, error) {
 		}
 		mendedChildren := make([]any, 0, len(list))
 		for i, child := range list {
-			each, err := mendUINode(child, fmt.Sprintf("%s.children[%d]", path, i))
+			each, err := mendUINode(child, fmt.Sprintf("%s.children[%d]", path, i), plugin)
 			if err != nil {
 				return nil, err
 			}

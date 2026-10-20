@@ -138,7 +138,7 @@ func (m model) uiFrame() (uiFrame, bool) {
 		}
 	}
 	tree := ui.Shown()
-	body := uiRenderer{focus: state.focus, svgs: m.svgs, ui: ui.ID}.render(tree, uiRoom{width: most - 4, height: room, fillWidth: full}, "")
+	body := m.dialogRenderer(ui, state).render(tree, uiRoom{width: most - 4, height: room, fillWidth: full}, "")
 	state.scroll = min(max(state.scroll, 0), max(body.height()-room, 0))
 	shown := body.lines[state.scroll:min(state.scroll+room, body.height())]
 
@@ -225,7 +225,7 @@ func (m model) bareFrame(ui tools.UI, state *uiLive) uiFrame {
 	if ui.Error != "" {
 		room = max(room-1, 1)
 	}
-	body := uiRenderer{focus: state.focus, svgs: m.svgs, ui: ui.ID}.render(ui.Shown(), uiRoom{width: width, height: room, fillWidth: full, fillHeight: full}, "")
+	body := m.dialogRenderer(ui, state).render(ui.Shown(), uiRoom{width: width, height: room, fillWidth: full, fillHeight: full}, "")
 	state.scroll = min(max(state.scroll, 0), max(body.height()-room, 0))
 	lines := slices.Clone(body.lines[state.scroll:min(state.scroll+room, body.height())])
 	inner := body.width
@@ -252,13 +252,22 @@ func (m model) bareFrame(ui tools.UI, state *uiLive) uiFrame {
 	return uiFrame{lines: lines, x: x, y: y, hits: hits}
 }
 
+// dialogRenderer draws an interface with its focus, its svgs and its
+// canvases.
+func (m model) dialogRenderer(ui tools.UI, state *uiLive) uiRenderer {
+	uis := m.dialogUIs()
+	return uiRenderer{focus: state.focus, svgs: m.svgs, ui: ui.ID, canvasLines: func(id string, width, height int) []string {
+		return uis.CanvasLines(ui.ID, id, width, height)
+	}}
+}
+
 // uiCloseHit is the id of the × in the dialog's top edge.
 const uiCloseHit = "\x00close"
 
 // uiKeys are the keys the interface takes, as its controls ask for, said
 // whole and, for a narrow dialog, the keys alone.
 func uiKeys(tree tools.UINode, closes bool) (string, string) {
-	var buttons, inputs, lines, changes, ticks bool
+	var buttons, inputs, lines, changes, ticks, canvas, keepsEsc bool
 	var walk func(n tools.UINode)
 	walk = func(n tools.UINode) {
 		if !n.Shown() {
@@ -271,6 +280,8 @@ func uiKeys(tree tools.UINode, closes bool) (string, string) {
 			inputs = true
 		case tools.UITextarea:
 			inputs, lines = true, true
+		case tools.UICanvas:
+			canvas, keepsEsc = true, keepsEsc || n.KeepEsc
 		case tools.UISelect, tools.UISlider, tools.UIRadio:
 			changes = true
 		case tools.UICheckbox, tools.UISwitch:
@@ -303,10 +314,17 @@ func uiKeys(tree tools.UINode, closes bool) (string, string) {
 	if ticks {
 		add("space", "tick")
 	}
+	if canvas {
+		keys, short = append(keys, "keys go to what has the focus"), append(short, "keys")
+	}
+	closeKey := "esc"
+	if keepsEsc {
+		closeKey = "ctrl+c"
+	}
 	if closes {
-		add("esc", "closes")
+		add(closeKey, "closes")
 	} else {
-		add("esc", "hides")
+		add(closeKey, "hides")
 	}
 	return strings.Join(keys, " · "), strings.Join(short, " · ")
 }
@@ -371,6 +389,10 @@ func (m model) updateUI(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m.uiFire(ui.ID, hit.id, "click")
 				case tools.UISVG:
 					return m.clickSVG(ui.ID, node, hit, msg.X, msg.Y)
+				case tools.UICanvas:
+					left, cmd := m.leaveInput(ui, previous, hit.id)
+					clicked, more := left.(model).canvasMouse(ui.ID, node, hit, "click", "", msg.X, msg.Y)
+					return clicked, tea.Batch(cmd, more)
 				case tools.UIInput, tools.UITextarea:
 					return m.leaveInput(ui, previous, hit.id)
 				case tools.UISelect:
@@ -393,6 +415,18 @@ func (m model) updateUI(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.MouseWheelMsg:
+		if frame, ok := m.uiFrame(); ok {
+			for _, hit := range frame.hits {
+				node, found := findNode(ui.Shown(), hit.id)
+				if found && node.Type == tools.UICanvas && msg.X >= hit.x0 && msg.X < hit.x1 && msg.Y >= hit.y0 && msg.Y < hit.y1 {
+					way := "down"
+					if msg.Button == tea.MouseWheelUp {
+						way = "up"
+					}
+					return m.canvasMouse(ui.ID, node, hit, "wheel", way, msg.X, msg.Y)
+				}
+			}
+		}
 		if msg.Button == tea.MouseWheelUp {
 			state.scroll -= 3
 		} else {
@@ -417,6 +451,9 @@ func (m model) uiKey(ui tools.UI, state *uiLive, msg tea.KeyPressMsg) (tea.Model
 		return m.leaveInput(ui, state.focus, next)
 	}
 	node, _ := findNode(shown, state.focus)
+	if node.Type == tools.UICanvas {
+		return m.canvasKey(ui, node, msg)
+	}
 	switch msg.String() {
 	case "esc", "ctrl+c":
 		return m.hideUI(ui)
@@ -579,6 +616,7 @@ func (m model) leaveInput(ui tools.UI, from, to string) (tea.Model, tea.Cmd) {
 	if from == to || from == "" {
 		return m, nil
 	}
+	m.canvasFocus(ui, from, to)
 	if node, ok := findNode(ui.Shown(), from); ok && node.TakesText() && node.OnChange != "" {
 		return m.uiFire(ui.ID, from, "change")
 	}

@@ -39,7 +39,14 @@ const (
 	UIRadio    = "radio"
 	// UISVG draws an SVG, drawn again whenever it changes.
 	UISVG = "svg"
+	// UICanvas is drawn by a plugin's code, cell by cell, and gets the keys
+	// and the mouse while it has the focus; plugins only.
+	UICanvas = "canvas"
 )
+
+// pluginUITypes are the node types a plugin's dialog takes: the model's
+// and the canvas.
+var pluginUITypes = append(slices.Clone(UITypes), UICanvas)
 
 // UITypes are every node type.
 var UITypes = []string{UIPanel, UICard, UIGrid, UILabel, UIButton, UIInput, UITextarea, UISelect, UISlider, UICheckbox, UISwitch, UIRadio, UISVG}
@@ -67,35 +74,39 @@ type UINode struct {
 	Options     []string `json:"options,omitempty"`
 	SVG         string   `json:"svg,omitempty"`
 	Language    string   `json:"language,omitempty"`
-	Min         float64  `json:"min,omitempty"`
-	Max         float64  `json:"max,omitempty"`
-	Step        float64  `json:"step,omitempty"`
-	Title       string   `json:"title,omitempty"`
-	Direction   string   `json:"direction,omitempty"`
-	Columns     int      `json:"columns,omitempty"`
-	Widths      []int    `json:"widths,omitempty"`
-	Justify     string   `json:"justify,omitempty"`
-	Align       string   `json:"align,omitempty"`
-	Gap         int      `json:"gap,omitempty"`
-	Grow        int      `json:"grow,omitempty"`
-	Width       UISize   `json:"width,omitempty"`
-	Height      UISize   `json:"height,omitempty"`
-	MinWidth    int      `json:"min_width,omitempty"`
-	MaxWidth    int      `json:"max_width,omitempty"`
-	MinHeight   int      `json:"min_height,omitempty"`
-	MaxHeight   int      `json:"max_height,omitempty"`
-	Padding     []int    `json:"padding,omitempty"`
-	Margin      []int    `json:"margin,omitempty"`
-	BG          string   `json:"bg,omitempty"`
-	FG          string   `json:"fg,omitempty"`
-	Border      string   `json:"border,omitempty"`
-	Bold        bool     `json:"bold,omitempty"`
-	Visible     *bool    `json:"visible,omitempty"`
-	Disabled    bool     `json:"disabled,omitempty"`
-	OnClick     string   `json:"on_click,omitempty"`
-	OnInput     string   `json:"on_input,omitempty"`
-	OnChange    string   `json:"on_change,omitempty"`
-	Children    []UINode `json:"children,omitempty"`
+	FPS         int      `json:"fps,omitempty"`
+	KeepEsc     bool     `json:"keep_esc,omitempty"`
+	// Takes is false for a canvas that only shows, never taking the focus.
+	Takes     *bool    `json:"focusable,omitempty"`
+	Min       float64  `json:"min,omitempty"`
+	Max       float64  `json:"max,omitempty"`
+	Step      float64  `json:"step,omitempty"`
+	Title     string   `json:"title,omitempty"`
+	Direction string   `json:"direction,omitempty"`
+	Columns   int      `json:"columns,omitempty"`
+	Widths    []int    `json:"widths,omitempty"`
+	Justify   string   `json:"justify,omitempty"`
+	Align     string   `json:"align,omitempty"`
+	Gap       int      `json:"gap,omitempty"`
+	Grow      int      `json:"grow,omitempty"`
+	Width     UISize   `json:"width,omitempty"`
+	Height    UISize   `json:"height,omitempty"`
+	MinWidth  int      `json:"min_width,omitempty"`
+	MaxWidth  int      `json:"max_width,omitempty"`
+	MinHeight int      `json:"min_height,omitempty"`
+	MaxHeight int      `json:"max_height,omitempty"`
+	Padding   []int    `json:"padding,omitempty"`
+	Margin    []int    `json:"margin,omitempty"`
+	BG        string   `json:"bg,omitempty"`
+	FG        string   `json:"fg,omitempty"`
+	Border    string   `json:"border,omitempty"`
+	Bold      bool     `json:"bold,omitempty"`
+	Visible   *bool    `json:"visible,omitempty"`
+	Disabled  bool     `json:"disabled,omitempty"`
+	OnClick   string   `json:"on_click,omitempty"`
+	OnInput   string   `json:"on_input,omitempty"`
+	OnChange  string   `json:"on_change,omitempty"`
+	Children  []UINode `json:"children,omitempty"`
 }
 
 // Shown tells whether a node is drawn.
@@ -105,6 +116,30 @@ func (n UINode) Shown() bool {
 
 // UIColors are the colour names a node may take besides #rrggbb.
 var UIColors = []string{"text", "dim", "accent", "error", "warning", "success", "surface", "background"}
+
+// UIPalette is what each colour name stands for.
+var UIPalette = map[string]string{
+	"text":       "#c0caf5",
+	"dim":        "#565f89",
+	"accent":     "#7aa2f7",
+	"error":      "#f7768e",
+	"warning":    "#e0af68",
+	"success":    "#9ece6a",
+	"surface":    "#292e42",
+	"background": "#16161e",
+}
+
+// UIColor is a colour as #rrggbb: a name of the palette, or #rrggbb itself;
+// "" for anything else.
+func UIColor(name string) string {
+	if hex, ok := UIPalette[name]; ok {
+		return hex
+	}
+	if hexColor.MatchString(name) {
+		return name
+	}
+	return ""
+}
 
 var (
 	hexColor     = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
@@ -118,12 +153,21 @@ var (
 // validateUI checks a tree before it is shown, naming the first problem by
 // its path, so the model can mend it.
 func validateUI(root UINode) error {
+	return validateTree(root, UITypes)
+}
+
+// validatePluginUI checks a plugin's tree, which may hold canvases.
+func validatePluginUI(root UINode) error {
+	return validateTree(root, pluginUITypes)
+}
+
+func validateTree(root UINode, types []string) error {
 	ids := map[string]bool{}
 	var check func(n UINode, path string) error
 	check = func(n UINode, path string) error {
 		where := path + " (" + n.Type + ")"
-		if !slices.Contains(UITypes, n.Type) {
-			return fmt.Errorf("%s: type %q: use %s, e.g. %s", path, n.Type, strings.Join(UITypes, ", "), uiTreeExample)
+		if !slices.Contains(types, n.Type) {
+			return fmt.Errorf("%s: type %q: use %s, e.g. %s", path, n.Type, strings.Join(types, ", "), uiTreeExample)
 		}
 		if (n.Focusable() || n.OnClick != "" || n.OnInput != "" || n.OnChange != "") && n.ID == "" {
 			return fmt.Errorf("%s needs an id", where)
@@ -249,6 +293,8 @@ type UIEvent struct {
 	Values  map[string]string
 	// Data is what a script passed to notify or submit, as JSON.
 	Data string
+	// Text is what a key typed into a canvas, "" for keys that type none.
+	Text string
 	// X and Y are where an svg was clicked, in its own units, when At.
 	X, Y float64
 	At   bool
@@ -313,6 +359,8 @@ type UIs struct {
 	// to ask; 0 when none is.
 	shown       int
 	shownBounds UIBounds
+	// canvas draws the canvases of plugins' interfaces.
+	canvas CanvasSource
 	// firstID is the number the first interface takes; deliver, when set,
 	// takes what the user does instead of the model, as for plugins.
 	firstID int

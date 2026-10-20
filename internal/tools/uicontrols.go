@@ -26,6 +26,9 @@ func (n UINode) TakesText() bool {
 
 // Focusable tells a node the user can tab to.
 func (n UINode) Focusable() bool {
+	if n.Type == UICanvas {
+		return n.Takes == nil || *n.Takes
+	}
 	return n.Type == UIButton || n.HasValue()
 }
 

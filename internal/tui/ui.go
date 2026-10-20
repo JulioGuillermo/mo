@@ -302,6 +302,7 @@ func Run(session Session) error {
 	session.Plugins.Follow(func() { bridge.send(uiChangedMsg{}) }, func(id int) { bridge.send(pluginDialogMsg(id)) })
 	session.Plugins.OnSend(func(message plugins.SentMessage) { bridge.send(pluginSendMsg(message)) })
 	session.Plugins.OnView(func(path string) { bridge.send(pluginViewMsg(path)) })
+	session.Plugins.SetUIFPS(session.Config.Render.UIFPS)
 	if session.Team != nil {
 		session.Team.Follow(func(team.Info) agent.Hooks { return agent.Hooks{Interact: bridge.interact} },
 			func() { bridge.send(agentsChangedMsg{}) }, func() { bridge.send(agentEndedMsg{}) })

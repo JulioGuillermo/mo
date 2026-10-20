@@ -271,6 +271,7 @@ dir = "~/.local/share/mo/memory"
 background = "#00081a"     # painted behind everything so mo looks the same in any terminal;
                            # "terminal" keeps the terminal's own
 sidebar = "auto"           # side panel of tasks and jobs when wide enough; "on" always; "off" never
+ui_fps = 20                # the most a plugin's canvas draws itself again a second
 keys = "default"           # "vim" for vim keys: modes, and ctrl+h/j/k/l between the panes
 status = "powerline"       # segments on backgrounds with arrows (needs a Nerd Font); "plain" for any font
 bar = "shapes"             # context bar: shapes ▰▱, braille, circles, half-circles, squares, half-squares, dots, rings, dashes, shade, blocks, halves, line
@@ -785,7 +786,8 @@ is your own code, with your rights and all of Lua's libraries, and it can:
 | hooks on a turn | `mo.on("prompt" \| "tool_call" \| "tool_result" \| "stream" \| "turn_end", fn)` |
 | items under **Plugins** in the side panel | `mo.sidebar.set{ id, text, detail, color, icon, on_click }` |
 | dialogs with inputs, text of many lines and buttons, full screen or not | `mo.dialog{ title, tree, on_event, size, listed }` |
-| node types of its own for dialogs | `mo.component{ name, render }` |
+| node types of its own for dialogs, from mo's nodes or drawn cell by cell | `mo.component{ name, render }` |
+| a canvas it draws itself, with the keys and the mouse | `{ type = "canvas", draw = function(w, h) ... end }` |
 | a file shown in mo's viewer | `mo.view(path)` |
 | messages to the model, through the permission mode | `mo.send{ title, message, wake }` |
 | settings you set in **/settings › Plugins**, where each also turns on and off | `mo.setting{ name, type, default, description, secret }`, `mo.settings.get(name)` |

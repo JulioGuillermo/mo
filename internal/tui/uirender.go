@@ -10,18 +10,6 @@ import (
 	"github.com/jg/mo/internal/tools"
 )
 
-// uiPalette is what the colour names of an interface stand for.
-var uiPalette = map[string]color.Color{
-	"text":       lipgloss.Color("#c0caf5"),
-	"dim":        lipgloss.Color("#565f89"),
-	"accent":     lipgloss.Color("#7aa2f7"),
-	"error":      lipgloss.Color("#f7768e"),
-	"warning":    lipgloss.Color("#e0af68"),
-	"success":    lipgloss.Color("#9ece6a"),
-	"surface":    lipgloss.Color("#292e42"),
-	"background": lipgloss.Color("#16161e"),
-}
-
 const (
 	uiInputWidth = 24
 	uiCursor     = "▏"
@@ -58,14 +46,16 @@ type uiRenderer struct {
 	// svgs draws the interface's svg nodes, ui being its number.
 	svgs *svgFrames
 	ui   int
+	// canvasLines gives the lines of a plugin's canvas at a size.
+	canvasLines func(id string, width, height int) []string
 }
 
 func uiColor(name string) color.Color {
 	if name == "" {
 		return nil
 	}
-	if found, ok := uiPalette[name]; ok {
-		return found
+	if hex, ok := tools.UIPalette[name]; ok {
+		return lipgloss.Color(hex)
 	}
 	return lipgloss.Color(name)
 }
@@ -337,6 +327,8 @@ func (r uiRenderer) content(n tools.UINode, room uiRoom, bg string) uiBox {
 		return r.radio(n, width, bg)
 	case tools.UISVG:
 		return r.svg(n, room, bg)
+	case tools.UICanvas:
+		return r.canvas(n, room, bg)
 	}
 	if n.Type == tools.UIGrid {
 		return r.grid(n, width, bg, fill)

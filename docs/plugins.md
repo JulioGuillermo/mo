@@ -195,7 +195,8 @@ dialog's event.
 
 `mo.dialog` opens a dialog over the screen at once. It takes the same nodes as the model's `ui`
 tool: `panel`, `card`, `grid`, `label`, `button`, `input`, `textarea`, `select`, `slider`,
-`checkbox`, `switch`, `radio` and `svg`, and the plugin's own [components](#components).
+`checkbox`, `switch`, `radio` and `svg`; and, for plugins only, `canvas`, which the plugin draws
+itself, and its own [components](#components).
 `{"action":"help","topic":"nodes"}` of the `ui` tool lists every field.
 
 ```lua
@@ -319,6 +320,72 @@ mo.dialog{ tree = { type = "card", title = "Issue", children = {
   { type = "labelled", id = "summary", label = "Summary" },
   { type = "labelled", id = "owner", label = "Owner", value = "ana" },
 } } }
+```
+
+### Canvas
+
+A `canvas` is drawn by the plugin, cell by cell: `draw(w, h)` gets its size and gives its lines,
+as a string or a list, with any colours. It takes `width`, `height`, their least and most and
+`grow` like any node, and holds the keys and the mouse while it has the focus.
+
+```lua
+local rows, at = { "hello" }, 1
+local dialog
+dialog = mo.dialog{ title = "pad", size = "full", frame = false, tree = {
+  type = "canvas", id = "pad", width = "full", height = "full", keep_esc = true,
+  draw = function(w, h)
+    local lines = {}
+    for i = 1, h do
+      local text = rows[i] or "~"
+      if i == at then text = mo.style(text, { bg = "surface" }) end
+      lines[i] = text
+    end
+    return lines
+  end,
+}, on_event = function(e)
+  if e.event == "key" and e.value == "j" then at = math.min(at + 1, #rows) end
+  if e.event == "key" and e.value == "k" then at = math.max(at - 1, 1) end
+  if e.event == "key" and e.value == "q" then dialog.close() end
+end }
+```
+
+| | |
+|---|---|
+| `draw(w, h)` | gives the lines at that size; mo cuts what is wider or longer and fills what is short |
+| `redraw` | `true` draws it again on its own as often as `fps` lets; a function is asked each frame and draws it again when it gives `true`; left out, it is drawn again only when it changes size, after one of its events, or on `dialog.redraw()` |
+| `fps` | the most it is drawn again a second on its own, at most **Settings › Interface › Plugin UIs** (`render.ui_fps`, 20 unless set) |
+| `keep_esc` | `true` gives it esc too; ctrl+c closes the dialog then |
+| `focusable` | `false` for one that only shows: tab skips it and keys never reach it |
+
+Its events reach `on_event` with `element` its id:
+
+| `event` | With |
+|---|---|
+| `key` | `value` the key as mo names it (`j`, `ctrl+x`, `enter`, `tab`, `space`, `pgdown`), `text` what it types |
+| `click` | `x`, `y`: the cell, from 0 |
+| `wheel` | `value` `up` or `down`, `x`, `y` |
+| `focus`, `blur` | the focus reached or left it |
+| `resize` | `value` the new size, as `80x24`, before it is drawn at it |
+
+Draw is called off mo's screen, which shows the last lines drawn meanwhile: a slow draw slows the
+canvas, never mo. `mo.style(text, { fg, bg, bold, italic, underline, reverse })` colours text;
+`mo.width(text)` is the cells it takes, wide characters counted as two.
+
+`dialog.redraw(id)` draws a canvas again, or all of the dialog's with no id.
+
+A component can draw itself too: its `render` gives `{ size, draw, redraw }` instead of nodes.
+`size(most_w, most_h)`, with the screen's size as the most, gives `{ w, h }`, its preferred size,
+and if it likes `min_w`, `max_w`, `min_h` and `max_h`; the node's own sizes win. It becomes a
+canvas, with the node's `id` or one of its own, that takes no focus unless its render gives
+`focusable = true`.
+
+```lua
+mo.component{ name = "meter", render = function(props)
+  return {
+    size = function() return { w = 20, h = 1 } end,
+    draw = function(w) local full = math.floor(w * props.value) return string.rep("█", full) .. string.rep("░", w - full) end,
+  }
+end }
 ```
 
 ### Showing a file

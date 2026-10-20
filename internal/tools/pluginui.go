@@ -48,7 +48,7 @@ func (u *UIs) toPlugin(ui *UI, event UIEvent, handler string) UIOutcome {
 
 // Open shows a plugin's interface and gives its number.
 func (u *UIs) Open(owner, title string, tree UINode, options DialogOptions) (int, error) {
-	if err := validateUI(tree); err != nil {
+	if err := validatePluginUI(tree); err != nil {
 		return 0, err
 	}
 	if options.Size != "" && options.Size != DialogFull {
@@ -102,7 +102,7 @@ func (u *UIs) Dismiss(id int) {
 // given; what the user typed stays.
 func (u *UIs) Replace(id int, title string, tree *UINode) error {
 	if tree != nil {
-		if err := validateUI(*tree); err != nil {
+		if err := validatePluginUI(*tree); err != nil {
 			return err
 		}
 	}
@@ -143,7 +143,7 @@ func PluginTree(value any) (*UINode, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tree: %w", err)
 	}
-	tree, err := ParseUITree(encoded)
+	tree, err := parseTree(encoded, true)
 	if err == nil && tree == nil {
 		return nil, fmt.Errorf("a dialog needs a tree, e.g. %s", uiTreeExample)
 	}
@@ -170,4 +170,43 @@ func (u *UIs) Bounds(id int) (UIBounds, bool) {
 		return UIBounds{}, false
 	}
 	return u.shownBounds, true
+}
+
+// CanvasSource gives the lines of a plugin's canvas at a size, at once:
+// those last drawn while new ones are drawn.
+type CanvasSource func(ui int, id string, width, height int) []string
+
+// SetCanvasSource sets who draws the canvases of these interfaces.
+func (u *UIs) SetCanvasSource(source CanvasSource) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.canvas = source
+}
+
+// CanvasLines are the lines of a canvas at a size, none without a source.
+func (u *UIs) CanvasLines(ui int, id string, width, height int) []string {
+	u.mu.Lock()
+	source := u.canvas
+	u.mu.Unlock()
+	if source == nil {
+		return nil
+	}
+	return source(ui, id, width, height)
+}
+
+// Send gives a plugin an event of a canvas, a key or the mouse, with every
+// value of the dialog.
+func (u *UIs) Send(event UIEvent) {
+	u.mu.Lock()
+	ui := u.find(event.UI)
+	if ui == nil || u.deliver == nil {
+		u.mu.Unlock()
+		return
+	}
+	event.Title, event.Action, event.Values = ui.Title, event.Event, inputValuesOf(ui.Shown())
+	u.mu.Unlock()
+	select {
+	case u.deliver <- event:
+	default:
+	}
 }

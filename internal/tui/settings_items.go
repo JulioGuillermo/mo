@@ -139,6 +139,17 @@ var settingsSections = []settingsSection{
 	}, note: func(model, *settingsMenu) string {
 		return "milliseconds between the frames of each animation; the screen is drawn as often as the quickest needs"
 	}, items: animationItems},
+	{key: "pluginuis", title: "Plugin UIs", summary: func(d *settingsDraft) string {
+		return d.uiFPS + " frames a second at most"
+	}, note: func(model, *settingsMenu) string {
+		return "how often a plugin's canvas may draw itself again by itself, apart from mo's own animations"
+	}, items: func(model, *settingsMenu) []settingItem {
+		return []settingItem{{"Frames per second", func(d *settingsDraft) string { return d.uiFPS }, func(d *settingsDraft) huh.Field {
+			return huh.NewInput().Title("Frames per second").
+				Description(fmt.Sprintf("the most a canvas is drawn again a second when it asks to, 1 to %d; a canvas may ask for fewer", config.MaxUIFPS)).
+				Validate(validUIFPS).Value(&d.uiFPS)
+		}}}
+	}},
 	{key: "memory", title: "Memory", summary: func(d *settingsDraft) string { return d.memoryDir }, items: memoryItems},
 	pluginsSection,
 }
