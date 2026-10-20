@@ -113,6 +113,10 @@ func (a *Agent) prepareCall(ctx context.Context, outer llm.ToolCall, hooks Hooks
 	}
 	pending.summary = a.Tools.Summary(call)
 	pending.need = a.approvalFor(ctx, call, hooks)
+	if blocked := pending.need.blocked; blocked != "" {
+		a.announceBlocked(call, blocked, hooks)
+		return settled(outer, blocked)
+	}
 	if pending.need.ask {
 		pending.approval = len(interaction.Approvals)
 		interaction.Approvals = append(interaction.Approvals, ApprovalRequest{

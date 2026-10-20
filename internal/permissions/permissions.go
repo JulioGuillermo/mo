@@ -47,19 +47,35 @@ func Stricter(a, b Mode) Mode {
 	return b
 }
 
-// Verdict is what the rules say about one command.
+// Verdict is what the rules say about one command, from the weakest: the
+// stronger of two wins.
 type Verdict int
 
 const (
 	Unknown Verdict = iota
+	// Allowed runs without asking.
 	Allowed
+	// Excepted is a command an exception (!rule) takes out of the allowed
+	// ones: the mode decides, as for one no rule names.
+	Excepted
+	// Denied (!!rule) asks in every mode, also in all.
 	Denied
+	// Blocked (!!!rule) never runs.
+	Blocked
 )
 
 const regexPrefix = "re:"
 
+// levelPrefixes mark what a rule does, longest first: never run, always
+// ask, take out of the allowed ones; a rule without one allows.
+var levelPrefixes = []struct {
+	prefix string
+	level  Verdict
+}{{"!!!", Blocked}, {"!!", Denied}, {"!", Excepted}}
+
 type rule struct {
 	text    string
+	level   Verdict
 	pattern *regexp.Regexp
 }
 
@@ -67,7 +83,8 @@ type rule struct {
 // alone it is any words, or none ("ls *" also takes "ls"), inside a word any
 // characters of it ("git log*"). "re:" starts a regular expression instead.
 // Fetches are written "web_fetch <url>", or "fetch <url>" as before the tool
-// was renamed: a rule of either kind decides for both.
+// was renamed: a rule of either kind decides for both. Before it, ! makes an
+// exception to the allowed ones, !! asks always and !!! never lets it run.
 func Compile(text string) error {
 	_, err := compile(text)
 	return err
@@ -75,12 +92,34 @@ func Compile(text string) error {
 
 func compile(text string) (rule, error) {
 	text = strings.TrimSpace(text)
-	if expression, isRegex := strings.CutPrefix(text, regexPrefix); isRegex {
-		pattern, err := regexp.Compile(strings.TrimSpace(expression))
-		if err != nil {
-			return rule{}, fmt.Errorf("rule %q: %w", text, err)
+	level, body := Allowed, text
+	for _, marked := range levelPrefixes {
+		if rest, found := strings.CutPrefix(text, marked.prefix); found {
+			level, body = marked.level, strings.TrimSpace(rest)
+			break
 		}
-		return rule{text: text, pattern: pattern}, nil
+	}
+	if body == "" {
+		return rule{}, fmt.Errorf("rule %q: write a command after the !", text)
+	}
+	compiled, err := compilePattern(body)
+	if err != nil {
+		return rule{}, fmt.Errorf("rule %q: %w", text, err)
+	}
+	return rule{text: text, level: level, pattern: compiled}, nil
+}
+
+// compileAtLeast compiles a rule that does at least what level does, as
+// those of a deny list, which ask unless they block.
+func compileAtLeast(text string, level Verdict) (rule, error) {
+	compiled, err := compile(text)
+	compiled.level = max(compiled.level, level)
+	return compiled, err
+}
+
+func compilePattern(text string) (*regexp.Regexp, error) {
+	if expression, isRegex := strings.CutPrefix(text, regexPrefix); isRegex {
+		return regexp.Compile(strings.TrimSpace(expression))
 	}
 	var expression strings.Builder
 	expression.WriteString("^")
@@ -102,7 +141,7 @@ func compile(text string) (rule, error) {
 		}
 	}
 	expression.WriteString("$")
-	return rule{text: text, pattern: regexp.MustCompile(expression.String())}, nil
+	return regexp.MustCompile(expression.String()), nil
 }
 
 // Policy is the mode and rules in force. The UI changes it while the agent
@@ -110,8 +149,7 @@ func compile(text string) (rule, error) {
 type Policy struct {
 	mu    sync.Mutex
 	mode  Mode
-	allow []rule
-	deny  []rule
+	rules []rule
 	// within is the policy a narrowed one never goes past: its mode when
 	// stricter, its rules, and the rules added to it later.
 	within *Policy
@@ -126,16 +164,17 @@ func (p *Policy) Narrowed(mode Mode, deny []string) (*Policy, error) {
 	}
 	narrowed := &Policy{mode: mode, within: p}
 	for _, text := range deny {
-		compiled, err := compile(text)
+		compiled, err := compileAtLeast(text, Denied)
 		if err != nil {
 			return nil, err
 		}
-		narrowed.deny = append(narrowed.deny, compiled)
+		narrowed.rules = append(narrowed.rules, compiled)
 	}
 	return narrowed, nil
 }
 
-// New builds a policy, refusing a rule that does not compile.
+// New builds a policy, refusing a rule that does not compile. The rules of
+// allow do what their prefix says; those of deny ask at least.
 func New(mode Mode, allow, deny []string) (*Policy, error) {
 	if !mode.Valid() {
 		return nil, fmt.Errorf("permissions.mode %q: use ask, edits, auto or all", mode)
@@ -147,11 +186,11 @@ func New(mode Mode, allow, deny []string) (*Policy, error) {
 		}
 	}
 	for _, text := range deny {
-		compiled, err := compile(text)
+		compiled, err := compileAtLeast(text, Denied)
 		if err != nil {
 			return nil, err
 		}
-		policy.deny = append(policy.deny, compiled)
+		policy.rules = append(policy.rules, compiled)
 	}
 	return policy, nil
 }
@@ -172,7 +211,8 @@ func (p *Policy) SetMode(mode Mode) {
 	p.mode = mode
 }
 
-// Allow adds a rule that lets a command through from now on.
+// Allow adds a rule from now on: one that lets a command through, or with
+// a prefix, one that keeps it from doing so.
 func (p *Policy) Allow(text string) error {
 	if p.within != nil {
 		return p.within.Allow(text)
@@ -186,12 +226,13 @@ func (p *Policy) Allow(text string) error {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.allow = append(p.allow, compiled)
+	p.rules = append(p.rules, compiled)
 	return nil
 }
 
 // Check returns what the rules say about a command and the rule that says
-// it. A deny rule wins over an allow rule.
+// it: the strongest that matches, so !!! blocks over !! asking, over a !
+// exception, over an allowing rule.
 func (p *Policy) Check(command string) (Verdict, string) {
 	command = strings.Join(strings.Fields(command), " ")
 	// A fetch is also written as it was before the tool was renamed, so the
@@ -201,23 +242,26 @@ func (p *Policy) Check(command string) (Verdict, string) {
 		forms = append(forms, "fetch "+url)
 	}
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	for _, denied := range p.deny {
-		for _, form := range forms {
-			if denied.pattern.MatchString(form) {
-				return Denied, denied.text
-			}
+	verdict, decided := Unknown, ""
+	for _, each := range p.rules {
+		if each.level > verdict && matchesAny(each.pattern, forms) {
+			verdict, decided = each.level, each.text
 		}
 	}
+	p.mu.Unlock()
 	if p.within != nil {
-		return p.within.Check(command)
-	}
-	for _, allowed := range p.allow {
-		for _, form := range forms {
-			if allowed.pattern.MatchString(form) {
-				return Allowed, allowed.text
-			}
+		if within, rule := p.within.Check(command); within > verdict {
+			return within, rule
 		}
 	}
-	return Unknown, ""
+	return verdict, decided
+}
+
+func matchesAny(pattern *regexp.Regexp, forms []string) bool {
+	for _, form := range forms {
+		if pattern.MatchString(form) {
+			return true
+		}
+	}
+	return false
 }

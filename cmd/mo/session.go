@@ -173,7 +173,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		AgentKinds:     agentKinds(cfg.Agents.Types),
 		ListAgentKinds: *cfg.Agents.ListTypes,
 	}
-	policy, err := permissions.New(permissions.Mode(cfg.Permissions.Mode), cfg.Permissions.Allow, cfg.Permissions.Deny)
+	policy, err := permissions.New(permissions.Mode(cfg.Permissions.Mode), cfg.Permissions.Rules(), cfg.Permissions.Deny)
 	if err != nil {
 		return tui.Session{}, err
 	}

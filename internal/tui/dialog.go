@@ -654,6 +654,8 @@ func (m model) commandParts(request agent.ApprovalRequest, body lipgloss.Style, 
 				mark, note, tint = "✓", "allowed: "+rule, lipgloss.Color("#9ece6a")
 			case permissions.Denied:
 				mark, note, tint = "✗", "deny rule: "+rule, lipgloss.Color("#f7768e")
+			case permissions.Excepted:
+				note = "exception: " + rule
 			}
 		}
 		if part.Writes {

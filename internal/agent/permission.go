@@ -26,6 +26,9 @@ Reply with SAFE or UNSAFE, then a reason of a few words.`
 
 // approval is whether a call needs the user's answer, and what to show.
 type approval struct {
+	// blocked says why a rule never lets the call run; it is refused
+	// without asking.
+	blocked  string
 	ask      bool
 	warning  string
 	reason   string
@@ -33,8 +36,12 @@ type approval struct {
 	ruled    bool
 }
 
-// approvalFor decides whether a call needs the user. A deny rule always
-// asks; the mode all asks nothing else; a warning asks in every other mode.
+// blockedResult is what the model reads of a call a !!! rule never lets
+// run.
+const blockedResult = "blocked by the rule %q, so %s did not run: the user never lets it run. Do not try to get the same done another way; tell the user if you need it."
+
+// approvalFor decides whether a call needs the user. A !!! rule refuses it
+// without asking; a deny or !! rule always asks; the mode all asks nothing else; a warning asks in every other mode.
 // Shell commands and fetches pass when rules allow every part of them, or
 // in auto mode when the model judges them safe. In ask mode, file changes
 // ask too.
@@ -46,6 +53,11 @@ func (a *Agent) approvalFor(ctx context.Context, call llm.ToolCall, hooks Hooks)
 		return approval{ask: warning != "" || listed, warning: warning}
 	}
 	subjects, ruled, splitErr := ruledSubjects(call)
+	for _, subject := range subjects {
+		if verdict, rule := policy.Check(subject.Text); verdict == permissions.Blocked {
+			return approval{blocked: fmt.Sprintf(blockedResult, rule, subject.Text)}
+		}
+	}
 	for _, subject := range subjects {
 		if verdict, rule := policy.Check(subject.Text); verdict == permissions.Denied {
 			return approval{ask: true, warning: "deny rule: " + rule, ruled: ruled}

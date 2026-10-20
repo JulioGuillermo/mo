@@ -3,7 +3,7 @@ package tui
 // Test Traceability Table
 // | ID    | Category | Description                                                          | Priority |
 // | PU-01 | Happy    | shift+tab goes through the modes and the status line shows the mode  | P0       |
-// | PU-02 | Happy    | "a" on a command opens its parts as rules; saving allows it and the rule | P0   |
+// | PU-02 | Happy    | "a" on a command opens its parts as rules; saving allows it and keeps only the user's rules | P0 |
 // | PU-03 | Edge     | Esc in the rule editor goes back to the question, still unanswered   | P1       |
 // | PU-04 | Happy    | A narrow terminal drops provider and speeds before the mode and model | P1      |
 // | PU-05 | Happy    | Settings keep the folder's rules apart and "try" names the deciding rule | P1   |
@@ -47,7 +47,7 @@ func TestPermissionUI(t *testing.T) {
 		}
 	})
 
-	t.Run("PU-02 a on a command opens its parts as rules; saving allows it and the rule", func(t *testing.T) {
+	t.Run("PU-02 a on a command opens its parts as rules; saving allows it and keeps only the user's rules", func(t *testing.T) {
 		m := ruledModel(t)
 		m, reply := withApproval(m, agent.ApprovalRequest{Call: llm.ToolCall{Name: "bash"}, Ruled: true, Commands: []string{"make test"}})
 
@@ -66,7 +66,7 @@ func TestPermissionUI(t *testing.T) {
 			}
 		}
 		layer, _ := config.ReadUserLayer()
-		if done.err != nil || !strings.Contains(strings.Join(layer.Permissions.Allow, "|"), "make test") || !strings.Contains(strings.Join(layer.Permissions.Allow, "|"), "ls *") {
+		if done.err != nil || !strings.Contains(strings.Join(layer.Permissions.Allow, "|"), "make test") || strings.Contains(strings.Join(layer.Permissions.Allow, "|"), "ls *") {
 			t.Errorf("saved = %+v allow = %q", done, layer.Permissions.Allow)
 		}
 	})
@@ -110,7 +110,7 @@ func TestPermissionUI(t *testing.T) {
 		if err != nil || layer.Permissions.Projects["/work/app"].Allow[0] != "make *" || layer.Permissions.Allow != nil {
 			t.Errorf("layer = %+v err = %v", layer.Permissions, err)
 		}
-		if !strings.Contains(tried, "make test → runs (allow: make *)") || !strings.Contains(tried, "make deploy → asks always (deny: make deploy*)") {
+		if !strings.Contains(tried, "make test → runs (allow: make *)") || !strings.Contains(tried, "make deploy → asks always (make deploy*)") {
 			t.Errorf("tried:\n%s", tried)
 		}
 	})

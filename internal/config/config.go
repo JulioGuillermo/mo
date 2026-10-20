@@ -161,6 +161,12 @@ type Permissions struct {
 	Projects map[string]ProjectRules `toml:"projects,omitempty"`
 }
 
+// Rules are the rules in force: mo's own that only read, then the user's,
+// which may take them back with !.
+func (p Permissions) Rules() []string {
+	return slices.Concat(DefaultAllow, p.Allow)
+}
+
 // ProjectRules add to the user's rules in one project, and may pick another
 // mode there.
 type ProjectRules struct {
@@ -174,7 +180,8 @@ type ProjectRules struct {
 // take the one set answers with an error.
 var Efforts = []string{"", "none", "minimal", "low", "medium", "high", "xhigh", "max"}
 
-// DefaultAllow are the commands that only read and run without asking.
+// DefaultAllow are the commands that only read and run without asking,
+// besides the user's rules; a rule "!ls *" takes one out.
 var DefaultAllow = []string{
 	"ls *", "pwd", "cat *", "head *", "tail *", "wc *", "grep *", "rg *", "tree *", "file *", "stat *",
 	"which *", "echo *", "git status *", "git diff *", "git log *", "git show *", "git branch",
@@ -540,7 +547,7 @@ func Defaults() Config {
 		Loop:        Loop{Enabled: ptr(true), Replies: 30, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2), Steps: ptr(300)},
 		Agents:      Agents{Enabled: ptr(false), ListTypes: ptr(false), Depth: 1, MaxParallel: 3, MaxAgents: 20, MaxSteps: 50},
 		Peers:       Peers{Enabled: ptr(false), Incoming: "ask", Outgoing: "tools", Wake: ptr(true), Network: "off"},
-		Permissions: Permissions{Mode: "edits", Allow: DefaultAllow},
+		Permissions: Permissions{Mode: "edits"},
 		Notify:      Notify{Finish: ptr(true), Approval: ptr(true), Method: "auto", Focused: ptr(false)},
 		Providers:   presets(),
 	}

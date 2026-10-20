@@ -116,7 +116,7 @@ var settingsSections = []settingsSection{
 	{key: "permissions", title: "Permissions", summary: func(d *settingsDraft) string {
 		return fmt.Sprintf("%s · %d allowed · %d never", d.permMode, len(ruleLines(d.allow)), len(ruleLines(d.deny)))
 	}, note: func(model, *settingsMenu) string {
-		return "shift+tab changes the mode for the session · " + ruleSyntax
+		return "shift+tab changes the mode for the session · in a rule, ! is an exception, !! always asks, !!! never runs"
 	}, items: permissionItems},
 	{key: "notify", title: "Notifications", summary: func(d *settingsDraft) string {
 		var when []string
@@ -708,7 +708,7 @@ func permissionItems(model, *settingsMenu) []settingItem {
 		{"Permission mode", func(d *settingsDraft) string { return d.permMode }, func(d *settingsDraft) huh.Field {
 			return huh.NewSelect[string]().Title("Permission mode").Description("shift+tab changes it too; it is kept").Options(modeOptions...).Value(&d.permMode)
 		}},
-		rules("Allowed commands", "run without asking in every project", func(d *settingsDraft) *string { return &d.allow }),
+		rules("Allowed commands", "run without asking in every project, besides mo's own, which only read:\n"+strings.Join(config.DefaultAllow, " · "), func(d *settingsDraft) *string { return &d.allow }),
 		rules("Never without asking", "ask in every mode, also in all; wins over allowed", func(d *settingsDraft) *string { return &d.deny }),
 	}
 	return append(items, tryItem)

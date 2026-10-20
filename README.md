@@ -302,8 +302,11 @@ icons = "nerd"             # Nerd Font icons for the branch and its changes and 
 
 [permissions]
 mode = "edits"             # ask | edits | auto | all; shift+tab changes it and it is kept
-allow = ["ls *", "git status *", "re:^npm (test|run lint)$", "web_fetch https://go.dev/*"]
-deny = ["git push *"]      # asks in every mode, also in all
+allow = ["make *", "re:^npm (test|run lint)$", "web_fetch https://go.dev/*",  # added to mo's own
+         "!cat .env*",     # ! an exception: an allowing rule does not count, the mode decides
+         "!!git push *",   # !! asks in every mode, also in all
+         "!!!rm -rf /*"]   # !!! never runs; the model is told it is blocked
+deny = []                  # as !!: asks in every mode
 
 [notify]
 finish = true              # when a turn ends, with the start of the answer (or its question)
@@ -645,7 +648,7 @@ The status line shows the mode; shift+tab, a click on it or its menu changes it,
 | `ask` | reading; everything that changes files or runs asks |
 | `edits` | reading and file changes in the working directory (the default) |
 | `auto` | as `edits`, and the commands and fetches the model judges safe for your request |
-| `all` | everything, except what a `deny` rule names |
+| `all` | everything, except what a `!!` or `deny` rule names; `!!!` never runs |
 
 In every mode a `bash` command runs when rules allow each of its parts: the commands joined by
 pipes, `&&` or `;`, inside loops, and inside `$(...)`. A part that writes to a file with `>` asks
@@ -653,8 +656,22 @@ even when a rule allows it. A fetch is checked as `web_fetch <url>`; a rule writ
 
 A rule is a command where `*` stands for anything: alone it is any words or none (`ls *` also
 takes `ls`, `ls * /home` takes `ls -la /home`), inside a word any characters of it (`git log*`).
-`re:` starts a regular expression. `deny` wins over `allow`. A wildcard on a command that runs
-others (`find *`, `xargs *`, `env *`, `sudo *`) lets those through too.
+`re:` starts a regular expression. A wildcard on a command that runs others (`find *`, `xargs *`,
+`env *`, `sudo *`) lets those through too.
+
+mo's own rules allow the commands that only read (`ls *`, `cat *`, `grep *`, `git status *`,
+`git diff *`, `git log *`...); yours add to them. Before a rule, a prefix makes it hold a command
+back instead, and the strongest that matches decides:
+
+| Rule | When it matches |
+|---|---|
+| `!!!rm -rf /*` | never runs, in any mode; the model is told the rule blocked it |
+| `!!git push *` | asks in every mode, also in `all`; as a rule of `deny` |
+| `!cat .env*` | no allowing rule counts: `edits` asks, `auto` lets the model judge, `all` runs |
+| `make *` | runs without asking |
+
+So `!echo *` takes one of mo's own back, and `ls *` with `!ls .git*` narrows yours. In `auto`, a
+command whose every part a rule allows runs without asking the model.
 
 When a command asks, `a` opens the parts no rule allows as rules: put the `*` where you want, then
 save them for every project or for this folder only. `/settings` › Safety edits the lists, one

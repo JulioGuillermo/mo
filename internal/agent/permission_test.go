@@ -12,6 +12,9 @@ package agent
 // | AP-08 | Security | A tool reached through tool_call asks as itself; the UI sees the tool | P0      |
 // | AP-09 | Security | A PowerShell command asks though a rule allows it; deny rules apply  | P0       |
 // | AP-10 | Happy    | In auto mode the model judges a PowerShell command as a whole        | P1       |
+// | AP-11 | Security | A !!! rule refuses the call without asking, in every mode, and tells the model why | P0 |
+// | AP-12 | Happy    | A ! exception asks in edits, goes to the judge in auto, runs in all; !! asks in all | P0 |
+// | AP-13 | Happy    | mo's own rules and the user's add up                                 | P1       |
 
 import (
 	"context"
@@ -19,6 +22,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/permissions"
 	"github.com/jg/mo/internal/tools"
@@ -200,6 +204,58 @@ func TestPermissions(t *testing.T) {
 
 		if listed.ask || len(judge.requests) != 1 || !strings.Contains(judge.requests[0].Messages[0].Text, "Get-ChildItem | Select-Object Name") {
 			t.Errorf("listed = %+v requests = %d", listed, len(judge.requests))
+		}
+	})
+
+	t.Run("AP-11 a !!! rule refuses the call without asking, in every mode, and tells the model why", func(t *testing.T) {
+		for _, mode := range permissions.Modes {
+			provider := &scriptedProvider{replies: []llm.Message{
+				{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{bashCall("ls && rm -rf /etc")}},
+				{Role: llm.RoleAssistant, Text: "done"},
+			}}
+			agent, _ := newAgentIn(t, provider, "bash")
+			agent.Permissions, _ = permissions.New(mode, []string{"!!!rm -rf /*"}, nil)
+			asked := 0
+			hooks := Hooks{Approve: func(context.Context, ApprovalRequest) Decision { asked++; return Allow }}
+
+			_ = agent.Run(ctx, "clean up", hooks)
+
+			result := agent.History[2]
+			if asked != 0 || !strings.Contains(result.Text, `blocked by the rule "!!!rm -rf /*"`) || !strings.Contains(result.Text, "rm -rf /etc") {
+				t.Errorf("%s: asked %d result %q", mode, asked, result.Text)
+			}
+		}
+	})
+
+	t.Run("AP-12 a ! exception asks in edits, goes to the judge in auto, runs in all; !! asks in all", func(t *testing.T) {
+		rules := []string{"ls *", "!ls .git*", "!!git push *"}
+		edits := ruledAgent(t, permissions.ModeEdits, rules, nil, nil)
+		judge := &scriptedProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Text: "SAFE - reads"}}}
+		auto := ruledAgent(t, permissions.ModeAuto, rules, nil, judge)
+		all := ruledAgent(t, permissions.ModeAll, rules, nil, nil)
+
+		inEdits := edits.approvalFor(ctx, bashCall("ls .git"), Hooks{})
+		inAuto := auto.approvalFor(ctx, bashCall("ls -la && ls .git"), Hooks{})
+		inAll := all.approvalFor(ctx, bashCall("ls .git"), Hooks{})
+		pushInAll := all.approvalFor(ctx, bashCall("git push origin"), Hooks{})
+
+		if !inEdits.ask || inAuto.ask || len(judge.requests) != 1 || strings.Contains(judge.requests[0].Messages[0].Text, "ls -la") || inAll.ask {
+			t.Errorf("edits %+v auto %+v all %+v", inEdits, inAuto, inAll)
+		}
+		if !pushInAll.ask || pushInAll.warning != "deny rule: !!git push *" {
+			t.Errorf("push in all %+v", pushInAll)
+		}
+	})
+
+	t.Run("AP-13 mo's own rules and the user's add up", func(t *testing.T) {
+		rules := config.Permissions{Allow: []string{"make *", "!cat .env*"}}.Rules()
+		agent := ruledAgent(t, permissions.ModeEdits, rules, nil, nil)
+
+		both := agent.approvalFor(ctx, bashCall("cat README.md && make test"), Hooks{})
+		secret := agent.approvalFor(ctx, bashCall("cat .env"), Hooks{})
+
+		if both.ask || !secret.ask {
+			t.Errorf("both %+v secret %+v", both, secret)
 		}
 	})
 }

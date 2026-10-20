@@ -18,8 +18,8 @@ const (
 	everyProject  = "user"
 	thisProject   = "project"
 	rulesHelp     = "enter next · shift+enter new line · esc back to the question"
-	ruleSyntax    = "one per line · * alone is any words or none, inside a word any characters · re: starts a regex"
-	ruleSyntaxTip = "e.g. ls * · ls -la * /home · git log* · re:^npm (test|run lint)$ · web_fetch https://github.com/*"
+	ruleSyntax    = "one per line · * alone is any words or none, inside a word any characters · re: starts a regex · !rule takes it out of the allowed, !!rule always asks, !!!rule never runs"
+	ruleSyntaxTip = "e.g. ls * · git log* · re:^npm (test|run lint)$ · web_fetch https://github.com/* · !ls .git* · !!git push * · !!!rm -rf /*"
 )
 
 type rulesSavedMsg struct {
@@ -76,9 +76,6 @@ func saveRules(rules []string, where, workDir string) tea.Cmd {
 			project.Allow = appendNew(project.Allow, rules)
 			layer.Permissions.Projects = withEntry(layer.Permissions.Projects, key, project)
 		} else {
-			if layer.Permissions.Allow == nil {
-				layer.Permissions.Allow = slices.Clone(config.DefaultAllow)
-			}
 			layer.Permissions.Allow = appendNew(layer.Permissions.Allow, rules)
 		}
 		return rulesSavedMsg{rules: rules, where: where, err: config.SaveUserLayer(layer)}

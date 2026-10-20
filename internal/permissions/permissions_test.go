@@ -11,6 +11,9 @@ package permissions
 // | PM-07 | Edge     | Quotes are removed from plain words; expansions stay as written      | P1       |
 // | PM-08 | Edge     | Modes go round in order and the stricter of two is kept              | P2       |
 // | PM-40 | Security | A narrowed policy keeps the stricter mode, follows the session's, adds its deny | P0 |
+// | PM-42 | Happy    | ! takes a command out of the allowed, !! asks, !!! blocks; the strongest that matches decides | P0 |
+// | PM-43 | Security | A deny rule asks at least, blocks with !!!; a narrowed policy keeps the session's !!! | P0 |
+// | PM-44 | Error    | A prefix with no command after it is refused                         | P2       |
 // | PM-41 | Happy    | A rule allowed through a narrowed policy is added to the session's   | P1       |
 
 import (
@@ -191,6 +194,54 @@ func TestNarrowed(t *testing.T) {
 		inNarrowed, _ := narrowed.Check("make build")
 		if err != nil || inSession != Allowed || inNarrowed != Allowed || narrowed.Mode() != ModeEdits {
 			t.Errorf("err %v session %v narrowed %v mode %s", err, inSession, inNarrowed, narrowed.Mode())
+		}
+	})
+}
+
+func TestRuleLevels(t *testing.T) {
+	t.Run("PM-42 ! takes a command out of the allowed, !! asks, !!! blocks; the strongest that matches decides", func(t *testing.T) {
+		policy, err := New(ModeEdits, []string{"ls *", "!ls .git*", "git *", "!!git push *", "rm *", "!!!rm -rf /*", "!!rm -rf /*"}, nil)
+
+		checks := map[string]Verdict{
+			"ls -la":           Allowed,
+			"ls .git/config":   Excepted,
+			"git status":       Allowed,
+			"git push origin":  Denied,
+			"rm build.log":     Allowed,
+			"rm -rf /etc":      Blocked,
+			"curl example.com": Unknown,
+		}
+		for command, want := range checks {
+			if got, rule := policy.Check(command); got != want || err != nil {
+				t.Errorf("%s: got %v (%q) want %v err %v", command, got, rule, want, err)
+			}
+		}
+		if _, rule := policy.Check("ls .git"); rule != "!ls .git*" {
+			t.Errorf("rule %q", rule)
+		}
+	})
+
+	t.Run("PM-43 a deny rule asks at least, blocks with !!!; a narrowed policy keeps the session's !!!", func(t *testing.T) {
+		session, _ := New(ModeAll, []string{"!!!shutdown *"}, []string{"git push *", "!!!dd *"})
+		narrowed, _ := session.Narrowed("", []string{"shutdown *"})
+
+		push, _ := session.Check("git push")
+		dd, _ := session.Check("dd if=/dev/zero")
+		shutdown, _ := narrowed.Check("shutdown now")
+
+		if push != Denied || dd != Blocked || shutdown != Blocked {
+			t.Errorf("push %v dd %v shutdown %v", push, dd, shutdown)
+		}
+	})
+
+	t.Run("PM-44 a prefix with no command after it is refused", func(t *testing.T) {
+		for _, text := range []string{"!", "!!", "!!! "} {
+			if Compile(text) == nil {
+				t.Errorf("%q was taken", text)
+			}
+		}
+		if Compile("!re:^ls") != nil || Compile("!!!re:(") == nil {
+			t.Error("regex after a prefix")
 		}
 	})
 }

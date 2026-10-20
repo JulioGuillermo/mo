@@ -448,13 +448,9 @@ func (d *settingsDraft) applyPermissions(layer config.Config) (config.Config, er
 		}
 	}
 	defaults := config.Defaults().Permissions
-	allow := ruleLines(d.allow)
-	if allow == nil {
-		allow = []string{}
-	}
 	layer.Permissions.Mode = unlessDefault(d.permMode, defaults.Mode)
-	layer.Permissions.Allow = unlessDefaultList(allow, defaults.Allow)
-	layer.Permissions.Deny = unlessDefaultList(ruleLines(d.deny), defaults.Deny)
+	layer.Permissions.Allow = ruleLines(d.allow)
+	layer.Permissions.Deny = ruleLines(d.deny)
 	if d.project == "" {
 		return layer, nil
 	}
@@ -476,7 +472,8 @@ func (d *settingsDraft) tryRules() string {
 		return "type a command to see which rule decides it"
 	}
 	mode := permissions.Mode(orDefault(d.projectMode, d.permMode))
-	policy, err := permissions.New(mode, append(ruleLines(d.allow), ruleLines(d.projectAllow)...), append(ruleLines(d.deny), ruleLines(d.projectDeny)...))
+	allow := config.Permissions{Allow: slices.Concat(ruleLines(d.allow), ruleLines(d.projectAllow))}.Rules()
+	policy, err := permissions.New(mode, allow, append(ruleLines(d.deny), ruleLines(d.projectDeny)...))
 	if err != nil {
 		return err.Error()
 	}
@@ -489,8 +486,16 @@ func (d *settingsDraft) tryRules() string {
 		verdict, rule := policy.Check(command.Text)
 		line := command.Text + " → "
 		switch {
+		case verdict == permissions.Blocked:
+			line += "never runs (" + rule + ")"
 		case verdict == permissions.Denied:
-			line += "asks always (deny: " + rule + ")"
+			line += "asks always (" + rule + ")"
+		case verdict == permissions.Excepted && mode == permissions.ModeAll:
+			line += "runs: mode all (exception " + rule + ")"
+		case verdict == permissions.Excepted && mode == permissions.ModeAuto:
+			line += "the model judges it (exception " + rule + ")"
+		case verdict == permissions.Excepted:
+			line += "asks (exception " + rule + ")"
 		case verdict == permissions.Allowed && command.Writes:
 			line += "asks: it writes to a file (allow: " + rule + ")"
 		case verdict == permissions.Allowed:
