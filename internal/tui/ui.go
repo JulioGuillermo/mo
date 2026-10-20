@@ -903,7 +903,7 @@ func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 	if command, isShell := strings.CutPrefix(prompt, "!"); isShell {
 		return m.runShell(strings.TrimSpace(command))
 	}
-	prompt, err := m.withSkill(prompt)
+	withSkill, err := m.withSkill(prompt)
 	if err != nil {
 		return m.emit(m.printer.Note(err.Error()))
 	}
@@ -914,7 +914,7 @@ func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 		m.pluginSends.streak = 0
 	}
 	if m.running {
-		return m.queue(prompt)
+		return m.queue(prompt, withSkill)
 	}
 	m.checkConfig()
 
@@ -924,7 +924,7 @@ func (m model) submitted(prompt string) (tea.Model, tea.Cmd) {
 		m.session.Team.BeginTurn()
 	}
 	echo := drawText(func() string { return m.printer.User(prompt) })
-	sent := m.withShellNotes(m.withAttachments(prompt))
+	sent := m.withShellNotes(m.withAttachments(withSkill))
 	return m.start(echo, func(ctx context.Context, hooks agent.Hooks) error {
 		return m.session.Agent.Run(ctx, sent, hooks)
 	})

@@ -452,9 +452,9 @@ var whileRunning = map[string]bool{
 // queue keeps a message written while the model works for its next step.
 // It waits over the status line, where it is in view whatever the model
 // is writing, and goes into the conversation where the model reads it.
-func (m model) queue(prompt string) (tea.Model, tea.Cmd) {
+func (m model) queue(typed, prompt string) (tea.Model, tea.Cmd) {
 	m.session.Agent.Queue(m.withShellNotes(m.withAttachments(prompt)))
-	m.queued = append(m.queued, prompt)
+	m.queued = append(m.queued, typed)
 	m.scrolled = false
 	return m, nil
 }

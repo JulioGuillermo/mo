@@ -10,9 +10,10 @@ import (
 	"github.com/jg/mo/internal/tools"
 )
 
-// withSkill loads the skill a prompt starts with, $name, after what the
-// user wrote. Text starting with $ that names no skill, such as $HOME or
-// $5, goes as it is.
+// withSkill adds to a prompt that starts with $name a note asking the model
+// to load that skill with its skill tool, or, when the model does not get
+// the skill, the skill itself. Text starting with $ that names no skill,
+// such as $HOME or $5, goes as it is.
 func (m model) withSkill(prompt string) (string, error) {
 	rest, ok := strings.CutPrefix(prompt, "$")
 	if !ok {
@@ -26,6 +27,9 @@ func (m model) withSkill(prompt string) (string, error) {
 			return "", fmt.Errorf("no skill %q · /skill lists them", name)
 		}
 		return prompt, nil
+	}
+	if !slices.Contains(m.session.Config.Skills.Disabled, name) {
+		return prompt + "\n\n" + agent.SkillRequest(name), nil
 	}
 	loaded, err := skill.Load(tools.SkillFilesShown)
 	if err != nil {

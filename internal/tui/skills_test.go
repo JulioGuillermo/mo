@@ -2,7 +2,9 @@ package tui
 
 // Test Traceability Table
 // | ID    | Category | Description                                                              | Priority |
-// | SK-01 | Happy    | $name sends the message with the skill loaded after it, as typed shown   | P0       |
+// | SK-01 | Happy    | $name sends the message asking the model to load the skill with its tool, as typed shown | P0 |
+// | SK-06 | Edge     | $name of a skill the model does not get sends the skill itself after the message | P1 |
+// | SK-07 | Happy    | The conversation and the queue show the message as typed, without the skill | P0 |
 // | SK-02 | Edge     | $ that names no skill, as $HOME or $5, goes as it is                     | P0       |
 // | SK-03 | Error    | $name alone that names no skill is refused                               | P1       |
 // | SK-04 | Happy    | $ and /skill offer the skills that match                                 | P1       |
@@ -36,12 +38,35 @@ func skillModel(t *testing.T) model {
 }
 
 func TestManualSkills(t *testing.T) {
-	t.Run("SK-01 $name sends the message with the skill loaded after it, as typed shown", func(t *testing.T) {
+	t.Run("SK-01 $name sends the message asking the model to load the skill with its tool, as typed shown", func(t *testing.T) {
 		sent, err := skillModel(t).withSkill("$pdf fill form.pdf")
 
 		shown := agent.PromptText(llm.Message{Role: llm.RoleUser, Text: sent})
-		if err != nil || !strings.Contains(sent, "Do the pdf steps.") || !strings.Contains(sent, agent.SkillNote) || shown != "$pdf fill form.pdf" {
+		if err != nil || strings.Contains(sent, "Do the pdf steps.") || !strings.Contains(sent, agent.SkillRequest("pdf")) || shown != "$pdf fill form.pdf" {
 			t.Errorf("sent %q shown %q err %v", sent, shown, err)
+		}
+	})
+
+	t.Run("SK-06 $name of a skill the model does not get sends the skill itself after the message", func(t *testing.T) {
+		m := skillModel(t)
+		m.session.Config.Skills.Disabled = []string{"pdf"}
+
+		sent, err := m.withSkill("$pdf fill form.pdf")
+
+		if err != nil || !strings.Contains(sent, "Do the pdf steps.") || !strings.Contains(sent, agent.SkillNote) {
+			t.Errorf("sent %q err %v", sent, err)
+		}
+	})
+
+	t.Run("SK-07 the conversation and the queue show the message as typed, without the skill", func(t *testing.T) {
+		m := skillModel(t)
+		m.session.Config.Skills.Disabled = []string{"pdf"}
+		m.running, m.cancel = true, func() {}
+
+		queued, _ := m.submitted("$pdf fill form.pdf")
+
+		if got := queued.(model).queued; len(got) != 1 || got[0] != "$pdf fill form.pdf" {
+			t.Errorf("queued %q", got)
 		}
 	})
 

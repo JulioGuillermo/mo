@@ -562,7 +562,9 @@ it off or give it its own mode, globally or per project. Compact mode comes with
 `skill_search` too.
 
 You load one yourself by starting a message with `$name` (`$pdf fill form.pdf`) or with
-`/skill name text`; both complete the name as you type. The skill goes with that message only.
+`/skill name text`; both complete the name as you type. Your message stays as you wrote it, and the
+model is asked to load the skill with its `skill` tool; a skill turned off for the model goes
+whole with the message instead.
 `/skill` alone lists them. A `$` that names no skill, like `$HOME`, is sent as it is.
 
 ## Conversations

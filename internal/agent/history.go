@@ -60,6 +60,12 @@ func PromptText(message llm.Message) string {
 // SkillNote starts, after a prompt, a skill the user loaded with it.
 const SkillNote = moNotePrefix + "The user loaded this skill for this message; follow it:"
 
+// SkillRequest asks the model, after a prompt, to load with its skill tool
+// the skill the user named.
+func SkillRequest(name string) string {
+	return moNotePrefix + "The user asks for the skill " + name + " with this message: load it with the skill tool first and follow it."
+}
+
 // Rewind drops the history from index on, to go on from before that prompt.
 // The size of what is left is estimated until the next answer.
 func (a *Agent) Rewind(index int) {
