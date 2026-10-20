@@ -63,8 +63,19 @@ func (m model) fileMenu(path string) (tea.Model, tea.Cmd) {
 func (m model) fileChoice(path, choice string) (bool, tea.Model, tea.Cmd) {
 	switch choice {
 	case fileCopy:
+		if m.terminalCopies {
+			return true, m, m.copyThroughTerminal("file", fileClips(path))
+		}
 		return true, m, copyFile(path)
 	case fileCopyImage:
+		if m.terminalCopies {
+			data, err := pngOf(path)
+			if err != nil {
+				updated, cmd := m.fileCopied(fileCopiedMsg{what: "image", err: err})
+				return true, updated, cmd
+			}
+			return true, m, m.copyThroughTerminal("image", []clipData{{mime: "image/png", data: data}})
+		}
 		return true, m, copyPicture(path)
 	case fileCopyPath:
 		updated, cmd := m.flashCopied(path, "copied its path")
@@ -92,4 +103,10 @@ func (m model) fileCopied(msg fileCopiedMsg) (tea.Model, tea.Cmd) {
 func (m model) flashCopied(text, note string) (tea.Model, tea.Cmd) {
 	flash := m.flashNote(note)
 	return m, tea.Batch(tea.SetClipboard(text), copyToSystem(text), flash)
+}
+
+// copyThroughTerminal puts data on the clipboard through the terminal, as
+// kitty's clipboard protocol does, and says so.
+func (m model) copyThroughTerminal(what string, items []clipData) tea.Cmd {
+	return tea.Batch(tea.Raw(osc5522(items)), func() tea.Msg { return fileCopiedMsg{what: what} })
 }

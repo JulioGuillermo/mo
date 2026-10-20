@@ -8,20 +8,29 @@ package tui
 // | FM-04 | Happy    | Copy the image puts PNG on the clipboard, a JPEG turned into PNG            | P1       |
 // | FM-05 | Edge     | A word that names no file, or a folder, opens no file menu                  | P1       |
 // | FM-06 | Edge     | Paths with :line:column, quotes, brackets or file:// are found; spaces are escaped in the URI | P1 |
-// | FM-07 | Error    | Without a clipboard program the copy says why                               | P2       |
+// | FM-07 | Error    | Without a clipboard program the copy says what to install, over SSH which terminal copies | P2 |
+// | FM-08 | Happy    | A program that fails gives way to the next: wl-copy, then xclip             | P0       |
+// | FM-09 | Edge     | xsel copies text but is never used for a file or an image, which need a type | P1      |
+// | FM-10 | Happy    | A terminal that reports kitty's clipboard mode gets the file through OSC 5522, URI and GNOME's list, no program run | P0 |
+// | FM-11 | Edge     | OSC 5522 sends each type in base64 chunks of 4096 bytes and ends the write   | P1       |
 
 import (
 	"bytes"
+	"encoding/base64"
+	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
 	"image/png"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // fakeCopier puts a wl-copy in PATH that keeps what it is given, its
@@ -183,19 +192,119 @@ func TestFileMenu(t *testing.T) {
 		}
 	})
 
-	t.Run("FM-07 without a clipboard program the copy says why", func(t *testing.T) {
-		t.Setenv("WAYLAND_DISPLAY", "")
-		t.Setenv("DISPLAY", "")
-		if os.Getenv("GOOS") == "darwin" {
+	t.Run("FM-07 without a clipboard program the copy says what to install, over SSH which terminal copies", func(t *testing.T) {
+		if runtime.GOOS == "darwin" {
 			t.Skip("macOS copies with osascript")
 		}
+		t.Setenv("PATH", t.TempDir())
+		t.Setenv("WAYLAND_DISPLAY", "wayland-test")
+		t.Setenv("DISPLAY", "")
+		t.Setenv("SSH_CONNECTION", "")
 
-		msg := copyFile("/tmp/x")().(fileCopiedMsg)
+		local := copyFile("/tmp/x")().(fileCopiedMsg)
+		t.Setenv("SSH_CONNECTION", "10.0.0.1 1 10.0.0.2 22")
+		remote := copyFile("/tmp/x")().(fileCopiedMsg)
 		m, _ := fileModel(t)
-		updated, _ := m.fileCopied(msg)
+		updated, _ := m.fileCopied(local)
 
-		if msg.err == nil || !strings.Contains(shown(updated.(model)), "copy the file: no wl-copy or xclip") {
-			t.Errorf("err %v shown:\n%s", msg.err, shown(updated.(model)))
+		if local.err == nil || !strings.Contains(shown(updated.(model)), "copy the file: install wl-clipboard (wl-copy), or xclip") {
+			t.Errorf("err %v shown:\n%s", local.err, shown(updated.(model)))
+		}
+		if remote.err == nil || !strings.Contains(remote.err.Error(), "over SSH only a terminal with kitty's clipboard protocol") {
+			t.Errorf("remote err %v", remote.err)
+		}
+	})
+}
+
+// fakePrograms puts in an empty PATH the programs named, each keeping its
+// arguments and input in a file of its name, or failing when told.
+func fakePrograms(t *testing.T, failing []string, names ...string) string {
+	t.Helper()
+	bin, kept := t.TempDir(), t.TempDir()
+	for _, name := range names {
+		script := "#!/bin/sh\nPATH=/usr/bin:/bin\nprintf '%s\\n' \"$*\" > " + filepath.Join(kept, name) + "\ncat >> " + filepath.Join(kept, name) + "\n"
+		if slices.Contains(failing, name) {
+			script = "#!/bin/sh\nexit 1\n"
+		}
+		os.WriteFile(filepath.Join(bin, name), []byte(script), 0o755)
+	}
+	t.Setenv("PATH", bin)
+	return kept
+}
+
+func TestCopyWays(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("macOS copies with pbcopy and osascript")
+	}
+
+	t.Run("FM-08 a program that fails gives way to the next: wl-copy, then xclip", func(t *testing.T) {
+		kept := fakePrograms(t, []string{"wl-copy"}, "wl-copy", "xclip")
+		t.Setenv("WAYLAND_DISPLAY", "wayland-test")
+		t.Setenv("DISPLAY", ":0")
+
+		msg := copyFile("/tmp/a.txt")().(fileCopiedMsg)
+
+		got, _ := os.ReadFile(filepath.Join(kept, "xclip"))
+		if msg.err != nil || string(got) != "-selection clipboard -t text/uri-list\nfile:///tmp/a.txt\r\n" {
+			t.Errorf("err %v xclip got %q", msg.err, got)
+		}
+	})
+
+	t.Run("FM-09 xsel copies text but is never used for a file or an image, which need a type", func(t *testing.T) {
+		kept := fakePrograms(t, nil, "xsel")
+		t.Setenv("WAYLAND_DISPLAY", "")
+		t.Setenv("DISPLAY", ":0")
+
+		textErr := copyWith(clipData{data: []byte("hello")})
+		fileMsg := copyFile("/tmp/a.txt")().(fileCopiedMsg)
+
+		got, _ := os.ReadFile(filepath.Join(kept, "xsel"))
+		if textErr != nil || string(got) != "--clipboard --input\nhello" {
+			t.Errorf("text err %v xsel got %q", textErr, got)
+		}
+		if fileMsg.err == nil || !strings.Contains(fileMsg.err.Error(), "install xclip") {
+			t.Errorf("file err %v", fileMsg.err)
+		}
+	})
+
+	t.Run("FM-10 a terminal that reports kitty's clipboard mode gets the file through OSC 5522, URI and GNOME's list, no program run", func(t *testing.T) {
+		kept := fakePrograms(t, nil, "wl-copy")
+		t.Setenv("WAYLAND_DISPLAY", "wayland-test")
+		m, dir := fileModel(t)
+		os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("hi"), 0o644)
+		updated, _ := m.Update(tea.ModeReportMsg{Mode: kittyClipboardMode, Value: ansi.ModeReset})
+		m = updated.(model)
+
+		_, _, cmd := m.fileChoice(filepath.Join(dir, "notes.txt"), fileCopy)
+		var sent string
+		for _, each := range cmd().(tea.BatchMsg) {
+			if raw, ok := each().(tea.RawMsg); ok {
+				sent = fmt.Sprint(raw.Msg)
+			}
+		}
+
+		uri := base64.StdEncoding.EncodeToString([]byte("file://" + filepath.Join(dir, "notes.txt") + "\r\n"))
+		gnome := base64.StdEncoding.EncodeToString([]byte("x-special/gnome-copied-files"))
+		if !m.terminalCopies || !strings.Contains(sent, uri) || !strings.Contains(sent, "mime="+gnome) {
+			t.Errorf("terminal copies %v sent %q", m.terminalCopies, sent)
+		}
+		if _, err := os.Stat(filepath.Join(kept, "wl-copy")); err == nil {
+			t.Error("wl-copy ran too")
+		}
+	})
+
+	t.Run("FM-11 OSC 5522 sends each type in base64 chunks of 4096 bytes and ends the write", func(t *testing.T) {
+		big := bytes.Repeat([]byte("x"), osc5522Chunk+10)
+
+		sequence := osc5522([]clipData{{mime: "image/png", data: big}, {mime: "text/plain", data: []byte("hi")}})
+
+		packets := strings.Split(strings.TrimSuffix(sequence, "\x1b\\"), "\x1b\\")
+		png := base64.StdEncoding.EncodeToString([]byte("image/png"))
+		if len(packets) != 5 || packets[0] != "\x1b]5522;type=write" || packets[4] != "\x1b]5522;type=wdata" {
+			t.Fatalf("packets %d: first %q last %q", len(packets), packets[0], packets[len(packets)-1])
+		}
+		if !strings.HasPrefix(packets[1], "\x1b]5522;type=wdata:mime="+png+";") || !strings.HasSuffix(packets[2], base64.StdEncoding.EncodeToString(big[osc5522Chunk:])) {
+			t.Errorf("chunks %q / %q", packets[1][:40], packets[2])
 		}
 	})
 }

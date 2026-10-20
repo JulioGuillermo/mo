@@ -1,11 +1,7 @@
 package tui
 
 import (
-	"context"
 	"fmt"
-	"os"
-	"os/exec"
-	"runtime"
 	"strings"
 	"time"
 
@@ -256,29 +252,4 @@ func dedent(rows []string, offset int) []string {
 		}
 	}
 	return rows
-}
-
-// copyToSystem also puts the text on the desktop's clipboard, for terminals
-// that do not take OSC 52.
-func copyToSystem(text string) tea.Cmd {
-	var name string
-	var args []string
-	switch {
-	case runtime.GOOS == "darwin":
-		name = "pbcopy"
-	case os.Getenv("WAYLAND_DISPLAY") != "" && found("wl-copy"):
-		name = "wl-copy"
-	case os.Getenv("DISPLAY") != "" && found("xclip"):
-		name, args = "xclip", []string{"-selection", "clipboard"}
-	default:
-		return nil
-	}
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), copyTimeout)
-		defer cancel()
-		command := exec.CommandContext(ctx, name, args...)
-		command.Stdin = strings.NewReader(text)
-		_ = command.Run()
-		return nil
-	}
 }

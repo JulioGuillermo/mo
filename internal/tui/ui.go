@@ -230,6 +230,10 @@ type model struct {
 	focused bool
 	// todos is the model's task list, from its latest todo call.
 	todos []tools.Todo
+	// terminalCopies is whether the terminal copies any type of data
+	// itself, with kitty's clipboard protocol: files and images too, over
+	// SSH as well.
+	terminalCopies bool
 	// sidebarSession is the side panel's mode /sidebar set for the session;
 	// empty follows the setting.
 	sidebarSession string
@@ -373,7 +377,8 @@ func (m model) Init() tea.Cmd {
 	if opening := m.openingConversation(); opening != nil {
 		start = tea.Sequence(start, opening)
 	}
-	return tea.Batch(start, tea.RequestBackgroundColor, textarea.Blink, m.readRepo(), loadEfforts(m.session), m.applyPeers())
+	return tea.Batch(start, tea.RequestBackgroundColor, tea.Raw(ansi.RequestMode(kittyClipboardMode)), textarea.Blink,
+		m.readRepo(), loadEfforts(m.session), m.applyPeers())
 }
 
 // openingConversation is what mo opens on besides a new conversation: the
@@ -619,6 +624,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case drawMsg:
 		return m.emitDrawn(msg)
+	case tea.ModeReportMsg:
+		if msg.Mode == kittyClipboardMode && !msg.Value.IsNotRecognized() {
+			m.terminalCopies = true
+		}
+		return m, nil
 	case tea.BackgroundColorMsg:
 		return m, m.applyScreen(msg.IsDark())
 	case tea.KeyPressMsg:
