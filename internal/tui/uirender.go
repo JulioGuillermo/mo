@@ -169,10 +169,20 @@ func framed(box uiBox, border lipgloss.Border, title, fg, bg string) uiBox {
 	return uiBox{lines: lines, width: inner + 2, hits: hits}
 }
 
-// render draws a node within width, on the background it sits on; fill
-// makes it take the whole width, as stretch and grow ask.
-func (r uiRenderer) render(n tools.UINode, width int, parentBG string, fill bool) uiBox {
-	if !n.Shown() || width <= 0 {
+// uiRoom is the room a node is drawn in: height 0 when its parent has no
+// height to give. fillWidth and fillHeight ask the node to take all of it,
+// as stretch, grow and full do.
+type uiRoom struct {
+	width, height         int
+	fillWidth, fillHeight bool
+}
+
+// render draws a node within its room, on the background it sits on. Its
+// width and height, fixed or full, and its least and most sizes count
+// with its padding and border, not its margin. A node is never cut to its
+// room's height, only to its own: what is taller than the dialog scrolls.
+func (r uiRenderer) render(n tools.UINode, room uiRoom, parentBG string) uiBox {
+	if !n.Shown() || room.width <= 0 {
 		return uiBox{}
 	}
 	bg := orDefault(n.BG, parentBG)
@@ -183,43 +193,87 @@ func (r uiRenderer) render(n tools.UINode, width int, parentBG string, fill bool
 		borderName = "rounded"
 	}
 	border, bordered := uiBorder(borderName)
-	frame := pl + pr
+	across, along := pl+pr, pt+pb
 	if bordered {
-		frame += 2
+		across, along = across+2, along+2
 	}
-	room := width - ml - mr
-	if n.Width > 0 {
-		room = min(room, n.Width)
-		fill = true
+
+	width := room.width - ml - mr
+	fillWidth := room.fillWidth || n.Width.Full()
+	if n.Width.Cells() > 0 {
+		width, fillWidth = min(width, n.Width.Cells()), true
 	}
-	inner := max(room-frame, 1)
-	content := r.content(n, inner, bg, fill)
-	if len(content.lines) == 0 && n.Width > 0 {
+	if n.MaxWidth > 0 {
+		width = min(width, n.MaxWidth)
+	}
+	height := max(room.height-mt-mb, 0)
+	fillHeight := (room.fillHeight || n.Height.Full()) && height > 0
+	if n.Height.Cells() > 0 {
+		height, fillHeight = n.Height.Cells(), true
+	}
+	if n.MaxHeight > 0 && (height == 0 || height > n.MaxHeight) {
+		height = n.MaxHeight
+	}
+
+	inner := uiRoom{width: max(width-across, 1), fillWidth: fillWidth, fillHeight: fillHeight}
+	if height > 0 {
+		inner.height = max(height-along, 1)
+	}
+	content := r.content(n, inner, bg)
+	if len(content.lines) == 0 && (n.Width.Cells() > 0 || fillHeight) {
 		content.lines = []string{""}
 	}
-	if fill {
-		content = widen(content, inner, bg)
+	if fillWidth {
+		content = widen(content, inner.width, bg)
 	}
-	if n.Height > 0 {
-		rows := max(n.Height-pt-pb-boolInt(bordered)*2, 1)
-		for len(content.lines) < rows {
-			content.lines = append(content.lines, blank(content.width, bg))
-		}
-		content.lines = content.lines[:rows]
+	if n.MinWidth > 0 {
+		content = widen(content, min(n.MinWidth-across, inner.width), bg)
 	}
+	rows := len(content.lines)
+	if fillHeight {
+		rows = inner.height
+	}
+	if n.MinHeight > 0 {
+		rows = max(rows, n.MinHeight-along)
+	}
+	if most := n.MaxHeight - along; n.MaxHeight > 0 {
+		rows = min(rows, max(most, 1))
+	}
+	content = withRows(content, rows, bg)
 	box := surround(content, pt, pr, pb, pl, bg)
 	if bordered {
 		// A card is as wide as its title needs, so the title shows.
 		if need := ansi.StringWidth(n.Title) + 4; n.Title != "" && box.width < need {
-			box = widen(box, min(need, max(room-2, box.width)), bg)
+			box = widen(box, min(need, max(width-2, box.width)), bg)
 		}
 		box = framed(box, border, n.Title, n.FG, bg)
 	}
 	return surround(box, mt, mr, mb, ml, parentBG)
 }
 
+// withRows pads a box with blank rows, or cuts it, to rows; its hits below
+// the cut go.
+func withRows(box uiBox, rows int, bg string) uiBox {
+	for len(box.lines) < rows {
+		box.lines = append(box.lines, blank(box.width, bg))
+	}
+	if len(box.lines) > rows {
+		box.lines = box.lines[:rows]
+		kept := box.hits[:0]
+		for _, hit := range box.hits {
+			if hit.y0 < rows {
+				hit.y1 = min(hit.y1, rows)
+				kept = append(kept, hit)
+			}
+		}
+		box.hits = kept
+	}
+	return box
+}
+
 // content draws what a node holds, without its padding, border or margin.
-func (r uiRenderer) content(n tools.UINode, width int, bg string, fill bool) uiBox {
+func (r uiRenderer) content(n tools.UINode, room uiRoom, bg string) uiBox {
+	width, fill := room.width, room.fillWidth
 	switch n.Type {
 	case tools.UILabel:
 		style := uiStyle(n.FG, bg, n.Bold)
@@ -272,7 +326,7 @@ func (r uiRenderer) content(n tools.UINode, width int, bg string, fill bool) uiB
 		line := text + blank(w-ansi.StringWidth(text), face)
 		return uiBox{lines: []string{line}, width: w, hits: []uiHit{{x1: w, y1: 1, id: n.ID}}}
 	case tools.UITextarea:
-		return r.textarea(n, width, fill)
+		return r.textarea(n, room)
 	case tools.UISelect:
 		return r.selectBox(n, width, bg)
 	case tools.UISlider:
@@ -282,41 +336,88 @@ func (r uiRenderer) content(n tools.UINode, width int, bg string, fill bool) uiB
 	case tools.UIRadio:
 		return r.radio(n, width, bg)
 	case tools.UISVG:
-		return r.svg(n, width, bg)
+		return r.svg(n, room, bg)
 	}
 	if n.Type == tools.UIGrid {
 		return r.grid(n, width, bg, fill)
 	}
 	if n.Direction == "row" {
-		return r.row(n, width, bg, fill)
+		return r.row(n, room, bg)
 	}
-	return r.column(n, width, bg, fill)
+	return r.column(n, room, bg)
 }
 
-// column stacks the children, each placed across as align says.
-func (r uiRenderer) column(n tools.UINode, width int, bg string, fill bool) uiBox {
+// growth is how much of the room left along its parent a child takes:
+// its grow, or 1 when its size along is full.
+func growth(child tools.UINode, along tools.UISize) int {
+	if child.Grow > 0 {
+		return child.Grow
+	}
+	if along.Full() {
+		return 1
+	}
+	return 0
+}
+
+// natural is a child as it is when it takes no more room than it needs:
+// before the room left is shared out, a full size along counts as none.
+func natural(child tools.UINode, row bool) tools.UINode {
+	if row && child.Width.Full() {
+		child.Width = 0
+	}
+	if !row && child.Height.Full() {
+		child.Height = 0
+	}
+	return child
+}
+
+// column stacks the children, each placed across as align says. When the
+// column has a height to give, the rows left go to the children that grow,
+// as their grow says.
+func (r uiRenderer) column(n tools.UINode, room uiRoom, bg string) uiBox {
 	stretch := n.Align == "stretch"
-	var boxes []uiBox
-	widest := 0
+	var children []tools.UINode
 	for _, child := range n.Children {
-		box := r.render(child, width, bg, stretch || child.Grow > 0)
-		if box.height() == 0 {
-			continue
+		if child.Shown() {
+			children = append(children, child)
 		}
-		boxes = append(boxes, box)
+	}
+	across := func(child tools.UINode) bool { return stretch || child.Grow > 0 }
+	boxes := make([]uiBox, len(children))
+	used, shares := n.Gap*max(len(children)-1, 0), 0
+	for i, child := range children {
+		boxes[i] = r.render(natural(child, false), uiRoom{width: room.width, fillWidth: across(child)}, bg)
+		used += boxes[i].height()
+		shares += growth(child, child.Height)
+	}
+	if left := room.height - used; shares > 0 && left > 0 {
+		for i, child := range children {
+			if share := growth(child, child.Height); share > 0 {
+				rows := boxes[i].height() + left*share/shares
+				boxes[i] = r.render(child, uiRoom{width: room.width, height: rows, fillWidth: across(child), fillHeight: true}, bg)
+			}
+		}
+	}
+	widest := 0
+	for _, box := range boxes {
 		widest = max(widest, box.width)
 	}
-	if fill || stretch {
-		widest = width
+	if room.fillWidth || stretch {
+		widest = room.width
 	}
 	var out uiBox
 	out.width = widest
-	for i, box := range boxes {
-		if i > 0 {
+	shown := 0
+	for _, box := range boxes {
+		if box.height() == 0 {
+			continue
+		}
+		if shown > 0 {
 			for range n.Gap {
 				out.lines = append(out.lines, blank(widest, bg))
 			}
 		}
+		shown++
 		left := 0
 		switch n.Align {
 		case "center":
@@ -335,8 +436,11 @@ func (r uiRenderer) column(n tools.UINode, width int, bg string, fill bool) uiBo
 }
 
 // row lays the children side by side: shrunk when they do not fit, the
-// room left given to those that grow, then spread as justify says.
-func (r uiRenderer) row(n tools.UINode, width int, bg string, fill bool) uiBox {
+// room left given to those that grow, then spread as justify says. Those
+// full in height, or all with align stretch, take the row's height; in a
+// row of a set height, the others have it to give their own that grow.
+func (r uiRenderer) row(n tools.UINode, room uiRoom, bg string) uiBox {
+	width, fill := room.width, room.fillWidth
 	var children []tools.UINode
 	for _, child := range n.Children {
 		if child.Shown() {
@@ -350,39 +454,40 @@ func (r uiRenderer) row(n tools.UINode, width int, bg string, fill bool) uiBox {
 	boxes := make([]uiBox, len(children))
 	used := 0
 	for i, child := range children {
-		boxes[i] = r.render(child, width, bg, false)
+		boxes[i] = r.render(natural(child, true), uiRoom{width: width}, bg)
 		used += boxes[i].width
 	}
 	if used+gaps > width && used > 0 {
 		room := max(width-gaps, len(children))
-		natural := sumWidths(boxes)
+		widths := sumWidths(boxes)
 		used = 0
 		for i, child := range children {
-			share := max(boxes[i].width*room/natural, 1)
-			boxes[i] = r.render(child, share, bg, false)
+			share := max(boxes[i].width*room/widths, 1)
+			boxes[i] = r.render(natural(child, true), uiRoom{width: share}, bg)
 			used += boxes[i].width
 		}
 	}
 	left := max(width-used-gaps, 0)
-	growth := 0
+	shares := 0
 	for _, child := range children {
-		growth += child.Grow
+		shares += growth(child, child.Width)
 	}
-	if growth > 0 && left > 0 {
+	if shares > 0 && left > 0 {
 		given := 0
 		for i, child := range children {
-			if child.Grow == 0 {
+			share := growth(child, child.Width)
+			if share == 0 {
 				continue
 			}
-			extra := left * child.Grow / growth
+			extra := left * share / shares
 			given += extra
-			boxes[i] = r.render(child, boxes[i].width+extra, bg, true)
+			boxes[i] = r.render(child, uiRoom{width: boxes[i].width + extra, fillWidth: true}, bg)
 		}
 		used += given
 		left = max(width-used-gaps, 0)
 	}
 	total := width
-	if !fill && growth == 0 && (n.Justify == "" || n.Justify == "start") {
+	if !fill && shares == 0 && (n.Justify == "" || n.Justify == "start") {
 		total = used + gaps
 		left = 0
 	}
@@ -390,8 +495,14 @@ func (r uiRenderer) row(n tools.UINode, width int, bg string, fill bool) uiBox {
 	for _, box := range boxes {
 		height = max(height, box.height())
 	}
-	if n.Height > 0 {
-		height = max(height, n.Height)
+	if room.fillHeight {
+		height = max(height, room.height)
+	}
+	for i, child := range children {
+		fills := child.Height.Full() || n.Align == "stretch"
+		if room.fillHeight || fills {
+			boxes[i] = r.render(child, uiRoom{width: boxes[i].width, height: height, fillWidth: true, fillHeight: fills}, bg)
+		}
 	}
 	offsets := make([]int, len(boxes))
 	spacing := float64(n.Gap)
@@ -471,7 +582,7 @@ func (r uiRenderer) grid(n tools.UINode, width int, bg string, fill bool) uiBox 
 			widths[column] = fixed(column)
 			continue
 		}
-		widths[column] = max(widths[column], r.render(cell, width, bg, false).width)
+		widths[column] = max(widths[column], r.render(cell, uiRoom{width: width}, bg).width)
 	}
 	used := 0
 	for _, w := range widths {
@@ -504,7 +615,7 @@ func (r uiRenderer) grid(n tools.UINode, width int, bg string, fill bool) uiBox 
 				continue
 			}
 			cell := cells[start+column]
-			boxes[column] = r.render(cell, widths[column], bg, stretch || grows[column] > 0 || fixed(column) > 0)
+			boxes[column] = r.render(cell, uiRoom{width: widths[column], fillWidth: stretch || grows[column] > 0 || fixed(column) > 0}, bg)
 			height = max(height, boxes[column].height())
 		}
 		top := len(out.lines)

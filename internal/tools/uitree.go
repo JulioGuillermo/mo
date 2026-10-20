@@ -12,7 +12,7 @@ import (
 // uiNodeKeys are the fields a node takes, as UINode names them.
 var uiNodeKeys = []string{
 	"type", "id", "text", "label", "value", "placeholder", "options", "min", "max", "step", "svg", "language", "title", "direction", "columns", "widths", "justify", "align", "gap", "grow",
-	"width", "height", "padding", "margin", "bg", "fg", "border", "bold", "visible", "disabled", "on_click", "on_input",
+	"width", "height", "min_width", "max_width", "min_height", "max_height", "padding", "margin", "bg", "fg", "border", "bold", "visible", "disabled", "on_click", "on_input",
 	"on_change", "children",
 }
 

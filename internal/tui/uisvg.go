@@ -138,15 +138,15 @@ func (f *svgFrames) draw(frame *svgFrame, ready func()) {
 
 // svg draws an svg node's picture, the last drawn while the next is drawn;
 // before any, or when its svg cannot be drawn, a box saying so.
-func (r uiRenderer) svg(n tools.UINode, width int, bg string) uiBox {
+func (r uiRenderer) svg(n tools.UINode, room uiRoom, bg string) uiBox {
 	cols, rows := uiSVGWidth, uiSVGHeight
-	if n.Width > 0 {
-		cols = n.Width
+	if room.fillWidth {
+		cols = room.width
 	}
-	if n.Height > 0 {
-		rows = n.Height
+	if room.fillHeight {
+		rows = room.height
 	}
-	cols = max(min(cols, width), 1)
+	cols = max(min(cols, room.width), 1)
 	frames := r.svgs
 	if frames == nil {
 		frames = &svgFrames{}

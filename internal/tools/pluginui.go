@@ -60,7 +60,7 @@ func (u *UIs) Open(owner, title string, tree UINode, options DialogOptions) (int
 	}
 	u.mu.Lock()
 	opened := u.find(id)
-	opened.Owner, opened.Size, opened.Listed = owner, options.Size, options.Listed
+	opened.Owner, opened.Size, opened.Listed, opened.Bare = owner, options.Size, options.Listed, options.Bare
 	u.mu.Unlock()
 	u.changed()
 	return id, nil
@@ -74,6 +74,8 @@ const DialogFull = "full"
 type DialogOptions struct {
 	Size   string
 	Listed bool
+	// Bare drops the dialog's frame: no edges, title, × or keys line.
+	Bare bool
 }
 
 // Dismiss closes a plugin's dialog for good, as esc does to one not
@@ -146,4 +148,26 @@ func PluginTree(value any) (*UINode, error) {
 		return nil, fmt.Errorf("a dialog needs a tree, e.g. %s", uiTreeExample)
 	}
 	return tree, err
+}
+
+// UIBounds is where a dialog is drawn, in cells of the screen.
+type UIBounds struct {
+	X, Y, Width, Height int
+}
+
+// SetShown says which interface is on screen and where; 0 for none.
+func (u *UIs) SetShown(id int, bounds UIBounds) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.shown, u.shownBounds = id, bounds
+}
+
+// Bounds is where an interface is drawn, when it is on screen.
+func (u *UIs) Bounds(id int) (UIBounds, bool) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if id == 0 || u.shown != id {
+		return UIBounds{}, false
+	}
+	return u.shownBounds, true
 }

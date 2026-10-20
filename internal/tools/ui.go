@@ -78,8 +78,12 @@ type UINode struct {
 	Align       string   `json:"align,omitempty"`
 	Gap         int      `json:"gap,omitempty"`
 	Grow        int      `json:"grow,omitempty"`
-	Width       int      `json:"width,omitempty"`
-	Height      int      `json:"height,omitempty"`
+	Width       UISize   `json:"width,omitempty"`
+	Height      UISize   `json:"height,omitempty"`
+	MinWidth    int      `json:"min_width,omitempty"`
+	MaxWidth    int      `json:"max_width,omitempty"`
+	MinHeight   int      `json:"min_height,omitempty"`
+	MaxHeight   int      `json:"max_height,omitempty"`
 	Padding     []int    `json:"padding,omitempty"`
 	Margin      []int    `json:"margin,omitempty"`
 	BG          string   `json:"bg,omitempty"`
@@ -125,6 +129,9 @@ func validateUI(root UINode) error {
 			return fmt.Errorf("%s needs an id", where)
 		}
 		if err := checkValue(n, where); err != nil {
+			return err
+		}
+		if err := checkSizes(n, where); err != nil {
 			return err
 		}
 		if n.ID != "" {
@@ -201,6 +208,8 @@ type UI struct {
 	// not listed closes for good.
 	Size   string `json:"-"`
 	Listed bool   `json:"-"`
+	// Bare is a plugin's dialog drawn without its frame.
+	Bare   bool `json:"-"`
 	script *uiScript
 }
 
@@ -300,9 +309,16 @@ type UIs struct {
 	conversation string
 	uis          []*UI
 	events       []UIEvent
+	// shown is the interface on screen now and where, kept for plugins
+	// to ask; 0 when none is.
+	shown       int
+	shownBounds UIBounds
 	// firstID is the number the first interface takes; deliver, when set,
 	// takes what the user does instead of the model, as for plugins.
-	firstID  int
+	firstID int
+	// lastID is the last number given in the conversation, so a number
+	// is never given twice, even once its interface is gone.
+	lastID   int
 	deliver  chan UIEvent
 	onChange func()
 }
@@ -337,6 +353,7 @@ func (u *UIs) SetConversation(id string) {
 		return
 	}
 	u.conversation = id
+	u.lastID = 0
 	if id == "" || u.root == "" || slices.ContainsFunc(u.uis, func(each *UI) bool { return each.Conversation == id }) {
 		return
 	}
@@ -461,7 +478,7 @@ func (u *UIs) create(title, script string, tree UINode) (int, error) {
 	if u.conversation == "" {
 		return 0, errors.New("interfaces are not available here")
 	}
-	next := max(u.firstID, 1)
+	next := max(u.firstID, 1, u.lastID+1)
 	for _, each := range u.uis {
 		if each.Conversation == u.conversation {
 			next = max(next, each.ID+1)
@@ -472,6 +489,7 @@ func (u *UIs) create(title, script string, tree UINode) (int, error) {
 		return 0, err
 	}
 	u.uis = append(u.uis, ui)
+	u.lastID = next
 	u.save()
 	return next, nil
 }
@@ -696,26 +714,26 @@ var uiHelp = []helpTopic{
 	{"create", "title, tree, script (optional): shows the interface and returns its id. What the user does in it reaches you as [mo] notes."},
 	{"update", "id, and any of title, tree, script: replaces them. What the user set and the script's state stay."},
 	{"remove", "id: removes the interface."},
-	{"nodes", `Every node is {"type": ..., more fields}; panel, card and grid hold nodes in "children".
-A node the user acts on, a button, an input or another control, needs an id; so does any node a script changes.
-Topic <type> explains one, with an example.
-panel     children, direction row|column, gap, justify start|center|end|space-between|space-around, align start|center|end|stretch
+	{"nodes", `Every node is {"type": ..., more fields}; panel, card and grid hold others in "children".
+A node the user acts on, or a script changes, needs an id.
+panel     lays its children in a column, or a row with direction row
 card      a panel with a border and a title
-grid      children row by row in columns (a number), each column as wide as its widest cell, like a table; gap between columns,
-          widths [12,0] fixes some (0: auto), align start|center|end|stretch in the cells, a cell's grow widens its column.
-          Use it to line labels up beside their controls.
+grid      its children in columns, like a table: labels beside their controls
 label     text
-button    label, on_click, disabled
-input     value, placeholder, on_input, on_change
-textarea  value of many lines, language (colours it as code), height, placeholder, on_input, on_change
-select    options ["a","b"], value, label, on_change
-slider    min, max, step (0, 100, 1 unless set), value, label, on_change
-checkbox  label, value "true"|"false", on_change
-switch    as checkbox, drawn as a switch
-radio     options, value, label, direction row|column, on_change
-svg       svg (its markup), width, height in cells (40, 12), on_click (e.x, e.y in viewBox units); ui.set(id, {svg = ...}) redraws it
-any node  id, fg, bg (#rrggbb or text|dim|accent|error|warning|success|surface|background), bold, visible, border rounded|normal|thick|double|none,
-          padding, margin (1, 2 or 4 numbers, as in CSS), width, height, grow (share of the room left in a row)`},
+button    something to press: label, on_click
+input     a line to type in: value, placeholder
+textarea  text of many lines, coloured as code of a language
+select, slider, checkbox, switch, radio: controls holding a value
+svg       a picture
+Topic <type>: what one is for, its fields and an example. Topic layout: sizes, grow, gaps and alignment.`},
+	{"layout", `Sizes, in cells, count with a node's padding and border:
+width, height     a number of cells, or "full": all the room its parent gives it; in a row or a column, what the others leave; at the root, the whole dialog
+min_width, max_width, min_height, max_height   the least and most it takes
+grow              a share of the room left along its parent, as CSS flex-grow: in a row, width; in a column, height when the column has a height to give
+gap               cells between children; justify along: start|center|end|space-between|space-around; align across: start|center|end|stretch
+padding, margin   1, 2 or 4 numbers, as in CSS; border rounded|normal|thick|double|none
+fg, bg            #rrggbb or text|dim|accent|error|warning|success|surface|background; bold, visible
+e.g. a side list and a pane taking the rest: {"type":"panel","direction":"row","height":"full","children":[{"type":"panel","width":20,"children":[...]},{"type":"textarea","id":"body","width":"full","height":"full"}]}`},
 	{"events", `on_click (button, svg), on_input (each key in an input), on_change (an input when left or on enter; any other control at each change) take:
 notify   tell you of this event (only when you must act on it)
 submit   tell you every control's value, and close the dialog
@@ -748,10 +766,10 @@ var uiNodeHelp = map[string]string{
 		"columns: how many; widths [12,0]: fixed widths, 0 as needed; gap: cells between columns; align: within the cells; a cell's grow widens its column. " +
 		`e.g. {"type":"grid","columns":2,"gap":2,"children":[{"type":"label","text":"Name"},{"type":"input","id":"name"}]}`,
 	UILabel:  `text, wrapped to its room; bold and fg colour it. e.g. {"type":"label","text":"Saved","fg":"success"}`,
-	UIButton: `label; on_click: what it does (topic events), notify when unset; disabled. e.g. {"type":"button","id":"ok","label":"OK","on_click":"submit"}`,
+	UIButton: `something the user presses. label; on_click: what it does (topic events), notify when unset; disabled. e.g. {"type":"button","id":"ok","label":"OK","on_click":"submit"}`,
 	UIInput: "a line the user types in. value, placeholder, width; on_input at each key, on_change when left or on enter. " +
 		`e.g. {"type":"input","id":"name","placeholder":"your name"}`,
-	UITextarea: "text of many lines the user types in; enter starts a new line. value, placeholder, width, height (rows, 6 unless set), " +
+	UITextarea: "text of many lines the user types in, as a note or code; enter starts a new line. value, placeholder, width, height (rows, 6 unless set; \"full\" for the rest of the dialog), " +
 		"language (go, lua, json...) colours it as code; on_input at each key, on_change when left. " +
 		`e.g. {"type":"textarea","id":"body","language":"markdown","height":8}`,
 	UISelect: "one of its options, shown as ◂ value ▸; ←→ or a click change it. options, value (the first unless set), label; on_change at each change. " +
@@ -784,8 +802,8 @@ func uiTool() Tool {
 		Name: "ui",
 		Description: "Build an interface the user works with on their own, in a dialog: a form, a settings panel, a picker, a small tool. " +
 			"Its Lua script reacts on their side without you; you hear only what the interface notifies or submits. For one question, use ask. " +
-			"Node types: " + strings.Join(UITypes, ", ") + ". " +
-			`{"action":"help"} explains how. A tree: ` + uiTreeExample,
+			"Basic nodes: panel, card, label, button, input; " + `{"action":"help","topic":"nodes"} lists every node, ` +
+			`{"action":"help"} explains the rest. A tree: ` + uiTreeExample,
 		Schema: json.RawMessage(`{"type":"object","properties":{
 "action":{"type":"string","enum":["create","update","remove","help"]},
 "id":{"type":"integer"},

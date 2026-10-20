@@ -14,20 +14,17 @@ const (
 )
 
 // textarea draws a textarea: its text coloured as code of its language,
-// wrapped to its width, as many rows as its height. Focused, it shows its
-// last rows and the cursor after the text; else its first rows, or its
-// placeholder while empty.
-func (r uiRenderer) textarea(n tools.UINode, width int, fill bool) uiBox {
-	w := min(uiTextareaWidth, width)
-	switch {
-	case n.Width > 0:
-		w = min(n.Width, width)
-	case fill:
-		w = width
+// wrapped to its width, as many rows as its room asks, 6 unless it does.
+// Focused, it shows its last rows and the cursor after the text; else its
+// first rows, or its placeholder while empty.
+func (r uiRenderer) textarea(n tools.UINode, room uiRoom) uiBox {
+	w := min(uiTextareaWidth, room.width)
+	if room.fillWidth {
+		w = room.width
 	}
-	rows := n.Height
-	if rows <= 0 {
-		rows = uiTextareaHeight
+	rows := uiTextareaHeight
+	if room.fillHeight {
+		rows = room.height
 	}
 	face := orDefault(n.BG, "surface")
 	value := n.Current()

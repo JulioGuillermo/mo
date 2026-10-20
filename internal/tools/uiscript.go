@@ -175,7 +175,7 @@ func (s *uiScript) get(state *lua.LState) int {
 	state.Push(luabox.ToLua(state, map[string]any{
 		"type": node.Type, "text": node.Text, "label": node.Label, "value": node.Value, "placeholder": node.Placeholder,
 		"title": node.Title, "fg": node.FG, "bg": node.BG, "visible": visible, "disabled": node.Disabled, "bold": node.Bold,
-		"width": node.Width, "height": node.Height, "border": node.Border, "options": node.Options, "svg": node.SVG,
+		"width": sizeValue(node.Width), "height": sizeValue(node.Height), "border": node.Border, "options": node.Options, "svg": node.SVG,
 		"min": node.Min, "max": node.Max, "step": node.Step, "checked": node.Checked(),
 	}))
 	return 1
@@ -297,16 +297,31 @@ func applyProps(n *UINode, props map[string]any) error {
 				n.Step = amount
 			}
 		case "width", "height":
+			size, err := parseUISize(value)
+			if err != nil {
+				return fmt.Errorf("%s %w", name, err)
+			}
+			if name == "width" {
+				n.Width = size
+			} else {
+				n.Height = size
+			}
+		case "min_width", "max_width", "min_height", "max_height":
 			if !isNumber || number < 0 {
 				return fmt.Errorf("%s is a number of cells", name)
 			}
-			if name == "width" {
-				n.Width = number
-			} else {
-				n.Height = number
+			switch name {
+			case "min_width":
+				n.MinWidth = number
+			case "max_width":
+				n.MaxWidth = number
+			case "min_height":
+				n.MinHeight = number
+			default:
+				n.MaxHeight = number
 			}
 		default:
-			return fmt.Errorf("%q cannot be set: use text, label, value, placeholder, title, options, min, max, step, svg, fg, bg, border, visible, disabled, bold, width or height", name)
+			return fmt.Errorf("%q cannot be set: use text, label, value, placeholder, title, options, min, max, step, svg, fg, bg, border, visible, disabled, bold, width, height, min_width, max_width, min_height or max_height", name)
 		}
 	}
 	return nil
@@ -337,4 +352,12 @@ func asFloat(value any) (float64, bool) {
 		return float64(v), true
 	}
 	return 0, false
+}
+
+// sizeValue is a size as a script reads it: a number, or "full".
+func sizeValue(size UISize) any {
+	if size.Full() {
+		return uiFullName
+	}
+	return int(size)
 }

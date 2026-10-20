@@ -2,7 +2,7 @@ package plugins
 
 // Test Traceability Table
 // | ID    | Category | Description                                                              | Priority |
-// | DG-01 | Happy    | mo.dialog takes size = "full" and listed; unlisted is the default         | P0       |
+// | DG-01 | Happy    | mo.dialog takes size = "full", listed and frame = false; unlisted and framed are the default | P0 |
 // | DG-02 | Error    | A size other than full fails mo.dialog                                   | P2       |
 // | DG-03 | Happy    | A dialog dismissed sends on_event a close event with every value, then its handler is dropped | P0 |
 // | DG-04 | Happy    | A component's nodes become what its render gives, with its fields and children as props, nested ones too | P0 |
@@ -10,6 +10,7 @@ package plugins
 // | DG-06 | Error    | A component that renders itself forever, or fails, fails mo.dialog with its name | P1 |
 // | DG-07 | Happy    | mo.view hands the path, resolved in the working directory, to who shows it; false with no one | P1 |
 // | DG-08 | Happy    | A textarea with a language is a node a dialog takes                      | P2       |
+// | DG-09 | Edge     | mo.screen is nil until mo tells the size; bounds is nil while the dialog is not on screen | P1 |
 
 import (
 	"context"
@@ -32,10 +33,10 @@ func runCommand(t *testing.T, set *Set, name string) (string, error) {
 }
 
 func TestDialogs(t *testing.T) {
-	t.Run("DG-01 mo.dialog takes size = \"full\" and listed; unlisted is the default", func(t *testing.T) {
+	t.Run("DG-01 mo.dialog takes size = \"full\", listed and frame = false; unlisted and framed are the default", func(t *testing.T) {
 		set := loadSource(t, map[string]string{"demo": `
 mo.command{ name = "open", run = function()
-  mo.dialog{ title = "Big", size = "full", listed = true, tree = { type = "label", text = "hi" } }
+  mo.dialog{ title = "Big", size = "full", listed = true, frame = false, tree = { type = "label", text = "hi" } }
   mo.dialog{ title = "Plain", tree = { type = "label", text = "hi" } }
 end }`}).set
 
@@ -43,7 +44,7 @@ end }`}).set
 
 		big, _ := set.Dialogs().Get(1001)
 		plain, _ := set.Dialogs().Get(1002)
-		if err != nil || big.Size != tools.DialogFull || !big.Listed || plain.Size != "" || plain.Listed {
+		if err != nil || big.Size != tools.DialogFull || !big.Listed || !big.Bare || plain.Size != "" || plain.Listed || plain.Bare {
 			t.Errorf("err = %v big = %+v plain = %+v", err, big, plain)
 		}
 	})
@@ -179,6 +180,23 @@ end }`}).set
 		dialog, _ := set.Dialogs().Get(1001)
 		if err != nil || dialog.Tree.Type != tools.UITextarea || dialog.Tree.Language != "lua" || dialog.Tree.Height != 4 {
 			t.Errorf("err = %v tree = %+v", err, dialog.Tree)
+		}
+	})
+
+	t.Run("DG-09 mo.screen is nil until mo tells the size; bounds is nil while the dialog is not on screen", func(t *testing.T) {
+		set := loadSource(t, map[string]string{"demo": `
+mo.command{ name = "open", run = function()
+  local screen = mo.screen()
+  local bounds = mo.dialog{ tree = { type = "label", text = "hi" } }.bounds()
+  return tostring(screen and screen.width) .. " " .. tostring(bounds)
+end }`}).set
+
+		before, _ := runCommand(t, set, "open")
+		set.SetScreen(100, 40)
+		after, _ := runCommand(t, set, "open")
+
+		if before != "nil nil" || after != "100 nil" {
+			t.Errorf("before = %q after = %q", before, after)
 		}
 	})
 }

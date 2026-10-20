@@ -22,6 +22,7 @@ func (p *Plugin) openAPI() {
 		"setting":     p.declareSetting,
 		"component":   p.declareComponent,
 		"view":        p.viewFile,
+		"screen":      p.screenSize,
 		"exec":        p.exec,
 		"run":         p.run,
 		"sleep":       sleep,

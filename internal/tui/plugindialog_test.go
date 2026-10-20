@@ -9,8 +9,12 @@ package tui
 // | PD-05 | Happy    | A textarea takes several lines, enter starting one, coloured as its language | P0     |
 // | PD-06 | Edge     | A textarea's keys line says enter makes a new line; esc closes or hides as the dialog does | P2 |
 // | PD-07 | Happy    | mo.view opens the file in the viewer, over the dialog, which keys no longer reach | P1  |
+// | PD-08 | Happy    | A dialog closed with esc opens again, fresh, as many times as asked        | P0       |
+// | PD-10 | Happy    | frame = false draws the interface alone: full, from the screen's corner to its last row; else centred | P0 |
+// | PD-09 | Happy    | mo.screen gives the terminal's size; bounds where the dialog is drawn, nil once gone from screen | P0 |
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -179,6 +183,90 @@ end }`)
 		ui, _ := m.session.Plugins.Dialogs().Get(m.uiOpen)
 		if m.viewer == nil || m.viewer.file == "" || ui.Values["name"] != "" {
 			t.Errorf("viewer = %v typed into the dialog = %q", m.viewer != nil, ui.Values["name"])
+		}
+	})
+
+	t.Run("PD-08 a dialog closed with esc opens again, fresh, as many times as asked", func(t *testing.T) {
+		m := pluginModel(t, `
+mo.command{ name = "vim", run = function(file)
+  mo.dialog{ title = file, tree = { type = "textarea", id = "body" } }
+end }`)
+		opened := make(chan int, 4)
+		m.session.Plugins.Follow(func() {}, func(id int) { opened <- id })
+		run, _ := m.session.Plugins.Command("vim")
+		dialogs := m.session.Plugins.Dialogs()
+
+		var ids []int
+		for _, file := range []string{"a.txt", "b.txt", "c.txt"} {
+			if _, err := run(t.Context(), file); err != nil {
+				t.Fatal(err)
+			}
+			updated, _ := m.Update(pluginDialogMsg(<-opened))
+			m = pressed(t, updated.(model), tea.KeyPressMsg{Code: 'x', Text: "x"})
+			ui, _ := dialogs.Get(m.uiOpen)
+			if ui.Title != file || ui.Values["body"] != "x" {
+				t.Errorf("%s opened as %+v", file, ui)
+			}
+			ids = append(ids, m.uiOpen)
+			updated, cmd := m.Update(keyEsc)
+			m = updated.(model)
+			cmd()
+		}
+
+		if len(dialogs.List()) != 0 || m.uiOpen != 0 || ids[0] == ids[1] {
+			t.Errorf("left open: %+v ids %v", dialogs.List(), ids)
+		}
+	})
+
+	t.Run("PD-09 mo.screen gives the terminal's size; bounds where the dialog is drawn, nil once gone from screen", func(t *testing.T) {
+		m := openedDialog(t, `
+local dialog
+mo.command{ name = "open", run = function()
+  dialog = mo.dialog{ title = "Small", tree = { type = "label", text = "hello" } }
+end }
+mo.command{ name = "where", run = function()
+  local screen, bounds = mo.screen(), dialog.bounds()
+  if not bounds then return screen.width .. "x" .. screen.height .. " none" end
+  return screen.width .. "x" .. screen.height .. " " .. bounds.x .. "," .. bounds.y .. " " .. bounds.width .. "x" .. bounds.height
+end }`)
+		updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+		m = updated.(model)
+		m.View()
+		where, _ := m.session.Plugins.Command("where")
+
+		shown, _ := where(t.Context(), "")
+		frame, _ := m.uiFrame()
+		m = pressed(t, m, keyEsc)
+		m.View()
+		gone, _ := where(t.Context(), "")
+
+		want := fmt.Sprintf("120x30 %d,%d %dx%d", frame.x, frame.y, ansi.StringWidth(frame.lines[0]), len(frame.lines))
+		if shown != want || gone != "120x30 none" {
+			t.Errorf("shown = %q, want %q; gone = %q", shown, want, gone)
+		}
+	})
+
+	t.Run("PD-10 frame = false draws the interface alone: full, from the screen's corner to its last row; else centred", func(t *testing.T) {
+		full := openedDialog(t, `
+mo.command{ name = "open", run = function()
+  mo.dialog{ title = "Editor", size = "full", frame = false, tree = { type = "textarea", id = "body", width = "full", height = "full" } }
+end }`)
+		small := openedDialog(t, `
+mo.command{ name = "open", run = function()
+  mo.dialog{ title = "Tip", frame = false, tree = { type = "button", id = "ok", label = "OK" } }
+end }`)
+
+		fullFrame, _ := full.uiFrame()
+		smallFrame, _ := small.uiFrame()
+
+		body := fullFrame.hits[0]
+		drawn := ansi.Strip(strings.Join(fullFrame.lines, "\n"))
+		if len(fullFrame.lines) != full.height || body.x0 != 0 || body.y0 != 0 || body.x1 != full.width || body.y1 != full.height || strings.ContainsAny(drawn, "╭╰×") {
+			t.Errorf("full: %d lines, body %+v", len(fullFrame.lines), body)
+		}
+		ok := smallFrame.hits[0]
+		if len(smallFrame.lines) != 1 || strings.Contains(ansi.Strip(smallFrame.lines[0]), "Tip") || ok.y0 != (small.height-1)/2 || ok.x0 == 0 {
+			t.Errorf("small: %q at %+v", smallFrame.lines, ok)
 		}
 	})
 }

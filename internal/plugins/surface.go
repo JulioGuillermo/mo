@@ -20,6 +20,8 @@ type surface struct {
 	open     func(id int)
 	send     func(SentMessage)
 	view     func(path string)
+	// screen is the terminal's width and height, zero until told.
+	screen [2]int
 }
 
 type sidebarEntry struct {
@@ -215,14 +217,18 @@ func (p *Plugin) removeSidebarItem(state *lua.LState) int {
 	return 0
 }
 
-// openDialog is mo.dialog{ title, tree, on_event, size, listed }: it shows
+// openDialog is mo.dialog{ title, tree, on_event, size, listed, frame }: it shows
 // a dialog of the nodes the ui tool takes, and the plugin's components, and
 // gives { id, update, close }. on_event gets what the user does in it.
 func (p *Plugin) openDialog(state *lua.LState) int {
 	spec := state.CheckTable(1)
 	tree := p.dialogTree(state, spec.RawGetString("tree"))
 	onEvent, _ := spec.RawGetString("on_event").(*lua.LFunction)
-	options := tools.DialogOptions{Size: luaString(spec.RawGetString("size")), Listed: lua.LVAsBool(spec.RawGetString("listed"))}
+	options := tools.DialogOptions{
+		Size:   luaString(spec.RawGetString("size")),
+		Listed: lua.LVAsBool(spec.RawGetString("listed")),
+		Bare:   spec.RawGetString("frame") == lua.LFalse,
+	}
 	surface := p.surface
 	id, err := surface.dialogs.Open(p.name, luaString(spec.RawGetString("title")), *tree, options)
 	if err != nil {
@@ -256,7 +262,7 @@ func (p *Plugin) dialogTree(state *lua.LState, value lua.LValue) *tools.UINode {
 }
 
 // dialogHandle is what mo.dialog gives: the dialog's id, update{ title,
-// tree } and close().
+// tree }, bounds() and close().
 func (p *Plugin) dialogHandle(id int) *lua.LTable {
 	state := p.state
 	handle := state.NewTable()
@@ -272,6 +278,7 @@ func (p *Plugin) dialogHandle(id int) *lua.LTable {
 		}
 		return 0
 	}))
+	handle.RawSetString("bounds", state.NewFunction(p.dialogBounds(id)))
 	handle.RawSetString("close", state.NewFunction(func(*lua.LState) int {
 		p.surface.mu.Lock()
 		delete(p.surface.handlers, id)

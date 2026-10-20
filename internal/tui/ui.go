@@ -704,6 +704,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *model) resize(size tea.WindowSizeMsg) tea.Cmd {
 	widthChanged := size.Width != m.width
 	m.width, m.height = size.Width, size.Height
+	m.session.Plugins.SetScreen(size.Width, size.Height)
 	m.input.SetWidth(size.Width)
 	m.printer.setWidth(m.mainWidth())
 	m.renderStream(true)
@@ -1205,6 +1206,7 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 
 func (m model) View() tea.View {
 	var view tea.View
+	m.forgetHiddenDialog()
 	if m.settings != nil && m.settings.floating {
 		view = tea.NewView(m.floatingView())
 		view.WindowTitle = "mo · settings"

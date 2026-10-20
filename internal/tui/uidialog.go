@@ -125,6 +125,9 @@ func (m model) uiFrame() (uiFrame, bool) {
 		return uiFrame{}, false
 	}
 	state := m.live(m.uiOpen)
+	if ui.Bare {
+		return m.bareFrame(ui, state), true
+	}
 	full := ui.Size == tools.DialogFull
 	most := max(min(m.width-6, uiDialogMaxWidth), 20)
 	room := max(m.height-4, 3)
@@ -135,7 +138,7 @@ func (m model) uiFrame() (uiFrame, bool) {
 		}
 	}
 	tree := ui.Shown()
-	body := uiRenderer{focus: state.focus, svgs: m.svgs, ui: ui.ID}.render(tree, most-4, "", full)
+	body := uiRenderer{focus: state.focus, svgs: m.svgs, ui: ui.ID}.render(tree, uiRoom{width: most - 4, height: room, fillWidth: full}, "")
 	state.scroll = min(max(state.scroll, 0), max(body.height()-room, 0))
 	shown := body.lines[state.scroll:min(state.scroll+room, body.height())]
 
@@ -210,6 +213,45 @@ func (m model) uiFrame() (uiFrame, bool) {
 	return uiFrame{lines: lines, x: x, y: y, hits: hits}, true
 }
 
+// bareFrame is a dialog drawn without its frame: the interface alone,
+// filling the screen when full, else centred, and what its code failed
+// with on its last row.
+func (m model) bareFrame(ui tools.UI, state *uiLive) uiFrame {
+	full := ui.Size == tools.DialogFull
+	width, room := max(min(m.width-2, uiDialogMaxWidth), 20), max(m.height-2, 3)
+	if full {
+		width, room = max(m.width, 1), max(m.height, 1)
+	}
+	if ui.Error != "" {
+		room = max(room-1, 1)
+	}
+	body := uiRenderer{focus: state.focus, svgs: m.svgs, ui: ui.ID}.render(ui.Shown(), uiRoom{width: width, height: room, fillWidth: full, fillHeight: full}, "")
+	state.scroll = min(max(state.scroll, 0), max(body.height()-room, 0))
+	lines := slices.Clone(body.lines[state.scroll:min(state.scroll+room, body.height())])
+	inner := body.width
+	if full {
+		inner = width
+	}
+	for len(lines) < room && full {
+		lines = append(lines, "")
+	}
+	if ui.Error != "" {
+		lines = append(lines, errorStyle.Render(ansi.Truncate("script: "+ui.Error, inner, "…")))
+	}
+	for i, line := range lines {
+		lines[i] = line + strings.Repeat(" ", max(inner-ansi.StringWidth(line), 0))
+	}
+	x := max((m.width-inner)/2, 0)
+	y := max((m.height-len(lines))/2, 0)
+	var hits []uiHit
+	for _, hit := range body.hits {
+		if top := hit.y0 - state.scroll; top >= 0 && top < room {
+			hits = append(hits, hit.moved(x, y-state.scroll))
+		}
+	}
+	return uiFrame{lines: lines, x: x, y: y, hits: hits}
+}
+
 // uiCloseHit is the id of the × in the dialog's top edge.
 const uiCloseHit = "\x00close"
 
@@ -269,11 +311,25 @@ func uiKeys(tree tools.UINode, closes bool) (string, string) {
 	return strings.Join(keys, " · "), strings.Join(short, " · ")
 }
 
-// overUI draws the open interface over the screen.
+// forgetHiddenDialog tells the plugins none of their dialogs is on screen
+// when the screen drawn shows none: none open, or another screen over it.
+func (m model) forgetHiddenDialog() {
+	dialogs := m.session.Plugins.Dialogs()
+	shown := m.uiOpen != 0 && m.uiStore == dialogs && m.settings == nil && m.agentView == nil && m.viewer == nil
+	if dialogs != nil && !shown {
+		dialogs.SetShown(0, tools.UIBounds{})
+	}
+}
+
+// overUI draws the open interface over the screen, and tells the plugins
+// where their dialog is.
 func (m model) overUI(screen string) string {
 	frame, ok := m.uiFrame()
 	if !ok {
 		return screen
+	}
+	if dialogs := m.session.Plugins.Dialogs(); dialogs != nil && m.uiStore == dialogs {
+		dialogs.SetShown(m.uiOpen, tools.UIBounds{X: frame.x, Y: frame.y, Width: ansi.StringWidth(frame.lines[0]), Height: len(frame.lines)})
 	}
 	return lipgloss.NewCompositor(
 		lipgloss.NewLayer(screen),

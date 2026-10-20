@@ -225,6 +225,7 @@ dialog = mo.dialog{
 | `on_event` | gets what you do in it |
 | `size` | `"full"` fills the screen; left out, it is as big as what it holds |
 | `listed` | `true` keeps it under **Plugins** in the side panel, to open again once hidden |
+| `frame` | `false` draws it without its frame: no edges, title, × or keys line; with `size = "full"`, the interface takes every cell of the screen |
 
 `mo.dialog` gives a handle:
 
@@ -232,6 +233,7 @@ dialog = mo.dialog{
 |---|---|
 | `dialog.id` | its number, from 1001 on |
 | `dialog.update{ title, tree }` | changes the title, the tree or both; what you typed stays |
+| `dialog.bounds()` | `{ x, y, width, height }` where it is drawn now, `nil` while it is not on screen |
 | `dialog.close()` | takes it away |
 
 What you do in the dialog goes to `on_event`, never to the model. The event is
@@ -252,17 +254,42 @@ node's `close` or `submit`. A dialog opened with `listed = true` only hides inst
 live while mo runs and are never saved. An error in `on_event` shows under the dialog and goes to
 the log.
 
+### Sizes
+
+Every node takes `width` and `height`, as cells or `"full"`, the least and most it takes, and
+`grow`, as CSS flex-grow. Sizes count with its padding and border.
+
+| Field | What |
+|---|---|
+| `width`, `height` | cells, or `"full"`: all the room its parent gives it; beside others in a row or a column, what they leave; at the root, the whole dialog |
+| `min_width`, `max_width`, `min_height`, `max_height` | the least and most it takes |
+| `grow` | a share of the room left along its parent: width in a row, height in a column that has a height to give |
+
+```lua
+mo.dialog{ title = "Mail", size = "full", tree = { type = "panel", direction = "row", height = "full", children = {
+  { type = "panel", width = 24, children = { --[[ the folders ]] } },
+  { type = "panel", width = "full", children = {
+    { type = "input", id = "subject", width = "full" },
+    { type = "textarea", id = "body", grow = 1 },
+    { type = "button", id = "send", label = "Send" },
+  } },
+} } }
+```
+
+`mo.screen()` gives `{ width, height }` of the terminal, or `nil` when there is none, as when mo
+answers once.
+
 ### Text of many lines
 
 A `textarea` takes text of many lines: enter starts a new line, tab moves on. `language` colours
-it as code, `height` is its rows (6 unless set), `width` its columns. With `size = "full"` it makes
+it as code; it is 6 rows high unless `height` or `grow` say otherwise. With `size = "full"` it makes
 a small editor:
 
 ```lua
 mo.command{ name = "note", run = function()
   local dialog
   dialog = mo.dialog{ title = "Note", size = "full", tree = { type = "panel", children = {
-    { type = "textarea", id = "body", language = "markdown", height = 30, value = mo.read("NOTES.md") or "" },
+    { type = "textarea", id = "body", language = "markdown", height = "full", value = mo.read("NOTES.md") or "" },
     { type = "button", id = "save", label = "Save" },
   } }, on_event = function(event)
     if event.element == "save" or event.event == "close" then
