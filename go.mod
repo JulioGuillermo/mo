@@ -19,6 +19,7 @@ require (
 	github.com/go-git/go-git/v5 v5.16.2
 	github.com/kanrichan/resvg-go v0.0.1
 	github.com/modelcontextprotocol/go-sdk v1.8.0
+	github.com/tetratelabs/wazero v1.4.0
 	github.com/yuin/gopher-lua v1.1.2
 	golang.org/x/image v0.47.0
 	golang.org/x/net v0.55.0
@@ -74,7 +75,6 @@ require (
 	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
-	github.com/tetratelabs/wazero v1.4.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xo/terminfo v1.0.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect

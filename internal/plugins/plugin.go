@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/tetratelabs/wazero"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -62,6 +63,8 @@ type Plugin struct {
 	// servers are the MCP servers it declares, providers the providers.
 	servers   []mcpServer
 	providers []providerDeclared
+	// wasm runs the WebAssembly modules it loads, made at the first.
+	wasm wazero.Runtime
 	// components are the plugin's own node types, by name.
 	components map[string]*lua.LFunction
 	// values are what the user set for the plugin, by setting name.
