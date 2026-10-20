@@ -9,6 +9,7 @@ package tui
 // | AF-05 | Happy    | Saving the other settings keeps the types                                | P0       |
 // | AF-06 | Happy    | The tools to tick are the session's a subagent can have, each MCP server whole, and what the type has | P1 |
 // | AF-07 | Happy    | The side panel and a subagent's menu show its type and model             | P1       |
+// | AF-08 | Happy    | Types in its description is off unless turned on, and only then written   | P1       |
 
 import (
 	"slices"
@@ -139,6 +140,18 @@ func TestAgentTypesForm(t *testing.T) {
 		plain := team.Info{State: team.Done}
 		if agentKindAndState(plain) != "done" || typeLead(plain) != "" || modelTail(plain) != "" {
 			t.Errorf("plain %q %q %q", agentKindAndState(plain), typeLead(plain), modelTail(plain))
+		}
+	})
+
+	t.Run("AF-08 Types in its description is off unless turned on, and only then written", func(t *testing.T) {
+		draft := defaultDraft()
+		untouched, _ := draft.applyTo(config.Config{}, nil)
+		draft.agentsListed = true
+
+		listed, err := draft.applyTo(config.Config{}, nil)
+
+		if untouched.Agents.ListTypes != nil || err != nil || listed.Agents.ListTypes == nil || !*listed.Agents.ListTypes || typesListed(false) != "off: action types lists them" {
+			t.Errorf("untouched %v listed %v err %v", untouched.Agents.ListTypes, listed.Agents.ListTypes, err)
 		}
 	})
 }

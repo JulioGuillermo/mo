@@ -6,6 +6,7 @@ package config
 // | AT-02 | Security | No project file sets types, trusted or not                               | P0       |
 // | AT-03 | Error    | A name with spaces, model, effort, mode or deny rule is refused, naming the type | P1       |
 // | AT-04 | Happy    | The tools of a type are named as now, the config passed in left alone    | P2       |
+// | AT-05 | Happy    | Types are not named in the agent tool unless list_types; the user file turns it on | P1 |
 
 import (
 	"path/filepath"
@@ -81,6 +82,19 @@ max_steps = 9
 
 		if !slices.Equal(normalized.Agents.Types["r"].Tools, []string{"web_fetch", "read"}) || cfg.Agents.Types["r"].Tools[0] != "fetch" {
 			t.Errorf("normalized %v original %v", normalized.Agents.Types["r"].Tools, cfg.Agents.Types["r"].Tools)
+		}
+	})
+
+	t.Run("AT-05 types are not named in the agent tool unless list_types; the user file turns it on", func(t *testing.T) {
+		isolatedHome(t)
+		plain, _ := Load(t.TempDir())
+		configHome := isolatedHome(t)
+		writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), "[agents]\nlist_types = true\n")
+
+		listed, err := Load(t.TempDir())
+
+		if *plain.Agents.ListTypes || err != nil || !*listed.Agents.ListTypes {
+			t.Errorf("plain %v listed %v err %v", *plain.Agents.ListTypes, *listed.Agents.ListTypes, err)
 		}
 	})
 }

@@ -156,21 +156,22 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	extra := extraTools(hub, loaded.plugins)
 	modes, groups := toolModes(cfg.Tools, extra, hub.ToolServers())
 	options := tools.Options{
-		Modes:        modes,
-		Groups:       groups,
-		SkillModes:   cfg.Skills.Modes,
-		Skills:       skills.Without(found, cfg.Skills.Disabled),
-		SkillMode:    cfg.Skills.Mode,
-		Searcher:     searcher,
-		Extra:        extra,
-		Mode:         cfg.Tools.Mode,
-		Load:         cfg.Tools.Load,
-		AlwaysLoaded: cfg.Tools.AlwaysLoaded,
-		Disabled:     cfg.Tools.Disabled,
-		MaxOutput:    cfg.Tools.MaxOutput,
-		ReadMaxSize:  readMaxSize,
-		Descriptions: cfg.Tools.Descriptions,
-		AgentKinds:   agentKinds(cfg.Agents.Types),
+		Modes:          modes,
+		Groups:         groups,
+		SkillModes:     cfg.Skills.Modes,
+		Skills:         skills.Without(found, cfg.Skills.Disabled),
+		SkillMode:      cfg.Skills.Mode,
+		Searcher:       searcher,
+		Extra:          extra,
+		Mode:           cfg.Tools.Mode,
+		Load:           cfg.Tools.Load,
+		AlwaysLoaded:   cfg.Tools.AlwaysLoaded,
+		Disabled:       cfg.Tools.Disabled,
+		MaxOutput:      cfg.Tools.MaxOutput,
+		ReadMaxSize:    readMaxSize,
+		Descriptions:   cfg.Tools.Descriptions,
+		AgentKinds:     agentKinds(cfg.Agents.Types),
+		ListAgentKinds: *cfg.Agents.ListTypes,
 	}
 	policy, err := permissions.New(permissions.Mode(cfg.Permissions.Mode), cfg.Permissions.Allow, cfg.Permissions.Deny)
 	if err != nil {

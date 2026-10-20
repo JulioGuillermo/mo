@@ -569,6 +569,11 @@ func agentItems(model, *settingsMenu) []settingItem {
 		count("Steps each", "replies of the model before a subagent is stopped", func(d *settingsDraft) *string { return &d.agentsSteps }),
 		{subagentsProvider, func(d *settingsDraft) string { return orDefault(d.agentsModel.provider, "the main agent's") }, nil},
 		{subagentsModel, func(d *settingsDraft) string { return orDefault(d.agentsModel.model, "the main agent's") }, nil},
+		{"Types in its description", func(d *settingsDraft) string { return typesListed(d.agentsListed) }, func(d *settingsDraft) huh.Field {
+			return huh.NewConfirm().Title("Types in its description").
+				Description("names the types in the agent tool's description, compactly; off: the model asks for them with action types").
+				Affirmative("Names").Negative("Off").Value(&d.agentsListed)
+		}},
 	}
 }
 
@@ -931,4 +936,11 @@ func reasoningChoice(choice string) string {
 		return "all"
 	}
 	return "this turn's"
+}
+
+func typesListed(listed bool) string {
+	if listed {
+		return "names"
+	}
+	return "off: action types lists them"
 }

@@ -10,7 +10,7 @@ package main
 // | SA-06 | Happy    | A type starts subagents only with can_start, and while the levels allow  | P0       |
 // | SA-07 | Security | A type's permissions are the stricter of its own and the session's; its deny adds | P0 |
 // | SA-08 | Error    | An unknown type is refused, naming the types                             | P1       |
-// | SA-09 | Happy    | The agent tool of the main agent lists the types and takes type          | P0       |
+// | SA-09 | Happy    | The agent tool of the main agent takes type and points to action types   | P0       |
 
 import (
 	"context"
@@ -209,7 +209,7 @@ func TestSubagents(t *testing.T) {
 		}
 	})
 
-	t.Run("SA-09 the agent tool of the main agent lists the types and takes type", func(t *testing.T) {
+	t.Run("SA-09 the agent tool of the main agent takes type and points to action types", func(t *testing.T) {
 		workDir := isolated(t, providerFile(modelServer(t)))
 		cfg, _ := config.Load(workDir)
 		on := true
@@ -227,7 +227,7 @@ func TestSubagents(t *testing.T) {
 				spec = each.Description + string(each.Schema)
 			}
 		}
-		if err != nil || !strings.Contains(spec, "- reviewer: reviews a diff") || !strings.Contains(spec, `"enum":["reviewer"]`) {
+		if err != nil || strings.Contains(spec, "reviews a diff") || !strings.Contains(spec, `{"action":"types"}`) {
 			t.Errorf("err %v spec %s", err, spec)
 		}
 	})

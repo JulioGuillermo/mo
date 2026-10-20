@@ -87,7 +87,9 @@ func typeOf(types map[string]config.AgentType, name string) (config.AgentType, e
 func agentKinds(types map[string]config.AgentType) []tools.AgentKind {
 	var kinds []tools.AgentKind
 	for _, name := range slices.Sorted(maps.Keys(types)) {
-		kinds = append(kinds, tools.AgentKind{Name: name, Description: types[name].Description})
+		kind := types[name]
+		kinds = append(kinds, tools.AgentKind{Name: name, Description: kind.Description, Model: kind.Model, Effort: kind.Effort,
+			Tools: kind.Tools, Skills: kind.Skills, CanStart: kind.CanStart, Permissions: kind.Permissions, MaxSteps: kind.MaxSteps})
 	}
 	return kinds
 }

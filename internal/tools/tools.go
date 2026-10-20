@@ -142,8 +142,10 @@ type Options struct {
 	Skills     []skills.Skill
 	SkillMode  Mode
 	SkillModes map[string]Mode
-	// AgentKinds are the kinds of subagent the agent tool offers.
-	AgentKinds []AgentKind
+	// AgentKinds are the kinds of subagent the agent tool offers;
+	// ListAgentKinds names them in its description.
+	AgentKinds     []AgentKind
+	ListAgentKinds bool
 }
 
 type Registry struct {
@@ -161,7 +163,7 @@ func NewRegistry(env Env, options Options) *Registry {
 			continue
 		}
 		if tool.Name == AgentName && len(options.AgentKinds) > 0 {
-			tool = agentTool(options.AgentKinds)
+			tool = agentTool(options.AgentKinds, options.ListAgentKinds)
 		}
 		if description, ok := options.Descriptions[tool.Name]; ok {
 			tool.Description = description
@@ -208,7 +210,7 @@ func builtins() []Tool {
 func builtinsWith(searcher web.Searcher) []Tool {
 	return []Tool{
 		bashTool(), readTool(), writeTool(), editTool(), lsTool(), mkdirTool(), rmTool(), grepTool(),
-		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), gitTool(), titleTool(), uiTool(), agentTool(nil), tellParentTool(), peersTool(),
+		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), gitTool(), titleTool(), uiTool(), agentTool(nil, false), tellParentTool(), peersTool(),
 	}
 }
 

@@ -200,6 +200,9 @@ type Agents struct {
 	// Types are kinds of subagent the model picks by name, each with its
 	// own model, tools and limits; one without a type is as above.
 	Types map[string]AgentType `toml:"types,omitempty"`
+	// ListTypes names the types in the agent tool's description; without
+	// it the model asks for them.
+	ListTypes *bool `toml:"list_types,omitempty"`
 }
 
 // AgentType is a kind of subagent. What it leaves empty is as for any
@@ -535,7 +538,7 @@ func Defaults() Config {
 			ReplyRefresh: RefreshLive, ReplyEveryMS: 100, ReplyEveryTokens: 10,
 			SpinnerMS: 80, RunningMS: 150, WritingMS: 220, ReasoningMS: 160, AskingMS: 500, UIFPS: 20, CellSize: render.CellSizeAuto},
 		Loop:        Loop{Enabled: ptr(true), Replies: 30, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2), Steps: ptr(300)},
-		Agents:      Agents{Enabled: ptr(false), Depth: 1, MaxParallel: 3, MaxAgents: 20, MaxSteps: 50},
+		Agents:      Agents{Enabled: ptr(false), ListTypes: ptr(false), Depth: 1, MaxParallel: 3, MaxAgents: 20, MaxSteps: 50},
 		Peers:       Peers{Enabled: ptr(false), Incoming: "ask", Outgoing: "tools", Wake: ptr(true), Network: "off"},
 		Permissions: Permissions{Mode: "edits", Allow: DefaultAllow},
 		Notify:      Notify{Finish: ptr(true), Approval: ptr(true), Method: "auto", Focused: ptr(false)},
@@ -1032,6 +1035,9 @@ func mergeAgents(base, layer Agents) Agents {
 	base.MaxSteps = override(base.MaxSteps, layer.MaxSteps)
 	if layer.Types != nil {
 		base.Types = layer.Types
+	}
+	if layer.ListTypes != nil {
+		base.ListTypes = layer.ListTypes
 	}
 	return base
 }

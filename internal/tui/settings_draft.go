@@ -89,6 +89,7 @@ type settingsDraft struct {
 	agentsMax      string
 	agentsSteps    string
 	agentsModel    providerModel
+	agentsListed   bool
 	peersEnabled   bool
 	peersName      string
 	peersIncoming  string
@@ -200,6 +201,7 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 
 		loopEnabled:       *cfg.Loop.Enabled,
 		agentsEnabled:     *cfg.Agents.Enabled,
+		agentsListed:      cfg.Agents.ListTypes != nil && *cfg.Agents.ListTypes,
 		agentsDepth:       strconv.Itoa(cfg.Agents.Depth),
 		agentsParallel:    strconv.Itoa(cfg.Agents.MaxParallel),
 		agentsMax:         strconv.Itoa(cfg.Agents.MaxAgents),
@@ -532,6 +534,9 @@ func (d *settingsDraft) agents() (config.Agents, error) {
 	}
 	if d.agentsEnabled != *defaults.Enabled {
 		agents.Enabled = &d.agentsEnabled
+	}
+	if d.agentsListed != *defaults.ListTypes {
+		agents.ListTypes = &d.agentsListed
 	}
 	return agents, nil
 }

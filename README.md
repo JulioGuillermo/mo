@@ -250,6 +250,7 @@ max_agents = 20            # started in one of your turns
 max_steps = 50             # replies of the model before a subagent is stopped
 model = ""                 # "provider/model" for them; empty for the main agent's
                            # /settings › Agents picks the provider, then a model it lists
+list_types = false         # name the types in the agent tool's description; off: action types lists them
 
 [agents.types.reviewer]    # a type of subagent the model picks by name; /settings › Agents › Types
 description = "reviews a diff and reports bugs"   # what the model reads to pick it
@@ -468,8 +469,10 @@ parent reads only that report, so long searches or test runs stay out of its con
   for any characters, as `mcp__github__*`), whether it starts subagents (`can_start`, while `depth`
   allows) and its steps. Its permissions are never looser than the session's: the stricter of its
   mode and yours, and its `deny` rules besides yours; a rule you allow while it asks is the
-  session's. The `agent` tool lists the types with their description and takes `type`; without
-  it a subagent is as above. The side panel and its view show its type, its menu its model.
+  session's. The `agent` tool takes `type`, and `{"action":"types"}` lists the types, or
+  with `type` tells one in detail: what it is for, its model, tools and limits. Its description
+  does not list them, to stay short; `list_types` (Settings › Agents › Types in its description)
+  names them there, only the names. Without `type` a subagent is as above. The side panel and its view show its type, its menu its model.
 - `run` takes a `task` and a `name`, or several in `tasks`, which work at once; it waits for their
   reports, or with `background: true` gives their ids at once and the model hears each report when
   it ends, as it does of background jobs.

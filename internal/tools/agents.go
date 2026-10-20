@@ -42,7 +42,7 @@ type Subagents interface {
 }
 
 var agentHelp = []helpTopic{
-	{"run", "the default. task and name, or tasks [{task,name}] that work at once; waits for their reports. type: a kind the description lists, else one like you. background (or wait false): their ids at once, and you hear each report when it ends. " +
+	{"run", "the default. task and name, or tasks [{task,name}] that work at once; waits for their reports. background (or wait false): their ids at once, and you hear each report when it ends. " +
 		"A subagent reads what it is sent and waits for those it started in the background before it reports."},
 	{"send", "id, message: queued while it works; once it ended or stopped, it goes on with all it did. background as for run."},
 	{"wait", "ids, or id; none: those you started in the background. Their reports."},
@@ -51,36 +51,21 @@ var agentHelp = []helpTopic{
 	{"stop", "id: stops it and those under it."},
 }
 
-// AgentKind is a kind of subagent the model may pick, as the settings
-// describe it.
-type AgentKind struct {
-	Name        string
-	Description string
-}
+var typesHelp = helpTopic{"types", "the kinds of subagent, one a line; with type, that one in detail: what it is for, its model, tools and limits. " +
+	"run takes type, as a field of each of tasks too; without it, a default one."}
 
-func agentTool(kinds []AgentKind) Tool {
-	description := "Hand tasks to subagents: each starts with only its task and an empty conversation, and you get only its report. " +
-		`{"action":"help"} explains each action.`
-	typeProperty := ""
-	if len(kinds) > 0 {
-		description += "\ntype picks a kind, each with its own model and tools; without it, one like you with your tools:"
-		var names []string
-		for _, kind := range kinds {
-			description += "\n- " + kind.Name + ": " + orDefaultString(kind.Description, "no description")
-			quoted, _ := json.Marshal(kind.Name)
-			names = append(names, string(quoted))
-		}
-		typeProperty = `"type":{"type":"string","enum":[` + strings.Join(names, ",") + `]},`
-	}
+func agentTool(kinds []AgentKind, listed bool) Tool {
 	return Tool{
 		Name:        AgentName,
-		Description: description,
+		Description: agentDescription(kinds, listed),
 		Schema: json.RawMessage(`{"type":"object","properties":{
-"action":{"type":"string","enum":["run","send","wait","log","status","stop","help"]},"topic":{"type":"string"},
-"task":{"type":"string"},"name":{"type":"string"},` + typeProperty + `
-"tasks":{"type":"array","items":{"type":"object","properties":{` + typeProperty + `"task":{"type":"string"},"name":{"type":"string"}},"required":["task"]}},
+"action":{"type":"string","enum":[` + agentActions(kinds) + `]},"topic":{"type":"string"},
+"task":{"type":"string"},"name":{"type":"string"},` + typeProperty(kinds, listed) + `
+"tasks":{"type":"array","items":{"type":"object","properties":{` + typeProperty(kinds, listed) + `"task":{"type":"string"},"name":{"type":"string"}},"required":["task"]}},
 "background":{"type":"boolean"},"wait":{"type":"boolean"},"id":{"type":"integer"},"ids":{"type":"array","items":{"type":"integer"}},"message":{"type":"string"}}}`),
-		Run:       runAgent,
+		Run: func(ctx context.Context, env Env, raw json.RawMessage) (string, error) {
+			return runAgent(ctx, env, raw, kinds)
+		},
 		View:      true,
 		Resumable: true,
 		Summary: func(args json.RawMessage) string {
@@ -115,7 +100,7 @@ func orName(task SubTask) string {
 	return cutAtRune(strings.Join(strings.Fields(task.Task), " "), 40)
 }
 
-func runAgent(ctx context.Context, env Env, raw json.RawMessage) (string, error) {
+func runAgent(ctx context.Context, env Env, raw json.RawMessage, kinds []AgentKind) (string, error) {
 	var args struct {
 		Action     string    `json:"action"`
 		Task       string    `json:"task"`
@@ -136,8 +121,14 @@ func runAgent(ctx context.Context, env Env, raw json.RawMessage) (string, error)
 	if args.Wait != nil && !*args.Wait {
 		args.Background = true
 	}
-	if args.Action == "help" {
-		return help(agentHelp, args.Topic)
+	switch args.Action {
+	case "help":
+		return help(agentHelpFor(kinds), args.Topic)
+	case "types":
+		if len(kinds) == 0 {
+			return "", fmt.Errorf("there are no kinds of subagent: leave type out")
+		}
+		return describeKinds(kinds, args.Type)
 	}
 	agents := env.Agents
 	if agents == nil {
@@ -191,7 +182,7 @@ func runAgent(ctx context.Context, env Env, raw json.RawMessage) (string, error)
 		}
 		return agents.Stop(args.ID)
 	}
-	return "", fmt.Errorf("action %q: use run, send, wait, log, status, stop or help", args.Action)
+	return "", fmt.Errorf("action %q: use run, send, wait, log, status, stop, types or help", args.Action)
 }
 
 // TellParentName is the tool a subagent tells the agent that started it
