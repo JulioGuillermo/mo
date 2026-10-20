@@ -54,6 +54,8 @@ type Plugin struct {
 	loadErr  error
 	warnings []string
 	settings []Setting
+	// components are the plugin's own node types, by name.
+	components map[string]*lua.LFunction
 	// values are what the user set for the plugin, by setting name.
 	values map[string]any
 }
@@ -79,17 +81,18 @@ func load(path, workDir, logDir, libDir string, surface *surface, values map[str
 	name := strings.TrimSuffix(filepath.Base(path), ".lua")
 	source, _ := os.ReadFile(path)
 	plugin := &Plugin{
-		name:    name,
-		workDir: workDir,
-		libDir:  libDir,
-		surface: surface,
-		logPath: filepath.Join(logDir, "plugin-"+name+".log"),
-		source:  string(source),
-		turn:    make(chan struct{}, 1),
-		hooks:   map[string][]*lua.LFunction{},
-		state:   lua.NewState(),
-		loading: true,
-		values:  values,
+		name:       name,
+		workDir:    workDir,
+		libDir:     libDir,
+		surface:    surface,
+		logPath:    filepath.Join(logDir, "plugin-"+name+".log"),
+		source:     string(source),
+		turn:       make(chan struct{}, 1),
+		hooks:      map[string][]*lua.LFunction{},
+		components: map[string]*lua.LFunction{},
+		state:      lua.NewState(),
+		loading:    true,
+		values:     values,
 	}
 	plugin.turn <- struct{}{}
 	plugin.openLibraries()

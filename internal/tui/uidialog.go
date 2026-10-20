@@ -85,6 +85,28 @@ func (m model) openUIIn(uis *tools.UIs, id int) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// closesForGood tells a dialog esc closes for good: a plugin's not listed
+// in the side panel, which could not be opened again.
+func closesForGood(ui tools.UI) bool {
+	return ui.Owner != "" && !ui.Listed
+}
+
+// hideUI is esc, the × or a click outside: the dialog hides, or, when it
+// cannot be opened again, closes and its plugin hears so. The dialog closes
+// off the screen's goroutine, which hears of the change.
+func (m model) hideUI(ui tools.UI) (tea.Model, tea.Cmd) {
+	m.uiOpen = 0
+	if !closesForGood(ui) {
+		return m, nil
+	}
+	delete(m.uiLives, ui.ID)
+	uis := m.dialogUIs()
+	return m, func() tea.Msg {
+		uis.Dismiss(ui.ID)
+		return nil
+	}
+}
+
 // uiFrame is the open interface drawn in its dialog, where it goes, and
 // its hits moved to the screen.
 type uiFrame struct {
@@ -103,10 +125,17 @@ func (m model) uiFrame() (uiFrame, bool) {
 		return uiFrame{}, false
 	}
 	state := m.live(m.uiOpen)
+	full := ui.Size == tools.DialogFull
 	most := max(min(m.width-6, uiDialogMaxWidth), 20)
-	tree := ui.Shown()
-	body := uiRenderer{focus: state.focus, svgs: m.svgs, ui: ui.ID}.render(tree, most-4, "", false)
 	room := max(m.height-4, 3)
+	if full {
+		most, room = max(m.width, 20), max(m.height-2, 3)
+		if ui.Error != "" {
+			room--
+		}
+	}
+	tree := ui.Shown()
+	body := uiRenderer{focus: state.focus, svgs: m.svgs, ui: ui.ID}.render(tree, most-4, "", full)
 	state.scroll = min(max(state.scroll, 0), max(body.height()-room, 0))
 	shown := body.lines[state.scroll:min(state.scroll+room, body.height())]
 
@@ -125,7 +154,7 @@ func (m model) uiFrame() (uiFrame, bool) {
 		inner = max(inner, min(ansi.StringWidth(title)+ansi.StringWidth(tag)+6, most-4))
 	}
 	inner = max(inner, ansi.StringWidth(tag)+4)
-	keys, short := uiKeys(tree)
+	keys, short := uiKeys(tree, closesForGood(ui))
 	inner = max(inner, min(ansi.StringWidth(short)+2, most-4))
 	failure := ""
 	if ui.Error != "" {
@@ -158,6 +187,9 @@ func (m model) uiFrame() (uiFrame, bool) {
 	if failure != "" {
 		lines = append(lines, pad(errorStyle.Render(ansi.Truncate(failure, inner, "…")), 0))
 	}
+	for full && len(lines) < m.height-1 {
+		lines = append(lines, pad("", 0))
+	}
 	if ansi.StringWidth(keys) > inner-2 {
 		keys = short
 	}
@@ -183,8 +215,8 @@ const uiCloseHit = "\x00close"
 
 // uiKeys are the keys the interface takes, as its controls ask for, said
 // whole and, for a narrow dialog, the keys alone.
-func uiKeys(tree tools.UINode) (string, string) {
-	var buttons, inputs, changes, ticks bool
+func uiKeys(tree tools.UINode, closes bool) (string, string) {
+	var buttons, inputs, lines, changes, ticks bool
 	var walk func(n tools.UINode)
 	walk = func(n tools.UINode) {
 		if !n.Shown() {
@@ -195,6 +227,8 @@ func uiKeys(tree tools.UINode) (string, string) {
 			buttons = true
 		case tools.UIInput:
 			inputs = true
+		case tools.UITextarea:
+			inputs, lines = true, true
 		case tools.UISelect, tools.UISlider, tools.UIRadio:
 			changes = true
 		case tools.UICheckbox, tools.UISwitch:
@@ -218,13 +252,20 @@ func uiKeys(tree tools.UINode) (string, string) {
 	if buttons {
 		add("enter", "press")
 	}
+	if lines && !buttons {
+		add("enter", "new line")
+	}
 	if changes {
 		add("←→", "change")
 	}
 	if ticks {
 		add("space", "tick")
 	}
-	add("esc", "hides")
+	if closes {
+		add("esc", "closes")
+	} else {
+		add("esc", "hides")
+	}
 	return strings.Join(keys, " · "), strings.Join(short, " · ")
 }
 
@@ -256,14 +297,12 @@ func (m model) updateUI(msg tea.Msg) (tea.Model, tea.Cmd) {
 		frame, _ := m.uiFrame()
 		width := ansi.StringWidth(frame.lines[0])
 		if msg.X < frame.x || msg.X >= frame.x+width || msg.Y < frame.y || msg.Y >= frame.y+len(frame.lines) {
-			m.uiOpen = 0
-			return m, nil
+			return m.hideUI(ui)
 		}
 		for _, hit := range frame.hits {
 			if msg.X >= hit.x0 && msg.X < hit.x1 && msg.Y >= hit.y0 && msg.Y < hit.y1 {
 				if hit.id == uiCloseHit {
-					m.uiOpen = 0
-					return m, nil
+					return m.hideUI(ui)
 				}
 				node, _ := findNode(ui.Shown(), hit.id)
 				if node.Disabled {
@@ -276,7 +315,7 @@ func (m model) updateUI(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m.uiFire(ui.ID, hit.id, "click")
 				case tools.UISVG:
 					return m.clickSVG(ui.ID, node, hit, msg.X, msg.Y)
-				case tools.UIInput:
+				case tools.UIInput, tools.UITextarea:
 					return m.leaveInput(ui, previous, hit.id)
 				case tools.UISelect:
 					if hit.part == uiSelectList {
@@ -324,8 +363,7 @@ func (m model) uiKey(ui tools.UI, state *uiLive, msg tea.KeyPressMsg) (tea.Model
 	node, _ := findNode(shown, state.focus)
 	switch msg.String() {
 	case "esc", "ctrl+c":
-		m.uiOpen = 0
-		return m, nil
+		return m.hideUI(ui)
 	case "tab", "down":
 		return move(1)
 	case "shift+tab", "up":
@@ -346,6 +384,9 @@ func (m model) uiKey(ui tools.UI, state *uiLive, msg tea.KeyPressMsg) (tea.Model
 			return m.selectList(ui.ID, node)
 		case tools.UIRadio:
 			return m.uiChange(ui.ID, node, node.Moved(1))
+		case tools.UITextarea:
+			m.dialogUIs().SetValue(ui.ID, node.ID, node.Current()+"\n")
+			return m.uiFire(ui.ID, node.ID, "input")
 		case tools.UIInput:
 			updated, cmd := m.uiFire(ui.ID, node.ID, "change")
 			if next := updated.(model); next.uiOpen == ui.ID {
@@ -356,7 +397,7 @@ func (m model) uiKey(ui tools.UI, state *uiLive, msg tea.KeyPressMsg) (tea.Model
 		}
 		return m, nil
 	}
-	if node.HasValue() && node.Type != tools.UIInput {
+	if node.HasValue() && !node.TakesText() {
 		switch msg.String() {
 		case "left":
 			return m.uiChange(ui.ID, node, node.Moved(-1))
@@ -374,7 +415,7 @@ func (m model) uiKey(ui tools.UI, state *uiLive, msg tea.KeyPressMsg) (tea.Model
 		}
 		return m, nil
 	}
-	if node.Type != tools.UIInput {
+	if !node.TakesText() {
 		return m, nil
 	}
 	value := node.Value
@@ -482,7 +523,7 @@ func (m model) leaveInput(ui tools.UI, from, to string) (tea.Model, tea.Cmd) {
 	if from == to || from == "" {
 		return m, nil
 	}
-	if node, ok := findNode(ui.Shown(), from); ok && node.Type == tools.UIInput && node.OnChange != "" {
+	if node, ok := findNode(ui.Shown(), from); ok && node.TakesText() && node.OnChange != "" {
 		return m.uiFire(ui.ID, from, "change")
 	}
 	return m, nil
@@ -508,18 +549,29 @@ func (m model) clickSVG(id int, node tools.UINode, hit uiHit, x, y int) (tea.Mod
 	return m.uiFollow(id, m.dialogUIs().FireAt(id, node.ID, "click", at, down))
 }
 
-// uiFollow follows what an event led to.
+// uiFollow follows what an event led to. A dialog hidden that could not
+// be opened again closes.
 func (m model) uiFollow(id int, outcome tools.UIOutcome) (tea.Model, tea.Cmd) {
 	if outcome.Submitted || outcome.Hidden || outcome.Removed {
 		m.uiOpen = 0
+	}
+	var closing tea.Cmd
+	if ui, ok := m.dialogUIs().Get(id); ok && outcome.Hidden && closesForGood(ui) {
+		uis := m.dialogUIs()
+		closing = func() tea.Msg {
+			_ = uis.Close(id)
+			return nil
+		}
+		outcome.Removed = true
 	}
 	if outcome.Removed {
 		delete(m.uiLives, id)
 	}
 	if !outcome.Told || m.running {
-		return m, nil
+		return m, closing
 	}
-	return m.reactToJobs()
+	reacted, cmd := m.reactToJobs()
+	return reacted, tea.Batch(closing, cmd)
 }
 
 // uiMenu is what a right click on an interface in the side panel offers.

@@ -301,6 +301,7 @@ func Run(session Session) error {
 	}
 	session.Plugins.Follow(func() { bridge.send(uiChangedMsg{}) }, func(id int) { bridge.send(pluginDialogMsg(id)) })
 	session.Plugins.OnSend(func(message plugins.SentMessage) { bridge.send(pluginSendMsg(message)) })
+	session.Plugins.OnView(func(path string) { bridge.send(pluginViewMsg(path)) })
 	if session.Team != nil {
 		session.Team.Follow(func(team.Info) agent.Hooks { return agent.Hooks{Interact: bridge.interact} },
 			func() { bridge.send(agentsChangedMsg{}) }, func() { bridge.send(agentEndedMsg{}) })
@@ -465,6 +466,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.pluginJudged(msg)
 	case pluginRetryMsg:
 		return m.pluginRetried()
+	case pluginViewMsg:
+		return m.viewArgument(string(msg))
 	}
 	if opened, ok := msg.(pluginDialogMsg); ok {
 		if m.settings != nil || m.popup != nil {
@@ -477,7 +480,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updatePopup(msg)
 		}
 	}
-	if m.uiOpen != 0 && m.popup == nil && !isAgentMsg(msg) {
+	if m.uiOpen != 0 && m.popup == nil && m.viewer == nil && !isAgentMsg(msg) {
 		if _, tick := msg.(viewerTickMsg); !tick {
 			return m.updateUI(msg)
 		}

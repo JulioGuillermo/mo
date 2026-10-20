@@ -14,6 +14,9 @@ import (
 // pluginDialogMsg says a plugin opened a dialog, to show at once.
 type pluginDialogMsg int
 
+// pluginViewMsg is a file a plugin asks to show in the viewer.
+type pluginViewMsg string
+
 // pluginClickMsg brings what an item of a plugin said when clicked.
 type pluginClickMsg struct {
 	text string
@@ -40,13 +43,20 @@ func (m model) pluginClicked(msg pluginClickMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// pluginDialogs are the dialogs the plugins opened, none without plugins.
+// pluginDialogs are the dialogs the plugins opened listed in the side
+// panel, none without plugins.
 func (m model) pluginDialogs() []tools.UI {
 	dialogs := m.session.Plugins.Dialogs()
 	if dialogs == nil {
 		return nil
 	}
-	return dialogs.List()
+	var listed []tools.UI
+	for _, dialog := range dialogs.List() {
+		if dialog.Listed {
+			listed = append(listed, dialog)
+		}
+	}
+	return listed
 }
 
 // pluginColor is the colour of an item a plugin names, as the nodes of a

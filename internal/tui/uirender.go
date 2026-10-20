@@ -271,6 +271,8 @@ func (r uiRenderer) content(n tools.UINode, width int, bg string, fill bool) uiB
 		}
 		line := text + blank(w-ansi.StringWidth(text), face)
 		return uiBox{lines: []string{line}, width: w, hits: []uiHit{{x1: w, y1: 1, id: n.ID}}}
+	case tools.UITextarea:
+		return r.textarea(n, width, fill)
 	case tools.UISelect:
 		return r.selectBox(n, width, bg)
 	case tools.UISlider:

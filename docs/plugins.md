@@ -194,8 +194,9 @@ dialog's event.
 ## Dialogs
 
 `mo.dialog` opens a dialog over the screen at once. It takes the same nodes as the model's `ui`
-tool: `panel`, `card`, `grid`, `label`, `button`, `input`, `select`, `slider`, `checkbox`,
-`switch`, `radio` and `svg`. `{"action":"help","topic":"nodes"}` of the `ui` tool lists every field.
+tool: `panel`, `card`, `grid`, `label`, `button`, `input`, `textarea`, `select`, `slider`,
+`checkbox`, `switch`, `radio` and `svg`, and the plugin's own [components](#components).
+`{"action":"help","topic":"nodes"}` of the `ui` tool lists every field.
 
 ```lua
 local dialog
@@ -217,6 +218,14 @@ dialog = mo.dialog{
 }
 ```
 
+| Field | What |
+|---|---|
+| `title` | in the dialog's top edge |
+| `tree` | its nodes |
+| `on_event` | gets what you do in it |
+| `size` | `"full"` fills the screen; left out, it is as big as what it holds |
+| `listed` | `true` keeps it under **Plugins** in the side panel, to open again once hidden |
+
 `mo.dialog` gives a handle:
 
 | | |
@@ -236,9 +245,60 @@ What you do in the dialog goes to `on_event`, never to the model. The event is
 | `remove` | `on_event` gets it and the dialog goes |
 | any other name | `on_event` gets it with that name as `action` |
 
-A hidden dialog stays under **Plugins** in the side panel, to open again with a click, until the
-plugin calls `close`. Esc hides it too. Dialogs live while mo runs and are never saved. An error in
-`on_event` shows under the dialog and goes to the log.
+Esc, the × and a click outside close a dialog for good, and `on_event` gets
+`{ event = "close", action = "close", values }`, so the plugin can keep what was typed. So does a
+node's `close` or `submit`. A dialog opened with `listed = true` only hides instead: it stays under
+**Plugins** in the side panel, to open again with a click, until the plugin calls `close`. Dialogs
+live while mo runs and are never saved. An error in `on_event` shows under the dialog and goes to
+the log.
+
+### Text of many lines
+
+A `textarea` takes text of many lines: enter starts a new line, tab moves on. `language` colours
+it as code, `height` is its rows (6 unless set), `width` its columns. With `size = "full"` it makes
+a small editor:
+
+```lua
+mo.command{ name = "note", run = function()
+  local dialog
+  dialog = mo.dialog{ title = "Note", size = "full", tree = { type = "panel", children = {
+    { type = "textarea", id = "body", language = "markdown", height = 30, value = mo.read("NOTES.md") or "" },
+    { type = "button", id = "save", label = "Save" },
+  } }, on_event = function(event)
+    if event.element == "save" or event.event == "close" then
+      mo.write("NOTES.md", event.values.body)
+      dialog.close()
+    end
+  end }
+end }
+```
+
+### Components
+
+`mo.component{ name, render }` adds a node type of the plugin's own. Where a tree has a node of
+that type, `render` gets its fields, `children` included, and gives the nodes to draw in its place,
+which may hold other components. The name can be none of mo's node types, nor a name taken as one
+such as `table` or `field`.
+
+```lua
+mo.component{ name = "labelled", render = function(props)
+  return { type = "grid", columns = 2, gap = 2, children = {
+    { type = "label", text = props.label },
+    { type = "input", id = props.id, value = props.value },
+  } }
+end }
+
+mo.dialog{ tree = { type = "card", title = "Issue", children = {
+  { type = "labelled", id = "summary", label = "Summary" },
+  { type = "labelled", id = "owner", label = "Owner", value = "ana" },
+} } }
+```
+
+### Showing a file
+
+`mo.view(path)` opens a file or folder in mo's viewer, as `/view` does, over what is on screen; a
+relative path is in the working directory. It gives `false` when there is no screen to show it on,
+as when mo answers once.
 
 ## Sending to the model
 

@@ -26,6 +26,9 @@ const (
 	UILabel  = "label"
 	UIButton = "button"
 	UIInput  = "input"
+	// A textarea is an input of many lines, coloured as code of its
+	// language when it has one.
+	UITextarea = "textarea"
 	// A grid lays its children in columns, row by row, as a table.
 	UIGrid = "grid"
 	// Controls holding a value the user picks.
@@ -39,7 +42,7 @@ const (
 )
 
 // UITypes are every node type.
-var UITypes = []string{UIPanel, UICard, UIGrid, UILabel, UIButton, UIInput, UISelect, UISlider, UICheckbox, UISwitch, UIRadio, UISVG}
+var UITypes = []string{UIPanel, UICard, UIGrid, UILabel, UIButton, UIInput, UITextarea, UISelect, UISlider, UICheckbox, UISwitch, UIRadio, UISVG}
 
 // UI event actions an element can name: send the event to the model, send
 // every input's value, close the dialog, or remove the UI and say so.
@@ -52,7 +55,7 @@ const (
 
 // UINode is one element of an interface the model draws: a panel or card
 // laying out its children in a row or a column, a label, a button, an
-// input, a select, a slider, a checkbox, a switch or a radio. Every one
+// input, a textarea, a select, a slider, a checkbox, a switch or a radio. Every one
 // takes colours, margin and padding.
 type UINode struct {
 	Type        string   `json:"type"`
@@ -63,6 +66,7 @@ type UINode struct {
 	Placeholder string   `json:"placeholder,omitempty"`
 	Options     []string `json:"options,omitempty"`
 	SVG         string   `json:"svg,omitempty"`
+	Language    string   `json:"language,omitempty"`
 	Min         float64  `json:"min,omitempty"`
 	Max         float64  `json:"max,omitempty"`
 	Step        float64  `json:"step,omitempty"`
@@ -191,7 +195,12 @@ type UI struct {
 	Seen         bool   `json:"seen"`
 	Conversation string `json:"-"`
 	// Owner is the plugin that opened the interface, "" for the model's.
-	Owner  string `json:"-"`
+	Owner string `json:"-"`
+	// Size is "full" for a dialog filling the screen. Listed puts a
+	// plugin's dialog in the side panel, to open again once hidden; one
+	// not listed closes for good.
+	Size   string `json:"-"`
+	Listed bool   `json:"-"`
 	script *uiScript
 }
 
@@ -698,6 +707,7 @@ grid      children row by row in columns (a number), each column as wide as its 
 label     text
 button    label, on_click, disabled
 input     value, placeholder, on_input, on_change
+textarea  value of many lines, language (colours it as code), height, placeholder, on_input, on_change
 select    options ["a","b"], value, label, on_change
 slider    min, max, step (0, 100, 1 unless set), value, label, on_change
 checkbox  label, value "true"|"false", on_change
@@ -741,6 +751,9 @@ var uiNodeHelp = map[string]string{
 	UIButton: `label; on_click: what it does (topic events), notify when unset; disabled. e.g. {"type":"button","id":"ok","label":"OK","on_click":"submit"}`,
 	UIInput: "a line the user types in. value, placeholder, width; on_input at each key, on_change when left or on enter. " +
 		`e.g. {"type":"input","id":"name","placeholder":"your name"}`,
+	UITextarea: "text of many lines the user types in; enter starts a new line. value, placeholder, width, height (rows, 6 unless set), " +
+		"language (go, lua, json...) colours it as code; on_input at each key, on_change when left. " +
+		`e.g. {"type":"textarea","id":"body","language":"markdown","height":8}`,
 	UISelect: "one of its options, shown as ◂ value ▸; ←→ or a click change it. options, value (the first unless set), label; on_change at each change. " +
 		`e.g. {"type":"select","id":"size","label":"Size","options":["S","M","L"],"value":"M"}`,
 	UISlider: "a number on a track. min, max, step (0, 100, 1 unless set), value, label; on_change at each step; width or grow lengthens it. " +

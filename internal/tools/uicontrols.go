@@ -13,10 +13,15 @@ import (
 // slider, a checkbox, a switch or a radio.
 func (n UINode) HasValue() bool {
 	switch n.Type {
-	case UIInput, UISelect, UISlider, UICheckbox, UISwitch, UIRadio:
+	case UIInput, UITextarea, UISelect, UISlider, UICheckbox, UISwitch, UIRadio:
 		return true
 	}
 	return false
+}
+
+// TakesText tells a node the user types in: an input or a textarea.
+func (n UINode) TakesText() bool {
+	return n.Type == UIInput || n.Type == UITextarea
 }
 
 // Focusable tells a node the user can tab to.

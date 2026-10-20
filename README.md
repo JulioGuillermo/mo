@@ -784,7 +784,9 @@ is your own code, with your rights and all of Lua's libraries, and it can:
 | commands for you, `/name text` | `mo.command{ name, description, run }` |
 | hooks on a turn | `mo.on("prompt" \| "tool_call" \| "tool_result" \| "stream" \| "turn_end", fn)` |
 | items under **Plugins** in the side panel | `mo.sidebar.set{ id, text, detail, color, icon, on_click }` |
-| dialogs with inputs and buttons, as the `ui` tool draws them | `mo.dialog{ title, tree, on_event }` |
+| dialogs with inputs, text of many lines and buttons, full screen or not | `mo.dialog{ title, tree, on_event, size, listed }` |
+| node types of its own for dialogs | `mo.component{ name, render }` |
+| a file shown in mo's viewer | `mo.view(path)` |
 | messages to the model, through the permission mode | `mo.send{ title, message, wake }` |
 | settings you set in **/settings › Plugins**, where each also turns on and off | `mo.setting{ name, type, default, description, secret }`, `mo.settings.get(name)` |
 

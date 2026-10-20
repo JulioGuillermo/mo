@@ -11,7 +11,7 @@ import (
 
 // uiNodeKeys are the fields a node takes, as UINode names them.
 var uiNodeKeys = []string{
-	"type", "id", "text", "label", "value", "placeholder", "options", "min", "max", "step", "svg", "title", "direction", "columns", "widths", "justify", "align", "gap", "grow",
+	"type", "id", "text", "label", "value", "placeholder", "options", "min", "max", "step", "svg", "language", "title", "direction", "columns", "widths", "justify", "align", "gap", "grow",
 	"width", "height", "padding", "margin", "bg", "fg", "border", "bold", "visible", "disabled", "on_click", "on_input",
 	"on_change", "children",
 }
@@ -43,6 +43,7 @@ var uiTypeAliases = map[string]string{
 	"dropdown": UISelect, "combo": UISelect, "combobox": UISelect, "picker": UISelect, "choice": UISelect, "menu": UISelect,
 	"range": UISlider, "scale": UISlider, "check": UICheckbox, "check_box": UICheckbox, "tick": UICheckbox,
 	"toggle": UISwitch, "radio_group": UIRadio, "radiogroup": UIRadio, "radios": UIRadio, "radiobutton": UIRadio, "radio_button": UIRadio,
+	"text_area": UITextarea, "multiline": UITextarea, "editor": UITextarea, "code": UITextarea,
 	"btn": UIButton, "textbox": UIInput, "textfield": UIInput, "text_input": UIInput, "field": UIInput, "entry": UIInput,
 }
 
@@ -229,6 +230,11 @@ func mendUINode(value any, path string) (map[string]any, error) {
 		mended["children"] = mendedChildren
 	}
 	return mended, nil
+}
+
+// IsUIType tells whether a name is a node type, or one taken as a type.
+func IsUIType(name string) bool {
+	return uiTypeOf(name) != ""
 }
 
 // uiTypeOf is the type a name stands for, or empty.

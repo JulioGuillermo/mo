@@ -19,6 +19,7 @@ type surface struct {
 	changed  func()
 	open     func(id int)
 	send     func(SentMessage)
+	view     func(path string)
 }
 
 type sidebarEntry struct {
@@ -60,10 +61,8 @@ func (s *surface) tell() {
 func (s *surface) deliver(event tools.UIEvent) {
 	s.mu.Lock()
 	handler, ok := s.handlers[event.UI]
-	if event.Action == tools.UIRemove {
-		delete(s.handlers, event.UI)
-	}
 	s.mu.Unlock()
+	defer s.forgetClosed(event.UI)
 	if !ok || handler.onEvent == nil {
 		return
 	}
@@ -74,6 +73,16 @@ func (s *surface) deliver(event tools.UIEvent) {
 		handler.plugin.log("dialog event:", err.Error())
 		s.dialogs.ShowError(event.UI, err.Error())
 	}
+}
+
+// forgetClosed drops the handler of a dialog that is gone.
+func (s *surface) forgetClosed(id int) {
+	if _, open := s.dialogs.Get(id); open {
+		return
+	}
+	s.mu.Lock()
+	delete(s.handlers, id)
+	s.mu.Unlock()
 }
 
 func eventTable(state *lua.LState, event tools.UIEvent) *lua.LTable {
@@ -206,15 +215,16 @@ func (p *Plugin) removeSidebarItem(state *lua.LState) int {
 	return 0
 }
 
-// openDialog is mo.dialog{ title, tree, on_event }: it shows a dialog of
-// the nodes the ui tool takes and gives { id, update, close }. on_event gets
-// what the user does in it.
+// openDialog is mo.dialog{ title, tree, on_event, size, listed }: it shows
+// a dialog of the nodes the ui tool takes, and the plugin's components, and
+// gives { id, update, close }. on_event gets what the user does in it.
 func (p *Plugin) openDialog(state *lua.LState) int {
 	spec := state.CheckTable(1)
 	tree := p.dialogTree(state, spec.RawGetString("tree"))
 	onEvent, _ := spec.RawGetString("on_event").(*lua.LFunction)
+	options := tools.DialogOptions{Size: luaString(spec.RawGetString("size")), Listed: lua.LVAsBool(spec.RawGetString("listed"))}
 	surface := p.surface
-	id, err := surface.dialogs.Open(p.name, luaString(spec.RawGetString("title")), *tree)
+	id, err := surface.dialogs.Open(p.name, luaString(spec.RawGetString("title")), *tree, options)
 	if err != nil {
 		state.RaiseError("mo.dialog: %v", err)
 	}
@@ -233,6 +243,10 @@ func (p *Plugin) dialogTree(state *lua.LState, value lua.LValue) *tools.UINode {
 	plain, err := toGo(value)
 	if err != nil {
 		state.RaiseError("mo.dialog: tree: %v", err)
+	}
+	plain, err = p.expandComponents(state, plain, 0)
+	if err != nil {
+		state.RaiseError("mo.dialog: %v", err)
 	}
 	tree, err := tools.PluginTree(plain)
 	if err != nil {

@@ -57,7 +57,7 @@ func TestPluginSurface(t *testing.T) {
 		m := pluginModel(t, `
 mo.sidebar.set{ id = "jira", text = "Jira · logged in", detail = "12 issues", color = "success", icon = "●" }
 mo.sidebar.set{ id = "plain", text = "a label" }`)
-		m.session.Plugins.Dialogs().Open("demo", "Board", mustTree(t))
+		m.session.Plugins.Dialogs().Open("demo", "Board", mustTree(t), tools.DialogOptions{Listed: true})
 
 		text := sidebarText(m)
 

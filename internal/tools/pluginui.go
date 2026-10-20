@@ -47,19 +47,53 @@ func (u *UIs) toPlugin(ui *UI, event UIEvent, handler string) UIOutcome {
 }
 
 // Open shows a plugin's interface and gives its number.
-func (u *UIs) Open(owner, title string, tree UINode) (int, error) {
+func (u *UIs) Open(owner, title string, tree UINode, options DialogOptions) (int, error) {
 	if err := validateUI(tree); err != nil {
 		return 0, err
+	}
+	if options.Size != "" && options.Size != DialogFull {
+		return 0, fmt.Errorf("size %q: leave it out, or use full", options.Size)
 	}
 	id, err := u.create(orDefaultString(title, owner), "", tree)
 	if err != nil {
 		return 0, err
 	}
 	u.mu.Lock()
-	u.find(id).Owner = owner
+	opened := u.find(id)
+	opened.Owner, opened.Size, opened.Listed = owner, options.Size, options.Listed
 	u.mu.Unlock()
 	u.changed()
 	return id, nil
+}
+
+// DialogFull is the size of a dialog filling the screen.
+const DialogFull = "full"
+
+// DialogOptions are how a plugin's dialog shows: its size, and whether it
+// is listed in the side panel.
+type DialogOptions struct {
+	Size   string
+	Listed bool
+}
+
+// Dismiss closes a plugin's dialog for good, as esc does to one not
+// listed, and tells the plugin with a close event.
+func (u *UIs) Dismiss(id int) {
+	u.mu.Lock()
+	ui := u.find(id)
+	if ui == nil {
+		u.mu.Unlock()
+		return
+	}
+	event := UIEvent{UI: id, Event: UIClose, Action: UIClose, Values: inputValuesOf(ui.Shown())}
+	u.mu.Unlock()
+	if u.deliver != nil {
+		select {
+		case u.deliver <- event:
+		default:
+		}
+	}
+	_ = u.Close(id)
 }
 
 // Replace changes a plugin's interface: its title when given, its tree when
