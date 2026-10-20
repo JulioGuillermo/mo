@@ -9,8 +9,9 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/jg/mo/internal/proctree"
 )
 
 const (
@@ -295,14 +296,12 @@ func orNoOutput(text string) string {
 	return text
 }
 
-// detachFromTerminal runs the command in its own session, without a
-// controlling terminal, so a password prompt fails instead of waiting, and a
-// cancel kills everything the command started.
+// detachFromTerminal runs the command apart from mo's terminal, so a
+// password prompt fails instead of waiting, and a cancel kills everything
+// the command started.
 func detachFromTerminal(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	cmd.Cancel = func() error {
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-	}
+	proctree.Detach(cmd)
+	proctree.KillOnCancel(cmd)
 	cmd.WaitDelay = bashWaitForOutput
 }
 

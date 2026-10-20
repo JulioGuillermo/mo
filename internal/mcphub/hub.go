@@ -14,13 +14,13 @@ import (
 	"regexp"
 	"slices"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/netx"
+	"github.com/jg/mo/internal/proctree"
 )
 
 const (
@@ -172,7 +172,7 @@ func transportFor(name string, settings config.MCPServer, logDir string, headers
 		for key, value := range expanded(settings.Env) {
 			cmd.Env = append(cmd.Env, key+"="+value)
 		}
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		proctree.Detach(cmd)
 		logFile, err := openLog(logDir, name)
 		if err != nil {
 			return nil, nil, nil, err
@@ -300,25 +300,24 @@ func (h *Hub) CloseExcept(kept *Hub) {
 	wg.Wait()
 }
 
-// stopProcesses signals the server's whole process group: it runs in its own
-// session, so its children would outlive mo otherwise. What ignores SIGTERM
-// for stopGrace gets SIGKILL.
+// stopProcesses stops the server and everything it started, which would
+// outlive mo otherwise. What does not end within stopGrace is killed.
 func (s *server) stopProcesses() {
 	if s.command == nil || s.command.Process == nil {
 		return
 	}
-	group := -s.command.Process.Pid
-	if syscall.Kill(group, syscall.SIGTERM) != nil {
+	pid := s.command.Process.Pid
+	if proctree.Terminate(pid) != nil {
 		return
 	}
 	deadline := time.Now().Add(stopGrace)
 	for time.Now().Before(deadline) {
-		if syscall.Kill(group, 0) != nil {
+		if !proctree.Alive(pid) {
 			return
 		}
 		time.Sleep(stopPollInterval)
 	}
-	syscall.Kill(group, syscall.SIGKILL)
+	proctree.Kill(pid)
 }
 
 // Test connects to one server as settings say, lists its tools and lets

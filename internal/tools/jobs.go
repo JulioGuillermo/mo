@@ -14,9 +14,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
+	"github.com/jg/mo/internal/proctree"
 	"github.com/jg/mo/internal/sessions"
 )
 
@@ -341,7 +341,7 @@ func (j *Jobs) Start(env Env, command string) (JobStatus, error) {
 	cmd.Dir = env.WorkDir
 	output := io.MultiWriter(started.log, started.summary)
 	cmd.Stdout, cmd.Stderr = output, output
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	proctree.Detach(cmd)
 	if err := cmd.Start(); err != nil {
 		j.forget(started)
 		return JobStatus{}, err
@@ -379,7 +379,7 @@ func (j *Jobs) Run(ctx context.Context, env Env, command string, timeout time.Du
 	cmd.Dir = env.WorkDir
 	output := io.MultiWriter(running.log, running.summary)
 	cmd.Stdout, cmd.Stderr = output, output
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	proctree.Detach(cmd)
 	cmd.WaitDelay = bashWaitForOutput
 	if err := cmd.Start(); err != nil {
 		j.forget(running)
@@ -678,11 +678,11 @@ func (j *Jobs) stop(running *job) {
 	running.status.State = JobKilled
 	pid := running.cmd.Process.Pid
 	j.mu.Unlock()
-	_ = syscall.Kill(-pid, syscall.SIGTERM)
+	_ = proctree.Terminate(pid)
 	select {
 	case <-running.done:
 	case <-time.After(jobStopWait):
-		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		_ = proctree.Kill(pid)
 		<-running.done
 	}
 }

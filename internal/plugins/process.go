@@ -6,11 +6,11 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 
 	lua "github.com/yuin/gopher-lua"
 
+	"github.com/jg/mo/internal/proctree"
 	"github.com/jg/mo/internal/tools"
 )
 
@@ -61,8 +61,8 @@ func runProcess(ctx context.Context, spec commandSpec) commandResult {
 	if spec.stdin != "" {
 		cmd.Stdin = strings.NewReader(spec.stdin)
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	proctree.Detach(cmd)
+	proctree.KillOnCancel(cmd)
 	cmd.WaitDelay = time.Second
 	stdout := tools.NewHeadTailBuffer(execKeptOutput)
 	stderr := stdout

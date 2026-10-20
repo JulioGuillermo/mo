@@ -29,7 +29,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -211,10 +210,10 @@ func TestProcesses(t *testing.T) {
 		hub.Close()
 
 		deadline := time.Now().Add(3 * time.Second)
-		for syscall.Kill(child, 0) == nil && time.Now().Before(deadline) {
+		for processRunning(child) && time.Now().Before(deadline) {
 			time.Sleep(50 * time.Millisecond)
 		}
-		if child == 0 || syscall.Kill(child, 0) == nil {
+		if child == 0 || processRunning(child) {
 			t.Errorf("child %d still running", child)
 		}
 	})
@@ -295,10 +294,10 @@ func TestReconnect(t *testing.T) {
 			t.Errorf("shared session closed: %v", err)
 		}
 		deadline := time.Now().Add(3 * time.Second)
-		for syscall.Kill(process, 0) == nil && time.Now().Before(deadline) {
+		for processRunning(process) && time.Now().Before(deadline) {
 			time.Sleep(50 * time.Millisecond)
 		}
-		if syscall.Kill(process, 0) == nil {
+		if processRunning(process) {
 			t.Error("helper still running")
 		}
 	})

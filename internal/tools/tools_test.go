@@ -42,7 +42,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"unicode/utf8"
 
@@ -469,7 +468,7 @@ func TestBashProcesses(t *testing.T) {
 func TestSpecialFiles(t *testing.T) {
 	t.Run("TL-19 read refuses and grep skips a FIFO instead of hanging", func(t *testing.T) {
 		env := newEnv(t)
-		if err := syscall.Mkfifo(filepath.Join(env.WorkDir, "pipe"), 0o644); err != nil {
+		if err := makeFIFO(filepath.Join(env.WorkDir, "pipe")); err != nil {
 			t.Skip(err)
 		}
 		writeFile(t, env, "a.txt", "needle\n")
