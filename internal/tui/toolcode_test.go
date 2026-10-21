@@ -9,6 +9,7 @@ package tui
 // | BH-05 | Edge     | A long command folds to its first lines, a long line is cut, as it was   | P1       |
 // | BH-06 | Happy    | An edit with several changes shows each as lines added and removed       | P0       |
 // | BH-07 | Happy    | An edit with old and new, and a write, show as before                    | P0       |
+// | BH-08 | Happy    | An answered ask shows every question with its answer, folded or open      | P0       |
 
 import (
 	"encoding/json"
@@ -137,6 +138,19 @@ func TestEditDiff(t *testing.T) {
 		}
 		if !strings.Contains(wrote, "package a") || !strings.Contains(wrote, "2 lines") {
 			t.Errorf("write:\n%s", wrote)
+		}
+	})
+
+	t.Run("BH-08 an answered ask shows every question with its answer, folded or open", func(t *testing.T) {
+		p := newPrinter()
+		run := toolRun{name: "ask", done: true, output: "Q: Which db?\nA: Postgres\n\nQ: Port?\nA: 5432"}
+
+		for _, open := range []bool{false, true} {
+			shown := ansi.Strip(p.Tool(run, open))
+
+			if !strings.Contains(shown, "? Which db?\n    › Postgres\n  ? Port?\n    › 5432") || strings.Contains(shown, "ctrl+o") {
+				t.Errorf("open %v:\n%s", open, shown)
+			}
 		}
 	})
 }

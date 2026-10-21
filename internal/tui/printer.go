@@ -762,10 +762,13 @@ func (p *printer) Tool(run toolRun, open bool) string {
 // of a long write or what read gave of a long file, where the rows are in the
 // text and how the screen paints those it shows: in the text they are plain.
 func (p *printer) toolLazy(run toolRun, open bool) (string, *lazyRows) {
+	sign := p.runSign(run)
+	if run.name == tools.AskName && run.done {
+		return "\n" + p.toolHeaderAs(run.name, run.args, sign) + "\n" + p.askAnswers(run.output), nil
+	}
 	var parts []string
 	var lazy *lazyRows
 	change, changed := fileChangeOf(run.name, run.args)
-	sign := p.runSign(run)
 	switch {
 	case open && changed:
 		code, paint := p.fileChangeBlock(change)
@@ -1096,4 +1099,40 @@ func firstLine(text string) string {
 		return line + " …"
 	}
 	return line
+}
+
+// askAnswers draws what an ask gave, each question and below it the user's
+// answer, wrapped to the width; anything else, as it came.
+func (p *printer) askAnswers(output string) string {
+	p.mu.Lock()
+	width := max(p.width-toolIndent-2, 20)
+	p.mu.Unlock()
+	var lines []string
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		switch {
+		case strings.HasPrefix(line, "Q: "):
+			lines = append(lines, wrapIndented(strings.TrimPrefix(line, "Q: "), "  ? ", width, toolStyle))
+		case strings.HasPrefix(line, "A: "):
+			lines = append(lines, wrapIndented(strings.TrimPrefix(line, "A: "), "    › ", width, userStyle))
+		case line == "":
+			continue
+		default:
+			lines = append(lines, wrapIndented(line, "      ", width, lipgloss.NewStyle()))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// wrapIndented wraps text after a mark, the lines after the first under it.
+func wrapIndented(text, mark string, width int, style lipgloss.Style) string {
+	pad := strings.Repeat(" ", ansi.StringWidth(mark))
+	wrapped := strings.Split(ansi.Wrap(text, width-len(pad), " "), "\n")
+	for i, piece := range wrapped {
+		prefix := pad
+		if i == 0 {
+			prefix = mark
+		}
+		wrapped[i] = prefix + style.Render(piece)
+	}
+	return strings.Join(wrapped, "\n")
 }

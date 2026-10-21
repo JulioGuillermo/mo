@@ -6,6 +6,7 @@ package agent
 // | IN-02 | Happy    | Answers go back with their questions; a skipped one says so           | P0       |
 // | IN-03 | Edge     | With nobody to answer, the model is told to decide itself            | P1       |
 // | IN-04 | Error    | A malformed ask call is an error result and asks nobody              | P1       |
+// | IN-05 | Happy    | An answered ask is shown as a call with the questions and answers     | P0       |
 
 import (
 	"context"
@@ -99,6 +100,26 @@ func TestInteraction(t *testing.T) {
 
 		if asked || !agent.History[2].IsError || !strings.Contains(agent.History[2].Text, "1 to 4 questions") {
 			t.Errorf("asked = %v result = %+v", asked, agent.History[2])
+		}
+	})
+
+	t.Run("IN-05 an answered ask is shown as a call with the questions and answers", func(t *testing.T) {
+		provider := &scriptedProvider{replies: []llm.Message{
+			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{askCall("q", tools.Question{Text: "Which db?"})}},
+			{Role: llm.RoleAssistant, Text: "ok"},
+		}}
+		agent := newAgent(t, provider)
+		var started, done []string
+		hooks := Hooks{
+			Interact:    func(context.Context, Interaction) Reply { return Reply{Answers: []string{"Postgres"}} },
+			OnToolStart: func(call llm.ToolCall, _ string) { started = append(started, call.Name) },
+			OnToolDone:  func(call llm.ToolCall, output string, _ bool) { done = append(done, output) },
+		}
+
+		_ = agent.Run(ctx, "set up", hooks)
+
+		if len(started) != 1 || started[0] != tools.AskName || len(done) != 1 || done[0] != "Q: Which db?\nA: Postgres" {
+			t.Errorf("started = %q done = %q", started, done)
 		}
 	})
 }

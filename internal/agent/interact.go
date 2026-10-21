@@ -177,7 +177,9 @@ func (a *Agent) decideCall(ctx context.Context, pending pendingCall, reply Reply
 	case ctx.Err() != nil:
 		return cancelledResult, true, false
 	case pending.questions != nil:
-		return answersText(pending.questions, reply.Answers[pending.firstAsk:pending.firstAsk+len(pending.questions)], reply.Unavailable), false, false
+		answers := answersText(pending.questions, reply.Answers[pending.firstAsk:pending.firstAsk+len(pending.questions)], reply.Unavailable)
+		showAnswered(pending.call, answers, hooks)
+		return answers, false, false
 	case a.looping():
 		return stoppedCallResult, true, false
 	}
@@ -213,4 +215,15 @@ func answersText(questions []tools.Question, answers []string, unavailable bool)
 		out = append(out, fmt.Sprintf("Q: %s\nA: %s", question.Text, answer))
 	}
 	return strings.Join(out, "\n\n")
+}
+
+// showAnswered puts an ask in the conversation once answered, as a call
+// with the questions and answers for its result.
+func showAnswered(call llm.ToolCall, answers string, hooks Hooks) {
+	if hooks.OnToolStart != nil {
+		hooks.OnToolStart(call, "")
+	}
+	if hooks.OnToolDone != nil {
+		hooks.OnToolDone(call, answers, false)
+	}
 }
