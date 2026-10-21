@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,6 +47,8 @@ type server struct {
 	session  *mcp.ClientSession
 	command  *exec.Cmd
 	tools    []namedTool
+	// description is what the server says it is for, as it connects.
+	description string
 
 	mu  sync.Mutex
 	err error
@@ -98,7 +101,7 @@ func Reconnect(ctx context.Context, previous *Hub, servers map[string]config.MCP
 	for _, name := range slices.Sorted(maps.Keys(servers)) {
 		if old, ok := kept[name]; ok {
 			hub.servers = append(hub.servers, &server{name: name, trust: servers[name].Trust, settings: servers[name],
-				session: old.session, command: old.command, tools: slices.Clone(old.tools)})
+				session: old.session, command: old.command, tools: slices.Clone(old.tools), description: old.description})
 			continue
 		}
 		entry := &server{name: name, trust: servers[name].Trust, settings: servers[name]}
@@ -128,6 +131,9 @@ func (s *server) connect(ctx context.Context, settings config.MCPServer, logDir 
 		return
 	}
 	s.session = session
+	if result := session.InitializeResult(); result != nil {
+		s.description = strings.TrimSpace(result.Instructions)
+	}
 	for _, tool := range tools {
 		s.tools = append(s.tools, namedTool{tool: tool})
 	}

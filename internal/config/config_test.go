@@ -11,7 +11,7 @@ package config
 // | CF-07 | Security | The project file cannot redirect a provider, swap its key or add one | P0    |
 // | CF-08 | Security | The project file can add tools to confirm but never remove them    | P0       |
 // | CF-09 | Security | The project file can pick a keyless provider but not a paid one    | P1       |
-// | CF-10 | Error    | An unknown tools.mode or a compact_at above 1 is refused          | P1       |
+// | CF-10 | Error    | An unknown tools.mode, a compact_at above 1 or a negative description_chars is refused | P1 |
 // | CF-11 | Security | The project file cannot move the memory folder                    | P0       |
 // | CF-12 | Happy    | The project file sets tool mode and context settings              | P1       |
 // | CF-13 | Security | The project file can disable more tools but not re-enable any     | P0       |
@@ -208,9 +208,9 @@ func TestProjectProviderChoice(t *testing.T) {
 }
 
 func TestPhaseTwoSettings(t *testing.T) {
-	t.Run("CF-10 an unknown tools.mode or a compact_at above 1 is refused", func(t *testing.T) {
+	t.Run("CF-10 an unknown tools.mode, a compact_at above 1 or a negative description_chars is refused", func(t *testing.T) {
 		configHome := isolatedHome(t)
-		for _, content := range []string{"[tools]\nmode = \"lazy\"\n", "[context]\ncompact_at = 75\n"} {
+		for _, content := range []string{"[tools]\nmode = \"lazy\"\n", "[context]\ncompact_at = 75\n", "[mcp.x]\nurl = \"http://x\"\ndescription_chars = -1\n"} {
 			writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), content)
 			if _, err := Load(t.TempDir()); err == nil {
 				t.Errorf("accepted %q", content)

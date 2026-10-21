@@ -64,6 +64,30 @@ func (h *Hub) ToolServers() map[string]string {
 	return servers
 }
 
+// Descriptions are what the servers that connected say they are for, by
+// server, each cut as its settings say; a server without one, or whose
+// settings turn it off, is left out.
+func (h *Hub) Descriptions() map[string]string {
+	descriptions := map[string]string{}
+	for _, entry := range h.servers {
+		limit := entry.settings.DescriptionLimit()
+		if entry.description == "" || limit == 0 {
+			continue
+		}
+		descriptions[entry.name] = cut(entry.description, limit)
+	}
+	return descriptions
+}
+
+// cut keeps the first limit characters of text, with … when it drops some.
+func cut(text string, limit int) string {
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return strings.TrimSpace(string(runes[:limit])) + "…"
+}
+
 // Tools adapts the tools of the servers that connected.
 func (h *Hub) Tools() []tools.Tool {
 	var adapted []tools.Tool

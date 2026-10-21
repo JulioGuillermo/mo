@@ -192,6 +192,12 @@ func searchTools(registry *Registry) []Tool {
 		}
 		searchDescription += " A group's name gives all its tools, more words after it filter them. Groups: " + strings.Join(names, ", ") + "."
 	}
+	if descriptions := registry.options.ServerDescriptions; len(descriptions) > 0 {
+		searchDescription += "\nWhat these MCP servers say they are for:"
+		for _, server := range slices.Sorted(maps.Keys(descriptions)) {
+			searchDescription += "\n- " + server + ": " + descriptions[server]
+		}
+	}
 	tools := []Tool{
 		{
 			Name:        listToolName,

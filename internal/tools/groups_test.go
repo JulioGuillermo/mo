@@ -8,6 +8,7 @@ package tools
 // | GR-03 | Happy    | A group is one line in tool_list and named in tool_search's description       | P0       |
 // | GR-04 | Happy    | tool_search with a group's name gives all its tools; more words filter them   | P0       |
 // | GR-05 | Happy    | Each skill has its own mode: listed in full, by name, or left to skill_search | P1       |
+// | GR-07 | Happy    | tool_search's description tells what each MCP server given says it is for     | P0       |
 
 import (
 	"context"
@@ -124,6 +125,23 @@ func TestToolModes(t *testing.T) {
 		}
 		if !strings.HasPrefix(found, "deploy:") {
 			t.Errorf("found %q", found)
+		}
+	})
+
+	t.Run("GR-07 tool_search's description tells what each MCP server given says it is for", func(t *testing.T) {
+		extra := browserTools(2)
+		groups := map[string]string{extra[0].Name: "playwright", extra[1].Name: "playwright"}
+		descriptions := map[string]string{"playwright": "Drive a browser.", "jira": "Tickets."}
+		registry := NewRegistry(newEnv(t), Options{Mode: ModeFull, Extra: extra, Groups: groups, ServerDescriptions: descriptions})
+
+		search, _ := specOf(registry.Specs(nil), searchToolName)
+		plain, _ := specOf(groupedRegistry(t).Specs(nil), searchToolName)
+
+		if !strings.HasSuffix(search.Description, "What these MCP servers say they are for:\n- jira: Tickets.\n- playwright: Drive a browser.") {
+			t.Errorf("description = %q", search.Description)
+		}
+		if strings.Contains(plain.Description, "say they are for") {
+			t.Errorf("without descriptions: %q", plain.Description)
 		}
 	})
 }

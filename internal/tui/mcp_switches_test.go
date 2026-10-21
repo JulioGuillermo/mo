@@ -7,6 +7,8 @@ package tui
 // | MS-03 | Edge     | A project that sets the servers off or the mode gets the change too       | P1       |
 // | MS-04 | Happy    | /mcp lists each server with how it is doing                               | P1       |
 // | MS-05 | Happy    | Esc closes the suggestions and leaves the model working; typing opens them again | P0 |
+// | MS-06 | Happy    | A server not in full mode shows its description switch and length; one in full does not | P0 |
+// | MS-07 | Happy    | The description switched off and its length go to the file; a bad length is refused | P0 |
 
 import (
 	"errors"
@@ -124,6 +126,39 @@ func TestMCPSwitches(t *testing.T) {
 		m = keys(t, m, keyEsc, keyEsc)
 		if !stopped {
 			t.Error("esc with the suggestions closed does not stop the model")
+		}
+	})
+
+	t.Run("MS-06 a server not in full mode shows its description switch and length; one in full does not", func(t *testing.T) {
+		m, msg := mcpModel(t)
+		compact, _ := m.editMCPServer(msg, "docs", &settingsMenu{})
+		full, _ := m.editMCPServer(msg, "web", &settingsMenu{})
+
+		if view := screen(compact.(model)); !strings.Contains(view, "Server description") || !strings.Contains(view, "2048 (default)") {
+			t.Errorf("compact:\n%s", view)
+		}
+		if view := screen(full.(model)); strings.Contains(view, "Server description") {
+			t.Errorf("full:\n%s", view)
+		}
+	})
+
+	t.Run("MS-07 the description switched off and its length go to the file; a bad length is refused", func(t *testing.T) {
+		draft := newMCPDraft("docs", config.MCPServer{URL: "http://x/mcp"})
+		draft.describeChars = "500"
+		kept, keptErr := draft.applyTo(config.Config{})
+		draft.describe = false
+		off, _ := draft.applyTo(config.Config{})
+		draft.describeChars = "many"
+		_, badErr := draft.applyTo(config.Config{})
+
+		if server := kept.MCP["docs"]; keptErr != nil || server.Description != nil || server.DescriptionChars != 500 {
+			t.Errorf("kept = %+v err = %v", server, keptErr)
+		}
+		if server := off.MCP["docs"]; server.Description == nil || *server.Description || server.DescriptionLimit() != 0 {
+			t.Errorf("off = %+v", server)
+		}
+		if badErr == nil || !strings.Contains(badErr.Error(), "description length") {
+			t.Errorf("bad length err = %v", badErr)
 		}
 	})
 }

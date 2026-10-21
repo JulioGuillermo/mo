@@ -138,6 +138,9 @@ type Options struct {
 	// Groups put tools in a group, by name: found together with tool_search
 	// under the group's name, as the tools of an MCP server.
 	Groups map[string]string
+	// ServerDescriptions are what MCP servers say they are for, by server,
+	// told in tool_search's description.
+	ServerDescriptions map[string]string
 	// Skills are the skills the model may load, shown as SkillMode says,
 	// or SkillModes for single ones; without any there are no skill tools.
 	Skills     []skills.Skill

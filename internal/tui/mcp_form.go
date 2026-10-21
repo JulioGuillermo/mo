@@ -6,6 +6,7 @@ import (
 	"maps"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -52,30 +53,40 @@ type mcpDraft struct {
 	mode     string
 	// defaultMode is the tool mode the server follows when it has none.
 	defaultMode string
+	// describe and describeChars say whether, and how much of, what the
+	// server says it is for goes to the model when not in full mode.
+	describe      bool
+	describeChars string
 }
 
 func newMCPDraft(name string, server config.MCPServer) *mcpDraft {
 	if name == newServerChoice {
-		return &mcpDraft{isNew: true, kind: kindCommand}
+		return &mcpDraft{isNew: true, kind: kindCommand, describe: true}
 	}
 	kind := kindCommand
 	if server.URL != "" {
 		kind = kindURL
 	}
+	describeChars := ""
+	if server.DescriptionChars > 0 {
+		describeChars = strconv.Itoa(server.DescriptionChars)
+	}
 	return &mcpDraft{
-		name:         name,
-		kind:         kind,
-		command:      server.Command,
-		args:         strings.Join(server.Args, "\n"),
-		env:          joinPairs(server.Env, "="),
-		url:          server.URL,
-		headers:      joinPairs(server.Headers, ": "),
-		ca:           server.CA,
-		insecure:     server.Insecure,
-		trust:        server.Trust,
-		savedEnv:     server.Env,
-		savedHeaders: server.Headers,
-		savedOAuth:   server.OAuth,
+		describe:      server.Description == nil || *server.Description,
+		describeChars: describeChars,
+		name:          name,
+		kind:          kind,
+		command:       server.Command,
+		args:          strings.Join(server.Args, "\n"),
+		env:           joinPairs(server.Env, "="),
+		url:           server.URL,
+		headers:       joinPairs(server.Headers, ": "),
+		ca:            server.CA,
+		insecure:      server.Insecure,
+		trust:         server.Trust,
+		savedEnv:      server.Env,
+		savedHeaders:  server.Headers,
+		savedOAuth:    server.OAuth,
 	}
 }
 
@@ -135,9 +146,28 @@ func (d *mcpDraft) entries(taken map[string]config.MCPServer) []entry {
 			}},
 		)
 	}
-	return append(entries, entry{"Trust its tools", func() string { return yesNo(d.trust) }, func() huh.Field {
+	entries = append(entries, entry{"Trust its tools", func() string { return yesNo(d.trust) }, func() huh.Field {
 		return huh.NewConfirm().Title("Trust its tools").Description("run them without asking").Value(&d.trust)
 	}})
+	if d.fullMode() {
+		return entries
+	}
+	entries = append(entries, entry{"Server description", func() string { return onOff(d.describe) }, func() huh.Field {
+		return huh.NewConfirm().Title("Server description").Description("what the server says it is for, told to the model in tool_search; full mode never sends it").Affirmative("On").Negative("Off").Value(&d.describe)
+	}})
+	if d.describe {
+		entries = append(entries, entry{"Description length", func() string {
+			return valueOr(d.describeChars, fmt.Sprintf("%d (default)", config.DefaultDescriptionChars))
+		}, func() huh.Field {
+			return huh.NewInput().Title("Description length").Description(fmt.Sprintf("characters of it sent, the rest cut; empty: %d", config.DefaultDescriptionChars)).Value(&d.describeChars)
+		}})
+	}
+	return entries
+}
+
+// fullMode tells whether the server's tools go to the model in full mode.
+func (d *mcpDraft) fullMode() bool {
+	return orDefault(d.mode, d.defaultMode) == string(tools.ModeFull)
 }
 
 // forKind keeps only the fields of the draft's kind, so a server switched
@@ -183,6 +213,16 @@ func (d *mcpDraft) applyTo(layer config.Config) (config.Config, error) {
 		return layer, fmt.Errorf("MCP %s headers: %w", name, err)
 	}
 	server.Env, server.Headers = env, headers
+	if !d.describe {
+		server.Description = new(bool)
+	}
+	if text := strings.TrimSpace(d.describeChars); text != "" {
+		chars, err := parseAtLeast(text, 1)
+		if err != nil {
+			return layer, fmt.Errorf("MCP %s description length: %w", name, err)
+		}
+		server.DescriptionChars = chars
+	}
 	layer.MCP = withEntry(layer.MCP, name, server)
 	if d.switches {
 		layer = d.switchesTo(layer, false)
@@ -273,12 +313,12 @@ var kindLabels = map[string]string{kindCommand: "command", kindURL: "URL"}
 // at once.
 func (m model) editMCPServer(msg settingsLoadedMsg, name string, menu *settingsMenu) (tea.Model, tea.Cmd) {
 	draft := newMCPDraft(name, msg.layer.MCP[name])
+	live := m.session.Config.Tools
+	draft.mode = string(live.MCPModes[name])
+	draft.defaultMode = orDefault(string(live.Mode), string(tools.ModeFull))
 	if menu == nil {
-		live := m.session.Config.Tools
 		draft.switches = true
 		draft.on = !slices.Contains(live.MCPDisabled, name)
-		draft.mode = string(live.MCPModes[name])
-		draft.defaultMode = orDefault(string(live.Mode), string(tools.ModeFull))
 	}
 	title := "MCP server " + name
 	if draft.isNew {

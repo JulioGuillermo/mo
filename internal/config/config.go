@@ -358,9 +358,28 @@ type MCPServer struct {
 	// already registered, the scopes, more parameters. Without it, a server
 	// that asks for a sign-in is found out and registered with.
 	OAuth *OAuth `toml:"oauth,omitempty"`
+	// Description says whether what the server says it is for goes to the
+	// model when its tools are not in full mode; on unless false.
+	Description *bool `toml:"description,omitempty"`
+	// DescriptionChars cuts that description; DefaultDescriptionChars when 0.
+	DescriptionChars int `toml:"description_chars,omitempty"`
 	// Plugin is the plugin that declared the server, which gives its
 	// headers; never in a file.
 	Plugin string `toml:"-"`
+}
+
+const DefaultDescriptionChars = 2048
+
+// DescriptionLimit is how many characters of the server's description go
+// to the model; 0 when none does.
+func (s MCPServer) DescriptionLimit() int {
+	if s.Description != nil && !*s.Description {
+		return 0
+	}
+	if s.DescriptionChars > 0 {
+		return s.DescriptionChars
+	}
+	return DefaultDescriptionChars
 }
 
 // BarStyles are the looks of the context bar, the first the default.
@@ -671,6 +690,11 @@ func validate(cfg Config) error {
 	}
 	if err := validatePermissions(cfg.Permissions); err != nil {
 		return err
+	}
+	for name, server := range cfg.MCP {
+		if server.DescriptionChars < 0 {
+			return fmt.Errorf("mcp.%s.description_chars %d: use a number of characters, or 0 for %d", name, server.DescriptionChars, DefaultDescriptionChars)
+		}
 	}
 	if !slices.Contains(notify.Methods, notify.Method(cfg.Notify.Method)) {
 		return fmt.Errorf("notify.method %q: use auto, terminal, desktop, bell or off", cfg.Notify.Method)
