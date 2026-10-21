@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -181,7 +182,7 @@ func TestRun(t *testing.T) {
 		provider := &scriptedProvider{replies: []llm.Message{
 			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
 				toolCall("c1", "write", `{"path":"inside.txt","content":"ok"}`),
-				toolCall("c2", "write", `{"path":"`+outside+`","content":"no"}`),
+				toolCall("c2", "write", `{"path":`+strconv.Quote(outside)+`,"content":"no"}`),
 			}},
 			{Role: llm.RoleAssistant, Text: "done"},
 		}}
@@ -209,8 +210,8 @@ func TestRun(t *testing.T) {
 		provider := &scriptedProvider{replies: []llm.Message{
 			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("c1", "mkdir", `{"path":"one"}`)}},
 			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("c2", "mkdir", `{"path":"two"}`)}},
-			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("c3", "mkdir", `{"path":"`+outside+`"}`)}},
-			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("c4", "mkdir", `{"path":"`+outside+`"}`)}},
+			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("c3", "mkdir", `{"path":`+strconv.Quote(outside)+`}`)}},
+			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("c4", "mkdir", `{"path":`+strconv.Quote(outside)+`}`)}},
 			{Role: llm.RoleAssistant, Text: "done"},
 		}}
 		agent := newAgent(t, provider, "mkdir")

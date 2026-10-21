@@ -35,7 +35,7 @@ var extensionByMIME = map[string]string{
 	"image/webp": ".webp", "image/bmp": ".bmp", "image/svg+xml": ".svg",
 }
 
-var imageMarker = regexp.MustCompile(`\[image [^\]:]*: (/[^\]\s]+)\]`)
+var imageMarker = regexp.MustCompile(`\[image [^\]:]*: (/[^\]\s]+|[A-Za-z]:\\[^\]\n]+)\]`)
 
 // ImageMarker is how a tool result points at an image: the model reads what
 // it is and where, and the UI draws it below the call.

@@ -26,6 +26,7 @@ package render
 // | RD-22 | Happy    | An SVG without xmlns is drawn; one in another namespace is refused   | P1       |
 // | RD-23 | Happy    | Absolute units convert to pixels; em alone falls back to a default   | P2       |
 // | RD-24 | Happy    | A thumbnail fits in its cells, proportions kept, upload apart        | P1       |
+// | RD-25 | Happy    | A marker with a Windows path, spaces too, is found                   | P0       |
 
 import (
 	"bytes"
@@ -402,6 +403,14 @@ func TestSVGSizes(t *testing.T) {
 
 		if !inchesKnown || inches != 192 || points != 16 || emKnown || width != defaultSVGWidth || height != defaultSVGHeight {
 			t.Errorf("in = %v pt = %v em known = %v default = %vx%v", inches, points, emKnown, width, height)
+		}
+	})
+
+	t.Run("RD-25 a marker with a Windows path, spaces too, is found", func(t *testing.T) {
+		marker := ImageMarker("image/png, 1 KB", `C:\Users\Ana Gil\AppData\Local\Temp\a.png`)
+
+		if got := MarkedImages("see\n" + marker + "\nend"); len(got) != 1 || got[0] != `C:\Users\Ana Gil\AppData\Local\Temp\a.png` {
+			t.Errorf("paths = %q", got)
 		}
 	})
 }
