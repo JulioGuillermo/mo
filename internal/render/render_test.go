@@ -27,6 +27,7 @@ package render
 // | RD-23 | Happy    | Absolute units convert to pixels; em alone falls back to a default   | P2       |
 // | RD-24 | Happy    | A thumbnail fits in its cells, proportions kept, upload apart        | P1       |
 // | RD-25 | Happy    | A marker with a Windows path, spaces too, is found                   | P0       |
+// | RD-26 | Error    | A diagram the text drawing panics on comes back as its source        | P0       |
 
 import (
 	"bytes"
@@ -411,6 +412,17 @@ func TestSVGSizes(t *testing.T) {
 
 		if got := MarkedImages("see\n" + marker + "\nend"); len(got) != 1 || got[0] != `C:\Users\Ana Gil\AppData\Local\Temp\a.png` {
 			t.Errorf("paths = %q", got)
+		}
+	})
+
+	t.Run("RD-26 a diagram the text drawing panics on comes back as its source", func(t *testing.T) {
+		source := "flowchart BT\n    N3[x] --> N0[... x N bloques]\n    N1[norm] --> N1[x]\n    N1[salida] ==> N1[salida]\n    N0[... x N bloques] -.-> N0[MLP]\n"
+
+		_, err := mermaidText(source, 180)
+		shown := Renderer{Mode: ModeBlocks, Width: 180}.Mermaid(source)
+
+		if err == nil || !strings.HasPrefix(shown, "```mermaid\nflowchart BT") {
+			t.Errorf("err = %v shown = %q", err, shown)
 		}
 	})
 }

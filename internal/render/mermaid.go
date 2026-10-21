@@ -2,6 +2,7 @@ package render
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -54,8 +55,14 @@ func textConfig(width ...int) *diagram.Config {
 }
 
 // mermaidText draws a flowchart, sequence, ER or class diagram with box
-// characters; a class diagram as a flowchart of class boxes.
-func mermaidText(source string, width ...int) (string, error) {
+// characters; a class diagram as a flowchart of class boxes. A diagram the
+// drawing library fails on, even by panicking, is an error.
+func mermaidText(source string, width ...int) (drawn string, err error) {
+	defer func() {
+		if failure := recover(); failure != nil {
+			drawn, err = "", fmt.Errorf("the diagram could not be drawn as text: %v", failure)
+		}
+	}()
 	if isClassDiagram(source) {
 		flowchart, err := classFlowchart(source)
 		if err != nil {
