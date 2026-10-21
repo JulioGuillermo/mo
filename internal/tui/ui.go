@@ -542,6 +542,9 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.dialog != nil {
 			return m.pasteIntoDialog(msg)
 		}
+		if msg.Content == "" {
+			return m, pasteClipboard()
+		}
 		if m.pastedPaths(msg.Content) {
 			return m, nil
 		}
@@ -796,7 +799,7 @@ func (m model) plainKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-	case "ctrl+v":
+	case "ctrl+v", "alt+v":
 		return m, pasteClipboard()
 	case "backspace", "delete":
 		if m.eraseAttachment(msg.String()) {

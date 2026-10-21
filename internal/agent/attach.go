@@ -149,7 +149,8 @@ func namedFiles(text, workDir string) []string {
 }
 
 // shellWords splits text at spaces, keeping quoted parts and escaped spaces
-// inside one word.
+// inside one word. The escape is the system shell's: a backslash, or on
+// Windows a backtick, as Windows Terminal pastes a path with spaces.
 func shellWords(text string) []string {
 	var words []string
 	var word strings.Builder
@@ -160,7 +161,7 @@ func shellWords(text string) []string {
 		case escaped:
 			word.WriteRune(character)
 			escaped = false
-		case character == '\\' && quote != '\'':
+		case character == escapeCharacter && quote != '\'':
 			escaped = true
 		case quote != 0 && character == quote:
 			quote = 0

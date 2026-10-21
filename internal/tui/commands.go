@@ -82,7 +82,7 @@ var keyHelp = [][2]string{
 	{"right click on an image or a file path", "copy the file as a file manager does, the image, the path; open it"},
 	{"shift+tab", "change the permission mode"},
 	{"ctrl+o, click", "open or fold reasoning and tool calls"},
-	{"ctrl+v", "paste a copied image or files as attachments"},
+	{"ctrl+v, alt+v", "paste a copied image or files as attachments; alt+v where the terminal keeps ctrl+v"},
 	{"drag", "select text and copy it"},
 	{"click", "buttons, options, tabs, commands, the mode, the model, a job"},
 	{"ctrl+d", "quit"},
