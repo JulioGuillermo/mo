@@ -328,6 +328,10 @@ func (m *model) replay(history []llm.Message) string {
 		case message.Role == llm.RoleUser && agent.IsPrompt(message):
 			prompt := agent.PromptText(message)
 			m.blocks = append(m.blocks, block{text: printer.User(prompt), draw: func(bool) string { return printer.User(prompt) }})
+			if drawn := printer.Thumbnails(promptImages(agent.SentPrompt(message))); drawn != "" {
+				uploads.WriteString(strings.Join(kittyUploads.FindAllString(drawn, -1), ""))
+				m.blocks = append(m.blocks, block{text: kittyUploads.ReplaceAllString(drawn, "")})
+			}
 		case message.Role == llm.RoleAssistant:
 			m.addReasoning(message.Reasoning)
 			if text := strings.TrimSpace(message.Text); text != "" {

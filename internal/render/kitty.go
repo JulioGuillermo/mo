@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/png"
 	"math/rand/v2"
+	"os"
 	"strings"
 	"sync/atomic"
 
@@ -30,13 +31,34 @@ func init() {
 // Placeholders are ordinary text to the UI, so the image scrolls with the
 // conversation. The image id travels in the cells' foreground colour.
 func kittyImage(img image.Image, box Box, cellWidth, cellHeight int) (string, error) {
+	upload, lines, err := kittyParts(img, box, cellWidth, cellHeight)
+	return upload + lines, err
+}
+
+func kittyParts(img image.Image, box Box, cellWidth, cellHeight int) (upload, lines string, err error) {
 	var encoded bytes.Buffer
 	if err := png.Encode(&encoded, shrink(img, box.Cols*cellWidth, box.Rows*cellHeight)); err != nil {
-		return "", err
+		return "", "", err
 	}
-	id := nextImageID.Add(1) % maxImageID
-	transmission := kittyTransmission(base64.StdEncoding.EncodeToString(encoded.Bytes()), id, box)
-	return transmission + kittyPlaceholders(id, box), nil
+	id := NewImageID()
+	return kittyTransmission(base64.StdEncoding.EncodeToString(encoded.Bytes()), id, box), kittyPlaceholders(id, box), nil
+}
+
+// Thumbnail draws an image file as a kitty image of at most cols × rows
+// cells: the upload to send the terminal once, and the lines that show it.
+func Thumbnail(path string, cols, rows int) (string, []string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", nil, err
+	}
+	img, err := DecodeFile(path, data)
+	if err != nil {
+		return "", nil, err
+	}
+	cellWidth, cellHeight := CellSize()
+	box := fitWithin(img, cols, rows, cellWidth, cellHeight)
+	upload, lines, err := kittyParts(img, box, cellWidth, cellHeight)
+	return upload, strings.Split(lines, "\n"), err
 }
 
 func kittyTransmission(payload string, id uint32, box Box) string {

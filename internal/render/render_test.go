@@ -25,6 +25,7 @@ package render
 // | RD-21 | Happy    | width="100%" with a viewBox keeps the viewBox's proportions          | P1       |
 // | RD-22 | Happy    | An SVG without xmlns is drawn; one in another namespace is refused   | P1       |
 // | RD-23 | Happy    | Absolute units convert to pixels; em alone falls back to a default   | P2       |
+// | RD-24 | Happy    | A thumbnail fits in its cells, proportions kept, upload apart        | P1       |
 
 import (
 	"bytes"
@@ -118,6 +119,25 @@ func TestKitty(t *testing.T) {
 		}
 		if !strings.HasPrefix(chunks[1], "\x1b_Gm=1;") || !strings.HasPrefix(chunks[2], "\x1b_Gm=0;") {
 			t.Errorf("continuations = %q / %q", chunks[1][:8], chunks[2][:8])
+		}
+	})
+
+	t.Run("RD-24 a thumbnail fits in its cells, proportions kept, upload apart", func(t *testing.T) {
+		t.Setenv("TMUX", "")
+		SetCellSize(10, 20)
+		t.Cleanup(func() { SetCellSize(0, 0) })
+		var encoded bytes.Buffer
+		png.Encode(&encoded, solid(1600, 800, color.White))
+		path := filepath.Join(t.TempDir(), "shot.png")
+		os.WriteFile(path, encoded.Bytes(), 0o600)
+
+		upload, lines, err := Thumbnail(path, 14, 3)
+
+		if err != nil || !strings.HasPrefix(upload, "\x1b_Ga=T") {
+			t.Fatalf("upload = %.20q err = %v", upload, err)
+		}
+		if len(lines) != 3 || ansi.StringWidth(lines[0]) != 12 {
+			t.Errorf("box = %d rows of %d cells", len(lines), ansi.StringWidth(lines[0]))
 		}
 	})
 

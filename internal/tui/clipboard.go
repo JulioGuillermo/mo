@@ -336,20 +336,30 @@ func (m model) attachmentBar() (string, []region) {
 	colors := dialogPalette(m.printer == nil || m.printer.isDark())
 	chip := lipgloss.NewStyle().Background(colors.button).Foreground(colors.text)
 	cross := chip.Foreground(lipgloss.Color("#f7768e")).Bold(true)
-	var chips []string
-	var regions []region
-	x := 2
+	columns := []string{dimStyle.Render("📎") + " "}
+	var shownChips []string
 	for _, label := range labels {
 		shown := chip.Render(" "+strings.Trim(label, "[]")+" ") + cross.Render("× ")
+		shownChips = append(shownChips, shown)
+		if thumbnail := m.thumbnails[m.attachments[label]]; len(thumbnail) > 0 {
+			shown = strings.Join(thumbnail, "\n") + "\n" + shown
+		}
+		columns = append(columns, shown, " ")
+	}
+	bar := lipgloss.JoinHorizontal(lipgloss.Bottom, columns...)
+	chipsRow := lipgloss.Height(bar) - 1
+	var regions []region
+	x := 2
+	for i, label := range labels {
 		chosen := label
-		regions = append(regions, region{y: 0, x0: x, x1: x + ansi.StringWidth(shown), do: func(m model) (tea.Model, tea.Cmd) {
+		width := ansi.StringWidth(shownChips[i])
+		regions = append(regions, region{y: chipsRow, x0: x, x1: x + width, do: func(m model) (tea.Model, tea.Cmd) {
 			m.dropAttachment(chosen)
 			return m, nil
 		}})
-		x += ansi.StringWidth(shown) + 1
-		chips = append(chips, shown)
+		x += lipgloss.Width(columns[2*i+1]) + 1
 	}
-	return dimStyle.Render("📎") + " " + strings.Join(chips, " "), regions
+	return bar, regions
 }
 
 // dropAttachment takes every copy of a label out of the input, with the

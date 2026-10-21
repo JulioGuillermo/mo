@@ -221,6 +221,9 @@ type model struct {
 	blocks              []block
 	redraws             int
 	attachments         map[string]string
+	// thumbnails are the kitty lines that show the images in the input, by
+	// path; nil while drawn.
+	thumbnails map[string][]string
 	// queuedAttachments are the labels of the queued messages, by the path
 	// they stand for, to have them back with the messages in the input.
 	queuedAttachments map[string]string
@@ -415,7 +418,18 @@ func (m *model) takeEvent(event llm.Event, at time.Time) {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	updated, ok := next.(model)
+	if !ok {
+		return next, cmd
+	}
+	return updated, tea.Batch(cmd, updated.drawThumbnails())
+}
+
+func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case thumbnailMsg:
+		return m.thumbnailDrawn(msg)
 	case mcpTestedMsg:
 		return m.mcpTested(msg)
 	case svgReadyMsg:
@@ -958,7 +972,8 @@ func (m model) beginTurn(typed, sent string) (tea.Model, tea.Cmd) {
 	if m.session.Team != nil {
 		m.session.Team.BeginTurn()
 	}
-	echo := drawText(func() string { return m.printer.User(typed) })
+	images := promptImages(agent.SentPrompt(llm.Message{Text: sent}))
+	echo := drawText(func() string { return m.printer.User(typed) + m.printer.Thumbnails(images) })
 	return m.start(echo, func(ctx context.Context, hooks agent.Hooks) error {
 		return m.session.Agent.RunTyped(ctx, sent, typed, hooks)
 	})
