@@ -603,7 +603,7 @@ func TestHelpAndView(t *testing.T) {
 		if !strings.Contains(all, "\npull: remote, name") || !strings.Contains(all, "\ntopic view: offset") || !strings.Contains(all, "\ntopic conflicts: ") {
 			t.Errorf("all = %q", all)
 		}
-		if !strings.HasPrefix(pull, "remote, name: the branch to take") {
+		if !strings.HasPrefix(pull, "remote, name or branch: the branch to take") {
 			t.Errorf("pull = %q", pull)
 		}
 		if !isError || !strings.Contains(unknown, "list, read, write, delete, search, view") {

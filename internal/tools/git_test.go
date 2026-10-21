@@ -11,6 +11,8 @@ package tools
 // | GT-07 | Security | A repo outside the working directory warns, whatever the action     | P0       |
 // | GT-08 | Happy    | repos lists those below and any opened, each with its branch          | P1       |
 // | GT-09 | Happy    | init makes the repository and its folder, listed in repos; a second init is refused | P0 |
+// | GT-10 | Error    | merge, cherry_pick and rebase without revision say what they need    | P1       |
+// | GT-11 | Happy    | name, branch, tag and commit name the revision; branch, tag and commit must be one | P0 |
 
 import (
 	"context"
@@ -189,4 +191,63 @@ func TestGitTool(t *testing.T) {
 			t.Errorf("again = %q refused = %v changes = %v", again, refused, changes)
 		}
 	})
+
+	t.Run("GT-10 merge, cherry_pick and rebase without revision say what they need", func(t *testing.T) {
+		run, _ := gitRepoTool(t)
+
+		for _, action := range []string{"merge", "cherry_pick", "rebase"} {
+			output, isError := run(map[string]any{"action": action})
+
+			if !isError || !strings.Contains(output, action+" needs revision") {
+				t.Errorf("%s: %q", action, output)
+			}
+		}
+	})
+
+	t.Run("GT-11 name, branch, tag and commit name the revision; branch, tag and commit must be one", func(t *testing.T) {
+		run, hash := gitRepoTool(t)
+		run(map[string]any{"action": "tag", "tag": "v1"})
+		run(map[string]any{"action": "branch", "branch": "side"})
+
+		byName, nameFailed := run(map[string]any{"action": "merge", "name": "side"})
+		byTag, tagFailed := run(map[string]any{"action": "show", "tag": "v1"})
+		byCommit, commitFailed := run(map[string]any{"action": "show", "commit": hash[:7]})
+		notBranch, _ := run(map[string]any{"action": "merge", "branch": "v1"})
+		notCommit, _ := run(map[string]any{"action": "show", "commit": "main"})
+		twice, _ := run(map[string]any{"action": "merge", "revision": "side", "branch": "side"})
+
+		if nameFailed || !strings.Contains(byName, "up to date with side") {
+			t.Errorf("by name: %q", byName)
+		}
+		if tagFailed || commitFailed || !strings.Contains(byTag, "first") || !strings.Contains(byCommit, "first") {
+			t.Errorf("by tag: %q by commit: %q", byTag, byCommit)
+		}
+		if !strings.Contains(notBranch, `no branch "v1"`) || !strings.Contains(notCommit, "not a commit hash") || !strings.Contains(twice, "give only one of revision, branch") {
+			t.Errorf("not branch: %q not commit: %q twice: %q", notBranch, notCommit, twice)
+		}
+	})
+}
+
+// gitRepoTool is the git tool on a new repository with one commit, and
+// that commit's hash.
+func gitRepoTool(t *testing.T) (func(map[string]any) (string, bool), string) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	dir := t.TempDir()
+	if _, err := git.PlainInit(dir, false); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello\n"), 0o644)
+	registry := NewRegistry(Env{WorkDir: dir}, Options{MaxOutput: 10000})
+	run := func(fields map[string]any) (string, bool) {
+		return registry.Run(context.Background(), llm.ToolCall{Name: "git", Args: args(t, fields)})
+	}
+	run(map[string]any{"action": "add"})
+	run(map[string]any{"action": "commit", "message": "first"})
+	repo, _ := git.PlainOpen(dir)
+	head, err := repo.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return run, head.Hash().String()
 }

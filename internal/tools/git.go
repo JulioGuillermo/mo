@@ -17,6 +17,11 @@ import (
 var gitChanges = []string{"init", "add", "commit", "branch", "switch", "merge", "cherry_pick", "rebase", "continue", "abort", "pull", "push",
 	"stash", "stash_apply", "stash_pop", "stash_drop", "tag", "reset"}
 
+var (
+	takesRevision = []string{"show", "merge", "cherry_pick", "rebase", "reset", "tag"}
+	needsRevision = []string{"merge", "cherry_pick", "rebase"}
+)
+
 var gitHelp = []helpTopic{
 	{"repo", "every action takes it: the repository folder, relative (mo, ./mo, ../x) or absolute; left out, the working directory. " +
 		"path and paths are relative to it. Outside the working directory it asks first."},
@@ -26,6 +31,9 @@ var gitHelp = []helpTopic{
 	{"status", "branch, what is staged, changed and untracked."},
 	{"diff", "changes not staged; staged: true, those staged. paths: only these."},
 	{"log", "commits, the latest first. count: how many (20). path: only those touching it."},
+	{"revision", "what show, merge, cherry_pick, rebase, reset and tag work on: a branch, tag or commit, as git takes it. " +
+		"In its place: branch, tag or commit say which it is and fail when it is not one (branch: local, or remote as origin/main; commit: its hash); " +
+		"name too, but in tag, where name is the new tag."},
 	{"show", "revision: a commit with its diff (HEAD)."},
 	{"blame", "path: who last changed each line."},
 	{"branches", "local and remote branches, the current one marked."},
@@ -35,20 +43,20 @@ var gitHelp = []helpTopic{
 	{"tags", "the tags."},
 	{"add", "paths: stage them; none: stage everything."},
 	{"commit", "message: commit what is staged."},
-	{"branch", "name: create a branch at HEAD."},
-	{"switch", "name: switch to a branch; create: true makes it first."},
+	{"branch", "name or branch: create a branch at HEAD."},
+	{"switch", "name or branch: switch to a branch; create: true makes it first."},
 	{"merge", "revision: merge it into the current branch."},
 	{"cherry_pick", "revision: apply that commit here."},
 	{"rebase", "revision: replay the current branch onto it."},
 	{"continue", "go on with a merge, cherry_pick or rebase once its conflicts are fixed."},
 	{"abort", "give up a merge, cherry_pick or rebase."},
-	{"pull", "remote, name: the branch to take (the one tracked); rebase: true replays yours on top, false merges, unset as git's pull.rebase says."},
+	{"pull", "remote, name or branch: the branch to take (the one tracked); rebase: true replays yours on top, false merges, unset as git's pull.rebase says."},
 	{"push", "remote: push the current branch (origin); never forced."},
 	{"stash", "message: put the tracked changes aside; untracked files stay."},
 	{"stash_apply", "index: apply a stash and keep it (0, the newest)."},
 	{"stash_pop", "index: apply a stash and drop it."},
 	{"stash_drop", "index: drop a stash for good."},
-	{"tag", "name, revision (HEAD), message: annotated when given."},
+	{"tag", "name or tag: the new tag; revision (HEAD), message: annotated when given."},
 	{"reset", "revision, mode: soft, mixed (default) or hard; untracked files stay."},
 	{"conflicts", "they stay as markers in the files: edit them away, then continue; commit and continue refuse while markers are left."},
 }
@@ -60,14 +68,14 @@ func gitTool() Tool {
 			`{"action":"repos"} lists the repositories; {"action":"help"} explains each action. For what it lacks, run git with ` + Shown(shellToolName) + ".",
 		Schema: json.RawMessage(`{"type":"object","properties":{
 "action":{"type":"string","enum":["repos","init","status","diff","log","show","blame","branches","check","fetch","stash_list","tags","add","commit","branch","switch","merge","cherry_pick","rebase","continue","abort","pull","push","stash","stash_apply","stash_pop","stash_drop","tag","reset","help"]},
-"repo":{"type":"string"},"paths":{"type":"array","items":{"type":"string"}},"path":{"type":"string"},"revision":{"type":"string"},"name":{"type":"string"},"message":{"type":"string"},
+"repo":{"type":"string"},"paths":{"type":"array","items":{"type":"string"}},"path":{"type":"string"},"revision":{"type":"string"},"name":{"type":"string"},"branch":{"type":"string"},"tag":{"type":"string"},"commit":{"type":"string"},"message":{"type":"string"},
 "remote":{"type":"string"},"staged":{"type":"boolean"},"create":{"type":"boolean"},"rebase":{"type":"boolean"},"mode":{"type":"string","enum":["soft","mixed","hard"]},
 "index":{"type":"integer"},"count":{"type":"integer"},"topic":{"type":"string"}},"required":["action"]}`),
 		Run:  runGit,
 		View: true,
 		Summary: func(args json.RawMessage) string {
 			parts := []string{argField(args, "action")}
-			for _, field := range []string{"repo", "revision", "name", "path", "message", "topic"} {
+			for _, field := range []string{"repo", "revision", "name", "branch", "tag", "commit", "path", "message", "topic"} {
 				if value := argField(args, field); value != "" {
 					parts = append(parts, value)
 				}
@@ -91,11 +99,12 @@ func gitTool() Tool {
 
 func runGit(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	var args struct {
-		Action, Repo, Path, Revision, Message, Name, Remote, Mode, Topic string
-		Index, Count                                                     int
-		Paths                                                            []string
-		Create, Staged                                                   bool
-		Rebase                                                           *bool
+		gitRefs
+		Action, Repo, Path, Message, Remote, Mode, Topic string
+		Index, Count                                     int
+		Paths                                            []string
+		Create, Staged                                   bool
+		Rebase                                           *bool
 	}
 	if err := decodeArgs(raw, &args); err != nil {
 		return "", err
@@ -112,7 +121,31 @@ func runGit(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	var revision string
+	if slices.Contains(takesRevision, args.Action) {
+		if revision, err = args.target(repo, args.Action != "tag"); err != nil {
+			return "", err
+		}
+	}
+	if slices.Contains(needsRevision, args.Action) && revision == "" {
+		return "", fmt.Errorf("%s needs revision: the branch, tag or commit", args.Action)
+	}
 	switch args.Action {
+	case "switch", "pull":
+		branch, err := args.branchName()
+		if err != nil {
+			return "", err
+		}
+		if args.Action == "switch" {
+			return repo.Switch(branch, args.Create)
+		}
+		return repo.Pull(gitops.PullOptions{Remote: args.Remote, Branch: branch, Rebase: args.Rebase})
+	case "tag":
+		name, err := args.tagName()
+		if err != nil {
+			return "", err
+		}
+		return repo.Tag(name, revision, args.Message)
 	case "status":
 		return repo.Status()
 	case "diff":
@@ -120,7 +153,7 @@ func runGit(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	case "log":
 		return repo.Log(args.Count, args.Path)
 	case "show":
-		return repo.Show(args.Revision)
+		return repo.Show(revision)
 	case "blame":
 		return repo.Blame(args.Path)
 	case "branches":
@@ -132,19 +165,19 @@ func runGit(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	case "commit":
 		return repo.Commit(args.Message)
 	case "branch":
-		return repo.Branch(args.Name)
-	case "switch":
-		return repo.Switch(args.Name, args.Create)
+		branch, err := args.branchName()
+		if err != nil {
+			return "", err
+		}
+		return repo.Branch(branch)
 	case "merge":
-		return repo.Merge(args.Revision)
+		return repo.Merge(revision)
 	case "cherry_pick":
-		return repo.CherryPick(args.Revision)
+		return repo.CherryPick(revision)
 	case "rebase":
-		return repo.Rebase(args.Revision)
+		return repo.Rebase(revision)
 	case "fetch":
 		return repo.Fetch(args.Remote)
-	case "pull":
-		return repo.Pull(gitops.PullOptions{Remote: args.Remote, Branch: args.Name, Rebase: args.Rebase})
 	case "push":
 		return repo.Push(args.Remote)
 	case "stash":
@@ -159,10 +192,8 @@ func runGit(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 		return repo.DropStash(args.Index)
 	case "tags":
 		return repo.Tags()
-	case "tag":
-		return repo.Tag(args.Name, args.Revision, args.Message)
 	case "reset":
-		return repo.Reset(args.Revision, args.Mode)
+		return repo.Reset(revision, args.Mode)
 	case "continue":
 		return repo.Continue()
 	case "abort":
