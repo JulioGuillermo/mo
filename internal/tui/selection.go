@@ -203,7 +203,8 @@ func (m model) highlight(screen string) string {
 }
 
 // selectedText is the text under a selection, each row without its
-// trailing blanks and the block without the indent all its rows share.
+// trailing blanks and the block without the indent all its rows share;
+// inside a code block of an answer, as the model wrote it.
 func (m model) selectedText(picked selection) string {
 	screen, _ := m.screenLayout()
 	if picked.inConversation {
@@ -222,7 +223,11 @@ func (m model) selectedText(picked selection) string {
 		}
 		rows = append(rows, strings.TrimRight(ansi.Cut(line, left, min(right, ansi.StringWidth(line))), " "))
 	}
-	return strings.Join(dedent(rows, max(firstStart, 0)), "\n")
+	shown := strings.Join(dedent(rows, max(firstStart, 0)), "\n")
+	if picked.inConversation && m.printer != nil {
+		return m.printer.asWritten(shown)
+	}
+	return shown
 }
 
 // dedent takes off the indent every row shares. The first row may start

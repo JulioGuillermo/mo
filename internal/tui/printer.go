@@ -78,6 +78,8 @@ type printer struct {
 	// files are the files drawn, as images, SVGs or diagrams, by the lines
 	// they show, for a right click on them to offer the file.
 	files []drawnFile
+	// codeBlocks are the code blocks of the answers, as written.
+	codeBlocks []string
 	// kind tells what a tool call does, for the colour of its mark.
 	kind func(call llm.ToolCall) toolKind
 }
@@ -103,6 +105,7 @@ func (p *printer) renderer() render.Renderer {
 // drawing, with its line under it, is set apart from the text around it
 // by a blank line, the text itself as it is.
 func (p *printer) Answer(text string) string {
+	p.keepCodeBlocks(text)
 	answer, stopped := llm.StopNote(text)
 	if stopped == "" {
 		return p.answerParts(text)

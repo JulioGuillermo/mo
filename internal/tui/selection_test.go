@@ -7,6 +7,8 @@ package tui
 // | SL-03 | Happy    | While dragging the text shows selected; a click without a drag clicks | P1      |
 // | SL-04 | Happy    | A drag held at the conversation's top scrolls it, and copies past the screen | P1 |
 // | SL-05 | Happy    | A drag held at its bottom scrolls down; leaving the edge or letting go stops it | P1 |
+// | SL-06 | Happy    | A code block copies as written: wrapped lines joined, tabs, spaces and its indent kept | P0 |
+// | SL-07 | Edge     | Part of a code line copies as is; prose, and code with prose, as the screen shows | P1 |
 
 import (
 	"fmt"
@@ -151,6 +153,33 @@ func TestSelection(t *testing.T) {
 		}
 		if stopped.conversationOffset() != down || after != nil {
 			t.Errorf("it should stop: offset %d, a tick after release %v", stopped.conversationOffset(), after != nil)
+		}
+	})
+
+	t.Run("SL-06 a code block copies as written: wrapped lines joined, tabs, spaces and its indent kept", func(t *testing.T) {
+		code := "    curl -sS https://example.com/api/v1/things?limit=100&offset=200&fields=id,name,owner,created,updated,labels,state,priority | jq '.items[] | {id, name}'\n\tif true; then echo \"a  b\"; fi"
+		m := selectingModel(t)
+		updated, _ := m.Update(printMsg(m.printer.Answer("Run this:\n\n```bash\n" + code + "\n```")))
+		m = updated.(model)
+		from, end := cellOf(t, m, "curl"), cellOf(t, m, "; fi")
+
+		_, cmd := dragged(t, m, from, point{end.x + 3, end.y})
+
+		if copied := sent(cmd); !strings.HasPrefix(copied, code) || strings.HasPrefix(copied, code+"\n") {
+			t.Errorf("copied = %q", copied)
+		}
+	})
+
+	t.Run("SL-07 part of a code line copies as is; prose, and code with prose, as the screen shows", func(t *testing.T) {
+		p := newPrinter()
+		p.Answer("Say  it.\n\n```\n    echo   one\ntwo\n```")
+
+		part := p.asWritten("echo   one")
+		prose := p.asWritten("Run it now")
+		mixed := p.asWritten("Say it.\necho one")
+
+		if part != "echo   one" || prose != "Run it now" || mixed != "Say it.\necho one" {
+			t.Errorf("part %q prose %q mixed %q", part, prose, mixed)
 		}
 	})
 }
