@@ -44,6 +44,15 @@ func (r *Repo) CommitRevision(hash string) (string, error) {
 	return hash, nil
 }
 
+// Hash is the whole hash of the commit a revision names; "" when none.
+func (r *Repo) Hash(revision string) string {
+	commit, err := r.commitOf(revision)
+	if err != nil {
+		return ""
+	}
+	return commit.Hash.String()
+}
+
 func (r *Repo) hasReference(name plumbing.ReferenceName) bool {
 	_, err := r.repo.Reference(name, false)
 	return err == nil

@@ -309,7 +309,10 @@ func (m model) treeShown() bool {
 // what the tree leaves, and the line between.
 func (m model) viewerWidth() int {
 	width := max(m.width, 20)
-	if m.treeShown() {
+	switch {
+	case m.commitListShown():
+		return max(width-m.commitListWidth()-1, 20)
+	case m.treeShown():
 		return max(width-m.treeWidth()-1, 20)
 	}
 	return width

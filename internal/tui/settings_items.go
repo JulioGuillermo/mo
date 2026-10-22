@@ -816,6 +816,11 @@ func appearanceItems(_ model, menu *settingsMenu) []settingItem {
 				Description(fmt.Sprintf("pixels of a character cell, WIDTHxHEIGHT, to size kitty images; auto asks the terminal\nnow %dx%d; set it if images look stretched or blurry", width, height)).
 				Validate(validCellSize).Value(&d.cellSize)
 		}},
+		{"Git blame in /view", func(d *settingsDraft) string { return onOff(d.blame) }, func(d *settingsDraft) huh.Field {
+			return huh.NewConfirm().Title("Git blame in /view").
+				Description("who last changed the cursor's line and in which commit, at its end; B turns it on and off there\nit reads the file's whole history, which takes seconds in a large repository").
+				Affirmative("On").Negative("Off").Value(&d.blame)
+		}},
 	}, replyItems(menu)...)
 }
 

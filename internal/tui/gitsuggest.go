@@ -16,6 +16,9 @@ func (m model) gitSuggestions(partial string) []command {
 	if !spaced {
 		return gitActionSuggestions(action)
 	}
+	if action == "history" {
+		return m.historySuggestions(rest)
+	}
 	words := strings.Split(rest, " ")
 	switch {
 	case (action == "show" || action == "branch") && len(words) == 1:
@@ -108,4 +111,14 @@ func (m model) repoSuggestions(action, typed string, branchNext bool) []command 
 	}
 	found := append(repos, folders...)
 	return found[:min(len(found), maxPathSuggestions)]
+}
+
+// historySuggestions are the files /git history takes, as /view finds them.
+func (m model) historySuggestions(partial string) []command {
+	var matches []command
+	for _, suggestion := range m.pathSuggestions(partial) {
+		suggestion.name = "git history " + strings.TrimPrefix(suggestion.name, "view ")
+		matches = append(matches, suggestion)
+	}
+	return matches
 }

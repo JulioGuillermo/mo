@@ -78,6 +78,9 @@ func (m model) gitCommand(argument string) (tea.Model, tea.Cmd) {
 		return m.showRepos()
 	case "init":
 		return m.runGitAction(request, "")
+	case "history":
+		_, file := cutWord(argument)
+		return m.gitHistory(file)
 	}
 	return m.runGitRequest(request)
 }

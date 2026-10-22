@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	changeHelp = "↑↓ move · e E on ⋯ show lines · f whole file · c comment · a attach · / search · y copy · t tree · esc close"
+	changeHelp = "↑↓ move · e E on ⋯ show lines · f whole file · c comment · a attach · H history · / search · y copy · t tree · esc close"
 )
 
 var (
@@ -29,6 +29,10 @@ type changeView struct {
 	root       string
 	comparison gitops.Comparison
 	tree       *fileTree
+	// revision is the commit shown, by its hash, and uncommitted is set
+	// for the changes not committed: where a file's history opens.
+	revision    string
+	uncommitted bool
 }
 
 // changeStyle is the colour of a file by what happened to it: new in
@@ -75,6 +79,12 @@ func (m model) showComparison(repo *gitops.Repo, request gitRequest) (tea.Model,
 		return m.emit(m.printer.Note(strings.TrimSpace(nothing + "\n" + warning)))
 	}
 	changes := &changeView{title: title, root: repo.Root(), comparison: comparison, tree: newChangeTree(repo.Root(), comparison.Files)}
+	if request.action == "show" {
+		changes.uncommitted = len(request.words) == 0
+		if !changes.uncommitted {
+			changes.revision = repo.Hash(request.words[0])
+		}
+	}
 	first := filepath.Join(changes.root, comparison.Files[0].Path)
 	m.openChange(changes, first)
 	changes.tree.reveal(first, m.treeHeight())
@@ -152,7 +162,9 @@ func (m *model) openChange(changes *changeView, path string) {
 			v.lines = v.diff.lines()
 		}
 	}
-	changes.tree.current = path
+	if changes.tree != nil {
+		changes.tree.current = path
+	}
 	if m.fileComments == nil {
 		m.fileComments = map[string][]fileComment{}
 	}

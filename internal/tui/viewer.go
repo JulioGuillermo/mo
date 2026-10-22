@@ -16,6 +16,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/jg/mo/internal/gitops"
 	"github.com/jg/mo/internal/render"
 	"github.com/jg/mo/internal/tools"
 )
@@ -24,7 +25,7 @@ const (
 	viewerRefresh = 300 * time.Millisecond
 	viewerShift   = 8
 	viewerHelp    = "↑↓ pgup pgdn home end scroll · ←→ long lines · / search · n N next · drag or y copy · b background · x kill · esc close"
-	fileHelp      = "↑↓ move · c comment the line or what you dragged over · d delete it · a attach to your message · / search · y copy · t tree · esc close"
+	fileHelp      = "↑↓ move · c comment the line or what you dragged over · d delete it · a attach to your message · B blame · H history · / search · y copy · t tree · esc close"
 	drawingHelp   = "drag, ↑↓ ←→ hjkl or the wheel pan · s code or drawing · / search · y copy · esc close"
 	viewMaxBytes  = 8 << 20
 )
@@ -92,6 +93,14 @@ type outputViewer struct {
 	commentFrom int
 	commentTo   int
 	commentText string
+	// blame is who last changed each line of the file, once read; blameOn
+	// shows the cursor's at its end, and blameNote what is going on before.
+	blame     []gitops.LineBlame
+	blameOn   bool
+	blameNote string
+	// history, when set, is the file's commits listed beside the diff of
+	// the one shown.
+	history *fileHistory
 }
 
 type viewerTickMsg int
@@ -203,6 +212,10 @@ func (m model) openFile(path string) (tea.Model, tea.Cmd) {
 		m.fileComments = map[string][]fileComment{}
 	}
 	m.viewer = v
+	if blame := m.session.Config.Render.Blame; blame != nil && *blame {
+		v.blameOn = true
+		return m, m.readBlame()
+	}
 	return m, nil
 }
 
@@ -357,6 +370,14 @@ func (m model) updateViewer(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, redraw
 	case tea.MouseWheelMsg:
+		if m.commitListShown() && msg.X <= m.commitListWidth() && (msg.Button == tea.MouseWheelUp || msg.Button == tea.MouseWheelDown) {
+			by := 3
+			if msg.Button == tea.MouseWheelUp {
+				by = -3
+			}
+			v.history.move(by, m.viewerRows())
+			return m, nil
+		}
 		if m.treeShown() && msg.X <= m.treeWidth() && (msg.Button == tea.MouseWheelUp || msg.Button == tea.MouseWheelDown) {
 			by := 3
 			if msg.Button == tea.MouseWheelUp {
@@ -378,6 +399,12 @@ func (m model) updateViewer(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.MouseClickMsg:
+		if m.commitListShown() && msg.Button == tea.MouseLeft {
+			if msg.X <= m.commitListWidth() {
+				return m.commitListClick(msg.Y)
+			}
+			v.history.focus = false
+		}
 		if m.treeShown() && msg.Button == tea.MouseLeft {
 			if msg.X <= m.treeWidth() {
 				return m.treeClick(msg.Y)
@@ -440,6 +467,8 @@ func (m model) updateViewer(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.typeQuery(msg)
 		case m.treeShown() && v.treeFocus:
 			return m.treeKey(msg)
+		case m.commitListShown() && v.history.focus:
+			return m.commitListKey(msg)
 		}
 		return m.viewerKey(msg.String())
 	}
@@ -494,6 +523,11 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	}
+	if v.history != nil {
+		if took, next, cmd := m.historyViewerKey(pressed); took {
+			return next, cmd
+		}
 	}
 	switch pressed {
 	case "tab":
@@ -562,6 +596,14 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 		if v.drawing != "" {
 			v.toggleCode()
 		}
+	case "B":
+		if v.file != "" {
+			return m.toggleBlame()
+		}
+	case "H":
+		if v.file != "" || v.changes != nil {
+			return m.openHistory()
+		}
 	case "e", "E":
 		m.expandDiff(pressed == "E")
 	case "f":
@@ -602,10 +644,13 @@ func (m model) copyViewer(text, done string) tea.Cmd {
 // beside it when there is one.
 func (m model) viewerView() string {
 	body := m.viewerBody(m.viewerWidth())
-	if !m.treeShown() {
-		return body
+	switch {
+	case m.commitListShown():
+		return m.commitListLayout(body)
+	case m.treeShown():
+		return m.treeLayout(body)
 	}
-	return m.treeLayout(body)
+	return body
 }
 
 // viewerBody is the header, the lines in view and the help or the search
@@ -637,6 +682,10 @@ func (m model) viewerBody(width int) string {
 		if v.diff != nil {
 			gutter = 1
 		}
+	}
+	if v.history != nil {
+		header = v.historyHeader(width, m.commentCount())
+		help = historyHelp
 	}
 	if v.drawing != "" {
 		widest := 0
@@ -688,6 +737,9 @@ func (m model) viewerBody(width int) string {
 		case (v.annotatable() && i == v.cursor && !v.commenting) || (v.commenting && i >= v.commentFrom && i <= v.commentTo):
 			if v.coloured() {
 				line = ansi.Cut(v.colouredLine(i, dark), v.left, v.left+room)
+			}
+			if v.file != "" {
+				line = withBlame(line, v.blameOf(i), room)
 			}
 			line = cursorRow(line, room)
 		case v.coloured():

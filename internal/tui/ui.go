@@ -430,6 +430,10 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case thumbnailMsg:
 		return m.thumbnailDrawn(msg)
+	case blameReadMsg:
+		return m.blameRead(msg)
+	case historyReadMsg:
+		return m.historyRead(msg)
 	case mcpTestedMsg:
 		return m.mcpTested(msg)
 	case svgReadyMsg:

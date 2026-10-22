@@ -426,6 +426,9 @@ type Render struct {
 	// CellSize is the pixels of a terminal cell, "8x16", that sizes kitty
 	// images; "auto" asks the terminal.
 	CellSize string `toml:"cell_size,omitempty"`
+	// Blame shows, in the file viewer, who last changed the line the
+	// cursor is on and in which commit; off unless true.
+	Blame *bool `toml:"blame,omitempty"`
 }
 
 // MaxUIFPS is the most frames a second a canvas can ask for.
@@ -1043,6 +1046,9 @@ func mergeHarmless(base, layer Config) Config {
 	base.Render.AskingMS = override(base.Render.AskingMS, layer.Render.AskingMS)
 	base.Render.UIFPS = override(base.Render.UIFPS, layer.Render.UIFPS)
 	base.Render.CellSize = override(base.Render.CellSize, layer.Render.CellSize)
+	if layer.Render.Blame != nil {
+		base.Render.Blame = layer.Render.Blame
+	}
 	base.Render.Icons = override(base.Render.Icons, layer.Render.Icons)
 	base.Loop = mergeLoop(base.Loop, layer.Loop)
 	return base

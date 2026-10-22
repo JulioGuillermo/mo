@@ -24,6 +24,7 @@ type gitAction struct {
 var gitActions = []gitAction{
 	{"show", "[repo] [revision]", "the changes not committed in the viewer; with a revision, that commit's", false},
 	{"compare", "[repo] <branch>", "what this branch adds over another, as a pull request", true},
+	{"history", "<file>", "the commits that changed a file, each with its changes, from the last", true},
 	{"branch", "[repo] [name]", "the branches, to filter and switch; with a name, make that branch", false},
 	{"repos", "", "the repositories known, each with its branch", false},
 	{"status", "[repo]", "the branch, what is staged, changed and untracked", false},
