@@ -27,14 +27,19 @@ func viewMatches(paths []string) []command {
 
 // viewTargets are the files an argument of /view names when it is a search:
 // @ and what to look for, a pattern with * or ?, or a word that is no path,
-// by name anywhere under the folder. It tells whether it was a search.
+// by name anywhere under the folder. A pattern that names no file whole is
+// taken as the start of their paths, as while it is typed: TI*/ lists what
+// is in the folders starting with TI. It tells whether it was a search.
 func (m model) viewTargets(argument string) ([]string, bool) {
 	files := m.files.list(m.session.WorkDir)
 	switch {
 	case strings.HasPrefix(argument, "@"):
 		return fuzzyFiles(files, argument[1:]), true
 	case isGlob(argument):
-		return globFiles(files, argument), true
+		if whole := globFiles(files, argument); len(whole) > 0 {
+			return whole, true
+		}
+		return globFiles(files, argument+"*"), true
 	}
 	return nil, false
 }

@@ -14,6 +14,7 @@ package tui
 // | VS-10 | Happy    | A big file opens at once and is coloured only where the viewer shows it  | P0       |
 // | VS-11 | Edge     | The globs: ** across folders, * within one, ? a character                | P1       |
 // | VS-12 | Happy    | Navigating the list: a folder lists that, .. goes up, a file opens       | P0       |
+// | VS-13 | Happy    | A pattern being typed, as src/*/ or **/mi, offers the files whose paths it starts | P0 |
 
 import (
 	"fmt"
@@ -253,6 +254,22 @@ func TestViewSearch(t *testing.T) {
 		}
 		if viewer := file.(model).viewer; viewer == nil || viewer.file != filepath.Join(root, "src", "pkg", "readme.md") {
 			t.Errorf("viewer %+v", viewer)
+		}
+	})
+
+	t.Run("VS-13 a pattern being typed, as src/*/ or **/mi, offers the files whose paths it starts", func(t *testing.T) {
+		m := searchModel(t)
+
+		folder := suggested(m, "/view src/*/")
+		inside := suggested(m, "/view s*/p*/r")
+		anyDepth := suggested(m, "/view **/mi_file.t")
+		everything := suggested(m, "/view **/")
+
+		if strings.Join(folder, ",") != "src/pkg/mi_file.txt,src/pkg/readme.md" || strings.Join(inside, ",") != "src/pkg/readme.md" {
+			t.Errorf("src/*/ offered %v, s*/p*/r %v", folder, inside)
+		}
+		if strings.Join(anyDepth, ",") != "src/pkg/mi_file.txt,src/deep/er/mi_file.test.go" || len(everything) != 6 {
+			t.Errorf("**/mi_file.t offered %v, **/ %d files", anyDepth, len(everything))
 		}
 	})
 }
