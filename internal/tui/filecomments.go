@@ -69,7 +69,7 @@ func (v *outputViewer) commentKey() string {
 // annotatable tells whether the viewer shows lines to move a cursor on and
 // comment: a file, or a diff.
 func (v *outputViewer) annotatable() bool {
-	return v.file != "" || v.diff != nil
+	return v.markdown == nil && (v.file != "" || v.diff != nil)
 }
 
 // anchor is what a comment on a row of the viewer keeps: the row of a

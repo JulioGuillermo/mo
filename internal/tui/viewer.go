@@ -104,6 +104,8 @@ type outputViewer struct {
 	// history, when set, is the file's commits listed beside the diff of
 	// the one shown.
 	history *fileHistory
+	// markdown, when set, shows the markdown file rendered.
+	markdown *markdownView
 }
 
 type viewerTickMsg int
@@ -368,6 +370,12 @@ func (m model) updateViewer(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.WindowSizeMsg:
 		redraw := m.resize(msg)
+		if v.markdown != nil {
+			top := v.top
+			uploads := m.drawMarkdown()
+			v.top = min(top, max(len(v.lines)-1, 0))
+			return m, tea.Batch(redraw, uploads)
+		}
 		if v.follow {
 			v.top = max(len(v.lines)-m.viewerRows(), 0)
 		}
@@ -527,6 +535,11 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if v.markdown != nil {
+		if took, next, cmd := m.markdownKey(pressed); took {
+			return next, cmd
+		}
+	}
 	if v.history != nil {
 		if took, next, cmd := m.historyViewerKey(pressed); took {
 			return next, cmd
@@ -598,6 +611,10 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 	case "s":
 		if v.drawing != "" {
 			v.toggleCode()
+		}
+	case "m":
+		if v.canRender() {
+			return m.toggleMarkdown()
 		}
 	case "B":
 		if v.file != "" {
@@ -689,6 +706,12 @@ func (m model) viewerBody(width int) string {
 	if v.history != nil {
 		header = v.historyHeader(width, m.commentCount())
 		help = historyHelp
+	}
+	if v.canRender() && v.markdown == nil {
+		help = "m rendered · " + help
+	}
+	if v.markdown != nil {
+		header, help, gutter = v.markdownHeader(width), markdownHelp, 0
 	}
 	if v.drawing != "" {
 		widest := 0
