@@ -417,7 +417,7 @@ func (m model) dialogLayout() (string, []region) {
 	var regions []region
 	if len(d.items) > 1 {
 		tabs, tabRegions := m.dialogTabs(colors, width)
-		lines = append(lines, tabs)
+		lines = append(lines, strings.Split(tabs, "\n")...)
 		regions = append(regions, tabRegions...)
 	}
 	body := lipgloss.NewStyle().Background(colors.body).Foreground(colors.text)
@@ -451,7 +451,8 @@ func (m model) dialogLayout() (string, []region) {
 }
 
 // dialogTabs names every part: the one shown stands out, answered ones are
-// ticked.
+// ticked. They go as tabs in a row when they fit in it named whole, else
+// one to a row, all as wide, the count after the first.
 func (m model) dialogTabs(colors dialogColors, width int) (string, []region) {
 	d := m.dialog
 	left := 0
@@ -460,15 +461,12 @@ func (m model) dialogTabs(colors dialogColors, width int) (string, []region) {
 			left++
 		}
 	}
-	var tabs []string
-	var regions []region
-	x := 0
-	for i, item := range d.items {
-		mark, name := "⚑ ", ""
+	count := dimStyle.Render(fmt.Sprintf(" %d of %d · %d left", d.current+1, len(d.items), left))
+	tab := func(i int, name string) string {
+		item := d.items[i]
+		mark := "⚑ "
 		if item.question >= 0 {
-			mark, name = "? ", oneLine(d.questionOf(item).Text, tabLength)
-		} else {
-			name = d.request(item).Call.Name
+			mark = "? "
 		}
 		style := lipgloss.NewStyle().Padding(0, 1).Background(colors.tab).Foreground(colors.text)
 		switch {
@@ -478,17 +476,50 @@ func (m model) dialogTabs(colors dialogColors, width int) (string, []region) {
 			mark = "✓ "
 			style = style.Background(colors.done).Foreground(colors.dim)
 		}
-		tab := style.Render(mark + name)
-		index := i
-		regions = append(regions, region{y: 0, x0: x, x1: x + ansi.StringWidth(tab), do: func(m model) (tea.Model, tea.Cmd) {
+		return style.Render(mark + name)
+	}
+	open := func(index int) func(m model) (tea.Model, tea.Cmd) {
+		return func(m model) (tea.Model, tea.Cmd) {
 			m.dialog.current = index
 			return m, m.focusItem()
-		}})
-		x += ansi.StringWidth(tab) + 1
-		tabs = append(tabs, tab)
+		}
 	}
-	count := dimStyle.Render(fmt.Sprintf(" %d of %d · %d left", d.current+1, len(d.items), left))
-	return ansi.Truncate(strings.Join(tabs, " ")+count, width, "…"), regions
+	var tabs []string
+	var regions []region
+	x := 0
+	whole := true
+	for i := range d.items {
+		name := oneLine(m.itemName(i), tabLength)
+		whole = whole && name == m.itemName(i)
+		shown := tab(i, name)
+		regions = append(regions, region{y: 0, x0: x, x1: x + ansi.StringWidth(shown), do: open(i)})
+		x += ansi.StringWidth(shown) + 1
+		tabs = append(tabs, shown)
+	}
+	if row := strings.Join(tabs, " ") + count; whole && ansi.StringWidth(row) <= width {
+		return row, regions
+	}
+	rowWidth := max(width-ansi.StringWidth(count), 20)
+	var rows []string
+	regions = nil
+	for i := range d.items {
+		name := oneLine(m.itemName(i), max(rowWidth-4, 10))
+		shown := tab(i, name+strings.Repeat(" ", max(rowWidth-4-ansi.StringWidth(name), 0)))
+		regions = append(regions, region{y: i, x0: 0, x1: ansi.StringWidth(shown), do: open(i)})
+		rows = append(rows, shown)
+	}
+	rows[0] += count
+	return strings.Join(rows, "\n"), regions
+}
+
+// itemName is what a part of the dialog is called: its question, or the
+// tool it asks to run.
+func (m model) itemName(i int) string {
+	item := m.dialog.items[i]
+	if item.question >= 0 {
+		return m.dialog.questionOf(item).Text
+	}
+	return m.dialog.request(item).Call.Name
 }
 
 func (m model) approvalLines(item dialogItem, colors dialogColors, body lipgloss.Style, width int) ([]string, []region) {
