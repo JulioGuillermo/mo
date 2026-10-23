@@ -841,15 +841,16 @@ func (m model) plainKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case "ctrl+c":
+		// What is typed goes first: the model and the shells go on.
+		if m.input.Value() != "" {
+			m.input.Reset()
+			return m, nil
+		}
 		if m.running {
 			m.stop()
 			return m, nil
 		}
 		if m.stopShells() {
-			return m, nil
-		}
-		if m.input.Value() != "" {
-			m.input.Reset()
 			return m, nil
 		}
 		return m, tea.Quit
@@ -912,7 +913,7 @@ func (m model) handleSuggestionKey(key string, matches []command) (bool, tea.Mod
 	case "tab":
 		m.completeCommand(selected)
 	case "enter":
-		if m.input.Value() == "/"+selected.name {
+		if m.input.Value() == "/"+selected.name || selected.shell {
 			return false, m, nil
 		}
 		if !m.completeCommand(selected) || m.settingsInFlight {
@@ -1370,7 +1371,7 @@ func (m model) upperLayout() (string, []region) {
 // lowerLayout is the input and the status line, the whole width.
 func (m model) lowerLayout() (string, []region) {
 	status, regions := m.statusLayout()
-	input := m.input.View()
+	input := m.shellInputView(m.input.View())
 	return input + "\n" + status, shifted(regions, lipgloss.Height(input))
 }
 

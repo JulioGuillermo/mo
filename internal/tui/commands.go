@@ -28,6 +28,9 @@ type command struct {
 	mention bool
 	// skill is a skill offered after $, to load with the message.
 	skill bool
+	// shell is a program or a path offered for the word being typed after
+	// !, in its place.
+	shell bool
 }
 
 var builtinCommands = []command{
@@ -85,6 +88,7 @@ var keyHelp = [][2]string{
 	{"ctrl+v, alt+v", "paste a copied image or files as attachments; alt+v where the terminal keeps ctrl+v"},
 	{"drag", "select text and copy it"},
 	{"click", "buttons, options, tabs, commands, the mode, the model, a job"},
+	{"ctrl+c", "clear what is typed; with nothing typed, stop the model or the shell commands, else quit"},
 	{"ctrl+d", "quit"},
 }
 
@@ -113,6 +117,9 @@ func (m model) suggestions() []command {
 	}
 	if typed, ok := m.typedSkill(); ok {
 		return m.skillSuggestions(typed, "$")
+	}
+	if _, command, ok := typedShell(m.input.Value()); ok {
+		return m.shellSuggestions(command)
 	}
 	typed, isCommand := strings.CutPrefix(m.input.Value(), "/")
 	if !isCommand || strings.Contains(typed, "\n") {
@@ -183,6 +190,10 @@ func (m *model) completeCommand(chosen command) bool {
 		m.completeMention(chosen)
 		return false
 	}
+	if chosen.shell {
+		m.completeShellWord(chosen)
+		return false
+	}
 	if chosen.skill {
 		value := chosen.name
 		if strings.HasPrefix(chosen.name, "$") {
@@ -236,7 +247,7 @@ func (m model) suggestionLayout(matches []command) (string, []region) {
 		switch {
 		case candidate.mention:
 			name = "@" + candidate.name
-		case candidate.skill:
+		case candidate.skill, candidate.shell:
 			name = candidate.name
 		}
 		if candidate.argument != "" {
