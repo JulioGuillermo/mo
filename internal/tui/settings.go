@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -444,6 +445,19 @@ func validCellSize(text string) error {
 
 func validSize(text string) error {
 	_, err := config.ParseSize(text)
+	return err
+}
+
+func parseSidebarWidth(text string) (int, error) {
+	width, err := strconv.Atoi(strings.TrimSpace(text))
+	if err != nil || width < config.MinSidebarWidth || width > config.MaxSidebarWidth {
+		return 0, fmt.Errorf("use %d to %d columns", config.MinSidebarWidth, config.MaxSidebarWidth)
+	}
+	return width, nil
+}
+
+func validSidebarWidth(text string) error {
+	_, err := parseSidebarWidth(text)
 	return err
 }
 

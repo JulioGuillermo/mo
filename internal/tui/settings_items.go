@@ -773,6 +773,11 @@ func appearanceItems(_ model, menu *settingsMenu) []settingItem {
 				huh.NewOption("off: tasks above the input instead", "off"),
 			).Value(&d.sidebar)
 		}},
+		{"Side panel width", func(d *settingsDraft) string { return d.sidebarWidth + " columns" }, func(d *settingsDraft) huh.Field {
+			return huh.NewInput().Title("Side panel width").
+				Description(fmt.Sprintf("columns, %d to %d; %d by default · /sidebar width changes it for the session", config.MinSidebarWidth, config.MaxSidebarWidth, config.DefaultSidebarWidth)).
+				Validate(validSidebarWidth).Value(&d.sidebarWidth)
+		}},
 		{"Status line", func(d *settingsDraft) string { return d.statusStyle }, func(d *settingsDraft) huh.Field {
 			return huh.NewSelect[string]().Title("Status line").Options(
 				huh.NewOption("powerline: segments on backgrounds joined by arrows; needs a Nerd Font or a powerline font", statusPowerline),

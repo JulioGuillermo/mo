@@ -246,6 +246,9 @@ type model struct {
 	// sidebarSession is the side panel's mode /sidebar set for the session;
 	// empty follows the setting.
 	sidebarSession string
+	// sidebarSessionWidth is the side panel's width /sidebar width set for
+	// the session; 0 keeps the setting's.
+	sidebarSessionWidth int
 	// sidebarScroll is how many of the panel's lines the wheel scrolled past.
 	sidebarScroll int
 	// openSection is the settings section to open once settings load, as
@@ -437,6 +440,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.thumbnailDrawn(msg)
 	case blameReadMsg:
 		return m.blameRead(msg)
+	case sidebarWidthSaved:
+		return m.sidebarWidthSaved(msg)
 	case historyReadMsg:
 		return m.historyRead(msg)
 	case mcpTestedMsg:

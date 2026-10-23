@@ -50,6 +50,7 @@ var projectFields = map[string]projectField{
 	"Ask before running":                   {"tools.confirm", func(d *settingsDraft) any { return &d.confirm }},
 	"Disabled":                             {"tools.disabled", func(d *settingsDraft) any { return &d.disabled }},
 	"MCP servers off":                      {"tools.mcp_disabled", func(d *settingsDraft) any { return &d.mcpDisabled }},
+	"Side panel width":                     {"render.sidebar_width", func(d *settingsDraft) any { return &d.sidebarWidth }},
 	"Skill mode":                           {"skills.mode", func(d *settingsDraft) any { return &d.skillMode }},
 	"Read instructions files":              {"instructions.enabled", func(d *settingsDraft) any { return &d.instructionsOn }},
 	"File names":                           {"instructions.files", func(d *settingsDraft) any { return &d.instructionsFiles }},

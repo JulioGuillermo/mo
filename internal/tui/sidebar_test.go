@@ -7,8 +7,13 @@ package tui
 // | SB-03 | Happy    | A job ending while idle starts a turn; while working it is only noted | P0       |
 // | SB-04 | Happy    | After a stop, /jobs tell lets the model hear the jobs that ended      | P1       |
 // | SB-06 | Happy    | on shows the panel in a narrow terminal while the conversation keeps its minimum; /sidebar alone turns it on and off | P0 |
-// | SB-07 | Edge     | /sidebar takes auto, on or off and suggests them; anything else only gets a note | P1 |
+// | SB-07 | Edge     | /sidebar takes auto, on, off or width and suggests them; anything else only gets a note | P1 |
 // | SB-05 | Happy    | A job that ended in a turn stopped with esc still starts a turn, with a note | P0 |
+// | SB-08 | Happy    | /sidebar width sets the panel's columns for the session; alone it says them and where they come from | P0 |
+// | SB-09 | Happy    | /sidebar width N global or project keeps it in that file, the default left out | P0 |
+// | SB-10 | Edge     | A width out of range, or another place, gets a note and changes nothing  | P1       |
+// | SB-11 | Happy    | /sidebar suggests width, then widths, then where to keep it              | P2       |
+// | SB-12 | Happy    | Settings › Side panel width saves the columns, the default left out; out of range is refused | P1 |
 
 import (
 	"context"
@@ -20,6 +25,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/agent"
+	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/tools"
 )
 
@@ -48,7 +54,7 @@ func TestSidebar(t *testing.T) {
 				t.Errorf("missing %q", want)
 			}
 		}
-		if m.mainWidth() != 140-sidebarWidth-1 || strings.Contains(ansi.Strip(m.bottom()), "todo 1/2") {
+		if m.mainWidth() != 140-config.DefaultSidebarWidth-1 || strings.Contains(ansi.Strip(m.bottom()), "todo 1/2") {
 			t.Errorf("main width = %d", m.mainWidth())
 		}
 	})
@@ -69,12 +75,12 @@ func TestSidebar(t *testing.T) {
 	t.Run("SB-06 on shows the panel in a narrow terminal while the conversation keeps its minimum; /sidebar alone turns it on and off", func(t *testing.T) {
 		vertical := sidebarModel(t, 80)
 		vertical.session.Config.Render.Sidebar = sidebarOn
-		tooNarrow := sidebarModel(t, sidebarWidth+mainMinWidth)
+		tooNarrow := sidebarModel(t, config.DefaultSidebarWidth+mainMinWidth)
 		tooNarrow.session.Config.Render.Sidebar = sidebarOn
 		turnedOn, _ := sidebarModel(t, 90).runCommand("/sidebar")
 		turnedOff, _ := turnedOn.(model).runCommand("/sidebar")
 
-		if !vertical.sidebarShown() || vertical.mainWidth() != 80-sidebarWidth-1 || !strings.Contains(steady(ansi.Strip(vertical.View().Content)), "Tasks  1/2") {
+		if !vertical.sidebarShown() || vertical.mainWidth() != 80-config.DefaultSidebarWidth-1 || !strings.Contains(steady(ansi.Strip(vertical.View().Content)), "Tasks  1/2") {
 			t.Errorf("on in 80 columns: shown = %v main = %d", vertical.sidebarShown(), vertical.mainWidth())
 		}
 		if tooNarrow.sidebarShown() {
@@ -85,7 +91,7 @@ func TestSidebar(t *testing.T) {
 		}
 	})
 
-	t.Run("SB-07 /sidebar takes auto, on or off and suggests them; anything else only gets a note", func(t *testing.T) {
+	t.Run("SB-07 /sidebar takes auto, on, off or width and suggests them; anything else only gets a note", func(t *testing.T) {
 		m := sidebarModel(t, 140)
 		auto, _ := m.runCommand("/sidebar auto")
 		wrong, _ := m.runCommand("/sidebar maybe")
@@ -99,7 +105,7 @@ func TestSidebar(t *testing.T) {
 		if auto.(model).sidebarSession != sidebarAuto || !auto.(model).sidebarShown() || wrong.(model).sidebarSession != "" {
 			t.Errorf("auto = %q wrong = %q", auto.(model).sidebarSession, wrong.(model).sidebarSession)
 		}
-		if strings.Join(names, ",") != "sidebar auto,sidebar on,sidebar off" {
+		if strings.Join(names, ",") != "sidebar width ,sidebar auto,sidebar on,sidebar off" {
 			t.Errorf("suggestions = %v", names)
 		}
 	})
@@ -210,6 +216,90 @@ func TestSidebarSections(t *testing.T) {
 		}
 		if strings.Contains(empty, "Jobs") || strings.Contains(empty, "UIs") || !strings.Contains(empty, "no tasks, jobs or interfaces yet") {
 			t.Errorf("empty:\n%s", empty)
+		}
+	})
+
+	t.Run("SB-08 /sidebar width sets the panel's columns for the session; alone it says them and where they come from", func(t *testing.T) {
+		m := sidebarModel(t, 140)
+		before := m.sidebarWidthNote()
+
+		updated, _ := m.runCommand("/sidebar width 50")
+		m = updated.(model)
+
+		if !strings.Contains(before, "36 columns, from the default") || m.sidebarWidth() != 50 || m.mainWidth() != 140-50-1 || !strings.Contains(m.sidebarWidthNote(), "from this session") {
+			t.Errorf("before %q now %d main %d note %q", before, m.sidebarWidth(), m.mainWidth(), m.sidebarWidthNote())
+		}
+		if line := strings.Split(ansi.Strip(m.View().Content), "\n")[0]; ansi.StringWidth(line) > 140 {
+			t.Errorf("a row is %d wide", ansi.StringWidth(line))
+		}
+	})
+
+	t.Run("SB-09 /sidebar width N global or project keeps it in that file, the default left out", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", home)
+		t.Setenv("HOME", home)
+		m := sidebarModel(t, 140)
+		m.session.WorkDir = t.TempDir()
+
+		updated, _ := m.runCommand("/sidebar width 44 global")
+		globalErr := saveSidebarWidth(m.session.WorkDir, scopeGlobal, 44)
+		global, _ := config.ReadUserLayer()
+		projectErr := saveSidebarWidth(m.session.WorkDir, scopeProject, 30)
+		inProject, _ := config.ReadProject(m.session.WorkDir)
+		saveSidebarWidth(m.session.WorkDir, scopeGlobal, config.DefaultSidebarWidth)
+		reset, _ := config.ReadUserLayer()
+
+		if updated.(model).sidebarWidth() != 44 || globalErr != nil || projectErr != nil {
+			t.Fatalf("width %d errors %v %v", updated.(model).sidebarWidth(), globalErr, projectErr)
+		}
+		if global.Render.SidebarWidth != 44 || inProject.Layer.Render.SidebarWidth != 30 || reset.Render.SidebarWidth != 0 {
+			t.Errorf("global %d project %d reset %d", global.Render.SidebarWidth, inProject.Layer.Render.SidebarWidth, reset.Render.SidebarWidth)
+		}
+	})
+
+	t.Run("SB-10 a width out of range, or another place, gets a note and changes nothing", func(t *testing.T) {
+		m := sidebarModel(t, 140)
+
+		for _, typed := range []string{"/sidebar width 5", "/sidebar width wide", "/sidebar width 40 everywhere"} {
+			updated, _ := m.runCommand(typed)
+			if updated.(model).sidebarWidth() != config.DefaultSidebarWidth {
+				t.Errorf("%s set %d", typed, updated.(model).sidebarWidth())
+			}
+		}
+	})
+
+	t.Run("SB-11 /sidebar suggests width, then widths, then where to keep it", func(t *testing.T) {
+		m := sidebarModel(t, 140)
+		names := func(typed string) []string {
+			m.input.SetValue(typed)
+			var found []string
+			for _, each := range m.suggestions() {
+				found = append(found, each.name)
+			}
+			return found
+		}
+
+		first, widths, scopes := names("/sidebar w"), names("/sidebar width "), names("/sidebar width 44 ")
+
+		if len(first) != 1 || first[0] != "sidebar width " || len(widths) == 0 || widths[0] != "sidebar width 36 " {
+			t.Errorf("first %q widths %q", first, widths)
+		}
+		if strings.Join(scopes, ",") != "sidebar width 44 session,sidebar width 44 global,sidebar width 44 project" {
+			t.Errorf("scopes %q", scopes)
+		}
+	})
+
+	t.Run("SB-12 settings › side panel width saves the columns, the default left out; out of range is refused", func(t *testing.T) {
+		base := config.Config{Provider: "llama-server"}
+		untouched, _ := newSettingsDraft(base).applyTo(base, nil)
+		draft := newSettingsDraft(base)
+		draft.sidebarWidth = "48"
+		wider, err := draft.applyTo(base, nil)
+		draft.sidebarWidth = "500"
+		_, refused := draft.applyTo(base, nil)
+
+		if untouched.Render.SidebarWidth != 0 || err != nil || wider.Render.SidebarWidth != 48 || refused == nil {
+			t.Errorf("untouched %d wider %d err %v refused %v", untouched.Render.SidebarWidth, wider.Render.SidebarWidth, err, refused)
 		}
 	})
 }

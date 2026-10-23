@@ -11,16 +11,18 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/team"
 	"github.com/jg/mo/internal/tools"
 )
 
 const (
-	sidebarWidth     = 36
-	sidebarMinScreen = 110
-	sidebarAuto      = "auto"
-	sidebarOn        = "on"
-	sidebarOff       = "off"
+	// sidebarAutoRoom is how much wider than the panel the screen is when
+	// auto shows it: the conversation's room beside it.
+	sidebarAutoRoom = 74
+	sidebarAuto     = "auto"
+	sidebarOn       = "on"
+	sidebarOff      = "off"
 	// mainMinWidth is the narrowest the conversation gets beside a panel
 	// that is always on.
 	mainMinWidth      = 30
@@ -47,9 +49,21 @@ func (m model) sidebarShown() bool {
 	case sidebarOff:
 		return false
 	case sidebarOn:
-		return m.width >= sidebarWidth+1+mainMinWidth
+		return m.width >= m.sidebarWidth()+1+mainMinWidth
 	}
-	return m.width >= sidebarMinScreen
+	return m.width >= m.sidebarWidth()+sidebarAutoRoom
+}
+
+// sidebarWidth is the side panel's columns: those /sidebar width set for
+// the session, else the setting's.
+func (m model) sidebarWidth() int {
+	if m.sidebarSessionWidth > 0 {
+		return m.sidebarSessionWidth
+	}
+	if width := m.session.Config.Render.SidebarWidth; width > 0 {
+		return width
+	}
+	return config.DefaultSidebarWidth
 }
 
 // sidebarMode is the side panel's mode: the one /sidebar set for the
@@ -62,7 +76,11 @@ var sidebarModes = []string{sidebarAuto, sidebarOn, sidebarOff}
 
 // sidebarCommand is /sidebar: alone it shows the panel if hidden and hides
 // it if shown; with a mode it sets that one; either for the session.
+// /sidebar width says the width, or sets it.
 func (m model) sidebarCommand(argument string) (tea.Model, tea.Cmd) {
+	if rest, ok := strings.CutPrefix(strings.TrimSpace(argument), "width"); ok && (rest == "" || rest[0] == ' ') {
+		return m.sidebarWidthCommand(strings.Fields(rest))
+	}
 	mode := strings.TrimSpace(argument)
 	switch {
 	case mode == "" && m.sidebarShown():
@@ -70,12 +88,12 @@ func (m model) sidebarCommand(argument string) (tea.Model, tea.Cmd) {
 	case mode == "":
 		mode = sidebarOn
 	case !slices.Contains(sidebarModes, mode):
-		return m.emit(m.printer.Note("/sidebar takes auto, on or off"))
+		return m.emit(m.printer.Note("/sidebar takes auto, on, off or width [columns] [session|global|project]"))
 	}
 	m.sidebarSession = mode
 	note := "side panel " + mode + " · this session"
 	if mode == sidebarOn && !m.sidebarShown() {
-		note = fmt.Sprintf("side panel on · shows from %d columns", sidebarWidth+1+mainMinWidth)
+		note = fmt.Sprintf("side panel on · shows from %d columns", m.sidebarWidth()+1+mainMinWidth)
 	}
 	return m, tea.Batch(m.fitWidth(), printText(m.printer.Note(note)))
 }
@@ -86,7 +104,13 @@ func (m model) sidebarSuggestions(partial string) []command {
 		sidebarOn:   "always, also in a narrow or vertical terminal",
 		sidebarOff:  "never: tasks above the input",
 	}
+	if rest, ok := strings.CutPrefix(partial, "width "); ok {
+		return m.sidebarWidthSuggestions(rest)
+	}
 	var matches []command
+	if strings.HasPrefix("width", partial) {
+		matches = append(matches, command{name: "sidebar width ", description: fmt.Sprintf("now %d columns · say or set it, for the session, global or project", m.sidebarWidth()), more: true})
+	}
 	for _, mode := range sidebarModes {
 		if !strings.HasPrefix(mode, partial) {
 			continue
@@ -104,7 +128,7 @@ func (m model) sidebarSuggestions(partial string) []command {
 // it shows.
 func (m model) mainWidth() int {
 	if m.sidebarShown() {
-		return m.width - sidebarWidth - 1
+		return m.width - m.sidebarWidth() - 1
 	}
 	return m.width
 }
@@ -169,7 +193,7 @@ func (m model) sidebar(height int) string {
 // opens what can be done with it.
 func (m model) sidebarLayout(height int) (string, []region) {
 	colors := sidebarPalette(m.printer == nil || m.printer.isDark())
-	width := sidebarWidth - 2
+	width := m.sidebarWidth() - 2
 	base := lipgloss.NewStyle().Background(colors.background).Foreground(colors.text)
 	lines, regions := m.sidebarLines()
 	lines = m.markSidebar(lines, regions)
@@ -195,7 +219,7 @@ func (m model) sidebarLayout(height int) (string, []region) {
 // sidebarLines are all the lines of the side panel, before scrolling.
 func (m model) sidebarLines() ([]string, []region) {
 	colors := sidebarPalette(m.printer == nil || m.printer.isDark())
-	width := sidebarWidth - 2
+	width := m.sidebarWidth() - 2
 	base := lipgloss.NewStyle().Background(colors.background).Foreground(colors.text)
 	paint := func(c color.Color) lipgloss.Style { return base.Foreground(c) }
 	var lines []string
@@ -512,7 +536,7 @@ func (m *model) scrollSidebar(up bool) {
 	lower, _ := m.lowerLayout()
 	height := m.height - lipgloss.Height(lower)
 	colors := sidebarPalette(m.printer == nil || m.printer.isDark())
-	if context := m.contextBlock(sidebarWidth-2, lipgloss.NewStyle(), colors); len(context) > 0 {
+	if context := m.contextBlock(m.sidebarWidth()-2, lipgloss.NewStyle(), colors); len(context) > 0 {
 		height -= len(context) + 1
 	}
 	m.sidebarScroll = max(0, min(m.sidebarScroll+sidebarWheelStep, len(lines)-height+1))

@@ -64,6 +64,7 @@ type settingsDraft struct {
 	uiMode       string
 	background   string
 	sidebar      string
+	sidebarWidth string
 	statusStyle  string
 	bar          string
 	// replyRefresh is how often what the model writes is drawn, with
@@ -186,6 +187,7 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		uiMode:           cfg.Render.Mode,
 		background:       cfg.Render.Background,
 		sidebar:          cfg.Render.Sidebar,
+		sidebarWidth:     strconv.Itoa(cfg.Render.SidebarWidth),
 		statusStyle:      cfg.Render.Status,
 		bar:              cfg.Render.Bar,
 		replyRefresh:     cfg.Render.ReplyRefresh,
@@ -372,6 +374,11 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	}
 	layer.Render.Background = unlessDefault(strings.TrimSpace(d.background), defaults.Render.Background)
 	layer.Render.Sidebar = unlessDefault(d.sidebar, defaults.Render.Sidebar)
+	sidebarWidth, err := parseSidebarWidth(d.sidebarWidth)
+	if err != nil {
+		return layer, fmt.Errorf("side panel width: %w", err)
+	}
+	layer.Render.SidebarWidth = unlessDefault(sidebarWidth, defaults.Render.SidebarWidth)
 	layer.Render.Status = unlessDefault(d.statusStyle, defaults.Render.Status)
 	layer.Render.Bar = unlessDefault(d.bar, defaults.Render.Bar)
 	everyMS, err := parseAtLeast(d.replyEveryMS, 10)

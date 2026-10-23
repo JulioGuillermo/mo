@@ -394,6 +394,9 @@ type Render struct {
 	// Sidebar shows the side panel of tasks and background jobs when the
 	// terminal is wide enough ("auto"), always ("on") or never ("off").
 	Sidebar string `toml:"sidebar,omitempty"`
+	// SidebarWidth is the columns of the side panel, from MinSidebarWidth
+	// to MaxSidebarWidth.
+	SidebarWidth int `toml:"sidebar_width,omitzero"`
 	// Status draws the status line as powerline segments, which need a
 	// font with their arrows, or "plain".
 	Status string `toml:"status,omitempty"`
@@ -437,6 +440,13 @@ type Render struct {
 	// cursor is on and in which commit; off unless true.
 	Blame *bool `toml:"blame,omitempty"`
 }
+
+// The side panel's width in columns.
+const (
+	DefaultSidebarWidth = 36
+	MinSidebarWidth     = 20
+	MaxSidebarWidth     = 120
+)
 
 // UIThemes are the looks of the screen, mo's own first.
 var UIThemes = []string{"mo", "tokyo night", "one", "catppuccin", "material", "dracula", "gruvbox", "nord", "solarized", "monokai"}
@@ -592,7 +602,7 @@ func Defaults() Config {
 		Skills:       Skills{Mode: tools.ModeFull},
 		Instructions: Instructions{Enabled: ptr(true), Files: []string{"AGENTS.md", "AGENT.md"}},
 		Web:          Web{Search: web.SearchDuckDuckGo},
-		Render: Render{Images: render.ModeAuto, Background: BackgroundTheme, Theme: UIThemes[0], Mode: ModeDark, Sidebar: "auto", Status: "powerline", Icons: "nerd", Keys: "default", Bar: "shapes",
+		Render: Render{Images: render.ModeAuto, Background: BackgroundTheme, Theme: UIThemes[0], Mode: ModeDark, Sidebar: "auto", SidebarWidth: DefaultSidebarWidth, Status: "powerline", Icons: "nerd", Keys: "default", Bar: "shapes",
 			ReplyRefresh: RefreshLive, ReplyEveryMS: 100, ReplyEveryTokens: 10,
 			SpinnerMS: 80, RunningMS: 150, WritingMS: 220, ReasoningMS: 160, AskingMS: 500, UIFPS: 20, CellSize: render.CellSizeAuto,
 			Syntax: SyntaxThemes[0]},
@@ -685,6 +695,9 @@ func validate(cfg Config) error {
 	}
 	if cfg.Render.UIFPS < 1 || cfg.Render.UIFPS > MaxUIFPS {
 		return fmt.Errorf("render.ui_fps %d: use 1 to %d", cfg.Render.UIFPS, MaxUIFPS)
+	}
+	if width := cfg.Render.SidebarWidth; width < MinSidebarWidth || width > MaxSidebarWidth {
+		return fmt.Errorf("render.sidebar_width %d: use %d to %d columns", width, MinSidebarWidth, MaxSidebarWidth)
 	}
 	if !slices.Contains(SyntaxThemes, cfg.Render.Syntax) {
 		return fmt.Errorf("render.syntax %q: use %s", cfg.Render.Syntax, strings.Join(SyntaxThemes, ", "))
@@ -1064,6 +1077,7 @@ func mergeHarmless(base, layer Config) Config {
 	base.Render.Images = override(base.Render.Images, layer.Render.Images)
 	base.Render.Background = override(base.Render.Background, layer.Render.Background)
 	base.Render.Sidebar = override(base.Render.Sidebar, layer.Render.Sidebar)
+	base.Render.SidebarWidth = override(base.Render.SidebarWidth, layer.Render.SidebarWidth)
 	base.Render.Keys = override(base.Render.Keys, layer.Render.Keys)
 	base.Render.Status = override(base.Render.Status, layer.Render.Status)
 	base.Render.Bar = override(base.Render.Bar, layer.Render.Bar)
