@@ -61,7 +61,8 @@ func (s *sixelScreen) mark(frame string) string {
 }
 
 // draw replaces the marks in what goes to the terminal by the strips their
-// frames bring. A screen erased shows none of the strips it had.
+// frames bring. A screen erased shows none of the strips it had. A repaint
+// goes out as one synchronized frame, so the erased screen is never seen.
 func (s *sixelScreen) draw(output []byte) []byte {
 	marks := frameMark.FindAllSubmatchIndex(output, -1)
 	if len(marks) == 0 {
@@ -70,7 +71,7 @@ func (s *sixelScreen) draw(output []byte) []byte {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var drawn bytes.Buffer
-	written := 0
+	written, repainted := 0, false
 	for _, mark := range marks {
 		before := output[written:mark[0]]
 		if bytes.Contains(before, []byte(ansi.EraseEntireScreen)) {
@@ -80,12 +81,16 @@ func (s *sixelScreen) draw(output []byte) []byte {
 		number, _ := strconv.Atoi(string(output[mark[2]:mark[3]]))
 		if lineMoves.Match(before) && len(s.shown) > 0 {
 			drawn.WriteString(s.repaint(number))
+			repainted = true
 		} else if strips := s.stripsOf(number); strips != "" {
 			drawn.WriteString(ansi.SaveCursor + strips + ansi.RestoreCursor)
 		}
 		written = mark[1]
 	}
 	drawn.Write(output[written:])
+	if repainted && !bytes.Contains(output, []byte(ansi.SetModeSynchronizedOutput)) {
+		return []byte(ansi.SetModeSynchronizedOutput + drawn.String() + ansi.ResetModeSynchronizedOutput)
+	}
 	return drawn.Bytes()
 }
 
