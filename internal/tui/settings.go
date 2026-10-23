@@ -355,7 +355,7 @@ func (m model) useSession(session Session) (tea.Model, tea.Cmd) {
 // bar are read as they are drawn.
 func (m *model) applyUI() tea.Cmd {
 	settings := m.session.Config.Render
-	m.printer.setImages(render.Detect(settings.Images))
+	m.printer.setImages(imagesFor(settings.Images, m.sixelTerminal))
 	useCellSize(settings.CellSize)
 	if useSyntaxTheme(settings.Syntax) {
 		m.printer.forgetMarkdown()

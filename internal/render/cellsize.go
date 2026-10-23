@@ -18,7 +18,10 @@ const CellSizeAuto = "auto"
 
 type cellPixels struct{ width, height int }
 
-var chosenCellSize atomic.Pointer[cellPixels]
+var (
+	chosenCellSize   atomic.Pointer[cellPixels]
+	reportedCellSize atomic.Pointer[cellPixels]
+)
 
 // SetCellSize fixes the pixels of a terminal cell; 0 for either asks the
 // terminal again.
@@ -30,14 +33,26 @@ func SetCellSize(width, height int) {
 	chosenCellSize.Store(&cellPixels{width, height})
 }
 
+// SetReportedCellSize keeps the pixels of a cell the terminal answered when
+// asked, for when its window size has none.
+func SetReportedCellSize(width, height int) {
+	if validCellPixels(width) && validCellPixels(height) {
+		reportedCellSize.Store(&cellPixels{width, height})
+	}
+}
+
 // CellSize is the size of a terminal cell in pixels: the one set, else the
-// one the terminal reports, else a common guess.
+// one the terminal's window size gives, else the one it answered, else a
+// common guess.
 func CellSize() (width, height int) {
 	if chosen := chosenCellSize.Load(); chosen != nil {
 		return chosen.width, chosen.height
 	}
 	if width, height, ok := terminalCellSize(); ok {
 		return width, height
+	}
+	if reported := reportedCellSize.Load(); reported != nil {
+		return reported.width, reported.height
 	}
 	return fallbackCellWidth, fallbackCellHeight
 }

@@ -133,7 +133,7 @@ func TestKitty(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "shot.png")
 		os.WriteFile(path, encoded.Bytes(), 0o600)
 
-		upload, lines, err := Thumbnail(path, 14, 3)
+		upload, lines, err := Thumbnail(path, 14, 3, ModeKitty)
 
 		if err != nil || !strings.HasPrefix(upload, "\x1b_Ga=T") {
 			t.Fatalf("upload = %.20q err = %v", upload, err)

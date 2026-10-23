@@ -802,8 +802,9 @@ func appearanceItems(_ model, menu *settingsMenu) []settingItem {
 		}},
 		{"Images, SVG and Mermaid", func(d *settingsDraft) string { return d.images }, func(d *settingsDraft) huh.Field {
 			return huh.NewSelect[string]().Title("Images, SVG and Mermaid").Options(
-				huh.NewOption("auto: kitty graphics where the terminal has them, else colour blocks", string(render.ModeAuto)),
+				huh.NewOption("auto: kitty graphics or sixel where the terminal has them, else colour blocks", string(render.ModeAuto)),
 				huh.NewOption("kitty graphics", string(render.ModeKitty)),
+				huh.NewOption("sixel: Windows Terminal, foot, WezTerm, xterm", string(render.ModeSixel)),
 				huh.NewOption("colour blocks", string(render.ModeBlocks)),
 				huh.NewOption("off: only the file path", string(render.ModeOff)),
 			).Value(&d.images)
@@ -811,7 +812,7 @@ func appearanceItems(_ model, menu *settingsMenu) []settingItem {
 		{"Cell size", func(d *settingsDraft) string { return d.cellSize }, func(d *settingsDraft) huh.Field {
 			width, height := render.CellSize()
 			return huh.NewInput().Title("Cell size").
-				Description(fmt.Sprintf("pixels of a character cell, WIDTHxHEIGHT, to size kitty images; auto asks the terminal\nnow %dx%d; set it if images look stretched or blurry", width, height)).
+				Description(fmt.Sprintf("pixels of a character cell, WIDTHxHEIGHT, to size kitty and sixel images; auto asks the terminal\nnow %dx%d; set it if images look stretched or blurry", width, height)).
 				Validate(validCellSize).Value(&d.cellSize)
 		}},
 		{"Git blame in /view", func(d *settingsDraft) string { return onOff(d.blame) }, func(d *settingsDraft) huh.Field {

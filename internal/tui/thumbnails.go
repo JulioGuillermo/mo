@@ -25,8 +25,18 @@ type thumbnailMsg struct {
 	lines  []string
 }
 
-func (p *printer) showsKitty() bool {
-	return p != nil && p.renderer().Mode == render.ModeKitty
+func (p *printer) showsSixel() bool {
+	return p != nil && p.renderer().Mode == render.ModeSixel
+}
+
+// picturesMode is the mode thumbnails are drawn in, kitty or sixel, and
+// whether the terminal shows them at all.
+func (p *printer) picturesMode() (render.Mode, bool) {
+	if p == nil {
+		return "", false
+	}
+	mode := p.renderer().Mode
+	return mode, mode == render.ModeKitty || mode == render.ModeSixel
 }
 
 func isPicture(path string) bool {
@@ -34,9 +44,10 @@ func isPicture(path string) bool {
 }
 
 // drawThumbnails draws in the background the thumbnails of the images in
-// the input that have none yet; only a kitty terminal shows them.
+// the input that have none yet; only a kitty or sixel terminal shows them.
 func (m *model) drawThumbnails() tea.Cmd {
-	if !m.printer.showsKitty() {
+	mode, shows := m.printer.picturesMode()
+	if !shows {
 		return nil
 	}
 	var draws []tea.Cmd
@@ -49,7 +60,7 @@ func (m *model) drawThumbnails() tea.Cmd {
 		}
 		m.thumbnails[path] = nil
 		draws = append(draws, func() tea.Msg {
-			upload, lines, err := render.Thumbnail(path, chipThumbnailCols, chipThumbnailRows)
+			upload, lines, err := render.Thumbnail(path, chipThumbnailCols, chipThumbnailRows, mode)
 			if err != nil {
 				return nil
 			}
@@ -86,15 +97,16 @@ func promptImages(sent string) []string {
 }
 
 // Thumbnails draws the images of a prompt side by side under it, with
-// their kitty uploads; nothing on a terminal without kitty images.
+// their kitty uploads; nothing on a terminal without kitty or sixel images.
 func (p *printer) Thumbnails(images []string) string {
-	if len(images) == 0 || !p.showsKitty() {
+	mode, shows := p.picturesMode()
+	if len(images) == 0 || !shows {
 		return ""
 	}
 	var uploads strings.Builder
 	columns := []string{"  "}
 	for _, path := range images {
-		upload, lines, err := render.Thumbnail(path, chatThumbnailCols, chatThumbnailRows)
+		upload, lines, err := render.Thumbnail(path, chatThumbnailCols, chatThumbnailRows, mode)
 		if err != nil {
 			continue
 		}

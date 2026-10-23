@@ -1,5 +1,5 @@
 // Package render draws images, SVG and Mermaid diagrams as text a terminal
-// can show: kitty graphics where the terminal speaks it, coloured half
+// can show: kitty graphics or sixel where the terminal speaks them, coloured half
 // blocks elsewhere.
 package render
 
@@ -16,6 +16,7 @@ type Mode string
 const (
 	ModeAuto   Mode = "auto"
 	ModeKitty  Mode = "kitty"
+	ModeSixel  Mode = "sixel"
 	ModeBlocks Mode = "blocks"
 	ModeOff    Mode = "off"
 )

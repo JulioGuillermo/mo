@@ -813,12 +813,13 @@ your next message or at once in a turn of its own, or copies the command or what
 
 ```toml
 [render]
-images = "auto"   # auto | kitty | blocks | off
-cell_size = "auto" # pixels of a character cell, e.g. "8x16", to size kitty images; auto asks the terminal
+images = "auto"   # auto | kitty | sixel | blocks | off
+cell_size = "auto" # pixels of a character cell, e.g. "8x16", to size kitty and sixel images; auto asks the terminal
 ```
 
 `auto` uses kitty graphics in kitty and ghostty (also inside tmux with `set -g allow-passthrough on`),
-coloured half blocks in other truecolor terminals, and text otherwise. SVG is drawn by resvg built
+sixel in a terminal that answers it draws them (Windows Terminal, foot, WezTerm, xterm), coloured
+half blocks in other truecolor terminals, and text otherwise. SVG is drawn by resvg built
 into mo; Mermaid flowcharts, sequence, ER and class diagrams are drawn with box characters, each
 box tight around its text, its edge and text in a colour of its own, or as an image when `mmdc`
 (mermaid-cli) is installed, which also draws the other kinds. A diagram wider than the conversation says so under it; ctrl+← and

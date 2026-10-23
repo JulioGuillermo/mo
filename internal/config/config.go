@@ -668,9 +668,9 @@ func validate(cfg Config) error {
 	if cfg.Tools.Load != tools.LoadContext && cfg.Tools.Load != tools.LoadDeclare {
 		return fmt.Errorf("tools.load %q: use context or declare", cfg.Tools.Load)
 	}
-	imageModes := []render.Mode{render.ModeAuto, render.ModeKitty, render.ModeBlocks, render.ModeOff}
+	imageModes := []render.Mode{render.ModeAuto, render.ModeKitty, render.ModeSixel, render.ModeBlocks, render.ModeOff}
 	if !slices.Contains(imageModes, cfg.Render.Images) {
-		return fmt.Errorf("render.images %q: use auto, kitty, blocks or off", cfg.Render.Images)
+		return fmt.Errorf("render.images %q: use auto, kitty, sixel, blocks or off", cfg.Render.Images)
 	}
 	if cfg.Context.Strategy != "compact" && cfg.Context.Strategy != "drop" {
 		return fmt.Errorf("context.strategy %q: use compact or drop", cfg.Context.Strategy)

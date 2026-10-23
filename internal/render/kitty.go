@@ -7,7 +7,6 @@ import (
 	"image"
 	"image/png"
 	"math/rand/v2"
-	"os"
 	"strings"
 	"sync/atomic"
 
@@ -42,23 +41,6 @@ func kittyParts(img image.Image, box Box, cellWidth, cellHeight int) (upload, li
 	}
 	id := NewImageID()
 	return kittyTransmission(base64.StdEncoding.EncodeToString(encoded.Bytes()), id, box), kittyPlaceholders(id, box), nil
-}
-
-// Thumbnail draws an image file as a kitty image of at most cols × rows
-// cells: the upload to send the terminal once, and the lines that show it.
-func Thumbnail(path string, cols, rows int) (string, []string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", nil, err
-	}
-	img, err := DecodeFile(path, data)
-	if err != nil {
-		return "", nil, err
-	}
-	cellWidth, cellHeight := CellSize()
-	box := fitWithin(img, cols, rows, cellWidth, cellHeight)
-	upload, lines, err := kittyParts(img, box, cellWidth, cellHeight)
-	return upload, strings.Split(lines, "\n"), err
 }
 
 func kittyTransmission(payload string, id uint32, box Box) string {

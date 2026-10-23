@@ -13,6 +13,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2
 	github.com/alecthomas/chroma/v2 v2.14.0
+	github.com/charmbracelet/ultraviolet v0.0.0-20261008173134-6b8d4baf91b4
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/fsnotify/fsnotify v1.10.1
@@ -36,9 +37,9 @@ require (
 	github.com/andybalholm/cascadia v1.3.4 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
+	github.com/bits-and-blooms/bitset v1.24.6 // indirect
 	github.com/catppuccin/go v0.2.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
-	github.com/charmbracelet/ultraviolet v0.0.0-20261008173134-6b8d4baf91b4 // indirect
 	github.com/charmbracelet/x/exp/ordered v0.1.0 // indirect
 	github.com/charmbracelet/x/exp/slice v0.0.0-20250327172914-2fdc97757edf // indirect
 	github.com/charmbracelet/x/exp/strings v0.0.0-20240722160745-212f7b056ed0 // indirect

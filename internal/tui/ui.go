@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"image/color"
 	"maps"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -21,6 +22,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
@@ -191,6 +193,8 @@ type model struct {
 	pluginSends *pluginSends
 	// svgs draws the svg nodes of interfaces, away from the screen.
 	svgs             *svgFrames
+	sixel            *sixelScreen
+	sixelTerminal    bool
 	clickedAt        point
 	clicked          bool
 	settingsInFlight bool
@@ -275,7 +279,7 @@ const agentShutdownWait = 3 * time.Second
 
 func Run(session Session) error {
 	printer := newPrinter()
-	printer.setImages(render.Detect(session.Config.Render.Images))
+	printer.setImages(imagesFor(session.Config.Render.Images, false))
 	useCellSize(session.Config.Render.CellSize)
 	useSyntaxTheme(session.Config.Render.Syntax)
 	screen := screenFor(session.Config.Render, true)
@@ -295,6 +299,7 @@ func Run(session Session) error {
 		vim:          vimState{enabled: session.Config.Render.Keys == "vim"},
 		files:        &fileIndex{},
 		shownSpeeds:  &shownSpeeds{},
+		sixel:        newSixelScreen(),
 		svgs:         &svgFrames{kitty: printer.images == render.ModeKitty, ready: func() { bridge.send(svgReadyMsg{}) }},
 		config:       watchConfig(session.WorkDir),
 		peers:        newPeerSession(),
@@ -303,7 +308,7 @@ func Run(session Session) error {
 	printer.setKind(m.toolKind)
 	m.configureJobs()
 	m.paceAnimations()
-	program := tea.NewProgram(m)
+	program := tea.NewProgram(m, tea.WithOutput(sixelOutput{File: os.Stdout, screen: m.sixel}))
 	bridge.program = program
 	bridge.paceReply(paceOf(session.Config.Render))
 	m.config.tell(bridge)
@@ -393,7 +398,7 @@ func (m model) Init() tea.Cmd {
 		start = tea.Sequence(start, opening)
 	}
 	return tea.Batch(start, tea.RequestBackgroundColor, tea.Raw(ansi.RequestMode(kittyClipboardMode)), textarea.Blink,
-		m.readRepo(), loadEfforts(m.session), m.applyPeers())
+		m.askTerminal(), m.readRepo(), loadEfforts(m.session), m.applyPeers())
 }
 
 // openingConversation is what mo opens on besides a new conversation: the
@@ -666,6 +671,10 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.BackgroundColorMsg:
 		return m, m.applyScreen(msg.IsDark())
+	case uv.PrimaryDeviceAttributesEvent:
+		return m.terminalAnswered(msg)
+	case uv.CellSizeEvent:
+		return m.cellSizeAnswered(msg)
 	case tea.KeyPressMsg:
 		m.focused = true
 		return m.handleKey(msg)
@@ -1294,6 +1303,9 @@ func (m model) View() tea.View {
 		}
 		view = tea.NewView(drawn)
 		view.WindowTitle = "mo"
+	}
+	if m.printer.showsSixel() {
+		view.Content = m.sixel.mark(view.Content)
 	}
 	view.AltScreen = true
 	view.MouseMode = tea.MouseModeCellMotion

@@ -25,6 +25,9 @@ func (r Renderer) Image(img image.Image) (string, error) {
 	case ModeKitty:
 		cellWidth, cellHeight := CellSize()
 		return kittyImage(img, fit(img, r.maxCols(), cellWidth, cellHeight), cellWidth, cellHeight)
+	case ModeSixel:
+		cellWidth, cellHeight := CellSize()
+		return sixelImage(img, fit(img, r.maxCols(), cellWidth, cellHeight), cellWidth, cellHeight)
 	case ModeBlocks:
 		return halfBlocks(img, fit(img, r.maxCols(), 1, 2)), nil
 	}
@@ -52,10 +55,10 @@ func (r Renderer) SVG(svg []byte) (string, error) {
 }
 
 // Mermaid draws a diagram as an image when mermaid-cli is installed and the
-// terminal speaks kitty graphics, and with box characters otherwise. A
+// terminal draws pictures, and with box characters otherwise. A
 // diagram neither can draw comes back as its source.
 func (r Renderer) Mermaid(source string) string {
-	if r.Mode == ModeKitty {
+	if r.Mode == ModeKitty || r.Mode == ModeSixel {
 		if svg, ok := mermaidSVG(source); ok {
 			if drawn, err := r.SVG(svg); err == nil {
 				return drawn
