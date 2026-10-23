@@ -22,10 +22,11 @@ const (
 	commentQuoteMost = 80
 )
 
+func commentMark() lipgloss.Style   { return lipgloss.NewStyle().Foreground(warning()).Bold(true) }
+func commentFooter() lipgloss.Style { return lipgloss.NewStyle().Foreground(warning()) }
+
 var (
-	commentMark   = lipgloss.NewStyle().Foreground(warning).Bold(true)
-	commentFooter = lipgloss.NewStyle().Foreground(warning)
-	skippedDirs   = map[string]bool{"node_modules": true, "vendor": true, "target": true, "dist": true, "__pycache__": true}
+	skippedDirs = map[string]bool{"node_modules": true, "vendor": true, "target": true, "dist": true, "__pycache__": true}
 )
 
 // fileComment is what the user said of lines of a file, from and to

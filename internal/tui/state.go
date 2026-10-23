@@ -29,17 +29,10 @@ type stateColors struct {
 }
 
 func statePalette(dark bool) stateColors {
-	if dark {
-		return stateColors{
-			reasoning: accent, writing: warning, reading: lipgloss.Color("#9ece6a"), changing: lipgloss.Color("#f7768e"),
-			compacting: lipgloss.Color("#bb9af7"), waiting: lipgloss.Color("#737aa2"), yours: lipgloss.Color("#7dcfff"),
-			prompt: lipgloss.Color("#73daca"),
-		}
-	}
+	c := ui(dark)
 	return stateColors{
-		reasoning: lipgloss.Color("#2e7de9"), writing: lipgloss.Color("#8c6c3e"), reading: lipgloss.Color("#587539"), changing: lipgloss.Color("#f52a65"),
-		compacting: lipgloss.Color("#9854f1"), waiting: lipgloss.Color("#8990b3"), yours: lipgloss.Color("#007197"),
-		prompt: lipgloss.Color("#118c74"),
+		reasoning: col(c.accent), writing: col(c.warning), reading: col(c.green), changing: col(c.red),
+		compacting: col(c.purple), waiting: col(c.dim), yours: col(c.cyan), prompt: col(c.teal),
 	}
 }
 

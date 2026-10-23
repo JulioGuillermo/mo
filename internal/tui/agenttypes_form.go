@@ -292,7 +292,7 @@ func (m model) editAgentType(menu *settingsMenu, name string) (tea.Model, tea.Cm
 	keep := func(m model, apply func(config.Config) (config.Config, error), what string) (tea.Model, tea.Cmd) {
 		layer, err := apply(menu.layer)
 		if err != nil {
-			e.notice = errorStyle.Render("not kept: " + err.Error())
+			e.notice = errorStyle().Render("not kept: " + err.Error())
 			return m.showEditor(e, editorSave)
 		}
 		menu.layer = layer

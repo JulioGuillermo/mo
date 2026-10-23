@@ -387,8 +387,9 @@ var BarStyles = []string{"shapes", "braille", "circles", "half-circles", "square
 
 type Render struct {
 	Images render.Mode `toml:"images,omitempty"`
-	// Background is the colour mo paints behind everything, as #rrggbb, so
-	// it looks the same in any terminal; "terminal" keeps the terminal's.
+	// Background is the colour mo paints behind everything, so it looks
+	// the same in any terminal: the theme's own ("theme"), or #rrggbb;
+	// "terminal" keeps the terminal's.
 	Background string `toml:"background,omitempty"`
 	// Sidebar shows the side panel of tasks and background jobs when the
 	// terminal is wide enough ("auto"), always ("on") or never ("off").
@@ -426,12 +427,27 @@ type Render struct {
 	// CellSize is the pixels of a terminal cell, "8x16", that sizes kitty
 	// images; "auto" asks the terminal.
 	CellSize string `toml:"cell_size,omitempty"`
+	// Theme is the look of the screen, one of UIThemes, dark or light as
+	// Mode says: dark, light, or auto as the terminal is.
+	Theme string `toml:"theme,omitempty"`
+	Mode  string `toml:"mode,omitempty"`
 	// Syntax is how code is coloured, one of SyntaxThemes.
 	Syntax string `toml:"syntax,omitempty"`
 	// Blame shows, in the file viewer, who last changed the line the
 	// cursor is on and in which commit; off unless true.
 	Blame *bool `toml:"blame,omitempty"`
 }
+
+// UIThemes are the looks of the screen, mo's own first.
+var UIThemes = []string{"mo", "tokyo night", "one", "catppuccin", "material", "dracula", "gruvbox", "nord", "solarized", "monokai"}
+
+// Modes of the look, and the background that is the look's own.
+const (
+	ModeDark        = "dark"
+	ModeLight       = "light"
+	ModeAuto        = "auto"
+	BackgroundTheme = "theme"
+)
 
 // SyntaxThemes are the ways code can be coloured, mo's own first.
 var SyntaxThemes = []string{"mo", "mo vivid", "tokyo night", "one", "catppuccin", "material", "dracula", "gruvbox", "nord", "solarized", "monokai"}
@@ -576,7 +592,7 @@ func Defaults() Config {
 		Skills:       Skills{Mode: tools.ModeFull},
 		Instructions: Instructions{Enabled: ptr(true), Files: []string{"AGENTS.md", "AGENT.md"}},
 		Web:          Web{Search: web.SearchDuckDuckGo},
-		Render: Render{Images: render.ModeAuto, Background: "#00081a", Sidebar: "auto", Status: "powerline", Icons: "nerd", Keys: "default", Bar: "shapes",
+		Render: Render{Images: render.ModeAuto, Background: BackgroundTheme, Theme: UIThemes[0], Mode: ModeDark, Sidebar: "auto", Status: "powerline", Icons: "nerd", Keys: "default", Bar: "shapes",
 			ReplyRefresh: RefreshLive, ReplyEveryMS: 100, ReplyEveryTokens: 10,
 			SpinnerMS: 80, RunningMS: 150, WritingMS: 220, ReasoningMS: 160, AskingMS: 500, UIFPS: 20, CellSize: render.CellSizeAuto,
 			Syntax: SyntaxThemes[0]},
@@ -698,7 +714,13 @@ func validate(cfg Config) error {
 		return fmt.Errorf("render.sidebar %q: use auto, on or off", cfg.Render.Sidebar)
 	}
 	if !ValidBackground(cfg.Render.Background) {
-		return fmt.Errorf("render.background %q: use #rrggbb or terminal", cfg.Render.Background)
+		return fmt.Errorf("render.background %q: use theme, #rrggbb or terminal", cfg.Render.Background)
+	}
+	if !slices.Contains(UIThemes, cfg.Render.Theme) {
+		return fmt.Errorf("render.theme %q: use %s", cfg.Render.Theme, strings.Join(UIThemes, ", "))
+	}
+	if !slices.Contains([]string{ModeDark, ModeLight, ModeAuto}, cfg.Render.Mode) {
+		return fmt.Errorf("render.mode %q: use dark, light or auto", cfg.Render.Mode)
 	}
 	if err := validatePermissions(cfg.Permissions); err != nil {
 		return err
@@ -726,10 +748,10 @@ func validate(cfg Config) error {
 	return validateLoop(cfg.Loop)
 }
 
-// ValidBackground accepts a #rrggbb colour or "terminal".
+// ValidBackground accepts a #rrggbb colour, "theme" or "terminal".
 func ValidBackground(text string) bool {
 	text = strings.TrimSpace(text)
-	if text == "terminal" {
+	if text == "terminal" || text == BackgroundTheme {
 		return true
 	}
 	if len(text) != 7 || text[0] != '#' {
@@ -1056,6 +1078,8 @@ func mergeHarmless(base, layer Config) Config {
 	base.Render.UIFPS = override(base.Render.UIFPS, layer.Render.UIFPS)
 	base.Render.CellSize = override(base.Render.CellSize, layer.Render.CellSize)
 	base.Render.Syntax = override(base.Render.Syntax, layer.Render.Syntax)
+	base.Render.Theme = override(base.Render.Theme, layer.Render.Theme)
+	base.Render.Mode = override(base.Render.Mode, layer.Render.Mode)
 	if layer.Render.Blame != nil {
 		base.Render.Blame = layer.Render.Blame
 	}

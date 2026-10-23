@@ -292,7 +292,7 @@ func (m model) pickConversation(msg resumeListMsg) (tea.Model, tea.Cmd) {
 	}
 	var options []huh.Option[string]
 	for _, info := range msg.infos {
-		label := errorStyle.Render(removeMark) + " " + orDefault(info.Title, "(no prompt)")
+		label := errorStyle().Render(removeMark) + " " + orDefault(info.Title, "(no prompt)")
 		if info.Parent != "" {
 			label = "↳ " + label
 			// A title that says what it is, fork: or compact:, says it all; one
@@ -303,7 +303,7 @@ func (m model) pickConversation(msg resumeListMsg) (tea.Model, tea.Cmd) {
 		}
 		label += dimStyle.Render(fmt.Sprintf(" · %d prompts · %s", info.Prompts, ago(info.Updated)))
 		if info.ID == m.thread.id {
-			label += keyStyle.Render(" · this one")
+			label += keyStyle().Render(" · this one")
 		}
 		options = append(options, huh.NewOption(label, info.ID))
 	}
@@ -529,19 +529,13 @@ const queuedRows = 8
 // queuedBackground is the shade behind the queue, warmer than the panel of
 // what the user wrote so the two are told apart.
 func queuedBackground(dark bool) color.Color {
-	if dark {
-		return lipgloss.Color("#2f2819")
-	}
-	return lipgloss.Color("#f3e5c4")
+	return col(ui(dark).queued)
 }
 
 // queuedDim is the colour of the last line's counts and hint, which are
 // said softly without Faint: some terminals take it from the background too.
 func queuedDim(dark bool) color.Color {
-	if dark {
-		return lipgloss.Color("#9a8f78")
-	}
-	return lipgloss.Color("#7a6a4a")
+	return col(ui(dark).queuedDim)
 }
 
 // queuedIcon is the mark of a message waiting, of the icon set: a speech
@@ -566,7 +560,7 @@ func (m model) queuedView() string {
 	}
 	dark := m.printer == nil || m.printer.isDark()
 	paint := lipgloss.NewStyle().Background(queuedBackground(dark))
-	edge := paint.Foreground(warning).Render("▌")
+	edge := paint.Foreground(warning()).Render("▌")
 	sign := " " + queuedIcon(m.treeIconSet()) + " "
 	indent := strings.Repeat(" ", ansi.StringWidth(sign))
 	width := max(m.mainWidth(), 20)
@@ -605,7 +599,7 @@ func (m model) queuedView() string {
 		rest += " · ^s now"
 	}
 
-	label := paint.Foreground(warning).Bold(true).Render(" ⧗ queued")
+	label := paint.Foreground(warning()).Bold(true).Render(" ⧗ queued")
 	tail := paint.Foreground(queuedDim(dark)).Render(rest)
 	fill := paint.Render(strings.Repeat(" ", max(width-1-ansi.StringWidth(" ⧗ queued"+rest), 0)))
 	rows = append(rows, edge+label+tail+fill)

@@ -166,7 +166,7 @@ func (m model) uiFrame() (uiFrame, bool) {
 	}
 	// The interface sits in the middle when the edges make the dialog wider.
 	indent := (inner - body.width) / 2
-	edge := lipgloss.NewStyle().Foreground(popupBorder)
+	edge := lipgloss.NewStyle().Foreground(popupBorder())
 	pad := func(line string, indent int) string {
 		line = strings.Repeat(" ", indent) + line
 		return edge.Render("│") + " " + line + strings.Repeat(" ", max(inner-ansi.StringWidth(line), 0)) + " " + edge.Render("│")
@@ -175,10 +175,10 @@ func (m model) uiFrame() (uiFrame, bool) {
 	used := 2
 	if title != "" {
 		name := ansi.Truncate(title, max(inner-ansi.StringWidth(tag)-4, 4), "…")
-		head += " " + toolName.Render(name) + " "
+		head += " " + toolName().Render(name) + " "
 		used += ansi.StringWidth(name) + 2
 	}
-	right := dimStyle.Render(tag) + toolName.Render("×") + edge.Render(" ─╮")
+	right := dimStyle.Render(tag) + toolName().Render("×") + edge.Render(" ─╮")
 	rightWidth := ansi.StringWidth(tag) + 1 + 3
 	fill := max(inner+4-used-rightWidth, 1)
 	head += edge.Render(strings.Repeat("─", fill)) + right
@@ -188,7 +188,7 @@ func (m model) uiFrame() (uiFrame, bool) {
 		lines = append(lines, pad(line, indent))
 	}
 	if failure != "" {
-		lines = append(lines, pad(errorStyle.Render(ansi.Truncate(failure, inner, "…")), 0))
+		lines = append(lines, pad(errorStyle().Render(ansi.Truncate(failure, inner, "…")), 0))
 	}
 	for full && len(lines) < m.height-1 {
 		lines = append(lines, pad("", 0))
@@ -236,7 +236,7 @@ func (m model) bareFrame(ui tools.UI, state *uiLive) uiFrame {
 		lines = append(lines, "")
 	}
 	if ui.Error != "" {
-		lines = append(lines, errorStyle.Render(ansi.Truncate("script: "+ui.Error, inner, "…")))
+		lines = append(lines, errorStyle().Render(ansi.Truncate("script: "+ui.Error, inner, "…")))
 	}
 	for i, line := range lines {
 		lines[i] = line + strings.Repeat(" ", max(inner-ansi.StringWidth(line), 0))

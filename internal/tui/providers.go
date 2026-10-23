@@ -397,9 +397,9 @@ func (m model) pickProvider(msg settingsLoadedMsg, menu *settingsMenu) (tea.Mode
 	cfg := config.UserSettings(msg.layer)
 	picked := m.session.Provider
 	options := providerOptions(cfg, msg.findings, msg.layer.Provider)[1:]
-	options = append([]huh.Option[string]{huh.NewOption(keyStyle.Render("Active provider")+"   "+dimStyle.Render(orDefault(msg.layer.Provider, "auto")+" · pick the one mo uses"), activeProviderChoice)}, options...)
+	options = append([]huh.Option[string]{huh.NewOption(keyStyle().Render("Active provider")+"   "+dimStyle.Render(orDefault(msg.layer.Provider, "auto")+" · pick the one mo uses"), activeProviderChoice)}, options...)
 	if found := detectedFindings(msg.findings); len(found) > 0 {
-		detected := huh.NewOption(keyStyle.Render("Detected")+"   "+dimStyle.Render(fmt.Sprintf("%d found on this machine · use one without setting it up", len(found))), detectedProviderChoice)
+		detected := huh.NewOption(keyStyle().Render("Detected")+"   "+dimStyle.Render(fmt.Sprintf("%d found on this machine · use one without setting it up", len(found))), detectedProviderChoice)
 		options = slices.Insert(options, 1, detected)
 	}
 	options = append(options, huh.NewOption("+ set up a new provider", newProviderChoice))
@@ -484,7 +484,7 @@ func (m model) editProvider(msg settingsLoadedMsg, cfg config.Config, name strin
 	e.save = func(m model) (tea.Model, tea.Cmd) {
 		if draft.isNew {
 			if err := validNewName(cfg.Providers)(draft.name); err != nil {
-				e.notice = errorStyle.Render("not saved: " + err.Error())
+				e.notice = errorStyle().Render("not saved: " + err.Error())
 				return m.showEditor(e, "Name")
 			}
 		}

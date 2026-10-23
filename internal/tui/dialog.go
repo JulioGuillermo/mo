@@ -393,17 +393,10 @@ type dialogColors struct {
 }
 
 func dialogPalette(dark bool) dialogColors {
-	if dark {
-		return dialogColors{
-			body: lipgloss.Color("#16213f"), command: lipgloss.Color("#0e1630"), button: lipgloss.Color("#26335e"),
-			chosen: accent, chosenText: lipgloss.Color("#0b1020"), tab: lipgloss.Color("#1c2850"), done: lipgloss.Color("#101a36"),
-			text: lipgloss.Color("#c0caf5"), dim: lipgloss.Color("#737aa2"),
-		}
-	}
+	c := ui(dark)
 	return dialogColors{
-		body: lipgloss.Color("#e1e6f5"), command: lipgloss.Color("#d0d8ef"), button: lipgloss.Color("#c4cde8"),
-		chosen: lipgloss.Color("#2e7de9"), chosenText: lipgloss.Color("#ffffff"), tab: lipgloss.Color("#d5dcf0"), done: lipgloss.Color("#eef1fa"),
-		text: lipgloss.Color("#3760bf"), dim: lipgloss.Color("#8990b3"),
+		body: col(c.body), command: col(c.block), button: col(c.button), chosen: col(c.accent), chosenText: col(c.onAccent),
+		tab: col(c.tab), done: col(c.done), text: col(c.text), dim: col(c.dim),
 	}
 }
 
@@ -434,7 +427,7 @@ func (m model) dialogLayout() (string, []region) {
 	}
 	item := *d.item()
 	if from := d.groups[item.group].interaction.From; from != "" {
-		lines = append(lines, pad(lipgloss.NewStyle().Background(colors.body).Foreground(lipgloss.Color("#e0af68")).Bold(true).Render("? asked by subagent "+from)))
+		lines = append(lines, pad(lipgloss.NewStyle().Background(colors.body).Foreground(warning()).Bold(true).Render("? asked by subagent "+from)))
 	} else {
 		lines = append(lines, pad(""))
 	}
@@ -502,7 +495,7 @@ func (m model) approvalLines(item dialogItem, colors dialogColors, body lipgloss
 	request := m.dialog.request(item)
 	title := body.Bold(true).Render("Run " + request.Call.Name + "?")
 	if request.Warning != "" {
-		title += body.Render("  ") + body.Foreground(lipgloss.Color("#f7768e")).Render(request.Warning)
+		title += body.Render("  ") + body.Foreground(col(uiNow().red)).Render(request.Warning)
 	}
 	lines := []string{title, ""}
 	lines = append(lines, m.approvalBody(item, colors, body, width)...)
@@ -528,7 +521,7 @@ func (m model) approvalLines(item dialogItem, colors dialogColors, body lipgloss
 // the warning colour unless the button is the chosen one.
 func buttonLabel(label string, chosen bool, colors dialogColors) string {
 	style := lipgloss.NewStyle().Background(colors.button).Foreground(colors.text)
-	key := style.Foreground(warning).Bold(true).Underline(true)
+	key := style.Foreground(warning()).Bold(true).Underline(true)
 	if chosen {
 		style = style.Background(colors.chosen).Foreground(colors.chosenText).Bold(true)
 		key = style.Underline(true)
@@ -569,7 +562,7 @@ func (m model) approvalLinesAll(request agent.ApprovalRequest, colors dialogColo
 	if request.Reason != "" {
 		lines = append(lines, "")
 		for _, line := range strings.Split(ansi.Wrap(request.Reason, width, " "), "\n") {
-			lines = append(lines, body.Foreground(warning).Render(line))
+			lines = append(lines, body.Foreground(warning()).Render(line))
 		}
 	}
 	if request.Ruled && len(request.Commands) > 0 && len(parts) == 0 {
@@ -638,7 +631,7 @@ func (m model) commandParts(request agent.ApprovalRequest, body lipgloss.Style, 
 	}
 	parts, err := permissions.CommandsIn(request.Summary, tools.CurrentShell().PowerShell())
 	if err != nil {
-		return []string{"", body.Foreground(warning).Render("could not split it into parts: " + oneLine(err.Error(), width-30))}
+		return []string{"", body.Foreground(warning()).Render("could not split it into parts: " + oneLine(err.Error(), width-30))}
 	}
 	if len(parts) < 2 && !slices.ContainsFunc(parts, permissions.Command.HeldBack) {
 		return nil
@@ -646,13 +639,13 @@ func (m model) commandParts(request agent.ApprovalRequest, body lipgloss.Style, 
 	policy := m.session.Agent.Permissions
 	lines := []string{"", body.Foreground(colors.dim).Render(fmt.Sprintf("%d parts", len(parts)))}
 	for _, part := range parts {
-		mark, note, tint := "●", "no rule allows it", warning
+		mark, note, tint := "●", "no rule allows it", warning()
 		if policy != nil {
 			switch verdict, rule := policy.CheckCommand(part); verdict {
 			case permissions.Allowed:
-				mark, note, tint = "✓", "allowed: "+rule, lipgloss.Color("#9ece6a")
+				mark, note, tint = "✓", "allowed: "+rule, col(uiNow().green)
 			case permissions.Denied:
-				mark, note, tint = "✗", "deny rule: "+rule, lipgloss.Color("#f7768e")
+				mark, note, tint = "✗", "deny rule: "+rule, col(uiNow().red)
 			case permissions.Excepted:
 				note = "exception: " + rule
 			}

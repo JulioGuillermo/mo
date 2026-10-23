@@ -99,7 +99,7 @@ func TestSyntaxThemes(t *testing.T) {
 		draft := newSettingsDraft(base)
 		draft.syntax = "nord"
 
-		preview := codePreview(syntaxThemeNamed(draft.syntax), true)
+		preview := codePreview(syntaxThemeNamed(draft.syntax), true, changePalette(true).block)
 		layer, err := draft.applyTo(base, nil)
 		untouched, _ := newSettingsDraft(base).applyTo(base, nil)
 

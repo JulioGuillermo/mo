@@ -200,10 +200,7 @@ func (m *model) redraw() {
 
 // reasoningStyle is the grey of reasoning, darker than the faint of notes.
 func (p *printer) reasoningStyle() lipgloss.Style {
-	if p.isDark() {
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89"))
-	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("#9699a3"))
+	return lipgloss.NewStyle().Foreground(col(ui(p.isDark()).faint))
 }
 
 // fold is a blank line and a grey header naming what is folded, then all of

@@ -255,33 +255,34 @@ func (m model) suggestionLayout(matches []command) (string, []region) {
 		}
 		line := fmt.Sprintf(" %-*s  %s ", width, name, candidate.description)
 		if first+i == selected {
-			lines = append(lines, selectedSuggestion.Render(line))
+			lines = append(lines, selectedSuggestion().Render(line))
 			continue
 		}
-		lines = append(lines, toolStyle.Render(fmt.Sprintf(" %-*s ", width, name))+dimStyle.Render(" "+candidate.description))
+		lines = append(lines, toolStyle().Render(fmt.Sprintf(" %-*s ", width, name))+dimStyle.Render(" "+candidate.description))
 	}
 	return strings.Join(lines, "\n"), regions
 }
 
-var (
-	selectedSuggestion = lipgloss.NewStyle().Background(accent).Foreground(lipgloss.Color("#1a1b26")).Bold(true)
-	helpHeading        = lipgloss.NewStyle().Foreground(warning).Bold(true)
-)
+func selectedSuggestion() lipgloss.Style {
+	return lipgloss.NewStyle().Background(accent()).Foreground(col(uiNow().onAccent)).Bold(true)
+}
+
+func helpHeading() lipgloss.Style { return lipgloss.NewStyle().Foreground(warning()).Bold(true) }
 
 // helpView lists the commands and the keys in two aligned tables.
 func (m model) helpView() string {
 	var out []string
-	out = append(out, helpHeading.Render("Commands"))
+	out = append(out, helpHeading().Render("Commands"))
 	for _, candidate := range m.commands() {
 		name := "/" + candidate.name
 		if candidate.argument != "" {
 			name += " " + candidate.argument
 		}
-		out = append(out, "  "+toolName.Render(fmt.Sprintf("%-18s", name))+dimStyle.Render(candidate.description))
+		out = append(out, "  "+toolName().Render(fmt.Sprintf("%-18s", name))+dimStyle.Render(candidate.description))
 	}
-	out = append(out, "", helpHeading.Render("Keys"))
+	out = append(out, "", helpHeading().Render("Keys"))
 	for _, entry := range keyHelp {
-		out = append(out, "  "+keyStyle.Render(fmt.Sprintf("%-22s", entry[0]))+dimStyle.Render(entry[1]))
+		out = append(out, "  "+keyStyle().Render(fmt.Sprintf("%-22s", entry[0]))+dimStyle.Render(entry[1]))
 	}
 	return strings.Join(out, "\n")
 }

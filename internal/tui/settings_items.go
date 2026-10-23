@@ -135,7 +135,7 @@ var settingsSections = []settingsSection{
 		return fmt.Sprintf("keys %s · panel %s · status %s", d.keys, d.sidebar, d.statusStyle)
 	}, items: appearanceItems},
 	{key: "style", title: "Style", summary: func(d *settingsDraft) string {
-		return "code " + d.syntax
+		return d.uiTheme + " " + d.uiMode + " · code " + d.syntax
 	}, items: styleItems},
 	{key: "animations", title: "Animations", summary: func(d *settingsDraft) string {
 		return fmt.Sprintf("spinner %s · running %s · writing %s ms", d.spinnerMS, d.runningMS, d.writingMS)
@@ -765,16 +765,6 @@ func appearanceItems(_ model, menu *settingsMenu) []settingItem {
 				huh.NewOption("default: type and send, as in a chat", "default"),
 				huh.NewOption("vim: insert, normal and visual modes; ctrl+h/j/k/l move between the panes; h and l go back and in through menus", "vim"),
 			).Value(&d.keys)
-		}},
-		{"Background", func(d *settingsDraft) string { return d.background }, func(d *settingsDraft) huh.Field {
-			return huh.NewInput().Title("Background").
-				Description("painted behind everything so mo looks the same in any terminal: #rrggbb, or terminal to keep its own").
-				Validate(func(text string) error {
-					if !config.ValidBackground(text) {
-						return fmt.Errorf("use #rrggbb or terminal")
-					}
-					return nil
-				}).Value(&d.background)
 		}},
 		{"Side panel", func(d *settingsDraft) string { return d.sidebar }, func(d *settingsDraft) huh.Field {
 			return huh.NewSelect[string]().Title("Side panel").Options(

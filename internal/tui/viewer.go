@@ -30,10 +30,13 @@ const (
 	viewMaxBytes  = 8 << 20
 )
 
+func viewerCurrent() lipgloss.Style {
+	return lipgloss.NewStyle().Background(warning()).Foreground(col(uiNow().onAccent))
+}
+
 var (
-	viewerMatch   = lipgloss.NewStyle().Reverse(true)
-	viewerCurrent = lipgloss.NewStyle().Background(warning).Foreground(lipgloss.Color("#1a1b26"))
-	viewerPicked  = lipgloss.NewStyle().Reverse(true)
+	viewerMatch  = lipgloss.NewStyle().Reverse(true)
+	viewerPicked = lipgloss.NewStyle().Reverse(true)
 )
 
 // outputViewer shows a job's output over the whole screen, as a terminal
@@ -658,10 +661,10 @@ func (m model) viewerView() string {
 func (m model) viewerBody(width int) string {
 	v := m.viewer
 	rows := m.viewerRows()
-	header := toolName.Render(fmt.Sprintf("Job %d", v.id)) + " " + dimStyle.Render(oneLine(v.status.Describe(), width-8))
+	header := toolName().Render(fmt.Sprintf("Job %d", v.id)) + " " + dimStyle.Render(oneLine(v.status.Describe(), width-8))
 	help := viewerHelp
 	if v.placeholder {
-		header = toolName.Render("Files") + " " + dimStyle.Render("choose one in the tree · only you see it")
+		header = toolName().Render("Files") + " " + dimStyle.Render("choose one in the tree · only you see it")
 		help = "tab tree · t hide it · esc close"
 	}
 	gutter := 0
@@ -671,7 +674,7 @@ func (m model) viewerBody(width int) string {
 			about += " · " + v.language
 		}
 		about += m.commentCount()
-		header = toolName.Render(oneLine(v.file, width/2)) + " " + dimStyle.Render(about+" · only you see it")
+		header = toolName().Render(oneLine(v.file, width/2)) + " " + dimStyle.Render(about+" · only you see it")
 		help = fileHelp
 		// The comment mark, the line's number, a space.
 		gutter = 1 + len(fmt.Sprint(len(v.lines))) + 1
@@ -692,7 +695,7 @@ func (m model) viewerBody(width int) string {
 		for _, line := range v.lines {
 			widest = max(widest, ansi.StringWidth(line))
 		}
-		header = toolName.Render(v.drawing) + " " + dimStyle.Render(fmt.Sprintf("%d lines · %d columns", len(v.lines), widest))
+		header = toolName().Render(v.drawing) + " " + dimStyle.Render(fmt.Sprintf("%d lines · %d columns", len(v.lines), widest))
 		help = drawingHelp
 	}
 	var out []string
@@ -727,7 +730,7 @@ func (m model) viewerBody(width int) string {
 		case re != nil && re.MatchString(plain):
 			style := viewerMatch
 			if i == current {
-				style = viewerCurrent
+				style = viewerCurrent()
 			}
 			line = re.ReplaceAllStringFunc(line, func(found string) string { return style.Render(found) })
 		case v.diff != nil:
@@ -748,7 +751,7 @@ func (m model) viewerBody(width int) string {
 		if gutter > 0 {
 			mark := " "
 			if _, _, commented := m.commentAt(i); commented {
-				mark = commentMark.Render("◆")
+				mark = commentMark().Render("◆")
 			}
 			if v.file != "" {
 				mark += dimStyle.Render(fmt.Sprintf("%*d ", gutter-2, i+1))
@@ -771,13 +774,13 @@ func (m model) viewerBody(width int) string {
 				where = v.diff.describe(from)
 			}
 		}
-		footer = commentMark.Render("◆ "+where+": ") + v.commentText + "▏" + dimStyle.Render("  enter keep · esc cancel · empty deletes it")
+		footer = commentMark().Render("◆ "+where+": ") + v.commentText + "▏" + dimStyle.Render("  enter keep · esc cancel · empty deletes it")
 	case v.annotatable() && onComment && !v.typing:
-		footer = commentFooter.Render("◆ "+comment.text) + dimStyle.Render(" · c edit · d delete")
+		footer = commentFooter().Render("◆ "+comment.text) + dimStyle.Render(" · c edit · d delete")
 	case v.typing:
-		footer = keyStyle.Render("/") + v.typed + "▏" + dimStyle.Render("  enter search · esc cancel")
+		footer = keyStyle().Render("/") + v.typed + "▏" + dimStyle.Render("  enter search · esc cancel")
 	case v.notice != "":
-		footer = keyStyle.Render(v.notice) + dimStyle.Render(" · "+help)
+		footer = keyStyle().Render(v.notice) + dimStyle.Render(" · "+help)
 	}
 	position := fmt.Sprintf(" %d-%d/%d", min(v.top+1, len(v.lines)), min(v.top+rows, len(v.lines)), len(v.lines))
 	if v.follow && v.status.State == tools.JobRunning {

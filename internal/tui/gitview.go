@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -16,11 +17,9 @@ const (
 	changeHelp = "↑↓ move · e E on ⋯ show lines · f whole file · c comment · a attach · H history · / search · y copy · t tree · esc close"
 )
 
-var (
-	changeAdded    = lipgloss.Color("#9ece6a")
-	changeDeleted  = lipgloss.Color("#f7768e")
-	changeModified = warning
-)
+func changeAdded() color.Color    { return col(uiNow().green) }
+func changeDeleted() color.Color  { return col(uiNow().red) }
+func changeModified() color.Color { return warning() }
 
 // changeView is a comparison shown in the viewer: its files in the tree,
 // the diff of the one picked beside it.
@@ -38,12 +37,12 @@ type changeView struct {
 // changeStyle is the colour of a file by what happened to it: new in
 // green, changed in amber, gone in red; bold for the one shown.
 func changeStyle(kind rune, current bool) lipgloss.Style {
-	style := lipgloss.NewStyle().Foreground(changeModified)
+	style := lipgloss.NewStyle().Foreground(changeModified())
 	switch kind {
 	case gitops.ChangeAdded, gitops.ChangeUntracked:
-		style = style.Foreground(changeAdded)
+		style = style.Foreground(changeAdded())
 	case gitops.ChangeDeleted:
-		style = style.Foreground(changeDeleted)
+		style = style.Foreground(changeDeleted())
 	}
 	return style.Bold(current)
 }
@@ -185,5 +184,5 @@ func (v *outputViewer) changeHeader(width int, comments string) string {
 		about += " · whole file"
 	}
 	about += comments
-	return toolName.Render(oneLine(v.diffFile, width/2)) + " " + dimStyle.Render(about+" · only you see it")
+	return toolName().Render(oneLine(v.diffFile, width/2)) + " " + dimStyle.Render(about+" · only you see it")
 }

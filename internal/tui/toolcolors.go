@@ -23,12 +23,20 @@ const (
 	kindOutput
 )
 
-var toolKindColors = map[toolKind]color.Color{
-	kindRead:       lipgloss.Color("#7aa2f7"),
-	kindWrite:      lipgloss.Color("#ff79c6"),
-	kindExec:       lipgloss.Color("#f7768e"),
-	kindBackground: lipgloss.Color("#e0af68"),
-	kindOutput:     lipgloss.Color("#9ece6a"),
+// toolKindColor is the colour of the mark of a kind of call.
+func toolKindColor(kind toolKind) color.Color {
+	colors := uiNow()
+	switch kind {
+	case kindWrite:
+		return col(colors.pink)
+	case kindExec:
+		return col(colors.red)
+	case kindBackground:
+		return col(colors.warning)
+	case kindOutput:
+		return col(colors.green)
+	}
+	return col(colors.accent)
 }
 
 // toolMark is the coloured dot before a tool call.
@@ -38,7 +46,7 @@ func toolMark(kind toolKind) string {
 
 // toolMarkAs is a call's sign of how it stands, coloured by what it does.
 func toolMarkAs(kind toolKind, sign string) string {
-	return lipgloss.NewStyle().Foreground(toolKindColors[kind]).Bold(true).Render(sign)
+	return lipgloss.NewStyle().Foreground(toolKindColor(kind)).Bold(true).Render(sign)
 }
 
 // toolKindOf tells what a call does; changes says whether the registry

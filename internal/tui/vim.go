@@ -60,14 +60,20 @@ type inputSnapshot struct {
 const vimUndoDepth = 100
 
 var (
-	vimCursorLine = lipgloss.NewStyle().Background(lipgloss.Color("#2a3355"))
-	vimPicked     = lipgloss.NewStyle().Reverse(true)
-	vimColors     = map[vimMode]color.Color{
-		vimInsert: lipgloss.Color("#9ece6a"),
-		vimNormal: lipgloss.Color("#7aa2f7"),
-		vimVisual: lipgloss.Color("#bb9af7"),
-	}
+	vimPicked = lipgloss.NewStyle().Reverse(true)
 )
+
+// vimColor is the colour of a mode on the status line.
+func vimColor(mode vimMode) color.Color {
+	colors := uiNow()
+	switch mode {
+	case vimInsert:
+		return col(colors.green)
+	case vimVisual:
+		return col(colors.purple)
+	}
+	return col(colors.accent)
+}
 
 // vimOn tells whether vim keys are in use.
 func (m model) vimOn() bool {
@@ -90,8 +96,9 @@ func (m model) vimSegment() segment {
 	if m.vim.pending != "" {
 		name += " " + m.vim.pending
 	}
-	text := lipgloss.NewStyle().Foreground(lipgloss.Color("#1a1b26")).Background(vimColors[m.vim.mode]).Bold(true).Render(name)
-	return segment{text: text, bg: vimColors[m.vim.mode]}
+	tint := vimColor(m.vim.mode)
+	text := lipgloss.NewStyle().Foreground(col(uiNow().onAccent)).Background(tint).Bold(true).Render(name)
+	return segment{text: text, bg: tint}
 }
 
 // vimKey handles a key with vim keys on, and tells whether it did; the
@@ -578,7 +585,7 @@ func (m model) markLines(lines []string, first int) []string {
 		return lines
 	}
 	from, to := m.vim.line-first, m.vim.line-first
-	style := vimCursorLine
+	style := lipgloss.NewStyle().Background(col(uiNow().vimCursor))
 	if m.vim.mode == vimVisual {
 		from, to, style = min(m.vim.anchor, m.vim.line)-first, max(m.vim.anchor, m.vim.line)-first, vimPicked
 	}

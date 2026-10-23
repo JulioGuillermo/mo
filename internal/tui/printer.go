@@ -32,34 +32,28 @@ const (
 
 const shownCommandLines = 6
 
-var (
-	accent       = lipgloss.Color("#7aa2f7")
-	warning      = lipgloss.Color("#e0af68")
-	dimStyle     = lipgloss.NewStyle().Faint(true)
-	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e"))
-	userStyle    = lipgloss.NewStyle().Foreground(accent).Bold(true)
-	toolStyle    = lipgloss.NewStyle().Foreground(accent)
-	toolName     = lipgloss.NewStyle().Foreground(accent).Bold(true)
-	keyStyle     = lipgloss.NewStyle().Foreground(warning).Bold(true)
-	workingStyle = lipgloss.NewStyle().Foreground(warning)
-	commandEdge  = lipgloss.NewStyle().Foreground(accent).Faint(true)
-)
+var dimStyle = lipgloss.NewStyle().Faint(true)
 
-// panel is the background of the user's messages and of commands, a shade
-// off the terminal's own.
-// panelBackground is the shade behind a command.
+// The colours and styles of the look in use, for what mo draws anywhere.
+func accent() color.Color  { return col(uiNow().accent) }
+func warning() color.Color { return col(uiNow().warning) }
+
+func errorStyle() lipgloss.Style   { return lipgloss.NewStyle().Foreground(col(uiNow().red)) }
+func userStyle() lipgloss.Style    { return lipgloss.NewStyle().Foreground(accent()).Bold(true) }
+func toolStyle() lipgloss.Style    { return lipgloss.NewStyle().Foreground(accent()) }
+func toolName() lipgloss.Style     { return lipgloss.NewStyle().Foreground(accent()).Bold(true) }
+func keyStyle() lipgloss.Style     { return lipgloss.NewStyle().Foreground(warning()).Bold(true) }
+func workingStyle() lipgloss.Style { return lipgloss.NewStyle().Foreground(warning()) }
+func commandEdge() lipgloss.Style  { return lipgloss.NewStyle().Foreground(accent()).Faint(true) }
+
+// panelBackground is the shade behind what the user wrote and a command,
+// a shade off the screen's own.
 func panelBackground(dark bool) color.Color {
-	if dark {
-		return lipgloss.Color("#24283b")
-	}
-	return lipgloss.Color("#e1e2e7")
+	return col(ui(dark).panel)
 }
 
 func panel(dark bool) lipgloss.Style {
-	if dark {
-		return lipgloss.NewStyle().Background(lipgloss.Color("#24283b")).Foreground(lipgloss.Color("#c0caf5"))
-	}
-	return lipgloss.NewStyle().Background(lipgloss.Color("#e1e2e7")).Foreground(lipgloss.Color("#3760bf"))
+	return lipgloss.NewStyle().Background(panelBackground(dark)).Foreground(col(ui(dark).text))
 }
 
 // printer formats what goes into the terminal scrollback. It is shared by the
@@ -393,7 +387,7 @@ func (p *printer) caption(name, path string, indent int) string {
 	room := max(width-indent-2, 10)
 	text := dimStyle.Render(path)
 	if name != "" {
-		text = lipgloss.NewStyle().Foreground(lipgloss.Color("#a9b1d6")).Render(name) + dimStyle.Render(" · "+path)
+		text = lipgloss.NewStyle().Foreground(col(uiNow().subtext)).Render(name) + dimStyle.Render(" · "+path)
 	}
 	return strings.Repeat(" ", indent) + ansi.Truncate(text, room, "…")
 }
@@ -651,7 +645,7 @@ func (p *printer) toolHeaderAs(name string, args json.RawMessage, sign string) s
 	if kind != nil {
 		mark = toolMarkAs(kind(call), sign)
 	}
-	return mark + toolName.Render(" "+tools.Shown(tools.Canonical(name)))
+	return mark + toolName().Render(" "+tools.Shown(tools.Canonical(name)))
 }
 
 // runSign is a call's sign of how it stands: turning while it runs,
@@ -703,7 +697,7 @@ func (p *printer) commandLines(text string, all bool, language string) string {
 			pieces = p.wrapped(line, 8)
 		}
 		for _, piece := range pieces {
-			out = append(out, commandEdge.Render("  ▌")+shade.Render(piece))
+			out = append(out, commandEdge().Render("  ▌")+shade.Render(piece))
 		}
 	}
 	if hidden > 0 && !all {
@@ -729,7 +723,7 @@ func (p *printer) highlightedCommand(lines []string, all bool, language string, 
 	var out []string
 	for _, piece := range code.render(0, len(code.rows), func(int) color.Color { return background }, dark) {
 		fill := shade.Render(strings.Repeat(" ", max(total-1-ansi.StringWidth(piece), 0)))
-		out = append(out, commandEdge.Render("  ▌")+shade.Render(" ")+piece+fill)
+		out = append(out, commandEdge().Render("  ▌")+shade.Render(" ")+piece+fill)
 	}
 	return out
 }
@@ -746,7 +740,7 @@ func (p *printer) commandTail(command, language string, rows int) string {
 	var out []string
 	for _, piece := range codeTail(command, language, rows, inner, background, dark) {
 		fill := shade.Render(strings.Repeat(" ", max(total-1-ansi.StringWidth(piece), 0)))
-		out = append(out, commandEdge.Render("  ▌")+shade.Render(" ")+piece+fill)
+		out = append(out, commandEdge().Render("  ▌")+shade.Render(" ")+piece+fill)
 	}
 	return strings.Join(out, "\n")
 }
@@ -841,7 +835,7 @@ func (p *printer) uiCall(args json.RawMessage) []string {
 	block := lipgloss.NewStyle().Background(colors.block)
 	pad := func(line string) string {
 		fill := block.Render(strings.Repeat(" ", max(inner+2-ansi.StringWidth(line), 0)))
-		return commandEdge.Render("  ▌") + block.Render(" ") + line + fill
+		return commandEdge().Render("  ▌") + block.Render(" ") + line + fill
 	}
 	var parts []string
 	if len(call.Tree) > 0 && string(call.Tree) != "null" {
@@ -955,7 +949,7 @@ func (p *printer) fullResult(output string, isError bool) string {
 	output = terminalText(output)
 	style := dimStyle
 	if isError {
-		style = errorStyle
+		style = errorStyle()
 	}
 	var out []string
 	for i, line := range strings.Split(strings.TrimRight(output, "\n"), "\n") {
@@ -978,7 +972,7 @@ func (p *printer) ToolResult(output string, isError bool) string {
 	shown := lines[:min(len(lines), toolPreviewLines)]
 	style := dimStyle
 	if isError {
-		style = errorStyle
+		style = errorStyle()
 	}
 	var out strings.Builder
 	for i, line := range shown {
@@ -997,7 +991,7 @@ func (p *printer) ToolResult(output string, isError bool) string {
 }
 
 func (p *printer) Denied(name string) string {
-	return errorStyle.Render("  ⎿ denied: " + name)
+	return errorStyle().Render("  ⎿ denied: " + name)
 }
 
 // Error shows an error; a line too long for the terminal goes on under
@@ -1006,7 +1000,7 @@ func (p *printer) Error(err error) string {
 	p.mu.Lock()
 	width := p.width - 2
 	p.mu.Unlock()
-	return errorStyle.Render(hangingWrap("✗ "+err.Error(), width))
+	return errorStyle().Render(hangingWrap("✗ "+err.Error(), width))
 }
 
 // FoldedError is a long error: its first line and how long it is, or all
@@ -1024,7 +1018,7 @@ func (p *printer) FoldedError(err error, open bool) string {
 		first = string(runes[:max(width/2, 20)]) + "…"
 	}
 	lines := strings.Count(text, "\n") + 1
-	return errorStyle.Render("✗ "+first) + dimStyle.Render(fmt.Sprintf(" · %d lines · ctrl+o or click to open", lines))
+	return errorStyle().Render("✗ "+first) + dimStyle.Render(fmt.Sprintf(" · %d lines · ctrl+o or click to open", lines))
 }
 
 var jsonKey = regexp.MustCompile(`^\s*"[^"]*":\s*`)
@@ -1088,7 +1082,7 @@ func (p *printer) Warning(text string) string {
 			lines[i] = strings.Repeat(" ", len([]rune(noteMark))) + line
 		}
 	}
-	return lipgloss.NewStyle().Foreground(warning).Render(strings.Join(lines, "\n"))
+	return lipgloss.NewStyle().Foreground(warning()).Render(strings.Join(lines, "\n"))
 }
 
 func (p *printer) clip(line string) string {
@@ -1121,9 +1115,9 @@ func (p *printer) askAnswers(output string) string {
 	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
 		switch {
 		case strings.HasPrefix(line, "Q: "):
-			lines = append(lines, wrapIndented(strings.TrimPrefix(line, "Q: "), "  ? ", width, toolStyle))
+			lines = append(lines, wrapIndented(strings.TrimPrefix(line, "Q: "), "  ? ", width, toolStyle()))
 		case strings.HasPrefix(line, "A: "):
-			lines = append(lines, wrapIndented(strings.TrimPrefix(line, "A: "), "    › ", width, userStyle))
+			lines = append(lines, wrapIndented(strings.TrimPrefix(line, "A: "), "    › ", width, userStyle()))
 		case line == "":
 			continue
 		default:

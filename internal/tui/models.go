@@ -138,7 +138,7 @@ func (m model) typeModelName(choice modelChoice, problem string) (tea.Model, tea
 	name := choice.current
 	description := "the model's id as the provider names it"
 	if problem != "" {
-		description = errorStyle.Render(problem) + "\n" + description
+		description = errorStyle().Render(problem) + "\n" + description
 	}
 	form := newForm(huh.NewGroup(huh.NewInput().Title("Model · " + choice.provider).Description(description).Value(&name))).WithShowHelp(false)
 	next := func(m model) (tea.Model, tea.Cmd) { return choice.pick(m, strings.TrimSpace(name)) }

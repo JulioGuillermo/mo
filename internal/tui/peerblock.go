@@ -19,12 +19,8 @@ type peerColors struct {
 }
 
 func peerPalette(dark bool) peerColors {
-	if dark {
-		return peerColors{background: lipgloss.Color("#1e2030"), text: lipgloss.Color("#c0caf5"),
-			incoming: lipgloss.Color("#bb9af7"), outgoing: lipgloss.Color("#7dcfff"), status: lipgloss.Color("#737aa2")}
-	}
-	return peerColors{background: lipgloss.Color("#e9e9ed"), text: lipgloss.Color("#3760bf"),
-		incoming: lipgloss.Color("#9854f1"), outgoing: lipgloss.Color("#007197"), status: lipgloss.Color("#8990b3")}
+	c := ui(dark)
+	return peerColors{background: col(c.peer), text: col(c.text), incoming: col(c.purple), outgoing: col(c.cyan), status: col(c.dim)}
 }
 
 // PeerIn draws a message a peer sent: its bar, who sent it, from which

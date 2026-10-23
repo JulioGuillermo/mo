@@ -60,6 +60,8 @@ type settingsDraft struct {
 	cellSize     string
 	blame        bool
 	syntax       string
+	uiTheme      string
+	uiMode       string
 	background   string
 	sidebar      string
 	statusStyle  string
@@ -180,6 +182,8 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		cellSize:         cfg.Render.CellSize,
 		blame:            cfg.Render.Blame != nil && *cfg.Render.Blame,
 		syntax:           cfg.Render.Syntax,
+		uiTheme:          cfg.Render.Theme,
+		uiMode:           cfg.Render.Mode,
 		background:       cfg.Render.Background,
 		sidebar:          cfg.Render.Sidebar,
 		statusStyle:      cfg.Render.Status,
@@ -364,7 +368,7 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	}
 	layer.Render.Images = unlessDefault(render.Mode(d.images), defaults.Render.Images)
 	if !config.ValidBackground(d.background) {
-		return layer, fmt.Errorf("background %q: use #rrggbb or terminal", d.background)
+		return layer, fmt.Errorf("background %q: use theme, #rrggbb or terminal", d.background)
 	}
 	layer.Render.Background = unlessDefault(strings.TrimSpace(d.background), defaults.Render.Background)
 	layer.Render.Sidebar = unlessDefault(d.sidebar, defaults.Render.Sidebar)
@@ -409,6 +413,8 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	layer.Render.CellSize = unlessDefault(cellSize, defaults.Render.CellSize)
 	layer.Render.Blame = unlessDefaultFlag(d.blame, false)
 	layer.Render.Syntax = unlessDefault(d.syntax, defaults.Render.Syntax)
+	layer.Render.Theme = unlessDefault(d.uiTheme, defaults.Render.Theme)
+	layer.Render.Mode = unlessDefault(d.uiMode, defaults.Render.Mode)
 	layer.Render.ReplyEveryMS = unlessDefault(everyMS, defaults.Render.ReplyEveryMS)
 	layer.Render.ReplyEveryTokens = unlessDefault(everyTokens, defaults.Render.ReplyEveryTokens)
 	layer.Render.Icons = unlessDefault(d.icons, defaults.Render.Icons)

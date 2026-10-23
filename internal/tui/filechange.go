@@ -96,19 +96,12 @@ type changeColors struct {
 }
 
 func changePalette(dark bool) changeColors {
-	if dark {
-		return changeColors{
-			block: lipgloss.Color("#0e1630"), added: lipgloss.Color("#12301f"), removed: lipgloss.Color("#3a1622"),
-			addedMark: lipgloss.Color("#9ece6a"), removedMark: lipgloss.Color("#f7768e"), hunk: lipgloss.Color("#565f89"),
-			blockCursor: lipgloss.Color("#22305a"), addedCursor: lipgloss.Color("#1f4d33"), removedCursor: lipgloss.Color("#5c2535"),
-			cursor: lipgloss.Color("#292e42"),
-		}
-	}
+	c := ui(dark)
 	return changeColors{
-		block: lipgloss.Color("#e6ecfa"), added: lipgloss.Color("#dcf2dc"), removed: lipgloss.Color("#f8dde2"),
-		addedMark: lipgloss.Color("#587539"), removedMark: lipgloss.Color("#f52a65"), hunk: lipgloss.Color("#8990b3"),
-		blockCursor: lipgloss.Color("#c9d6f2"), addedCursor: lipgloss.Color("#bfe6bf"), removedCursor: lipgloss.Color("#f0c2cb"),
-		cursor: lipgloss.Color("#d8dcea"),
+		block: col(c.block), added: col(c.added), removed: col(c.removed),
+		addedMark: col(c.green), removedMark: col(c.red), hunk: col(c.faint),
+		blockCursor: col(c.blockCursor), addedCursor: col(c.addedCursor), removedCursor: col(c.removedCursor),
+		cursor: col(c.cursorLine),
 	}
 }
 
@@ -128,7 +121,7 @@ func (p *printer) fileChangeBlock(change fileChange) (string, func(from, to int)
 	colors := changePalette(dark)
 	language := languageOf(change.path)
 	inner := max(width-8, 20)
-	edge := commandEdge.Render("  ▌")
+	edge := commandEdge().Render("  ▌")
 	if !change.edit {
 		block := lipgloss.NewStyle().Background(colors.block)
 		lead, fill := block.Render(" "), newSGR(block)
@@ -141,7 +134,7 @@ func (p *printer) fileChangeBlock(change fileChange) (string, func(from, to int)
 	files := change.files()
 	for i, each := range change.edits {
 		if len(files) > 1 && (i == 0 || each.path != change.edits[i-1].path) {
-			out = append(out, edge+toolName.Render(" "+each.path))
+			out = append(out, edge+toolName().Render(" "+each.path))
 		}
 		out = append(out, p.diffRows(each, languageOf(each.path), inner, colors, dark)...)
 	}
@@ -157,7 +150,7 @@ var hunkHeader = regexp.MustCompile(`^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
 // it as a whole, so what a string or a comment holds across lines is known.
 func (p *printer) diffRows(each fileEdit, language string, inner int, colors changeColors, dark bool) []string {
 	oldCode, newCode := newCodeText(each.old, language, inner-2), newCodeText(each.new, language, inner-2)
-	edge := commandEdge.Render("  ▌")
+	edge := commandEdge().Render("  ▌")
 	pad := func(line string, background color.Color) string {
 		fill := lipgloss.NewStyle().Background(background).Render(strings.Repeat(" ", max(inner+2-ansi.StringWidth(line), 0)))
 		return edge + line + fill

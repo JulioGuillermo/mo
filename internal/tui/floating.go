@@ -51,7 +51,7 @@ func (m model) floatingBox() region {
 }
 
 func (m model) floatingFrame() string {
-	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(popupBorder).Padding(0, 1).
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(popupBorder()).Padding(0, 1).
 		Render(m.floatingContent())
 }
 

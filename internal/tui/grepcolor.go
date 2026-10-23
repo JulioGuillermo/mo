@@ -45,9 +45,9 @@ func (p *printer) grepResult(run toolRun, open bool) (string, bool) {
 		hidden, lines = len(lines)-toolPreviewLines, lines[:toolPreviewLines]
 	}
 
-	file := newSGR(lipgloss.NewStyle().Foreground(accent).Bold(true))
+	file := newSGR(lipgloss.NewStyle().Foreground(accent()).Bold(true))
 	dim := newSGR(dimStyle)
-	hit := newSGR(lipgloss.NewStyle().Foreground(warning).Bold(true))
+	hit := newSGR(lipgloss.NewStyle().Foreground(warning()).Bold(true))
 	var out []string
 	row := 0
 	emit := func(text string) {

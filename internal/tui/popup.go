@@ -17,11 +17,11 @@ const (
 	popupDescriptionMax = 12
 )
 
-var (
-	popupBorder   = lipgloss.Color("#7aa2f7")
-	popupError    = lipgloss.Color("#f7768e")
-	popupSelected = lipgloss.NewStyle().Background(lipgloss.Color("#7aa2f7")).Foreground(lipgloss.Color("#1a1b26")).Bold(true)
-)
+func popupBorder() color.Color { return accent() }
+func popupError() color.Color  { return col(uiNow().red) }
+func popupSelected() lipgloss.Style {
+	return lipgloss.NewStyle().Background(accent()).Foreground(col(uiNow().onAccent)).Bold(true)
+}
 
 // popup is a small menu drawn over the screen, where a right click
 // opened it or in the middle: what can be done with something, the
@@ -78,7 +78,7 @@ func (m model) popupLayout() popupBox {
 
 	var body []string
 	options := map[int]int{}
-	body = append(body, toolName.Render(ansi.Truncate(p.title, width, "…")))
+	body = append(body, toolName().Render(ansi.Truncate(p.title, width, "…")))
 	if p.description != "" {
 		described := strings.Split(ansi.Wrap(p.description, width, " "), "\n")
 		room := max(screenHeight-len(p.options)-5, 1)
@@ -103,7 +103,7 @@ func (m model) popupLayout() popupBox {
 		label := " " + ansi.Truncate(p.options[i].Key, width-2, "…")
 		label += strings.Repeat(" ", max(width-ansi.StringWidth(label), 0))
 		if i == p.selected {
-			label = popupSelected.Render(ansi.Strip(label))
+			label = popupSelected().Render(ansi.Strip(label))
 		}
 		options[len(body)+1] = i
 		body = append(body, label)
@@ -113,10 +113,10 @@ func (m model) popupLayout() popupBox {
 	}
 	border := p.border
 	if border == nil {
-		border = popupBorder
+		border = popupBorder()
 	}
 	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 1).
-		Background(lipgloss.Color("#16161e")).Render(strings.Join(body, "\n"))
+		Background(col(uiNow().popup)).Render(strings.Join(body, "\n"))
 	lines := strings.Split(box, "\n")
 	boxWidth, boxHeight := ansi.StringWidth(lines[0]), len(lines)
 

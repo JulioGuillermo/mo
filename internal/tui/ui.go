@@ -231,6 +231,9 @@ type model struct {
 	showDetails       bool
 	thread            conversation
 	lastEsc           time.Time
+	// terminalDark is whether the terminal's own background is dark, as it
+	// reports it.
+	terminalDark bool
 	// focused is whether the terminal has the focus, as it reports it; mo
 	// starts as if it had.
 	focused bool
@@ -272,25 +275,26 @@ func Run(session Session) error {
 	printer.setImages(render.Detect(session.Config.Render.Images))
 	useCellSize(session.Config.Render.CellSize)
 	useSyntaxTheme(session.Config.Render.Syntax)
-	if screen := screenFor(session.Config.Render.Background); screen.set {
-		printer.setDark(screen.dark)
-	}
+	screen := screenFor(session.Config.Render, true)
+	useUITheme(session.Config.Render.Theme, screen.dark)
+	printer.setDark(screen.dark)
 	printer.workDir = session.WorkDir
 	bridge := &bridge{printer: printer, exited: make(chan struct{})}
 	m := model{
-		session:     session,
-		bridge:      bridge,
-		printer:     printer,
-		input:       newInput(),
-		spinner:     spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(workingStyle)),
-		focused:     true,
-		history:     loadHistory(),
-		vim:         vimState{enabled: session.Config.Render.Keys == "vim"},
-		files:       &fileIndex{},
-		shownSpeeds: &shownSpeeds{},
-		svgs:        &svgFrames{kitty: printer.images == render.ModeKitty, ready: func() { bridge.send(svgReadyMsg{}) }},
-		config:      watchConfig(session.WorkDir),
-		peers:       newPeerSession(),
+		session:      session,
+		bridge:       bridge,
+		printer:      printer,
+		input:        newInput(),
+		spinner:      spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(workingStyle())),
+		focused:      true,
+		terminalDark: true,
+		history:      loadHistory(),
+		vim:          vimState{enabled: session.Config.Render.Keys == "vim"},
+		files:        &fileIndex{},
+		shownSpeeds:  &shownSpeeds{},
+		svgs:         &svgFrames{kitty: printer.images == render.ModeKitty, ready: func() { bridge.send(svgReadyMsg{}) }},
+		config:       watchConfig(session.WorkDir),
+		peers:        newPeerSession(),
 	}
 	defer m.config.close()
 	printer.setKind(m.toolKind)
@@ -364,7 +368,7 @@ func inputStyles(styles textarea.Styles, dark bool) textarea.Styles {
 		state.CursorLine = shade
 		state.Placeholder = shade.Faint(true)
 		state.EndOfBuffer = shade
-		state.Prompt = shade.Foreground(accent).Bold(true)
+		state.Prompt = shade.Foreground(accent()).Bold(true)
 	}
 	return styles
 }
@@ -1289,7 +1293,7 @@ func (m model) View() tea.View {
 	view.AltScreen = true
 	view.MouseMode = tea.MouseModeCellMotion
 	view.ReportFocus = true
-	if screen := screenFor(m.session.Config.Render.Background); screen.set {
+	if screen := screenFor(m.session.Config.Render, m.terminalDark); screen.set {
 		view.BackgroundColor, view.ForegroundColor = screen.background, screen.foreground
 	}
 	return view
@@ -1543,21 +1547,13 @@ func (c statusColors) mode(mode permissions.Mode) color.Color {
 }
 
 func statusPalette(dark bool) statusColors {
-	if dark {
-		return statusColors{
-			provider: accent, model: lipgloss.Color("#bb9af7"), label: lipgloss.Color("#565f89"),
-			low: lipgloss.Color("#9ece6a"), mid: warning, high: lipgloss.Color("#f7768e"), empty: lipgloss.Color("#3b4261"),
-			prompt: lipgloss.Color("#7dcfff"), generation: lipgloss.Color("#73daca"),
-			base: lipgloss.Color("#0b1230"), segment: lipgloss.Color("#2a2f4a"), segmentDim: lipgloss.Color("#1f2440"),
-			segmentDeep: lipgloss.Color("#171b33"), text: lipgloss.Color("#a9b1d6"), branch: warning,
-		}
-	}
+	c := ui(dark)
 	return statusColors{
-		provider: lipgloss.Color("#2e7de9"), model: lipgloss.Color("#9854f1"), label: lipgloss.Color("#8990b3"),
-		low: lipgloss.Color("#587539"), mid: lipgloss.Color("#8c6c3e"), high: lipgloss.Color("#f52a65"), empty: lipgloss.Color("#c4c8da"),
-		prompt: lipgloss.Color("#007197"), generation: lipgloss.Color("#118c74"),
-		base: lipgloss.Color("#f4f5fb"), segment: lipgloss.Color("#d5d9ec"), segmentDim: lipgloss.Color("#e1e4f2"),
-		segmentDeep: lipgloss.Color("#e9ebf6"), text: lipgloss.Color("#3760bf"), branch: lipgloss.Color("#8c6c3e"),
+		provider: col(c.accent), model: col(c.purple), label: col(c.faint),
+		low: col(c.green), mid: col(c.warning), high: col(c.red), empty: col(c.empty),
+		prompt: col(c.cyan), generation: col(c.teal),
+		base: col(c.statusBase), segment: col(c.segment), segmentDim: col(c.segmentDim),
+		segmentDeep: col(c.segmentDeep), text: col(c.subtext), branch: col(c.warning),
 	}
 }
 

@@ -407,7 +407,7 @@ func (m model) commitListLayout(body string) string {
 	left := h.lines(width, len(rows))
 	divider := dimStyle.Render("│")
 	if h.focus {
-		divider = treeFolder.Render("│")
+		divider = treeFolder().Render("│")
 	}
 	out := make([]string, len(rows))
 	for i, row := range rows {
@@ -423,12 +423,12 @@ func (h *fileHistory) lines(width, height int) []string {
 	if h.entries[0].uncommitted {
 		commits--
 	}
-	title := toolName.Render("history") + dimStyle.Render(fmt.Sprintf(" · %d commits", commits))
+	title := toolName().Render("history") + dimStyle.Render(fmt.Sprintf(" · %d commits", commits))
 	switch {
 	case h.typing:
-		title = keyStyle.Render("/") + ansi.Truncate(h.typed, width-3, "") + "▏"
+		title = keyStyle().Render("/") + ansi.Truncate(h.typed, width-3, "") + "▏"
 	case h.filter != "":
-		title = keyStyle.Render("/") + ansi.Truncate(h.filter, width-12, "…") + dimStyle.Render(fmt.Sprintf(" · %d found", len(h.listed)))
+		title = keyStyle().Render("/") + ansi.Truncate(h.filter, width-12, "…") + dimStyle.Render(fmt.Sprintf(" · %d found", len(h.listed)))
 	}
 	out := []string{padTo(title, width)}
 	for at := h.top; at < h.top+height-2; at++ {
@@ -468,7 +468,7 @@ func (h *fileHistory) row(index int, cursor bool, width int) string {
 	case entry.uncommitted:
 		return changeStyle(gitops.ChangeModified, index == h.current).Render(plain)
 	case index == h.current:
-		return treeOpened.Render(plain)
+		return treeOpened().Render(plain)
 	}
 	return plain
 }
@@ -483,5 +483,5 @@ func firstName(name string) string {
 func (v *outputViewer) historyHeader(width int, comments string) string {
 	h := v.history
 	about := fmt.Sprintf("%d of %d · %s", h.current+1, len(h.entries), h.entries[h.current].title())
-	return toolName.Render(oneLine(h.path, width/3)) + " " + dimStyle.Render(oneLine(about+comments, width))
+	return toolName().Render(oneLine(h.path, width/3)) + " " + dimStyle.Render(oneLine(about+comments, width))
 }

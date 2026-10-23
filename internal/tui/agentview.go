@@ -221,7 +221,7 @@ func (m model) agentRows(infos []team.Info, below int, width int, base lipgloss.
 		indent := strings.Repeat("  ", max(info.Depth-below-1, 0))
 		note, noteStyle := " · "+agentKindAndState(info), base.Foreground(colors.dim)
 		if info.AskingBelow > 0 && info.State != team.Asking {
-			note, noteStyle = fmt.Sprintf(" · %d asks", info.AskingBelow), base.Foreground(lipgloss.Color("#e0af68"))
+			note, noteStyle = fmt.Sprintf(" · %d asks", info.AskingBelow), base.Foreground(warning())
 		}
 		// Its context, used of its window, on the right; the name gives
 		// way when there is no room.
@@ -313,12 +313,10 @@ func (m model) agentViewLayout() (string, []region) {
 	info, _ := m.agentInfo(view.id)
 	dark := m.printer == nil || m.printer.isDark()
 	mark, tint := agentMark(info, dark)
-	bar := lipgloss.NewStyle().Background(accent).Foreground(lipgloss.Color("#1a1b26"))
-	if !dark {
-		bar = lipgloss.NewStyle().Background(lipgloss.Color("#2e7de9")).Foreground(lipgloss.Color("#ffffff"))
-	}
+	colors := ui(dark)
+	bar := lipgloss.NewStyle().Background(col(colors.accent)).Foreground(col(colors.onAccent))
 	var regions []region
-	title := bar.Render(" ") + bar.Foreground(tint).Background(lipgloss.Color("#1a1b26")).Bold(true).Render(" "+mark+" ") + bar.Render(" ")
+	title := bar.Render(" ") + bar.Foreground(tint).Background(col(ui(true).onAccent)).Bold(true).Render(" "+mark+" ") + bar.Render(" ")
 	x := ansi.StringWidth(title)
 	crumb := func(text string, do func(m model) (tea.Model, tea.Cmd)) {
 		style := bar

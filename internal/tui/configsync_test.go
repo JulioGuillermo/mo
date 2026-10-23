@@ -185,7 +185,7 @@ func TestConfigSync(t *testing.T) {
 
 		m = follow(m, configChangedMsg{})
 
-		if m.popup == nil || m.popup.border != popupError || !strings.Contains(m.popup.title, "broken") || m.session.Config.Effort != "low" {
+		if m.popup == nil || m.popup.border != popupError() || !strings.Contains(m.popup.title, "broken") || m.session.Config.Effort != "low" {
 			t.Fatalf("popup %+v effort %q", m.popup, m.session.Config.Effort)
 		}
 	})

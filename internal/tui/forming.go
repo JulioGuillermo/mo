@@ -204,7 +204,7 @@ func (m model) formingWindow(path, text string) string {
 	// began there is known; the line being written, by itself.
 	for _, line := range codeTail(text, languageOf(path), formingLines, width, colors.block, dark) {
 		fill := block.Render(strings.Repeat(" ", max(width+1-ansi.StringWidth(line), 0)))
-		out = append(out, commandEdge.Render("  ▌")+block.Render(" ")+line+fill)
+		out = append(out, commandEdge().Render("  ▌")+block.Render(" ")+line+fill)
 	}
 	return strings.Join(out, "\n")
 }

@@ -573,10 +573,7 @@ func keepMode(fresh, current Session) {
 // stand apart from the settings and their values.
 func settingsTheme(isDark bool) *huh.Styles {
 	styles := huh.ThemeCharm(isDark)
-	grey := lipgloss.Color("#737aa2")
-	if !isDark {
-		grey = lipgloss.Color("#8990b3")
-	}
+	grey := col(ui(isDark).dim)
 	styles.Focused.Description = styles.Focused.Description.Foreground(grey)
 	styles.Blurred.Description = styles.Blurred.Description.Foreground(grey)
 	styles.Group.Description = styles.Group.Description.Foreground(grey)

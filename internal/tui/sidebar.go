@@ -150,15 +150,10 @@ type sidebarColors struct {
 }
 
 func sidebarPalette(dark bool) sidebarColors {
-	if dark {
-		return sidebarColors{
-			background: lipgloss.Color("#060e24"), title: accent, text: lipgloss.Color("#c0caf5"), dim: lipgloss.Color("#565f89"),
-			done: lipgloss.Color("#9ece6a"), active: warning, failed: lipgloss.Color("#f7768e"),
-		}
-	}
+	c := ui(dark)
 	return sidebarColors{
-		background: lipgloss.Color("#eef1fa"), title: lipgloss.Color("#2e7de9"), text: lipgloss.Color("#3760bf"), dim: lipgloss.Color("#8990b3"),
-		done: lipgloss.Color("#587539"), active: lipgloss.Color("#8c6c3e"), failed: lipgloss.Color("#f52a65"),
+		background: col(c.sidebar), title: col(c.accent), text: col(c.text), dim: col(c.faint),
+		done: col(c.green), active: col(c.warning), failed: col(c.red),
 	}
 }
 
@@ -302,9 +297,9 @@ func (m model) sidebarLines() ([]string, []region) {
 			add(paint(colors.dim).Render(fmt.Sprintf("… +%d older", len(statuses)-shownJobs)))
 			break
 		}
-		mark, tint, state := arc(), toolKindColors[kindBackground], "running "+time.Since(status.Started).Round(time.Second).String()
+		mark, tint, state := arc(), toolKindColor(kindBackground), "running "+time.Since(status.Started).Round(time.Second).String()
 		if status.Foreground {
-			tint = toolKindColors[kindExec]
+			tint = toolKindColor(kindExec)
 		}
 		switch status.State {
 		case tools.JobDone:

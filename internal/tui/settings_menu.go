@@ -134,7 +134,7 @@ func (m model) menuOptions(menu *settingsMenu) []huh.Option[string] {
 		options = append(options, huh.NewOption(row("This project ›", fmt.Sprintf("%d set in %s · tab", len(menu.project.set), projectFileName)), menuProject))
 	}
 	return append(options,
-		huh.NewOption(keyStyle.Render("Save and close"), menuSave),
+		huh.NewOption(keyStyle().Render("Save and close"), menuSave),
 		huh.NewOption("Close without saving", menuDiscard),
 	)
 }
@@ -183,7 +183,7 @@ func (m model) openMenuChoice(menu *settingsMenu, choice string) (tea.Model, tea
 		_, err := menu.apply(menu.layer)
 		project, projectErr := menu.projectLayer()
 		if err = errors.Join(err, projectErr); err != nil {
-			menu.notice = errorStyle.Render("not saved: " + err.Error())
+			menu.notice = errorStyle().Render("not saved: " + err.Error())
 			return m.showMenu(menu)
 		}
 		if !menu.changed() {
@@ -395,7 +395,7 @@ func (m model) leaveMenu(menu *settingsMenu) (tea.Model, tea.Cmd) {
 func (m model) keepEdit(menu *settingsMenu, what string, apply func(config.Config) (config.Config, error)) (tea.Model, tea.Cmd) {
 	layer, err := apply(menu.layer)
 	if err != nil {
-		menu.notice = errorStyle.Render("not kept: " + err.Error())
+		menu.notice = errorStyle().Render("not kept: " + err.Error())
 		return m.showMenu(menu)
 	}
 	if layer.Provider != menu.layer.Provider || layer.Model != menu.layer.Model {

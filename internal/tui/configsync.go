@@ -201,7 +201,7 @@ func (m model) showBrokenFile(broken *config.BrokenFile, whole bool) (tea.Model,
 		title:       "✗ settings file broken: " + broken.Path,
 		description: description,
 		options:     options,
-		border:      popupError,
+		border:      popupError(),
 		config:      true,
 		do: func(m model, choice string) (tea.Model, tea.Cmd) {
 			var err error
@@ -237,7 +237,7 @@ func (m model) askTrust(files config.Files, held []string, whole bool) (tea.Mode
 		title:       "! project settings changed",
 		description: description,
 		options:     options,
-		border:      warning,
+		border:      warning(),
 		config:      true,
 		do: func(m model, choice string) (tea.Model, tea.Cmd) {
 			m.config.answeredProject, m.config.keptProject = digest, nil

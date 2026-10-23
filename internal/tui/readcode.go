@@ -84,7 +84,7 @@ func (p *printer) readCode(run toolRun, open bool) (string, func(from, to int) [
 	code := newCodeLines(expanded, language, inner)
 
 	block := lipgloss.NewStyle().Background(colors.block)
-	edge, lead, fill, number := commandEdge.Render("  ▌"), block.Render(" "), newSGR(block), newSGR(block.Foreground(colors.hunk))
+	edge, lead, fill, number := commandEdge().Render("  ▌"), block.Render(" "), newSGR(block), newSGR(block.Foreground(colors.hunk))
 	label := func(row int) string {
 		if gutter == 0 {
 			return ""

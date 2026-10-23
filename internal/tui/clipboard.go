@@ -335,7 +335,7 @@ func (m model) attachmentBar() (string, []region) {
 	slices.Sort(labels)
 	colors := dialogPalette(m.printer == nil || m.printer.isDark())
 	chip := lipgloss.NewStyle().Background(colors.button).Foreground(colors.text)
-	cross := chip.Foreground(lipgloss.Color("#f7768e")).Bold(true)
+	cross := chip.Foreground(col(uiNow().red)).Bold(true)
 	columns := []string{dimStyle.Render("📎") + " "}
 	var shownChips []string
 	for _, label := range labels {

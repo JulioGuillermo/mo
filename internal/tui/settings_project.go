@@ -216,9 +216,9 @@ func (m model) switchScope(menu *settingsMenu) (tea.Model, tea.Cmd) {
 
 // scopeTabs shows both screens, the open one lit, as the menu's first line.
 func scopeTabs(scope settingsScope) string {
-	global, project := keyStyle.Render("Global"), dimStyle.Render("This project")
+	global, project := keyStyle().Render("Global"), dimStyle.Render("This project")
 	if scope == projectScope {
-		global, project = dimStyle.Render("Global"), keyStyle.Render("This project")
+		global, project = dimStyle.Render("Global"), keyStyle().Render("This project")
 	}
 	return global + dimStyle.Render("  │  ") + project + dimStyle.Render("   tab switches")
 }
@@ -228,11 +228,11 @@ func (menu *settingsMenu) projectDescription() string {
 	project := menu.project
 	switch {
 	case project.err != nil:
-		lines = append(lines, errorStyle.Render("cannot read it: "+project.err.Error()))
+		lines = append(lines, errorStyle().Render("cannot read it: "+project.err.Error()))
 	case project.file.Path != "" && project.file.Path != config.ProjectFile(project.workDir):
 		lines = append(lines, "read from the old .mo.toml; saving moves it to "+projectFileName)
 	case project.heldBack:
-		lines = append(lines, errorStyle.Render("not saved by you here (it came with the repository or changed since):")+
+		lines = append(lines, errorStyle().Render("not saved by you here (it came with the repository or changed since):")+
 			"\nonly its harmless settings apply until you save it")
 	}
 	return strings.Join(lines, "\n")
@@ -257,7 +257,7 @@ func (m model) projectOptions(menu *settingsMenu, row func(title, summary string
 		huh.NewOption(row("Permissions", projectPermissionSection.summary(menu.draft)), projectPermissions),
 		huh.NewOption(row("Peers", projectPeersSection.summary(menu.draft)), projectPeers),
 		huh.NewOption(row("Global ›", "the settings for every project · tab"), menuGlobal),
-		huh.NewOption(keyStyle.Render("Save and close"), menuSave),
+		huh.NewOption(keyStyle().Render("Save and close"), menuSave),
 		huh.NewOption("Close without saving", menuDiscard),
 	)
 }
@@ -286,7 +286,7 @@ func overridable(section settingsSection, items []settingItem) []settingItem {
 // overrideMark says, after a value in the project screen, where it comes from.
 func (menu *settingsMenu) overrideMark(section settingsSection, item settingItem) string {
 	if field, _ := fieldOf(section, item); menu.project.set[field.key] {
-		return keyStyle.Render("  ● this project")
+		return keyStyle().Render("  ● this project")
 	}
 	return dimStyle.Render("  · global")
 }

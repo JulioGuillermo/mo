@@ -66,11 +66,11 @@ func (m model) showEditor(e *editor, last string) (tea.Model, tea.Cmd) {
 		options = append(options, huh.NewOption(fmt.Sprintf("%-*s   %s", width, each.title, dimStyle.Render(oneLine(each.value(), 60))), each.title))
 	}
 	for i, action := range e.actions {
-		options = append(options, huh.NewOption(keyStyle.Render(action.label), fmt.Sprintf("%s%d", editorActionPrefix, i)))
+		options = append(options, huh.NewOption(keyStyle().Render(action.label), fmt.Sprintf("%s%d", editorActionPrefix, i)))
 	}
-	options = append(options, huh.NewOption(keyStyle.Render(e.saveLabel), editorSave))
+	options = append(options, huh.NewOption(keyStyle().Render(e.saveLabel), editorSave))
 	if e.remove != nil {
-		options = append(options, huh.NewOption(errorStyle.Render(e.removeLabel), editorRemove))
+		options = append(options, huh.NewOption(errorStyle().Render(e.removeLabel), editorRemove))
 	}
 	options = append(options, huh.NewOption("‹ back", editorBack))
 	choice := last
@@ -156,7 +156,7 @@ func (m model) confirmRemove(e *editor) (tea.Model, tea.Cmd) {
 // keeps what was typed.
 func (m model) saveEdit(e *editor, msg settingsLoadedMsg, menu *settingsMenu, what string, apply func(layer config.Config) (config.Config, error)) (tea.Model, tea.Cmd) {
 	if _, err := apply(msg.layer); err != nil {
-		e.notice = errorStyle.Render("not saved: " + err.Error())
+		e.notice = errorStyle().Render("not saved: " + err.Error())
 		return m.showEditor(e, editorSave)
 	}
 	if menu != nil {

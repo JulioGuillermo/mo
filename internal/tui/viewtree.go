@@ -21,9 +21,10 @@ const (
 	treeHelp   = "↑↓ move · →/enter open · ← close · / find · tab file · t hide"
 )
 
+func treeFolder() lipgloss.Style { return lipgloss.NewStyle().Foreground(accent()) }
+func treeOpened() lipgloss.Style { return lipgloss.NewStyle().Foreground(warning()).Bold(true) }
+
 var (
-	treeFolder  = lipgloss.NewStyle().Foreground(accent)
-	treeOpened  = lipgloss.NewStyle().Foreground(warning).Bold(true)
 	treeFocused = lipgloss.NewStyle().Reverse(true)
 	treeBlurred = lipgloss.NewStyle().Underline(true)
 )
@@ -256,11 +257,11 @@ func (t *fileTree) lines(width, height int, focused bool, icons string) []string
 			label := name
 			switch {
 			case row.dir:
-				label = treeFolder.Render(name)
+				label = treeFolder().Render(name)
 			case changed:
 				label = changeStyle(kind, row.path == t.current).Render(name)
 			case row.path == t.current:
-				label = treeOpened.Render(name)
+				label = treeOpened().Render(name)
 			}
 			text = ansi.Truncate(indent+tint+label, width, "…")
 		}
@@ -277,11 +278,11 @@ func (t *fileTree) lines(width, height int, focused bool, icons string) []string
 func treeTitle(t *fileTree, width int) string {
 	switch {
 	case t.typing:
-		return keyStyle.Render("/") + ansi.Truncate(t.typed, width-3, "") + "▏"
+		return keyStyle().Render("/") + ansi.Truncate(t.typed, width-3, "") + "▏"
 	case t.filter != "":
-		return keyStyle.Render("/") + ansi.Truncate(t.filter, width-12, "…") + dimStyle.Render(fmt.Sprintf(" · %d found", len(t.found)))
+		return keyStyle().Render("/") + ansi.Truncate(t.filter, width-12, "…") + dimStyle.Render(fmt.Sprintf(" · %d found", len(t.found)))
 	}
-	return toolName.Render(ansi.Truncate(filepath.Base(t.root)+"/", width, "…"))
+	return toolName().Render(ansi.Truncate(filepath.Base(t.root)+"/", width, "…"))
 }
 
 // padTo fills a styled line with spaces to width, or cuts it there.
@@ -519,7 +520,7 @@ func (m model) treeLayout(body string) string {
 	left := v.tree.lines(width, len(rows), v.treeFocus, m.treeIconSet())
 	divider := dimStyle.Render("│")
 	if v.treeFocus {
-		divider = treeFolder.Render("│")
+		divider = treeFolder().Render("│")
 	}
 	out := make([]string, len(rows))
 	for i, row := range rows {

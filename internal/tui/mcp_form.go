@@ -338,7 +338,7 @@ func (m model) editMCPServer(msg settingsLoadedMsg, name string, menu *settingsM
 	e.save = func(m model) (tea.Model, tea.Cmd) {
 		if draft.isNew {
 			if err := validNewName(msg.layer.MCP)(draft.name); err != nil {
-				e.notice = errorStyle.Render("not saved: " + err.Error())
+				e.notice = errorStyle().Render("not saved: " + err.Error())
 				return m.showEditor(e, "Name")
 			}
 		}
@@ -364,7 +364,7 @@ func (m model) saveServer(e *editor, msg settingsLoadedMsg, menu *settingsMenu, 
 		return m.saveEdit(e, msg, menu, what, draft.applyTo)
 	}
 	if _, err := draft.applyTo(msg.layer); err != nil {
-		e.notice = errorStyle.Render("not saved: " + err.Error())
+		e.notice = errorStyle().Render("not saved: " + err.Error())
 		return m.showEditor(e, editorSave)
 	}
 	return m.saveOrWait(&settingsScreen{layer: msg.layer, apply: draft.applyTo, project: project})
@@ -445,7 +445,7 @@ func (m model) testMCP(e *editor, draft *mcpDraft) (tea.Model, tea.Cmd) {
 	tried.name = name
 	layer, err := tried.applyTo(config.Config{})
 	if err != nil {
-		e.notice = errorStyle.Render("✗ " + err.Error())
+		e.notice = errorStyle().Render("✗ " + err.Error())
 		return m.showEditor(e, mcpTestChoice)
 	}
 	server := layer.MCP[name]
@@ -461,9 +461,9 @@ func (m model) testMCP(e *editor, draft *mcpDraft) (tea.Model, tea.Cmd) {
 // is open, else when it is opened again.
 func (m model) mcpTested(msg mcpTestedMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
-		msg.editor.notice = errorStyle.Render("✗ " + oneLine(msg.err.Error(), 200))
+		msg.editor.notice = errorStyle().Render("✗ " + oneLine(msg.err.Error(), 200))
 	} else {
-		msg.editor.notice = lipgloss.NewStyle().Foreground(lipgloss.Color("#9ece6a")).Render(
+		msg.editor.notice = lipgloss.NewStyle().Foreground(col(uiNow().green)).Render(
 			fmt.Sprintf("✓ connected · %d tools", len(msg.tools))) + dimStyle.Render(testedTools(msg.tools))
 	}
 	if m.settings != nil && m.settings.editor == msg.editor {
@@ -497,10 +497,10 @@ func (m model) mcpState(name string) string {
 			continue
 		}
 		if mcphub.NeedsLogin(status.Err) {
-			return lipgloss.NewStyle().Foreground(warning).Render("! needs a sign-in · /mcp login " + name)
+			return lipgloss.NewStyle().Foreground(warning()).Render("! needs a sign-in · /mcp login " + name)
 		}
 		if status.Err != nil {
-			return errorStyle.Render("✗ " + oneLine(status.Err.Error(), 50))
+			return errorStyle().Render("✗ " + oneLine(status.Err.Error(), 50))
 		}
 		mode := string(live.MCPModes[name])
 		if mode != "" {
