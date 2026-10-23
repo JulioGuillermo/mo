@@ -29,7 +29,6 @@ import (
 	"github.com/jg/mo/internal/gitops"
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/mcphub"
-	"github.com/jg/mo/internal/notify"
 	"github.com/jg/mo/internal/peers"
 	"github.com/jg/mo/internal/permissions"
 	"github.com/jg/mo/internal/plugins"
@@ -1094,8 +1093,9 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 	case "kill":
 		return m.killJob(argument)
 	case "notify":
-		method := notify.Method(m.session.Config.Notify.Method)
-		return m, tea.Batch(sendNotification(method, "test notification"), printText(m.printer.Note("sent a test notification · "+string(method))))
+		settings := m.session.Config.Notify
+		note := fmt.Sprintf("sent a test notification · %s · sound %s", settings.Method, settings.Sound)
+		return m, tea.Batch(sendNotification(settings, "test notification"), printText(m.printer.Note(note)))
 	case "rewind":
 		return m.pickPrompt()
 	case "reload":

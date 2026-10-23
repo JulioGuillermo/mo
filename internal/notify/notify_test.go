@@ -6,8 +6,11 @@ package notify
 // | NT-02 | Security | Text from the model cannot end the sequence or start another         | P0       |
 // | NT-03 | Edge     | Inside tmux the sequence is wrapped to reach the terminal            | P1       |
 // | NT-04 | Happy    | Bell and off do what they say                                        | P2       |
+// | NT-05 | Happy    | The bell sound is the bell; off makes no sound                       | P1       |
+// | NT-06 | Edge     | The system sound with a file no player can find falls back on the bell | P2     |
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -50,6 +53,25 @@ func TestBuild(t *testing.T) {
 
 		if bell.Escape != "\a" || off.Escape != "" || off.Desktop != nil {
 			t.Errorf("bell = %+v off = %+v", bell, off)
+		}
+	})
+
+	t.Run("NT-05 the bell sound is the bell; off makes no sound", func(t *testing.T) {
+		bell := BuildChime(SoundBell, "")
+		off := BuildChime(SoundOff, "")
+
+		if bell.Escape != "\a" || bell.Play != nil || off.Escape != "" || off.Play != nil {
+			t.Errorf("bell = %+v off = %+v", bell, off)
+		}
+	})
+
+	t.Run("NT-06 the system sound with a file no player can find falls back on the bell", func(t *testing.T) {
+		t.Setenv("PATH", t.TempDir())
+
+		chime := BuildChime(SoundSystem, "/nowhere/sound.oga")
+
+		if runtime.GOOS == "linux" && (chime.Escape != "\a" || chime.Play != nil) {
+			t.Errorf("got %+v", chime)
 		}
 	})
 }

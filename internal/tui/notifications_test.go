@@ -5,6 +5,8 @@ package tui
 // | NU-01 | Happy    | A turn ending while the terminal is not focused calls with the answer | P0      |
 // | NU-02 | Happy    | Nothing is sent while focused, unless asked for, nor after esc        | P1       |
 // | NU-03 | Happy    | A permission question calls with the tool, what it runs and how many more | P0  |
+// | NU-04 | Happy    | The bell sound rings with the terminal's notification, off stays quiet | P0       |
+// | NU-05 | Edge     | The bell rings once when the method is the bell too                   | P1       |
 
 import (
 	"context"
@@ -84,6 +86,27 @@ func TestNotifications(t *testing.T) {
 
 		if !strings.Contains(sent(cmd), "Run bash? rm -rf build (+1 more)") {
 			t.Errorf("sent = %q", sent(cmd))
+		}
+	})
+
+	t.Run("NU-04 the bell sound rings with the terminal's notification, off stays quiet", func(t *testing.T) {
+		quiet := notifyModel(t, false)
+		ringing := notifyModel(t, false)
+		ringing.session.Config.Notify.Sound = "bell"
+
+		silent, rung := sent(quiet.turnEnded(nil)), sent(ringing.turnEnded(nil))
+
+		if strings.Count(silent, "\a") != 1 || strings.Count(rung, "\a") != 2 || !strings.Contains(rung, "777;notify") {
+			t.Errorf("off = %q bell = %q", silent, rung)
+		}
+	})
+
+	t.Run("NU-05 the bell rings once when the method is the bell too", func(t *testing.T) {
+		m := notifyModel(t, false)
+		m.session.Config.Notify.Method, m.session.Config.Notify.Sound = "bell", "bell"
+
+		if rung := sent(m.turnEnded(nil)); strings.Count(rung, "\a") != 1 {
+			t.Errorf("sent = %q", rung)
 		}
 	})
 }

@@ -145,10 +145,12 @@ type Context struct {
 // when it asks for permission; by default only while the terminal is not
 // focused.
 type Notify struct {
-	Finish   *bool  `toml:"finish,omitempty"`
-	Approval *bool  `toml:"approval,omitempty"`
-	Method   string `toml:"method,omitempty"`
-	Focused  *bool  `toml:"focused,omitempty"`
+	Finish    *bool  `toml:"finish,omitempty"`
+	Approval  *bool  `toml:"approval,omitempty"`
+	Method    string `toml:"method,omitempty"`
+	Focused   *bool  `toml:"focused,omitempty"`
+	Sound     string `toml:"sound,omitempty"`
+	SoundFile string `toml:"sound_file,omitempty"`
 }
 
 // Permissions are the mode tool calls start in and the rules for shell
@@ -610,7 +612,7 @@ func Defaults() Config {
 		Agents:      Agents{Enabled: ptr(false), ListTypes: ptr(false), Depth: 1, MaxParallel: 3, MaxAgents: 20, MaxSteps: 50},
 		Peers:       Peers{Enabled: ptr(false), Incoming: "ask", Outgoing: "tools", Wake: ptr(true), Network: "off"},
 		Permissions: Permissions{Mode: "edits"},
-		Notify:      Notify{Finish: ptr(true), Approval: ptr(true), Method: "auto", Focused: ptr(false)},
+		Notify:      Notify{Finish: ptr(true), Approval: ptr(true), Method: "auto", Focused: ptr(false), Sound: "off"},
 		Providers:   presets(),
 	}
 }
@@ -745,6 +747,9 @@ func validate(cfg Config) error {
 	}
 	if !slices.Contains(notify.Methods, notify.Method(cfg.Notify.Method)) {
 		return fmt.Errorf("notify.method %q: use auto, terminal, desktop, bell or off", cfg.Notify.Method)
+	}
+	if !slices.Contains(notify.Sounds, notify.Sound(cfg.Notify.Sound)) {
+		return fmt.Errorf("notify.sound %q: use off, bell or system", cfg.Notify.Sound)
 	}
 	if compactAt := *cfg.Context.CompactAt; compactAt < 0 || compactAt >= 1 {
 		return fmt.Errorf("context.compact_at %v: use a fraction from 0 (never) to below 1", compactAt)
@@ -965,6 +970,8 @@ func mergePeers(base, layer Peers) Peers {
 
 func mergeNotify(base, layer Notify) Notify {
 	base.Method = override(base.Method, layer.Method)
+	base.Sound = override(base.Sound, layer.Sound)
+	base.SoundFile = override(base.SoundFile, layer.SoundFile)
 	for _, field := range []struct{ base, layer **bool }{
 		{&base.Finish, &layer.Finish}, {&base.Approval, &layer.Approval}, {&base.Focused, &layer.Focused},
 	} {

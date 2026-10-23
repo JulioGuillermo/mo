@@ -133,6 +133,8 @@ type settingsDraft struct {
 	notifyApproval bool
 	notifyMethod   string
 	notifyFocused  bool
+	notifySound    string
+	soundFile      string
 
 	// plugins are the settings of each plugin, by its name.
 	plugins map[string]map[string]any
@@ -240,6 +242,8 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		notifyApproval: *cfg.Notify.Approval,
 		notifyMethod:   cfg.Notify.Method,
 		notifyFocused:  *cfg.Notify.Focused,
+		notifySound:    cfg.Notify.Sound,
+		soundFile:      cfg.Notify.SoundFile,
 
 		permMode: cfg.Permissions.Mode,
 		allow:    strings.Join(cfg.Permissions.Allow, "\n"),
@@ -427,10 +431,12 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	layer.Render.Icons = unlessDefault(d.icons, defaults.Render.Icons)
 	layer.Render.Keys = unlessDefault(d.keys, defaults.Render.Keys)
 	layer.Notify = config.Notify{
-		Finish:   unlessDefaultFlag(d.notifyFinish, *defaults.Notify.Finish),
-		Approval: unlessDefaultFlag(d.notifyApproval, *defaults.Notify.Approval),
-		Method:   unlessDefault(d.notifyMethod, defaults.Notify.Method),
-		Focused:  unlessDefaultFlag(d.notifyFocused, *defaults.Notify.Focused),
+		Finish:    unlessDefaultFlag(d.notifyFinish, *defaults.Notify.Finish),
+		Approval:  unlessDefaultFlag(d.notifyApproval, *defaults.Notify.Approval),
+		Method:    unlessDefault(d.notifyMethod, defaults.Notify.Method),
+		Focused:   unlessDefaultFlag(d.notifyFocused, *defaults.Notify.Focused),
+		Sound:     unlessDefault(d.notifySound, defaults.Notify.Sound),
+		SoundFile: strings.TrimSpace(d.soundFile),
 	}
 	return d.applyPermissions(layer)
 }

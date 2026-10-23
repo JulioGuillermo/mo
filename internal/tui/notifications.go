@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/jg/mo/internal/agent"
+	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/notify"
 )
@@ -21,17 +22,40 @@ func (m model) notifyUser(body string) tea.Cmd {
 	if settings.Focused == nil || (!*settings.Focused && m.focused) {
 		return nil
 	}
-	return sendNotification(notify.Method(settings.Method), body)
+	return sendNotification(settings, body)
 }
 
-func sendNotification(method notify.Method, body string) tea.Cmd {
-	sent := notify.Build(method, notifyTitle, body, os.Getenv)
+// sendNotification shows a notification and sounds it, each as set; the
+// bell rings once though both ask for it.
+func sendNotification(settings config.Notify, body string) tea.Cmd {
+	sent := notify.Build(notify.Method(settings.Method), notifyTitle, body, os.Getenv)
+	chime := notify.BuildChime(notify.Sound(settings.Sound), settings.SoundFile)
+	if chime.Escape == sent.Escape {
+		chime.Escape = ""
+	}
+	return tea.Batch(showNotification(sent), playChime(chime))
+}
+
+func showNotification(sent notify.Notification) tea.Cmd {
 	switch {
 	case sent.Escape != "":
 		return tea.Raw(sent.Escape)
 	case sent.Desktop != nil:
 		return func() tea.Msg {
 			_ = sent.Desktop()
+			return nil
+		}
+	}
+	return nil
+}
+
+func playChime(chime notify.Chime) tea.Cmd {
+	switch {
+	case chime.Escape != "":
+		return tea.Raw(chime.Escape)
+	case chime.Play != nil:
+		return func() tea.Msg {
+			_ = chime.Play()
 			return nil
 		}
 	}

@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -126,10 +127,10 @@ var settingsSections = []settingsSection{
 		if d.notifyApproval {
 			when = append(when, "permission")
 		}
-		if len(when) == 0 || d.notifyMethod == string(notify.MethodOff) {
+		if len(when) == 0 {
 			return "off"
 		}
-		return d.notifyMethod + " · " + strings.Join(when, ", ")
+		return d.notifyMethod + " · sound " + d.notifySound + " · " + strings.Join(when, ", ")
 	}, note: func(model, *settingsMenu) string { return "/notify sends a test" }, items: notifyItems},
 	{key: "appearance", title: "Look and keys", summary: func(d *settingsDraft) string {
 		return fmt.Sprintf("keys %s · panel %s · status %s", d.keys, d.sidebar, d.statusStyle)
@@ -746,6 +747,18 @@ func notifyItems(model, *settingsMenu) []settingItem {
 				huh.NewOption("off", string(notify.MethodOff)),
 			).Value(&d.notifyMethod)
 		}},
+		{"Sound", func(d *settingsDraft) string { return d.notifySound }, func(d *settingsDraft) huh.Field {
+			return huh.NewSelect[string]().Title("Sound").Description("with every notification, whichever way it is shown").Options(
+				huh.NewOption("off", string(notify.SoundOff)),
+				huh.NewOption("bell: the terminal's, as it is set to sound; reaches you over ssh", string(notify.SoundBell)),
+				huh.NewOption("system: the sound file below, or the system's own; plays where mo runs", string(notify.SoundSystem)),
+			).Value(&d.notifySound)
+		}},
+		{"Sound file", func(d *settingsDraft) string { return orDefault(d.soundFile, "system's own") }, func(d *settingsDraft) huh.Field {
+			return huh.NewInput().Title("Sound file").
+				Description("for the system sound; empty for the system's own · .oga, .wav… (Windows: .wav)").
+				Validate(existingFileOrEmpty).Value(&d.soundFile)
+		}},
 		flag("Notify while you look at mo", "no: only when the terminal is not focused", func(d *settingsDraft) *bool { return &d.notifyFocused }),
 	}
 }
@@ -955,4 +968,15 @@ func defaultRulesShown() []string {
 		return config.DefaultAllowPowerShell
 	}
 	return config.DefaultAllow
+}
+
+func existingFileOrEmpty(text string) error {
+	path := strings.TrimSpace(text)
+	if path == "" {
+		return nil
+	}
+	if info, err := os.Stat(path); err != nil || info.IsDir() {
+		return fmt.Errorf("no file at %s", path)
+	}
+	return nil
 }

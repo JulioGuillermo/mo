@@ -313,6 +313,8 @@ finish = true              # when a turn ends, with the start of the answer (or 
 approval = true            # when a call asks for permission
 method = "auto"            # auto | terminal | desktop | bell | off
 focused = false            # true: also while the terminal has the focus
+sound = "off"              # off | bell: the terminal's bell, reaches you over ssh | system: a sound played where mo runs
+sound_file = ""            # for system: a sound file to play; empty for the system's own (Windows: a .wav)
 
 [permissions.projects."/home/me/work/app"]   # in this folder only, added to the above
 mode = "auto"
@@ -642,7 +644,10 @@ Tool calls show their first lines; ctrl+o, or a click on one, shows the whole ca
 mo calls you back when a turn ends and when a call asks for permission, only while its terminal is
 not focused. `auto` uses the terminal's own notifications where it has them (Ghostty, WezTerm,
 foot, kitty, iTerm2; they work over ssh and through tmux), else `notify-send`, macOS or Windows
-notifications, else the bell. `/notify` sends a test. A terminal that does not report focus
+notifications, else the bell. `sound` adds a sound to each, whichever way it is shown: `bell` rings
+the terminal's bell, which travels over ssh; `system` plays `sound_file`, or the system's own sound,
+with canberra-gtk-play, pw-play or paplay, afplay on macOS, or Windows PowerShell, on the machine
+mo runs on. `/notify` sends a test. A terminal that does not report focus
 counts as focused once you type: set `focused = true` there.
 
 ## Permissions
