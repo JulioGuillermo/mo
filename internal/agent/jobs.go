@@ -38,7 +38,7 @@ func (a *Agent) tellEndedJobs() {
 		a.History[last].Text += "\n\n" + note
 		return
 	}
-	a.History = append(a.History, llm.Message{Role: llm.RoleUser, Text: note})
+	a.History = append(a.History, stamped(llm.Message{Role: llm.RoleUser, Text: note}))
 }
 
 // HasEndedJobs tells whether a background job ended that the model has not

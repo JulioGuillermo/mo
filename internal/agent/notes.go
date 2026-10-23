@@ -40,5 +40,5 @@ func (a *Agent) tellNotes() {
 		a.History[last].Text += "\n\n" + note
 		return
 	}
-	a.History = append(a.History, llm.Message{Role: llm.RoleUser, Text: note})
+	a.History = append(a.History, stamped(llm.Message{Role: llm.RoleUser, Text: note}))
 }

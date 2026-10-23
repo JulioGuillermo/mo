@@ -28,7 +28,7 @@ func (a *Agent) keepPartial() {
 	if text == "" {
 		return
 	}
-	a.History = append(a.History, llm.Message{Role: llm.RoleAssistant, Text: text + stoppedMark})
+	a.History = append(a.History, llm.Message{Role: llm.RoleAssistant, Text: text + stoppedMark, Timing: a.stoppedTiming()})
 }
 
 // dropUnfinished takes out of the history the tool calls a stop cut short,
@@ -101,8 +101,19 @@ func (a *Agent) unanswered() []llm.ToolCall {
 // goes on otherwise than by continuing them.
 func (a *Agent) settleUnanswered() {
 	for _, call := range a.unanswered() {
-		a.History = append(a.History, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Text: stoppedCall, IsError: true})
+		a.History = append(a.History, stamped(llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Text: stoppedCall, IsError: true}))
 	}
+}
+
+// stoppedTiming is the timing of the reply streamed until the user stopped
+// it, ended now.
+func (a *Agent) stoppedTiming() *llm.Timing {
+	timing := a.streamTiming
+	a.streamTiming = nil
+	if timing == nil {
+		return llm.StartedNow().Ended()
+	}
+	return timing.Ended()
 }
 
 // Continue goes on with a turn the user stopped, without a new prompt.
@@ -118,14 +129,16 @@ func (a *Agent) Continue(ctx context.Context, hooks Hooks) error {
 		for _, call := range calls {
 			if !a.Tools.Resumable(call.Name) {
 				// Left by mo stopping mid-call: never run again unasked.
-				a.History = append(a.History, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Text: interruptedCall, IsError: true})
+				a.History = append(a.History, stamped(llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Text: interruptedCall, IsError: true}))
 				continue
 			}
 			summary := a.Tools.Summary(call)
 			if hooks.OnToolStart != nil {
 				hooks.OnToolStart(call, summary)
 			}
+			timing := llm.StartedNow()
 			output, isError := a.runTool(tools.WithResume(ctx), call)
+			timing.Ended()
 			if hooks.OnToolDone != nil {
 				hooks.OnToolDone(call, output, isError)
 			}
@@ -133,7 +146,7 @@ func (a *Agent) Continue(ctx context.Context, hooks Hooks) error {
 				// Stopped again: still to go on with.
 				return ctx.Err()
 			}
-			a.History = append(a.History, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Text: output, IsError: isError})
+			a.History = append(a.History, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Text: output, IsError: isError, Timing: timing})
 			a.step(hooks)
 		}
 		a.loops = 0
@@ -145,7 +158,7 @@ func (a *Agent) Continue(ctx context.Context, hooks Hooks) error {
 	case message.Role != llm.RoleAssistant:
 		a.History[last].Text += "\n\n" + continueNote
 	default:
-		a.History = append(a.History, llm.Message{Role: llm.RoleUser, Text: continueNote})
+		a.History = append(a.History, stamped(llm.Message{Role: llm.RoleUser, Text: continueNote}))
 	}
 	a.loops = 0
 	return a.turn(ctx, hooks)

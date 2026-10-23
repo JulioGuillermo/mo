@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jg/mo/internal/llm"
 )
@@ -19,6 +20,8 @@ type queue struct {
 // Typed as the user wrote it.
 type Queued struct {
 	Text, Typed string
+	// At is when the user sent it; now when not set.
+	At time.Time
 }
 
 // Queue keeps a message the user wrote while the agent works; the model
@@ -30,6 +33,9 @@ func (a *Agent) Queue(text string) {
 // QueueTyped is Queue with what the user typed, kept with the message when
 // what reaches the model differs from it.
 func (a *Agent) QueueTyped(message Queued) {
+	if message.At.IsZero() {
+		message.At = time.Now()
+	}
 	a.queued.mu.Lock()
 	defer a.queued.mu.Unlock()
 	a.queued.messages = append(a.queued.messages, message)
@@ -79,6 +85,7 @@ func (a *Agent) deliverQueued(hooks Hooks) {
 	joined := strings.Join(texts, "\n\n")
 	joinedTyped := strings.Join(typed, "\n\n")
 	message := withInput(a.promptMessageNaming(joined, strings.Join(own, "\n\n"), hooks), joinedTyped)
+	message.Timing = (&llm.Timing{Start: queued[0].At}).Ended()
 	if last := len(a.History) - 1; last >= 0 && a.History[last].Role == llm.RoleUser {
 		previous := a.History[last]
 		merged := previous
@@ -90,6 +97,9 @@ func (a *Agent) deliverQueued(hooks Hooks) {
 			merged = withInput(merged, joinedTyped)
 		}
 		merged.Images = append(merged.Images, message.Images...)
+		if merged.Timing == nil {
+			merged.Timing = message.Timing
+		}
 		a.History[last] = merged
 	} else {
 		a.History = append(a.History, message)

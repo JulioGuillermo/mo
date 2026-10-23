@@ -126,7 +126,10 @@ type Agent struct {
 	partialReasoning strings.Builder
 	shownText        string
 	shownReasoning   string
-	judgedSafe       map[string]bool
+	// streamTiming is the timing of the reply being streamed, for a reply
+	// the user stops to keep.
+	streamTiming *llm.Timing
+	judgedSafe   map[string]bool
 }
 
 // Hooks lets the caller follow a run. Every field is optional. Without
@@ -179,6 +182,7 @@ func (a *Agent) RunTyped(ctx context.Context, prompt, typed string, hooks Hooks)
 		prompt = a.RewritePrompt(ctx, prompt)
 	}
 	message := a.promptMessage(prompt, hooks)
+	message.Timing = llm.StartedNow()
 	a.History = append(a.History, withInput(message, typed))
 	a.currentRequest = prompt
 	a.loops = 0
@@ -397,13 +401,21 @@ func (a *Agent) steps(ctx context.Context, hooks Hooks) error {
 		}
 		results := a.History[len(a.History)-len(response.Message.ToolCalls):]
 		if note, found := toolImages(response.Message.ToolCalls, results); found {
-			a.History = append(a.History, note)
+			a.History = append(a.History, stamped(note))
 		}
 		a.step(hooks)
 		if a.looping() {
 			return ErrLooping
 		}
 	}
+}
+
+// stamped is a message mo adds, timed as made now unless it has a timing.
+func stamped(message llm.Message) llm.Message {
+	if message.Timing == nil {
+		message.Timing = llm.StartedNow().Ended()
+	}
+	return message
 }
 
 // markSilent makes an answer with no text and no call say so, as the
@@ -432,10 +444,13 @@ func (a *Agent) stream(ctx context.Context, hooks Hooks, early *earlyRunner) (ll
 	}
 	repeated := ""
 	a.resetPartial()
+	timing := llm.StartedNow()
+	a.streamTiming = timing
 	response, err := a.Provider.Stream(streamCtx, a.request(), func(event llm.Event) {
 		if repeated != "" {
 			return
 		}
+		timing.Saw(event.Kind, time.Now())
 		switch event.Kind {
 		case llm.EventText, llm.EventReasoning:
 			if a.StreamPiece != nil {
@@ -464,6 +479,11 @@ func (a *Agent) stream(ctx context.Context, hooks Hooks, early *earlyRunner) (ll
 		}
 	})
 	if repeated == "" {
+		if err == nil {
+			usage := response.Usage
+			timing.Usage = &usage
+			response.Message.Timing = timing.Ended()
+		}
 		return response, "", err
 	}
 	if early == nil || !early.any() {
@@ -481,6 +501,9 @@ func (a *Agent) stream(ctx context.Context, hooks Hooks, early *earlyRunner) (ll
 func (a *Agent) streamRetrying(ctx context.Context, hooks Hooks, early *earlyRunner) (llm.Response, string, error) {
 	for attempt := 1; ; attempt++ {
 		response, repeated, err := a.stream(ctx, hooks, early)
+		if timing := response.Message.Timing; timing != nil {
+			timing.Retries = attempt - 1
+		}
 		limit, limited := llm.LimitOf(err)
 		if !limited || limit.Plan || attempt > LimitRetries || ctx.Err() != nil || a.streamedAnything(early) {
 			return response, repeated, err
@@ -543,20 +566,24 @@ const (
 )
 
 // sentHistory is the history as the model gets it: with the reasoning it is
-// kept, none, that of the turn in progress, or all.
+// kept, none, that of the turn in progress, or all, and no timing.
 func (a *Agent) sentHistory() []llm.Message {
-	if a.KeepReasoning == ReasoningAll || !slices.ContainsFunc(a.History, func(message llm.Message) bool { return message.Reasoning != "" || len(message.Thinking) > 0 }) {
-		return a.History
-	}
 	// Reasoning goes from this message on.
-	from := len(a.History)
-	if a.KeepReasoning == ReasoningTurn {
+	from := 0
+	switch a.KeepReasoning {
+	case ReasoningAll:
+	case ReasoningTurn:
 		from = a.lastUserMessage()
+	default:
+		from = len(a.History)
 	}
 	sent := slices.Clone(a.History)
-	for i := range min(from, len(sent)) {
-		sent[i].Reasoning = ""
-		sent[i].Thinking = nil
+	for i := range sent {
+		sent[i].Timing = nil
+		if i < from {
+			sent[i].Reasoning = ""
+			sent[i].Thinking = nil
+		}
 	}
 	return sent
 }

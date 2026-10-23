@@ -134,7 +134,9 @@ func (a *Agent) compact(ctx context.Context, hooks Hooks, instruction string, mi
 	}
 
 	hooks.activity(CompactingActivity)
+	timing := llm.StartedNow()
 	summary, err := a.summarize(ctx, a.History[:cut], instruction)
+	timing.Ended()
 	hooks.activity("")
 	if err != nil {
 		return err
@@ -146,6 +148,7 @@ func (a *Agent) compact(ctx context.Context, hooks Hooks, instruction string, mi
 	}
 	whole := slices.Clone(a.History)
 	a.History = withSummary(summary, kept, request)
+	a.History[0].Timing = withSummaryTiming(a.History[0].Timing, timing)
 	a.LastUsage = llm.Usage{}
 	a.historyAtUsage = 0
 	a.sizeAfterCompaction = a.ContextUsed()
@@ -249,6 +252,18 @@ func withSummary(summary string, kept []llm.Message, request string) []llm.Messa
 	history := slices.Clone(kept)
 	history[0].Text = header + history[0].Text
 	return history
+}
+
+// withSummaryTiming is the timing of the message a summary was put in, with
+// when the summary was written: the message's own when it was kept, a copy
+// so the history before keeps its own.
+func withSummaryTiming(kept, summary *llm.Timing) *llm.Timing {
+	if kept == nil {
+		return summary
+	}
+	timing := *kept
+	timing.Summary = summary
+	return &timing
 }
 
 func (a *Agent) lastUserMessage() int {

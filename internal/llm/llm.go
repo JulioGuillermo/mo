@@ -29,6 +29,8 @@ type Message struct {
 	ToolCalls  []ToolCall
 	ToolCallID string
 	IsError    bool
+	// Timing is when it happened, to measure models; never sent.
+	Timing *Timing `json:",omitempty"`
 }
 
 // Image is a picture sent to the model with a user message.

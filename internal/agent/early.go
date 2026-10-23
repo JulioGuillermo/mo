@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jg/mo/internal/llm"
 )
@@ -24,6 +25,9 @@ type earlyCall struct {
 	// done is set once it has a result; interrupted when a stop cut it.
 	done        bool
 	interrupted bool
+	// timing is when the user was asked about it and answered, and when
+	// it ran.
+	timing llm.Timing
 }
 
 // earlyPiece is a call as far as the reply has written it.
@@ -173,6 +177,7 @@ func (r *earlyRunner) run() {
 			if call.reply != nil {
 				reply = *call.reply
 			}
+			call.timing.Start = time.Now()
 			result, isError, run := r.agent.decideCall(r.ctx, call.pending, reply, r.hooks)
 			if !run {
 				call.result, call.isError, call.done = result, isError, true
@@ -185,8 +190,10 @@ func (r *earlyRunner) run() {
 				r.hooks.OnToolStart(call.pending.call, call.pending.summary)
 			}
 			running, call.ran = true, true
+			call.timing.Start = time.Now()
 			go func(call *earlyCall) {
 				call.result, call.isError = r.agent.runTool(r.ctx, call.pending.call)
+				call.timing.End = time.Now()
 				call.interrupted = r.ctx.Err() != nil
 				results <- call
 			}(call)
@@ -204,6 +211,7 @@ func (r *earlyRunner) run() {
 			call.pending = r.agent.prepareCall(r.ctx, call.call, r.hooks, &interaction)
 			if len(interaction.Approvals)+len(interaction.Questions) > 0 {
 				call.asked = true
+				call.timing.Asked = time.Now()
 				waiting++
 				go func() { answers <- answered{call, r.agent.interact(r.ctx, interaction, r.hooks)} }()
 			}
@@ -211,6 +219,7 @@ func (r *earlyRunner) run() {
 		case answer := <-answers:
 			waiting--
 			answer.call.reply = &answer.reply
+			answer.call.timing.Answered = time.Now()
 		case call := <-results:
 			running = false
 			call.done = true
@@ -249,7 +258,8 @@ func earlyHistory(message llm.Message, calls []*earlyCall) []llm.Message {
 			continue
 		}
 		message.ToolCalls = append(message.ToolCalls, call.call)
-		results = append(results, llm.Message{Role: llm.RoleTool, ToolCallID: call.call.ID, Text: call.result, IsError: call.isError})
+		timing := call.timing
+		results = append(results, llm.Message{Role: llm.RoleTool, ToolCallID: call.call.ID, Text: call.result, IsError: call.isError, Timing: timing.Ended()})
 	}
 	if len(message.ToolCalls) == 0 && strings.TrimSpace(message.Text) == "" {
 		return results
@@ -279,7 +289,11 @@ func (a *Agent) answerEarly(ctx context.Context, ran []*earlyCall, calls []llm.T
 				unfinished[call.ID] = true
 			}
 		}
-		a.History = append(a.History, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Text: result, IsError: isError})
+		timing := llm.StartedNow()
+		if i < len(ran) {
+			*timing = ran[i].timing
+		}
+		a.History = append(a.History, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Text: result, IsError: isError, Timing: timing.Ended()})
 	}
 	return unfinished
 }
@@ -301,7 +315,7 @@ func (a *Agent) keepEarly(early *earlyRunner, stopped bool) bool {
 	if stopped && text != "" {
 		text += stoppedMark
 	}
-	a.History = append(a.History, earlyHistory(llm.Message{Role: llm.RoleAssistant, Text: text}, calls)...)
+	a.History = append(a.History, earlyHistory(llm.Message{Role: llm.RoleAssistant, Text: text, Timing: a.stoppedTiming()}, calls)...)
 	return true
 }
 

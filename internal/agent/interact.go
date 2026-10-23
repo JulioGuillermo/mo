@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/tools"
@@ -60,15 +61,21 @@ func (a *Agent) answerToolCalls(ctx context.Context, calls []llm.ToolCall, hooks
 	for i, call := range calls {
 		pending[i] = a.prepareCall(ctx, call, hooks, &interaction)
 	}
+	asked := time.Now()
 	reply := a.interact(ctx, interaction, hooks)
+	answered := time.Now()
 	unfinished := map[string]bool{}
 	for _, call := range pending {
 		stoppedBefore := ctx.Err() != nil
-		output, isError, interrupted := a.finishCall(ctx, call, reply, hooks)
+		timing := &llm.Timing{}
+		if call.approval >= 0 || call.questions != nil {
+			timing.Asked, timing.Answered = asked, answered
+		}
+		output, isError, interrupted := a.finishCall(ctx, call, reply, hooks, timing)
 		if stoppedBefore || interrupted {
 			unfinished[call.outer.ID] = true
 		}
-		a.History = append(a.History, llm.Message{Role: llm.RoleTool, ToolCallID: call.outer.ID, Text: output, IsError: isError})
+		a.History = append(a.History, llm.Message{Role: llm.RoleTool, ToolCallID: call.outer.ID, Text: output, IsError: isError, Timing: timing.Ended()})
 	}
 	return unfinished
 }
@@ -152,7 +159,8 @@ func (a *Agent) interact(ctx context.Context, interaction Interaction, hooks Hoo
 }
 
 // finishCall runs a call the user let through, or says why it did not run.
-func (a *Agent) finishCall(ctx context.Context, pending pendingCall, reply Reply, hooks Hooks) (string, bool, bool) {
+func (a *Agent) finishCall(ctx context.Context, pending pendingCall, reply Reply, hooks Hooks, timing *llm.Timing) (string, bool, bool) {
+	timing.Start = time.Now()
 	output, isError, run := a.decideCall(ctx, pending, reply, hooks)
 	if !run {
 		return output, isError, false
@@ -160,7 +168,9 @@ func (a *Agent) finishCall(ctx context.Context, pending pendingCall, reply Reply
 	if hooks.OnToolStart != nil {
 		hooks.OnToolStart(pending.call, pending.summary)
 	}
+	timing.Start = time.Now()
 	output, isError = a.runTool(ctx, pending.call)
+	timing.End = time.Now()
 	interrupted := ctx.Err() != nil
 	if hooks.OnToolDone != nil {
 		hooks.OnToolDone(pending.call, output, isError)

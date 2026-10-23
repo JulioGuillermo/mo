@@ -226,7 +226,7 @@ func (a *Agent) cutLoopingReply(repeated string, hooks Hooks) error {
 		a.History[last].Text += "\n\n" + note
 		return nil
 	}
-	a.History = append(a.History, llm.Message{Role: llm.RoleUser, Text: note})
+	a.History = append(a.History, stamped(llm.Message{Role: llm.RoleUser, Text: note}))
 	return nil
 }
 
