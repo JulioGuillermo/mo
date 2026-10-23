@@ -9,6 +9,8 @@ package tui
 // | SS-05 | Edge     | Output with no mark goes out as it is                                  | P1       |
 // | SS-06 | Edge     | With no screen a frame gets no mark                                    | P2       |
 // | SS-07 | Happy    | auto takes sixel in a sixel terminal, unless kitty; a set mode stays   | P0       |
+// | SS-08 | Edge     | A frame that scrolls part of the screen is erased and painted whole   | P0       |
+// | SS-09 | Edge     | A frame that scrolls with no picture on screen goes out as it is      | P1       |
 
 import (
 	"image"
@@ -123,6 +125,34 @@ func TestSixelScreen(t *testing.T) {
 
 		if sixel != render.ModeSixel || blocks != render.ModeBlocks || chosen != render.ModeBlocks || kitty != render.ModeKitty {
 			t.Errorf("sixel %s, blocks %s, chosen %s, kitty %s", sixel, blocks, chosen, kitty)
+		}
+	})
+	t.Run("SS-08 A frame that scrolls part of the screen is erased and painted whole", func(t *testing.T) {
+		screen := newSixelScreen()
+		picture := sixelPicture(t)
+		flushed(screen, "a\nb\n"+picture+"\nstatus")
+		frame := "b\n" + picture + "\nc\nstatus"
+
+		output := string(screen.draw([]byte("\x1b[1;4r\x1b[1S\x1b[r" + screen.mark(frame))))
+
+		repaint := output[strings.Index(output, ansi.EraseEntireScreen):]
+		if !strings.Contains(repaint, ansi.CursorPosition(1, 4)+"c") || !strings.Contains(repaint, ansi.CursorPosition(1, 5)+"status") {
+			t.Errorf("text not painted again: %q", repaint)
+		}
+		if strings.Count(repaint, "\x1bP") != 2 || !strings.HasSuffix(output, ansi.RestoreCursor) {
+			t.Errorf("strips not drawn again: %q", repaint)
+		}
+	})
+
+	t.Run("SS-09 A frame that scrolls with no picture on screen goes out as it is", func(t *testing.T) {
+		screen := newSixelScreen()
+		sixelPicture(t)
+		output := "\x1b[1;4r\x1b[1S\x1b[r"
+
+		drawn := string(screen.draw([]byte(output + screen.mark("a\nb"))))
+
+		if drawn != output+"a\nb" {
+			t.Errorf("got %q", drawn)
 		}
 	})
 }

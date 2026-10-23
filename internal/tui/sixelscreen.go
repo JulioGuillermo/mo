@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/render"
@@ -16,11 +17,18 @@ import (
 
 const keptSixelFrames = 16
 
-var frameMark = regexp.MustCompile("\x1b_mo-frame;([0-9]+)\x1b\\\\")
+var (
+	frameMark = regexp.MustCompile("\x1b_mo-frame;([0-9]+)\x1b\\\\")
+	// lineMoves are the margins, insertions and deletions of lines a
+	// renderer scrolls part of the screen with.
+	lineMoves = regexp.MustCompile(`\x1b\[[0-9;]*[rLM]`)
+)
 
 // sixelScreen draws the sixel strips of a frame once the frame reaches the
 // terminal. Each frame carries a mark with its number at its last cell; the
-// output puts there the strips not on screen since the frame before.
+// output puts there the strips not on screen since the frame before. A frame
+// that scrolls part of the screen is painted again whole, as terminals move
+// the pictures of the rows outside the scrolled part too.
 type sixelScreen struct {
 	mu     sync.Mutex
 	last   int
@@ -29,6 +37,7 @@ type sixelScreen struct {
 }
 
 type sixelFrame struct {
+	text       string
 	placements []render.SixelPlacement
 	lastLine   int
 }
@@ -42,7 +51,7 @@ func (s *sixelScreen) mark(frame string) string {
 	if s == nil || !render.HasSixelImages() {
 		return frame
 	}
-	shows := sixelFrame{placements: render.SixelPlacements(frame), lastLine: strings.Count(frame, "\n")}
+	shows := sixelFrame{text: frame, placements: render.SixelPlacements(frame), lastLine: strings.Count(frame, "\n")}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.last++
@@ -69,15 +78,19 @@ func (s *sixelScreen) draw(output []byte) []byte {
 		}
 		drawn.Write(before)
 		number, _ := strconv.Atoi(string(output[mark[2]:mark[3]]))
-		drawn.WriteString(s.stripsOf(number))
+		if lineMoves.Match(before) && len(s.shown) > 0 {
+			drawn.WriteString(s.repaint(number))
+		} else if strips := s.stripsOf(number); strips != "" {
+			drawn.WriteString(ansi.SaveCursor + strips + ansi.RestoreCursor)
+		}
 		written = mark[1]
 	}
 	drawn.Write(output[written:])
 	return drawn.Bytes()
 }
 
-// stripsOf draws the strips of a frame not on screen yet, the cursor kept
-// where it was. One on the frame's last line is drawn every time, since the
+// stripsOf draws the strips of a frame not on screen yet, moving the cursor.
+// One on the frame's last line is drawn every time, since the
 // mark rewrites the cell it ends on.
 func (s *sixelScreen) stripsOf(number int) string {
 	frame, ok := s.frames[number]
@@ -96,10 +109,24 @@ func (s *sixelScreen) stripsOf(number int) string {
 		}
 	}
 	s.shown = shown
-	if strips.Len() == 0 {
+	return strips.String()
+}
+
+// repaint erases the screen, pictures and all, and paints the frame again
+// with its strips, the cursor and its colours kept where they were.
+func (s *sixelScreen) repaint(number int) string {
+	frame, ok := s.frames[number]
+	if !ok {
 		return ""
 	}
-	return ansi.SaveCursor + strips.String() + ansi.RestoreCursor
+	var painted strings.Builder
+	painted.WriteString(ansi.SaveCursor + ansi.ResetStyle + ansi.EraseEntireScreen)
+	for y, line := range uv.NewStyledString(frame.text).Lines(ansi.GraphemeWidth) {
+		painted.WriteString(ansi.CursorPosition(1, y+1) + line.Render() + ansi.ResetStyle)
+	}
+	clear(s.shown)
+	painted.WriteString(s.stripsOf(number) + ansi.RestoreCursor)
+	return painted.String()
 }
 
 // sixelOutput is the terminal's output with the strips of each frame drawn
