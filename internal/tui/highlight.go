@@ -98,9 +98,10 @@ func highlightLines(code, language string, width int, background color.Color, da
 func highlightWith(colors syntaxColors, code, language string, width int, background color.Color) []string {
 	code = strings.ReplaceAll(strings.TrimRight(ansi.Strip(code), "\n"), "\t", "    ")
 	tokens := []chroma.Token{{Type: chroma.Text, Value: code}}
+	dialect, isShell := shellDialectFor(language)
 	switch {
-	case language == shellLanguage:
-		tokens = shellTokens(code)
+	case isShell:
+		tokens = dialect.tokens(code)
 	case language != "":
 		if lexer := lexers.Get(language); lexer != nil {
 			if iterator, err := chroma.Coalesce(lexer).Tokenise(nil, code); err == nil {

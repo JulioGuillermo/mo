@@ -132,8 +132,8 @@ func lexRows(language, text string, count int) [][]codeToken {
 	rows := make([][]codeToken, 0, count)
 	var current []codeToken
 	var tokens []chroma.Token
-	if language == shellLanguage {
-		tokens = shellTokens(text)
+	if dialect, ok := shellDialectFor(language); ok {
+		tokens = dialect.tokens(text)
 	} else if lexer := lexerFor(language); lexer != nil {
 		if iterator, err := chroma.Coalesce(lexer).Tokenise(nil, text); err == nil {
 			tokens = iterator.Tokens()

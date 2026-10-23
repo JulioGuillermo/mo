@@ -17,6 +17,7 @@ const stylePreviewWidth = 64
 // codeSamples are what a theme of code colours is shown on, the shell first.
 var codeSamples = []struct{ language, code string }{
 	{shellLanguage, "go build -o mo --tags=\"a b\" ./cmd/mo 2>/dev/null\ngrep -c 'ok' out.log && echo \"$HOME\" 42 >> x.log # done"},
+	{"powershell", "Get-ChildItem -Path $env:USERPROFILE -Recurse | Where-Object { $_.Length -gt 1024 } # big\n[int]$n = 42; Write-Host \"n: $n\" *> out.log"},
 	{"go", "// Sum adds the values.\nfunc Sum(values []int) (total int) {\n    for _, v := range values { total += v * 2 }\n    return total, nil\n}"},
 	{"python", "@cache\ndef greet(name: str = \"mo\") -> str | None:\n    return f\"hi {name}\" if name else None  # 3.12"},
 	{"typescript", "export const load = async (url: string): Promise<Item[]> =>\n  (await fetch(url)).json() as Item[] // 42"},

@@ -10,6 +10,8 @@ package tui
 // | SI-06 | Edge     | Enter runs the command even with suggestions open                        | P0       |
 // | SI-07 | Edge     | A name with spaces or quotes is quoted for the shell                     | P1       |
 // | SI-08 | Happy    | ctrl+c clears what is typed and the model goes on; with nothing typed it stops it | P0 |
+// | SI-09 | Happy    | PowerShell has its cmdlets, -Params, operator words, $env:vars, [Types], strings and <# comments #> apart | P0 |
+// | SI-10 | Happy    | Code in bash or PowerShell is coloured by mo, as the shell's commands are | P1 |
 
 import (
 	"os"
@@ -142,6 +144,41 @@ func TestShellInput(t *testing.T) {
 		}
 		if !stopped {
 			t.Error("ctrl+c on an empty input did not stop the model")
+		}
+	})
+
+	t.Run("SI-09 PowerShell has its cmdlets, -Params, operator words, $env:vars, [Types], strings and <# comments #> apart", func(t *testing.T) {
+		command := "Get-ChildItem -Path $env:USERPROFILE -Recurse | Where-Object { $_.Length -gt 1024 } <# big #>\n[int]$n = 42; Write-Host \"n: `\"$n\" *> out.log; git --version 2>&1"
+		parts := powershellDialect.parts(command, func(string) bool { return false })
+		partOf := func(word string) shellPart { return parts[len([]rune(command[:strings.Index(command, word)]))] }
+
+		want := map[string]shellPart{
+			"Get-ChildItem": partProgram, "-Path": partShortFlag, "$env:USERPROFILE": partVariable, "-Recurse": partShortFlag,
+			"| Where": partOperator, "Where-Object": partProgram, "{ $_": partOperator, "$_": partVariable, "-gt": partOperator,
+			"1024": partNumber, "<# big #>": partComment, "[int]": partType, "$n =": partVariable, "= 42": partOperator, "42": partNumber,
+			"Write-Host": partProgram, `"n: `: partString, "$n\"": partVariable, "*>": partOperator, "out.log": partPath,
+			"git": partProgram, "--version": partLongFlag, "2>&1": partOperator,
+		}
+		for word, part := range want {
+			if got := partOf(word); got != part {
+				t.Errorf("%q is %v, want %v", word, got, part)
+			}
+		}
+		if end := strings.Index(command, `" *>`); parts[len([]rune(command[:end]))] != partString {
+			t.Error("the backtick did not keep the string open")
+		}
+	})
+
+	t.Run("SI-10 code in bash or PowerShell is coloured by mo, as the shell's commands are", func(t *testing.T) {
+		colors := syntaxPalette(true)
+		program := sgrOf(colors.program.color)
+
+		bash := strings.Join(highlightLines("ls -la", "bash", 80, changePalette(true).block, true), "")
+		pwsh := strings.Join(highlightLines("Get-Item -Path x", "powershell", 80, changePalette(true).block, true), "")
+		rows := lexRows("PowerShell", "Get-Item -Path x", 1)
+
+		if !strings.Contains(bash, program) || !strings.Contains(pwsh, program) || len(rows) != 1 || rows[0][0].kind != kindProgram {
+			t.Errorf("bash %q pwsh %q rows %+v", bash, pwsh, rows)
 		}
 	})
 }
