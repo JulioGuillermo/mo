@@ -134,6 +134,9 @@ var settingsSections = []settingsSection{
 	{key: "appearance", title: "Look and keys", summary: func(d *settingsDraft) string {
 		return fmt.Sprintf("keys %s · panel %s · status %s", d.keys, d.sidebar, d.statusStyle)
 	}, items: appearanceItems},
+	{key: "style", title: "Style", summary: func(d *settingsDraft) string {
+		return "code " + d.syntax
+	}, items: styleItems},
 	{key: "animations", title: "Animations", summary: func(d *settingsDraft) string {
 		return fmt.Sprintf("spinner %s · running %s · writing %s ms", d.spinnerMS, d.runningMS, d.writingMS)
 	}, note: func(model, *settingsMenu) string {

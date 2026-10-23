@@ -356,6 +356,9 @@ func (m *model) applyUI() tea.Cmd {
 	settings := m.session.Config.Render
 	m.printer.setImages(render.Detect(settings.Images))
 	useCellSize(settings.CellSize)
+	if useSyntaxTheme(settings.Syntax) {
+		m.printer.forgetMarkdown()
+	}
 	m.session.Plugins.SetUIFPS(settings.UIFPS)
 	if enabled := settings.Keys == "vim"; enabled != m.vim.enabled {
 		m.vim = vimState{enabled: enabled}

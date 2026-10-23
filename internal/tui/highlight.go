@@ -10,42 +10,80 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// syntaxColors are the colours of code by what each piece is.
-type syntaxColors struct {
-	text, keyword, builtin, str, comment, operator, variable, number color.Color
+// tone is how a kind of code looks: its colour, as #rrggbb, and its weight.
+type tone struct {
+	color                   string
+	bold, italic, underline bool
 }
+
+func (t tone) fg() color.Color {
+	return lipgloss.Color(t.color)
+}
+
+// on is the tone as a style on a background.
+func (t tone) on(background color.Color) lipgloss.Style {
+	return lipgloss.NewStyle().Background(background).Foreground(t.fg()).Bold(t.bold).Italic(t.italic).Underline(t.underline)
+}
+
+// syntaxColors are the tones of code by what each piece is; program,
+// shortFlag, longFlag and path are of the commands of the shell, and mark
+// of the ! before one typed.
+type syntaxColors struct {
+	text, keyword, builtin, str, comment, operator, punctuation, variable, number tone
+	function, typ, constant, attribute                                            tone
+	program, shortFlag, longFlag, path, mark                                      tone
+}
+
+// Kinds of the pieces of a shell command chroma has no name for.
+const (
+	kindProgram chroma.TokenType = 900000 + iota
+	kindShortFlag
+	kindLongFlag
+	kindPath
+)
 
 func syntaxPalette(dark bool) syntaxColors {
-	if dark {
-		return syntaxColors{
-			text: lipgloss.Color("#c0caf5"), keyword: lipgloss.Color("#bb9af7"), builtin: lipgloss.Color("#7dcfff"),
-			str: lipgloss.Color("#9ece6a"), comment: lipgloss.Color("#565f89"), operator: lipgloss.Color("#89ddff"),
-			variable: lipgloss.Color("#e0af68"), number: lipgloss.Color("#ff9e64"),
-		}
-	}
-	return syntaxColors{
-		text: lipgloss.Color("#3760bf"), keyword: lipgloss.Color("#9854f1"), builtin: lipgloss.Color("#007197"),
-		str: lipgloss.Color("#587539"), comment: lipgloss.Color("#848cb5"), operator: lipgloss.Color("#006a83"),
-		variable: lipgloss.Color("#8c6c3e"), number: lipgloss.Color("#b15c00"),
-	}
+	return currentSyntax().colors(dark)
 }
 
-func (c syntaxColors) of(kind chroma.TokenType) color.Color {
+func (c syntaxColors) of(kind chroma.TokenType) tone {
 	switch {
+	case kind == kindProgram:
+		return c.program
+	case kind == kindShortFlag:
+		return c.shortFlag
+	case kind == kindLongFlag:
+		return c.longFlag
+	case kind == kindPath:
+		return c.path
 	case kind.InCategory(chroma.Comment):
 		return c.comment
+	case kind == chroma.KeywordType:
+		return c.typ
+	case kind == chroma.KeywordConstant:
+		return c.constant
 	case kind.InCategory(chroma.Keyword):
 		return c.keyword
-	case kind == chroma.NameBuiltin:
+	case kind == chroma.NameBuiltin || kind == chroma.NameBuiltinPseudo:
 		return c.builtin
-	case kind == chroma.NameVariable || kind == chroma.LiteralStringInterpol:
+	case kind == chroma.NameFunction || kind == chroma.NameFunctionMagic:
+		return c.function
+	case kind == chroma.NameClass || kind == chroma.NameNamespace || kind == chroma.NameException:
+		return c.typ
+	case kind == chroma.NameConstant:
+		return c.constant
+	case kind == chroma.NameAttribute || kind == chroma.NameTag || kind == chroma.NameDecorator || kind == chroma.NameProperty:
+		return c.attribute
+	case kind == chroma.NameVariable || kind.InSubCategory(chroma.NameVariable) || kind == chroma.LiteralStringInterpol:
 		return c.variable
 	case kind.InSubCategory(chroma.LiteralString):
 		return c.str
 	case kind.InSubCategory(chroma.LiteralNumber):
 		return c.number
-	case kind.InCategory(chroma.Operator) || kind.InCategory(chroma.Punctuation):
+	case kind.InCategory(chroma.Operator):
 		return c.operator
+	case kind.InCategory(chroma.Punctuation):
+		return c.punctuation
 	}
 	return c.text
 }
@@ -54,12 +92,20 @@ func (c syntaxColors) of(kind chroma.TokenType) color.Color {
 // piece on background so the block stays whole; a language chroma does not
 // know is plain text.
 func highlightLines(code, language string, width int, background color.Color, dark bool) []string {
-	colors := syntaxPalette(dark)
+	return highlightWith(syntaxPalette(dark), code, language, width, background)
+}
+
+func highlightWith(colors syntaxColors, code, language string, width int, background color.Color) []string {
 	code = strings.ReplaceAll(strings.TrimRight(ansi.Strip(code), "\n"), "\t", "    ")
 	tokens := []chroma.Token{{Type: chroma.Text, Value: code}}
-	if lexer := lexers.Get(language); lexer != nil && language != "" {
-		if iterator, err := chroma.Coalesce(lexer).Tokenise(nil, code); err == nil {
-			tokens = iterator.Tokens()
+	switch {
+	case language == shellLanguage:
+		tokens = shellTokens(code)
+	case language != "":
+		if lexer := lexers.Get(language); lexer != nil {
+			if iterator, err := chroma.Coalesce(lexer).Tokenise(nil, code); err == nil {
+				tokens = iterator.Tokens()
+			}
 		}
 	}
 	width = max(width, 10)
@@ -67,7 +113,7 @@ func highlightLines(code, language string, width int, background color.Color, da
 	var line strings.Builder
 	used := 0
 	for _, token := range tokens {
-		style := lipgloss.NewStyle().Background(background).Foreground(colors.of(token.Type))
+		style := colors.of(token.Type).on(background)
 		var piece strings.Builder
 		flush := func() {
 			if piece.Len() > 0 {

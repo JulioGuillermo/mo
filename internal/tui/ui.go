@@ -271,6 +271,7 @@ func Run(session Session) error {
 	printer := newPrinter()
 	printer.setImages(render.Detect(session.Config.Render.Images))
 	useCellSize(session.Config.Render.CellSize)
+	useSyntaxTheme(session.Config.Render.Syntax)
 	if screen := screenFor(session.Config.Render.Background); screen.set {
 		printer.setDark(screen.dark)
 	}

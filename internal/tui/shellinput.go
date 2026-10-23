@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"os"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -33,13 +32,15 @@ func (m model) shellInputView(view string) string {
 	}
 	dark := m.printer == nil || m.printer.isDark()
 	background := panel(dark).GetBackground()
-	palette := shellPaletteFor(dark)
-	styles := []lipgloss.Style{}
+	colors := syntaxPalette(dark)
+	var styles []lipgloss.Style
 	for range marks {
-		styles = append(styles, palette.mark)
+		styles = append(styles, colors.mark.on(background))
 	}
-	for _, part := range shellParts(command, m.isFile) {
-		styles = append(styles, palette.style(part))
+	for _, token := range shellTokens(command) {
+		for range []rune(token.Value) {
+			styles = append(styles, colors.of(token.Type).on(background))
+		}
 	}
 	value := []rune(m.input.Value())
 	cursorX, cursorY := -1, -1
@@ -61,7 +62,7 @@ func (m model) shellInputView(view string) string {
 		painted.WriteString(ansi.Cut(line, 0, inputPromptWidth))
 		column := inputPromptWidth
 		for i, character := range []rune(text) {
-			style := styles[min(at+i, len(styles)-1)].Background(background)
+			style := styles[min(at+i, len(styles)-1)]
 			if y == cursorY && column == cursorX {
 				style = style.Reverse(true)
 			}
@@ -93,11 +94,4 @@ func runeIndex(text, part []rune, from int) int {
 		}
 	}
 	return -1
-}
-
-// isFile tells whether a word names a file or a folder from the working
-// directory.
-func (m model) isFile(word string) bool {
-	_, err := os.Stat(m.absolutePath(word))
-	return err == nil
 }

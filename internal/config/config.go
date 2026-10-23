@@ -426,10 +426,15 @@ type Render struct {
 	// CellSize is the pixels of a terminal cell, "8x16", that sizes kitty
 	// images; "auto" asks the terminal.
 	CellSize string `toml:"cell_size,omitempty"`
+	// Syntax is how code is coloured, one of SyntaxThemes.
+	Syntax string `toml:"syntax,omitempty"`
 	// Blame shows, in the file viewer, who last changed the line the
 	// cursor is on and in which commit; off unless true.
 	Blame *bool `toml:"blame,omitempty"`
 }
+
+// SyntaxThemes are the ways code can be coloured, mo's own first.
+var SyntaxThemes = []string{"mo", "mo vivid", "tokyo night", "one", "catppuccin", "material", "dracula", "gruvbox", "nord", "solarized", "monokai"}
 
 // MaxUIFPS is the most frames a second a canvas can ask for.
 const MaxUIFPS = 120
@@ -573,7 +578,8 @@ func Defaults() Config {
 		Web:          Web{Search: web.SearchDuckDuckGo},
 		Render: Render{Images: render.ModeAuto, Background: "#00081a", Sidebar: "auto", Status: "powerline", Icons: "nerd", Keys: "default", Bar: "shapes",
 			ReplyRefresh: RefreshLive, ReplyEveryMS: 100, ReplyEveryTokens: 10,
-			SpinnerMS: 80, RunningMS: 150, WritingMS: 220, ReasoningMS: 160, AskingMS: 500, UIFPS: 20, CellSize: render.CellSizeAuto},
+			SpinnerMS: 80, RunningMS: 150, WritingMS: 220, ReasoningMS: 160, AskingMS: 500, UIFPS: 20, CellSize: render.CellSizeAuto,
+			Syntax: SyntaxThemes[0]},
 		Loop:        Loop{Enabled: ptr(true), Replies: 30, Repeats: 3, StreamRepeats: 5, Warnings: ptr(2), Steps: ptr(300)},
 		Agents:      Agents{Enabled: ptr(false), ListTypes: ptr(false), Depth: 1, MaxParallel: 3, MaxAgents: 20, MaxSteps: 50},
 		Peers:       Peers{Enabled: ptr(false), Incoming: "ask", Outgoing: "tools", Wake: ptr(true), Network: "off"},
@@ -663,6 +669,9 @@ func validate(cfg Config) error {
 	}
 	if cfg.Render.UIFPS < 1 || cfg.Render.UIFPS > MaxUIFPS {
 		return fmt.Errorf("render.ui_fps %d: use 1 to %d", cfg.Render.UIFPS, MaxUIFPS)
+	}
+	if !slices.Contains(SyntaxThemes, cfg.Render.Syntax) {
+		return fmt.Errorf("render.syntax %q: use %s", cfg.Render.Syntax, strings.Join(SyntaxThemes, ", "))
 	}
 	if _, _, err := render.ParseCellSize(cfg.Render.CellSize); err != nil {
 		return fmt.Errorf("render.cell_size: %w", err)
@@ -1046,6 +1055,7 @@ func mergeHarmless(base, layer Config) Config {
 	base.Render.AskingMS = override(base.Render.AskingMS, layer.Render.AskingMS)
 	base.Render.UIFPS = override(base.Render.UIFPS, layer.Render.UIFPS)
 	base.Render.CellSize = override(base.Render.CellSize, layer.Render.CellSize)
+	base.Render.Syntax = override(base.Render.Syntax, layer.Render.Syntax)
 	if layer.Render.Blame != nil {
 		base.Render.Blame = layer.Render.Blame
 	}

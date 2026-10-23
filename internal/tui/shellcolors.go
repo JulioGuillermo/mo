@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"unicode"
 
-	"charm.land/lipgloss/v2"
+	"github.com/alecthomas/chroma/v2"
 )
 
 // shellPart is what a rune of a command is, to colour it.
@@ -22,6 +24,7 @@ const (
 	partOperator
 	partPath
 	partComment
+	partKeyword
 )
 
 var (
@@ -81,7 +84,7 @@ func shellParts(command string, isFile func(word string) bool) []shellPart {
 			mark(i, i+name, partVariable)
 			markWord(runes, i+name+1, end, mark, valuePart(word[name+1:], isFile))
 		case expectProgram && shellKeywords[word]:
-			mark(i, end, partProgram)
+			mark(i, end, partKeyword)
 		case expectProgram:
 			markWord(runes, i, end, mark, partProgram)
 			expectProgram = false
@@ -226,41 +229,45 @@ func isAssignment(word string) bool {
 	return true
 }
 
-// shellPalette is how each part of a command looks in the input.
-type shellPalette struct {
-	mark  lipgloss.Style
-	parts map[shellPart]lipgloss.Style
+// shellLanguage is the language of the commands of the shell, typed or run
+// by the model, coloured by shellParts instead of chroma.
+const shellLanguage = "bash"
+
+var partKinds = map[shellPart]chroma.TokenType{
+	partText: chroma.Text, partProgram: kindProgram, partShortFlag: kindShortFlag, partLongFlag: kindLongFlag,
+	partNumber: chroma.LiteralNumber, partString: chroma.LiteralString, partVariable: chroma.NameVariable,
+	partOperator: chroma.Operator, partPath: kindPath, partComment: chroma.Comment, partKeyword: chroma.Keyword,
 }
 
-func shellPaletteFor(dark bool) shellPalette {
-	colors := map[shellPart]string{
-		partText: "#c0caf5", partProgram: "#7aa2f7", partShortFlag: "#e0af68", partLongFlag: "#bb9af7", partNumber: "#ff9e64",
-		partString: "#9ece6a", partVariable: "#73daca", partOperator: "#f7768e", partPath: "#7dcfff", partComment: "#565f89",
-	}
-	markColor := "#ff9e64"
-	if !dark {
-		colors = map[shellPart]string{
-			partText: "#3760bf", partProgram: "#2e7de9", partShortFlag: "#8c6c3e", partLongFlag: "#9854f1", partNumber: "#b15c00",
-			partString: "#587539", partVariable: "#118c74", partOperator: "#f52a65", partPath: "#007197", partComment: "#848cb5",
+// shellTokens are the pieces of a command, each a run of the same part, as
+// chroma gives them for other languages.
+func shellTokens(command string) []chroma.Token {
+	runes := []rune(command)
+	parts := shellParts(command, fileExists)
+	var tokens []chroma.Token
+	for start := 0; start < len(runes); {
+		end := start
+		for end < len(runes) && parts[end] == parts[start] && (runes[end] == '\n') == (runes[start] == '\n') {
+			end++
 		}
-		markColor = "#b15c00"
-	}
-	palette := shellPalette{mark: lipgloss.NewStyle().Foreground(lipgloss.Color(markColor)).Bold(true), parts: map[shellPart]lipgloss.Style{}}
-	for part, color := range colors {
-		style := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
-		switch part {
-		case partProgram:
-			style = style.Bold(true)
-		case partPath:
-			style = style.Underline(true)
-		case partComment:
-			style = style.Italic(true)
+		kind := partKinds[parts[start]]
+		if runes[start] == '\n' {
+			kind = chroma.Text
 		}
-		palette.parts[part] = style
+		tokens = append(tokens, chroma.Token{Type: kind, Value: string(runes[start:end])})
+		start = end
 	}
-	return palette
+	return tokens
 }
 
-func (p shellPalette) style(part shellPart) lipgloss.Style {
-	return p.parts[part]
+// fileExists tells whether a word names a file or a folder from where mo
+// runs, ~ the home folder.
+func fileExists(word string) bool {
+	if rest, ok := strings.CutPrefix(word, "~/"); ok {
+		if home, err := os.UserHomeDir(); err == nil {
+			word = filepath.Join(home, rest)
+		}
+	}
+	_, err := os.Stat(word)
+	return err == nil
 }

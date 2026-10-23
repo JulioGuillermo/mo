@@ -477,6 +477,13 @@ func (p *printer) setWidth(width int) {
 	}
 }
 
+// forgetMarkdown makes markdown drawn again with the colours now in use.
+func (p *printer) forgetMarkdown() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.markdown = nil
+}
+
 func (p *printer) isDark() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -869,18 +876,18 @@ func uiTreeLines(root tools.UINode, background color.Color, dark bool, width int
 		style := lipgloss.NewStyle().Background(background).Foreground(c).Bold(bold)
 		return func(text string) string { return style.Render(text) }
 	}
-	guide, kind, id, words := paint(colors.comment, false), paint(colors.keyword, true), paint(colors.variable, false), paint(colors.str, false)
-	name, equals := paint(colors.builtin, false), paint(colors.operator, false)
+	guide, kind, id, words := paint(colors.comment.fg(), false), paint(colors.keyword.fg(), true), paint(colors.variable.fg(), false), paint(colors.str.fg(), false)
+	name, equals := paint(colors.builtin.fg(), false), paint(colors.operator.fg(), false)
 	value := func(raw string) string {
 		switch {
 		case strings.HasPrefix(raw, `"`):
-			return paint(colors.str, false)(raw)
+			return paint(colors.str.fg(), false)(raw)
 		case raw == "true" || raw == "false":
-			return paint(colors.keyword, false)(raw)
+			return paint(colors.keyword.fg(), false)(raw)
 		case strings.HasPrefix(raw, "["):
-			return paint(colors.text, false)(raw)
+			return paint(colors.text.fg(), false)(raw)
 		}
-		return paint(colors.number, false)(raw)
+		return paint(colors.number.fg(), false)(raw)
 	}
 	var lines []string
 	var walk func(n tools.UINode, lead, branch string)

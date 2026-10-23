@@ -67,5 +67,8 @@ func markdownStyle(dark bool) ansi.StyleConfig {
 		chroma.Background.BackgroundColor = &blockBackground
 		config.CodeBlock.Chroma = &chroma
 	}
+	if theme := currentSyntax(); theme.styled {
+		config.CodeBlock.Chroma = theme.colors(dark).glamourChroma(config.CodeBlock.Chroma)
+	}
 	return config
 }

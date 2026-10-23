@@ -121,29 +121,38 @@ func tokeniseLines(language string, lines []string) [][]codeToken {
 	return rows
 }
 
+func lexerFor(language string) chroma.Lexer {
+	if language == "" {
+		return nil
+	}
+	return lexers.Get(language)
+}
+
 func lexRows(language, text string, count int) [][]codeToken {
 	rows := make([][]codeToken, 0, count)
 	var current []codeToken
-	var lexer chroma.Lexer
-	if language != "" {
-		lexer = lexers.Get(language)
-	}
-	if lexer != nil {
+	var tokens []chroma.Token
+	if language == shellLanguage {
+		tokens = shellTokens(text)
+	} else if lexer := lexerFor(language); lexer != nil {
 		if iterator, err := chroma.Coalesce(lexer).Tokenise(nil, text); err == nil {
-			for _, token := range iterator.Tokens() {
-				parts := strings.Split(token.Value, "\n")
-				for i, part := range parts {
-					if part != "" {
-						current = append(current, codeToken{text: part, kind: token.Type})
-					}
-					if i < len(parts)-1 {
-						rows, current = append(rows, current), nil
-					}
+			tokens = iterator.Tokens()
+		}
+	}
+	if tokens != nil {
+		for _, token := range tokens {
+			parts := strings.Split(token.Value, "\n")
+			for i, part := range parts {
+				if part != "" {
+					current = append(current, codeToken{text: part, kind: token.Type})
+				}
+				if i < len(parts)-1 {
+					rows, current = append(rows, current), nil
 				}
 			}
-			rows = append(rows, current)
-			return fitRows(rows, count)
 		}
+		rows = append(rows, current)
+		return fitRows(rows, count)
 	}
 	for _, line := range strings.Split(text, "\n") {
 		var row []codeToken
@@ -315,7 +324,7 @@ func renderSpan(row []codeToken, from, to int, background color.Color, colors sy
 		piece := sliceRunes(token.text, max(from-position, 0), min(to-position, length))
 		style, found := styles[token.kind]
 		if !found {
-			style = lipgloss.NewStyle().Background(background).Foreground(colors.of(token.kind))
+			style = colors.of(token.kind).on(background)
 			styles[token.kind] = style
 		}
 		out.WriteString(style.Render(piece))
@@ -537,7 +546,7 @@ func codeBlock(code *codeText, background color.Color, dark bool, decorate func(
 	if len(code.rows) <= lazyRowsOver {
 		return strings.Join(paint(0, len(code.rows)), "\n"), nil
 	}
-	plain := newSGR(lipgloss.NewStyle().Background(background).Foreground(syntaxPalette(dark).text))
+	plain := newSGR(syntaxPalette(dark).text.on(background))
 	rows := make([]string, len(code.rows))
 	for i := range rows {
 		rows[i] = decorate(i, plain.wrap(code.plain(i)))
