@@ -5,9 +5,11 @@ package tui
 // alone would not tell things apart, and a cold steel blue against them.
 
 var (
-	redlineNight = basePalette{text: "#f2dede", comment: "#56628a", red: "#ff2a3d", orange: "#ff7a3d", yellow: "#ffb347",
-		green: "#3fd9c0", teal: "#3fd9c0", cyan: "#6fb7d8", blue: "#6fb7d8", purple: "#ff5a8a", pink: "#ff4fa0"}
-	redlineAsh = basePalette{text: "#2a1418", comment: "#7a8199", red: "#c8102e", orange: "#c2410c", yellow: "#a35a00",
+	redlineNight = machinePalette{text: "#f2dede", comment: "#56628a", primary: "#ff2a3d", call: "#ffffff",
+		strings: "#ffb347", numbers: "#ff7a3d", types: "#6fb7d8", operators: "#ff5a8a"}
+	redlineAsh = machinePalette{text: "#2a1418", comment: "#7a8199", primary: "#c8102e", call: "#1a0a0e",
+		strings: "#a35a00", numbers: "#c2410c", types: "#1d5f80", operators: "#b0124f"}
+	redlineInks = basePalette{text: "#2a1418", comment: "#7a8199", red: "#c8102e", orange: "#c2410c", yellow: "#a35a00",
 		green: "#0f7a6c", teal: "#0f7a6c", cyan: "#1d5f80", blue: "#1d5f80", purple: "#b0124f", pink: "#b0124f"}
 )
 
@@ -31,29 +33,5 @@ var (
 			heading: "#ff2a3d", lineNumber: "#7a1424", lineNumberCursor: "#ff2a3d",
 		},
 	}
-	redlineLight = redlineOnPaper(derived("#f6efec", redlineAsh, redlineAsh.red, false))
+	redlineLight = onPaper("#f6efec", redlineInks, redlineInks.red)
 )
-
-// redlineOnPaper is the light side with the reds of the dark one where they
-// stand for Redline: code, separators, the context's fill and tables.
-func redlineOnPaper(c uiColors) uiColors {
-	c.inlineCode, c.inlineCodeBack = "#c8102e", "#f3dcdc"
-	c.segment, c.segmentDim, c.segmentDeep, c.statusBase = "#f0c9cd", "#f5d9dc", "#f9e6e7", "#fbf0f0"
-	c.separator, c.gauge = "#c8102e", "#c8102e"
-	c.tableHeader, c.tableEven, c.tableOdd = "#e8a7b0", "#f6dfe1", "#faecee"
-	c.heading = "#c8102e"
-	c.lineNumber, c.lineNumberCursor = "#d9a0a8", "#c8102e"
-	c.promptSpeed, c.generationSpeed = "#d0485a", "#c8102e"
-	return c
-}
-
-// redlineColors colour code with red for what drives it, white for what it
-// calls, amber for what it holds and steel blue for its types.
-func redlineColors(p basePalette, call string) syntaxColors {
-	return syntaxColors{
-		text: plain(p.text), keyword: bold(p.red), builtin: plain(p.orange), str: plain(p.yellow), comment: italic(p.comment),
-		operator: plain(p.purple), punctuation: plain(mixHex(p.text, p.comment, 0.55)), variable: plain(p.text), number: plain(p.orange),
-		function: bold(call), typ: plain(p.cyan), constant: plain(p.orange), attribute: plain(p.yellow),
-		program: bold(p.red), shortFlag: plain(p.yellow), longFlag: plain(p.purple), path: tone{color: p.cyan, underline: true}, mark: bold(p.orange),
-	}
-}

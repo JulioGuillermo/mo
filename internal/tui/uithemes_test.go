@@ -9,6 +9,7 @@ package tui
 // | UT-05 | Happy    | Settings saves the look and the mode when not the default, and previews the look hovered | P1 |
 // | UT-06 | Happy    | Redline's own colours reach the separators, the context, tables, headings, line numbers and the cursor line | P1 |
 // | UT-07 | Happy    | A look without colours of its own keeps faint separators and numbers, green context and its grounds for tables | P0 |
+// | UT-08 | Happy    | Every machine theme sets all its own colours, dark and light, and colours code of its own | P1 |
 
 import (
 	"reflect"
@@ -137,6 +138,26 @@ func TestUIThemes(t *testing.T) {
 		}
 		if !lineNumberStyle(false).GetFaint() || markdownStyle(true).LinkText.Color != styles.DarkStyleConfig.LinkText.Color {
 			t.Error("line numbers or links changed")
+		}
+	})
+
+	t.Run("UT-08 every machine theme sets all its own colours, dark and light, and colours code of its own", func(t *testing.T) {
+		for _, name := range []string{"redline", "coldwire", "neon requiem", "fallout"} {
+			theme, syntax := uiThemeNamed(name), syntaxThemeNamed(name)
+			if theme == nil || syntax == nil || syntax.name != name {
+				t.Fatalf("%s is missing", name)
+			}
+			for _, dark := range []bool{true, false} {
+				extras := reflect.ValueOf(theme.colors(dark).uiExtras)
+				for i := range extras.NumField() {
+					if value := extras.Field(i).String(); !strings.HasPrefix(value, "#") {
+						t.Errorf("%s dark=%v %s = %q", name, dark, extras.Type().Field(i).Name, value)
+					}
+				}
+				if syntax.colors(dark).keyword.color != theme.colors(dark).inlineCode {
+					t.Errorf("%s dark=%v: code keywords and code in text differ", name, dark)
+				}
+			}
 		}
 	})
 }

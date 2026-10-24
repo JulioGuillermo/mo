@@ -451,7 +451,7 @@ const (
 )
 
 // UIThemes are the looks of the screen, mo's own first.
-var UIThemes = []string{"mo", "redline", "tokyo night", "one", "catppuccin", "material", "dracula", "gruvbox", "nord", "solarized", "monokai"}
+var UIThemes = []string{"mo", "redline", "coldwire", "neon requiem", "fallout", "tokyo night", "one", "catppuccin", "material", "dracula", "gruvbox", "nord", "solarized", "monokai"}
 
 // Modes of the look, and the background that is the look's own.
 const (
@@ -462,7 +462,7 @@ const (
 )
 
 // SyntaxThemes are the ways code can be coloured, mo's own first.
-var SyntaxThemes = []string{"mo", "mo vivid", "redline", "tokyo night", "one", "catppuccin", "material", "dracula", "gruvbox", "nord", "solarized", "monokai"}
+var SyntaxThemes = []string{"mo", "mo vivid", "redline", "coldwire", "neon requiem", "fallout", "tokyo night", "one", "catppuccin", "material", "dracula", "gruvbox", "nord", "solarized", "monokai"}
 
 // MaxUIFPS is the most frames a second a canvas can ask for.
 const MaxUIFPS = 120

@@ -688,6 +688,11 @@
   `terminal` keeps the terminal's background and asks it whether it is dark.
 - Inline code and code blocks are on blue, table stripes too; glamour's grey did not sit on a
   blue screen.
+- The machine themes, Redline, Coldwire, Neon Requiem and Fallout, put one colour of every strength
+  on a night close to black. Each has its dark side written out colour by colour, since that is
+  the side tuned by eye; their light sides come from one recipe, `onPaper`, and their code from
+  one shape, `machineColors`. A theme sets apart the colours it needs, `uiExtras`; the other
+  themes leave them empty and keep what they had.
 
 ## Questions and approvals
 
