@@ -575,6 +575,9 @@ func (p *printer) User(text string) string {
 	p.mu.Unlock()
 	bandWidth := max(width, 20)
 	band := panel(dark).Width(bandWidth).Padding(0, 1)
+	if prompt := ui(dark).prompt; prompt != "" {
+		band = band.Background(col(prompt))
+	}
 	textWidth := bandWidth - 2 - 2
 	var lines []string
 	for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {

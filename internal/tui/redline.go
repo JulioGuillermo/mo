@@ -13,7 +13,7 @@ var (
 
 var (
 	redlineDark = uiColors{
-		background: "#03060f", sidebar: "#060b19", statusBase: "#0b0308",
+		background: "#03060f", sidebar: "#020409", statusBase: "#0b0308",
 		panel: "#1a0910", block: "#0b1122", body: "#0f172e", button: "#3a1020", tab: "#161d38", done: "#0c1326",
 		segment: "#3d0c1a", segmentDim: "#2a0812", segmentDeep: "#1c050c",
 		peer: "#151a2a", popup: "#080c18", queued: "#2a1a0e",
@@ -25,6 +25,7 @@ var (
 		accent:   "#ff2a3d", warning: "#ffaa33", green: "#3fd9c0", red: "#ff5470", purple: "#ff5a8a", cyan: "#6fb7d8",
 		teal: "#3fd9c0", orange: "#ff7a3d", pink: "#ff4fa0",
 		uiExtras: uiExtras{
+			prompt:    "#2c0e18",
 			separator: "#c8102e", gauge: "#ff2a3d",
 			tableHeader: "#a50d26", tableEven: "#2a0812", tableOdd: "#1a050c",
 			heading: "#ff2a3d", lineNumber: "#7a1424", lineNumberCursor: "#ff2a3d",

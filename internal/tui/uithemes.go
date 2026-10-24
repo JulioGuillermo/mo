@@ -36,8 +36,10 @@ type uiColors struct {
 // first on the accent, and its links, the words in it and the address
 // cyan; empty, they are glamour's own. lineNumber and lineNumberCursor
 // colour the numbers of a file's lines, and that of the cursor's; empty,
-// they are faint text.
+// they are faint text. prompt is behind what the user sent, in the
+// conversation; empty, the panel.
 type uiExtras struct {
+	prompt                           string
 	separator, gauge                 string
 	tableHeader, tableEven, tableOdd string
 	heading                          string
