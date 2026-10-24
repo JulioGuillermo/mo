@@ -37,9 +37,11 @@ type uiColors struct {
 // cyan; empty, they are glamour's own. lineNumber and lineNumberCursor
 // colour the numbers of a file's lines, and that of the cursor's; empty,
 // they are faint text. prompt is behind what the user sent, in the
-// conversation; empty, the panel.
+// conversation; empty, the panel. promptSpeed and generationSpeed colour
+// how fast the prompt was read and the reply written; empty, cyan and teal.
 type uiExtras struct {
 	prompt                           string
+	promptSpeed, generationSpeed     string
 	separator, gauge                 string
 	tableHeader, tableEven, tableOdd string
 	heading                          string

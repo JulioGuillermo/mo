@@ -501,10 +501,10 @@ func (m model) speedPart(show statusParts, colors statusColors) string {
 	taken := m.speeds()
 	prompt, generation, promptLive, generationLive := taken.prompt, taken.generation, taken.promptLive, taken.generationLive
 	if show.prompt && prompt > 0 {
-		speeds = append(speeds, paint(colors.label, "pp ")+paint(colors.prompt, fmt.Sprintf("%s%.0f", promptLive, prompt)))
+		speeds = append(speeds, paint(colors.label, "pp ")+paint(colors.promptSpeed, fmt.Sprintf("%s%.0f", promptLive, prompt)))
 	}
 	if show.generation && generation > 0 {
-		speeds = append(speeds, paint(colors.label, "tg ")+paint(colors.generation, fmt.Sprintf("%s%.1f", generationLive, generation)))
+		speeds = append(speeds, paint(colors.label, "tg ")+paint(colors.generationSpeed, fmt.Sprintf("%s%.1f", generationLive, generation)))
 	}
 	if len(speeds) == 0 {
 		return ""
