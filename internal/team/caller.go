@@ -122,7 +122,8 @@ func (c caller) resume(ctx context.Context, members []*member) (string, error) {
 	return c.reports(ctx, members)
 }
 
-// reports waits for the runs and gives how each ended.
+// reports waits for the runs and gives how each ended. One a stop that let
+// it end its step stopped leaves the call to be resumed.
 func (c caller) reports(ctx context.Context, members []*member) (string, error) {
 	err := c.team.waitFor(ctx, c.id, members)
 	if err != nil {
@@ -133,6 +134,9 @@ func (c caller) reports(ctx context.Context, members []*member) (string, error) 
 	for _, m := range members {
 		c.team.mu.Lock()
 		m.untold = false
+		if m.State == Stopped && m.interrupted {
+			tools.MarkCutShort(ctx)
+		}
 		c.team.mu.Unlock()
 		out = append(out, c.team.report(m))
 	}

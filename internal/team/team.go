@@ -293,6 +293,37 @@ func (t *Team) StopAll() {
 	t.stopAllLocked()
 }
 
+// StopAllAfter asks every subagent to stop as mode says, as the main agent
+// is asked; one waiting for its turn to work stops at once. Each stops as
+// interrupted, to go on with /continue.
+func (t *Team) StopAllAfter(mode agent.StopMode) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, m := range t.members {
+		if m.cancel == nil {
+			continue
+		}
+		m.interrupted = true
+		if m.State == Queued {
+			m.cancel()
+			continue
+		}
+		m.agent.RequestStop(mode)
+	}
+}
+
+// ClearStops takes back the stops asked of the subagents still working.
+func (t *Team) ClearStops() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, m := range t.members {
+		if m.cancel != nil {
+			m.interrupted = false
+			m.agent.ClearStop()
+		}
+	}
+}
+
 // GoOn runs on, as if they had not stopped, the subagents parent started in
 // the background that stopped when everything did; those under them go
 // on as they do.
@@ -534,6 +565,7 @@ func (t *Team) startWith(ctx context.Context, m *member, message string, backgro
 	stopWithAll := context.AfterFunc(t.root, cancel)
 	t.mu.Lock()
 	m.State, m.Err, m.cancel, m.background, m.untold, m.interrupted = Queued, "", cancel, background, false, false
+	m.agent.ClearStop()
 	// What it was asked shows and is saved before its agent takes it in.
 	if message != "" {
 		m.history = append(slices.Clone(m.history), llm.Message{Role: llm.RoleUser, Text: message})
@@ -564,13 +596,19 @@ func (t *Team) startWith(ctx context.Context, m *member, message string, backgro
 			}
 			for err == nil {
 				// Before it reports: what it was sent during its last step,
-				// and the subagents it left working in the background.
+				// and the subagents it left working in the background; a
+				// stop asked leaves them for /continue.
 				if m.agent.HasQueued() {
-					err = m.agent.RunQueued(runCtx, hooks)
+					err = t.unlessStopping(m, func() error { return m.agent.RunQueued(runCtx, hooks) })
 					continue
 				}
-				if err = t.waitFor(runCtx, m.ID, t.backgroundOf(m.ID)); err == nil && m.agent.HasEndedJobs() {
-					err = m.agent.RunEndedJobs(runCtx, hooks)
+				background := t.backgroundOf(m.ID)
+				if err = t.waitFor(runCtx, m.ID, background); err == nil && len(background) > 0 && m.agent.Stopping() {
+					err = context.Canceled
+					break
+				}
+				if err == nil && m.agent.HasEndedJobs() {
+					err = t.unlessStopping(m, func() error { return m.agent.RunEndedJobs(runCtx, hooks) })
 					continue
 				}
 				break
@@ -580,6 +618,14 @@ func (t *Team) startWith(ctx context.Context, m *member, message string, backgro
 		t.snapshot(m)
 		t.finish(m, err)
 	}()
+}
+
+// unlessStopping runs more of a subagent's work, unless a stop was asked.
+func (t *Team) unlessStopping(m *member, work func() error) error {
+	if m.agent.Stopping() {
+		return context.Canceled
+	}
+	return work()
 }
 
 func (t *Team) finish(m *member, err error) {

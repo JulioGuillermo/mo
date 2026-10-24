@@ -2,7 +2,7 @@ package agent
 
 // Test Traceability Table
 // | ID    | Category | Description                                                          | Priority |
-// | RE-01 | Happy    | An answer stopped mid-way stays in the history; continue tells the model to go on | P0 |
+// | RE-01 | Happy    | An answer stopped mid-way stays in the history; continue keep tells the model to go on | P0 |
 // | RE-02 | Happy    | Stopped before any answer, continue answers the prompt waiting, with no note | P1  |
 // | RE-03 | Edge     | Continue on an empty conversation says there is nothing to continue  | P2       |
 // | RE-04 | Happy    | A stop amid tool calls keeps those that ran and the text, drops the rest | P0    |
@@ -10,6 +10,7 @@ package agent
 // | RE-06 | Security | A call left without a result that is not resumable is answered as interrupted, never run again | P0 |
 // | RE-07 | Happy    | A new prompt instead of continue answers the call left as stopped        | P0       |
 // | RE-08 | Happy    | Each step gives a copy of the history                                    | P1       |
+// | RE-09 | Happy    | Continue drops an answer stopped mid-way and asks the model again, with no note | P0 |
 
 import (
 	"context"
@@ -41,14 +42,14 @@ func (p *stoppingProvider) Stream(ctx context.Context, req llm.Request, onEvent 
 }
 
 func TestContinue(t *testing.T) {
-	t.Run("RE-01 an answer stopped mid-way stays in the history; continue tells the model to go on", func(t *testing.T) {
+	t.Run("RE-01 an answer stopped mid-way stays in the history; continue keep tells the model to go on", func(t *testing.T) {
 		ctx, stop := context.WithCancel(context.Background())
 		provider := &stoppingProvider{stop: stop}
 		agent := newAgent(t, provider)
 
 		stopped := agent.Run(ctx, "do both steps", Hooks{})
 		kept := agent.History[len(agent.History)-1]
-		err := agent.Continue(context.Background(), Hooks{})
+		err := agent.ContinueTelling(context.Background(), Hooks{})
 
 		sent := provider.requests[1].Messages
 		if !errors.Is(stopped, context.Canceled) || kept.Role != llm.RoleAssistant || !strings.HasPrefix(kept.Text, "Step one is done, now step") {
@@ -69,6 +70,23 @@ func TestContinue(t *testing.T) {
 		sent := provider.requests[0].Messages
 		if err != nil || len(sent) != 1 || sent[0].Text != "what is 2+2" {
 			t.Errorf("err = %v sent = %+v", err, sent)
+		}
+	})
+
+	t.Run("RE-09 continue drops an answer stopped mid-way and asks the model again, with no note", func(t *testing.T) {
+		ctx, stop := context.WithCancel(context.Background())
+		provider := &stoppingProvider{stop: stop}
+		agent := newAgent(t, provider)
+		_ = agent.Run(ctx, "do both steps", Hooks{})
+
+		err := agent.Continue(context.Background(), Hooks{})
+
+		sent := provider.requests[1].Messages
+		if err != nil || len(sent) != 1 || sent[0].Text != "do both steps" {
+			t.Fatalf("err = %v sent = %+v", err, sent)
+		}
+		if len(agent.History) != 2 || agent.History[1].Text != "two is done too" {
+			t.Errorf("history = %+v", agent.History)
 		}
 	})
 

@@ -66,13 +66,18 @@ func (a *Agent) answerToolCalls(ctx context.Context, calls []llm.ToolCall, hooks
 	answered := time.Now()
 	unfinished := map[string]bool{}
 	for _, call := range pending {
-		stoppedBefore := ctx.Err() != nil
+		stoppedBefore := ctx.Err() != nil || a.heldBack()
+		if stoppedBefore {
+			unfinished[call.outer.ID] = true
+			a.History = append(a.History, stamped(llm.Message{Role: llm.RoleTool, ToolCallID: call.outer.ID, Text: cancelledResult, IsError: true}))
+			continue
+		}
 		timing := &llm.Timing{}
 		if call.approval >= 0 || call.questions != nil {
 			timing.Asked, timing.Answered = asked, answered
 		}
 		output, isError, interrupted := a.finishCall(ctx, call, reply, hooks, timing)
-		if stoppedBefore || interrupted {
+		if interrupted {
 			unfinished[call.outer.ID] = true
 		}
 		a.History = append(a.History, llm.Message{Role: llm.RoleTool, ToolCallID: call.outer.ID, Text: output, IsError: isError, Timing: timing.Ended()})
@@ -169,9 +174,9 @@ func (a *Agent) finishCall(ctx context.Context, pending pendingCall, reply Reply
 		hooks.OnToolStart(pending.call, pending.summary)
 	}
 	timing.Start = time.Now()
-	output, isError = a.runTool(ctx, pending.call)
+	output, isError, cutShort := a.runTool(ctx, pending.call)
 	timing.End = time.Now()
-	interrupted := ctx.Err() != nil
+	interrupted := ctx.Err() != nil || cutShort
 	if hooks.OnToolDone != nil {
 		hooks.OnToolDone(pending.call, output, isError)
 	}

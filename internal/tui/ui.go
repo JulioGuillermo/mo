@@ -234,6 +234,9 @@ type model struct {
 	showDetails       bool
 	thread            conversation
 	lastEsc           time.Time
+	// stopping is the stop asked of the model and the subagents while
+	// they work, until they stop.
+	stopping agent.StopMode
 	// terminalDark is whether the terminal's own background is dark, as it
 	// reports it.
 	terminalDark bool
@@ -874,8 +877,7 @@ func (m model) plainKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "esc":
 		if m.running {
-			m.stop()
-			return m, nil
+			return m.escStop()
 		}
 		if m.stopShells() {
 			return m, nil
@@ -884,10 +886,10 @@ func (m model) plainKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.titling.cancel()
 			return m, nil
 		}
-		if m.session.Team != nil && m.session.Team.Working() {
-			m.session.Team.StopAll()
-			return m.emit(m.printer.Note("subagents stopped"))
+		if m.working() {
+			return m.escStop()
 		}
+		m.stopping = agent.StopNone
 		if m.input.Value() == "" && time.Since(m.lastEsc) < doubleEscWindow {
 			m.lastEsc = time.Time{}
 			return m.pickPrompt()
@@ -1016,6 +1018,8 @@ func (m model) start(first tea.Cmd, work func(context.Context, agent.Hooks) erro
 	m.newPrompt = false
 	ctx, cancel := context.WithCancel(context.Background())
 	finished := make(chan struct{})
+	m.stopping = agent.StopNone
+	m.session.Agent.ClearStop()
 	m.running = true
 	m.tellPeers()
 	m.cancel = cancel
@@ -1071,11 +1075,21 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		if m.running {
 			return m.emit(m.printer.Note("the model is working already"))
 		}
+		goOn := m.session.Agent.Continue
+		switch argument {
+		case "":
+		case "keep":
+			goOn = m.session.Agent.ContinueTelling
+		default:
+			return m.emit(m.printer.Note("/continue, or /continue keep to tell the model it was stopped"))
+		}
 		if m.session.Team != nil {
 			// The subagents it left working in the background go on too.
 			m.session.Team.GoOn(0)
 		}
-		return m.start(printText(m.printer.Note("continuing…")), m.session.Agent.Continue)
+		return m.start(printText(m.printer.Note("continuing…")), goOn)
+	case "stop":
+		return m.stopCommand(argument)
 	case "vim":
 		m.vim = vimState{enabled: !m.vim.enabled}
 		state := "off"
@@ -1187,6 +1201,8 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 	}
 	m.activity = ""
 	m.runningTool = nil
+	stopAsked := m.stopping != agent.StopNone
+	m.stopping = agent.StopNone
 	m.cancel()
 	m.closeDialog(true)
 	partial := strings.TrimSpace(m.stream)
@@ -1216,7 +1232,7 @@ func (m model) finishRun(err error) (tea.Model, tea.Cmd) {
 		lines = append(lines, m.printer.Error(err))
 	}
 	save := m.saveConversation()
-	stopped := errors.Is(err, context.Canceled)
+	stopped := errors.Is(err, context.Canceled) || stopAsked
 	if !stopped {
 		save = tea.Batch(save, m.turnEnded(err))
 	}
@@ -1367,7 +1383,11 @@ func (m model) upperLayout() (string, []region) {
 		if !m.runStarted.IsZero() {
 			elapsed = " · " + formatElapsed(time.Since(m.runStarted))
 		}
-		add(m.spinnerView()+" "+m.currentState().label(true)+dimStyle.Render(elapsed+queued+" · esc to stop"), nil)
+		escHint := " · esc to stop"
+		if m.stopping != agent.StopNone {
+			escHint = ""
+		}
+		add(m.spinnerView()+" "+m.currentState().label(true)+dimStyle.Render(elapsed+queued+escHint), nil)
 	case m.worked > 0 && m.titling == nil:
 		add(dimStyle.Render("  idle · worked "+formatElapsed(m.worked)), nil)
 	}

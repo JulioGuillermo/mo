@@ -498,8 +498,8 @@ parent reads only that report, so long searches or test runs stay out of its con
 - A subagent at `depth` has no `agent` tool. Waiting for its own subagents, one gives up its place
   among the `max_parallel` working, so a tree never waits on itself.
 - What a subagent asks, an approval or a question, comes to you in the usual dialog, saying which one
-  asks. Esc stops the main agent and every subagent; with the main agent idle, it stops the subagents
-  still working.
+  asks. A stop, esc or `/stop`, reaches the main agent and every subagent alike; with the main agent
+  idle, it stops the subagents still working.
 - Subagents are saved with the conversation, all they did, and come back with `/resume`: those that
   were working, stopped, ready to go on. `/continue` goes on as if nothing had stopped, also after
   mo exited: an `agent` call cut short is kept, unanswered, and run again as resumed, so the
@@ -638,6 +638,24 @@ loses a step at most.
 Going back does not undo what tools changed on disk since that prompt.
 
 Tool calls show their first lines; ctrl+o, or a click on one, shows the whole call and output.
+
+## Stopping
+
+| | the reply being written | the calls running | then |
+|---|---|---|---|
+| esc, `/stop` | cut at once | end, with their results; those not started never run | stops before the model is asked again |
+| `/stop next` | ends | end, all of the round's | stops before the model is asked again |
+| esc esc, `/stop now`, ctrl+c | cut at once | cut at once | |
+| `/stop cancel` | takes back a stop asked, if it has not stopped yet | | |
+
+A stop asked replaces the one before, and the status line says it is coming and what esc does then.
+A subagent stops the same way; the `agent` call waiting for it is kept to go on with.
+
+`/continue` goes on as if nothing had stopped: the reply the stop cut goes, but for the calls it ran
+and their results, and the model is asked again from the last round it ended, with no word of the
+stop; an `agent` call goes on waiting for its subagents, which go on from where they were.
+`/continue keep` keeps the cut reply, marked where it stopped, and tells the model it was stopped.
+A new message instead keeps the cut reply too.
 
 ## Notifications
 
@@ -881,7 +899,8 @@ examples; [docs/examples/plugins/git.lua](docs/examples/plugins/git.lua) is a co
 | enter | send; while the model works, queue it: it waits over the status line, shaded, each message after an icon (💬 or Nerd Font's bubble, » in text), with an amber edge on the left (`⧗ queued · N · ↑ edit` under them) and goes into the conversation when the model reads it, at its next step; a long one wraps over several lines, up to eight; several messages queued together are one entry and the model reads them as one message; ↑ with nothing typed brings them all back into the input to edit, without stopping the model; ctrl+s sends them (and what is typed) now: the model stops where it is and answers them, instead of reading them at its next step; esc gives them back in the input too, but stops the model |
 | shift+enter, ctrl+j, alt+enter | new line, in the input and in the boxes of forms |
 | `!command`, `!!command` | run it in the shell, in this folder: for you alone, or with the model reading it with your next message |
-| esc, ctrl+c | stop the current run, or the commands run with `!`; esc with suggestions open (commands, paths, @) closes them first and leaves the run going |
+| esc | stop: the reply being written at once, the calls running once they end (see [Stopping](#stopping)); esc again stops them too, at once. Also the commands run with `!`; with suggestions open (commands, paths, @) it closes them first and leaves the run going |
+| ctrl+c | stop the current run at once, or the commands run with `!` |
 | ctrl+b | send the command that blocks the model to the background |
 | `/vim`, or `keys = "vim"` under `[render]` | vim keys: esc to normal mode, i a A I o to write; ctrl+h/j/k/l move between the conversation, the input and the side panel; in the conversation j k gg G ctrl+d ctrl+u move a cursor, l and h open and fold what it is on, v selects lines and y copies them; in the panel j k pick a task or job and l opens its menu; in the input h l w b 0 $ x D dd edit, v selects, u and ctrl+r undo and redo; y yy dd x D copy to the clipboard and p P paste from it; `:` starts a command; in settings lists l goes in and h back. The mode shows before the status line |
 | ctrl+x | clear what is typed, also while the model works, which goes on |

@@ -445,7 +445,7 @@ func ago(when time.Time) string {
 // whileRunning are the commands that leave the conversation alone, so they
 // work while the model does: settings saved then apply when it finishes.
 var whileRunning = map[string]bool{
-	"help": true, "settings": true, "providers": true, "mcp": true, "plugins": true, "notify": true,
+	"help": true, "stop": true, "settings": true, "providers": true, "mcp": true, "plugins": true, "notify": true,
 	"sidebar": true, "vim": true, "jobs": true, "agents": true, "kill": true, "view": true, "git": true, "peers": true, "quit": true, "exit": true, "title": true, "model": true, "effort": true, "login": true, "logout": true,
 }
 
@@ -479,7 +479,7 @@ func (m model) sendNow() (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	m.sendingNow = true
-	m.stop()
+	m.stopAfter(agent.StopAfterCalls)
 	return m, cmd
 }
 

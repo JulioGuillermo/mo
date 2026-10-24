@@ -130,6 +130,7 @@ type Agent struct {
 	// the user stops to keep.
 	streamTiming *llm.Timing
 	judgedSafe   map[string]bool
+	stop         stopRequest
 }
 
 // Hooks lets the caller follow a run. Every field is optional. Without
@@ -298,13 +299,15 @@ func (a *Agent) lastAnswer() string {
 	return ""
 }
 
-// runTool runs a call and lets AfterToolCall change what it gave.
-func (a *Agent) runTool(ctx context.Context, call llm.ToolCall) (string, bool) {
-	output, isError := a.Tools.Run(ctx, call)
+// runTool runs a call and lets AfterToolCall change what it gave; cutShort
+// tells that a stop cut its work short, though it ended.
+func (a *Agent) runTool(ctx context.Context, call llm.ToolCall) (output string, isError, cutShort bool) {
+	ctx, mark := tools.WithCutShortMark(ctx)
+	output, isError = a.Tools.Run(ctx, call)
 	if a.AfterToolCall != nil {
 		output = a.AfterToolCall(ctx, call, output, isError)
 	}
-	return output, isError
+	return output, isError, mark.Load()
 }
 
 // steps runs the model and its calls until it answers in text.
@@ -315,6 +318,9 @@ func (a *Agent) steps(ctx context.Context, hooks Hooks) error {
 		limit = a.Loop.Steps
 	}
 	for steps := 0; ; steps++ {
+		if a.Stopping() {
+			return context.Canceled
+		}
 		if limit > 0 && steps >= limit {
 			return ErrStepLimit
 		}
@@ -328,9 +334,10 @@ func (a *Agent) steps(ctx context.Context, hooks Hooks) error {
 			a.makeRoom(ctx, hooks)
 		}
 		early := a.startEarlyCalls(ctx, hooks)
-		response, repeated, err := a.streamRetrying(ctx, hooks, early)
+		replyCtx, replyEnded := a.writingReply(ctx)
+		response, repeated, err := a.streamRetrying(replyCtx, hooks, early)
 		_, limited := llm.LimitOf(err)
-		if err != nil && !limited && ctx.Err() == nil && (early == nil || !early.any()) && a.withoutImages() {
+		if err != nil && !limited && replyCtx.Err() == nil && (early == nil || !early.any()) && a.withoutImages() {
 			if hooks.OnNotice != nil {
 				hooks.OnNotice(fmt.Sprintf("the model did not take the images (%v); sending without them", err))
 			}
@@ -338,21 +345,23 @@ func (a *Agent) steps(ctx context.Context, hooks Hooks) error {
 				early.abort()
 				early = a.startEarlyCalls(ctx, hooks)
 			}
-			response, repeated, err = a.stream(ctx, hooks, early)
+			response, repeated, err = a.stream(replyCtx, hooks, early)
 		}
+		replyEnded()
 		if err != nil {
-			stopped := ctx.Err() != nil
-			if !a.keepEarly(early, stopped) && stopped {
+			stopped := ctx.Err() != nil || a.heldBack()
+			waits := stopped && ctx.Err() == nil
+			if !a.keepEarly(early, stopped, waits) && stopped {
 				a.keepPartial()
 			}
 			if stopped {
-				return ctx.Err()
+				return context.Canceled
 			}
 			a.CheckModel(ctx, hooks, CheckFailure)
 			return err
 		}
 		if repeated != "" {
-			a.keepEarly(early, false)
+			a.keepEarly(early, false, false)
 			if err := a.cutLoopingReply(repeated, hooks); err != nil {
 				return err
 			}
@@ -395,9 +404,12 @@ func (a *Agent) steps(ctx context.Context, hooks Hooks) error {
 		} else {
 			unfinished = a.answerToolCalls(ctx, response.Message.ToolCalls, hooks)
 		}
-		if ctx.Err() != nil {
+		// Calls left unfinished with the context alive were held back or
+		// cut short by a stop that let the others end.
+		if ctx.Err() != nil || len(unfinished) > 0 {
 			a.dropUnfinished(asked, unfinished)
-			return ctx.Err()
+			a.step(hooks)
+			return context.Canceled
 		}
 		results := a.History[len(a.History)-len(response.Message.ToolCalls):]
 		if note, found := toolImages(response.Message.ToolCalls, results); found {
@@ -580,6 +592,7 @@ func (a *Agent) sentHistory() []llm.Message {
 	sent := slices.Clone(a.History)
 	for i := range sent {
 		sent[i].Timing = nil
+		sent[i].Stopped = false
 		if i < from {
 			sent[i].Reasoning = ""
 			sent[i].Thinking = nil

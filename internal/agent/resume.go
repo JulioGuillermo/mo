@@ -28,7 +28,7 @@ func (a *Agent) keepPartial() {
 	if text == "" {
 		return
 	}
-	a.History = append(a.History, llm.Message{Role: llm.RoleAssistant, Text: text + stoppedMark, Timing: a.stoppedTiming()})
+	a.History = append(a.History, llm.Message{Role: llm.RoleAssistant, Text: text + stoppedMark, Timing: a.stoppedTiming(), Stopped: true})
 }
 
 // dropUnfinished takes out of the history the tool calls a stop cut short,
@@ -116,38 +116,32 @@ func (a *Agent) stoppedTiming() *llm.Timing {
 	return timing.Ended()
 }
 
-// Continue goes on with a turn the user stopped, without a new prompt.
-// Stopped before any answer, the model answers the prompt waiting; stopped
-// later, it is told to go on from where it was. Calls a stop left are run
-// again as resumed, going on with what they started, and the turn goes on
-// after them as if it had not stopped.
+// Continue goes on with a turn the user stopped as if it had not stopped:
+// the reply the stop cut goes, but for the calls it ran and their results,
+// and the model is asked again from there, with no word of the stop. Calls
+// a stop left are run again as resumed, going on with what they started.
+// A turn that had ended is told to go on, as ContinueTelling does.
 func (a *Agent) Continue(ctx context.Context, hooks Hooks) error {
+	return a.goOn(ctx, hooks, false)
+}
+
+// ContinueTelling goes on with a turn the user stopped, telling the model:
+// the reply the stop cut stays, marked where it was cut, and a note says it
+// was stopped and is to go on.
+func (a *Agent) ContinueTelling(ctx context.Context, hooks Hooks) error {
+	return a.goOn(ctx, hooks, true)
+}
+
+func (a *Agent) goOn(ctx context.Context, hooks Hooks, tell bool) error {
 	if len(a.History) == 0 {
 		return ErrNothingToContinue
 	}
+	if !tell {
+		a.dropStoppedReplies()
+	}
 	if calls := a.unanswered(); len(calls) > 0 {
-		for _, call := range calls {
-			if !a.Tools.Resumable(call.Name) {
-				// Left by mo stopping mid-call: never run again unasked.
-				a.History = append(a.History, stamped(llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Text: interruptedCall, IsError: true}))
-				continue
-			}
-			summary := a.Tools.Summary(call)
-			if hooks.OnToolStart != nil {
-				hooks.OnToolStart(call, summary)
-			}
-			timing := llm.StartedNow()
-			output, isError := a.runTool(tools.WithResume(ctx), call)
-			timing.Ended()
-			if hooks.OnToolDone != nil {
-				hooks.OnToolDone(call, output, isError)
-			}
-			if ctx.Err() != nil {
-				// Stopped again: still to go on with.
-				return ctx.Err()
-			}
-			a.History = append(a.History, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Text: output, IsError: isError, Timing: timing})
-			a.step(hooks)
+		if err := a.resumeCalls(ctx, calls, hooks); err != nil {
+			return err
 		}
 		a.loops = 0
 		return a.turn(ctx, hooks)
@@ -155,6 +149,7 @@ func (a *Agent) Continue(ctx context.Context, hooks Hooks) error {
 	last := len(a.History) - 1
 	switch message := a.History[last]; {
 	case message.Role == llm.RoleUser && isPrompt(message):
+	case message.Role != llm.RoleAssistant && !tell:
 	case message.Role != llm.RoleAssistant:
 		a.History[last].Text += "\n\n" + continueNote
 	default:
@@ -162,6 +157,54 @@ func (a *Agent) Continue(ctx context.Context, hooks Hooks) error {
 	}
 	a.loops = 0
 	return a.turn(ctx, hooks)
+}
+
+// resumeCalls runs again, as resumed, the calls a stop left without a
+// result; one that is not resumable is answered as interrupted.
+func (a *Agent) resumeCalls(ctx context.Context, calls []llm.ToolCall, hooks Hooks) error {
+	for _, call := range calls {
+		if !a.Tools.Resumable(call.Name) {
+			// Left by mo stopping mid-call: never run again unasked.
+			a.History = append(a.History, stamped(llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Text: interruptedCall, IsError: true}))
+			continue
+		}
+		summary := a.Tools.Summary(call)
+		if hooks.OnToolStart != nil {
+			hooks.OnToolStart(call, summary)
+		}
+		timing := llm.StartedNow()
+		output, isError, cutShort := a.runTool(tools.WithResume(ctx), call)
+		timing.Ended()
+		if hooks.OnToolDone != nil {
+			hooks.OnToolDone(call, output, isError)
+		}
+		if ctx.Err() != nil || cutShort {
+			// Stopped again: still to go on with.
+			return context.Canceled
+		}
+		a.History = append(a.History, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Text: output, IsError: isError, Timing: timing})
+		a.step(hooks)
+	}
+	return nil
+}
+
+// dropStoppedReplies takes out of the turn the replies the user stopped while
+// they were written: one that ran calls keeps them and their results, its
+// cut text gone; one that ran none goes whole.
+func (a *Agent) dropStoppedReplies() {
+	from := a.lastUserMessage() + 1
+	kept := slices.Clone(a.History[:from])
+	for _, message := range a.History[from:] {
+		if !message.Stopped {
+			kept = append(kept, message)
+			continue
+		}
+		if len(message.ToolCalls) > 0 {
+			message.Text, message.Stopped = "", false
+			kept = append(kept, message)
+		}
+	}
+	a.History = kept
 }
 
 // Stopped tells a call's result that says it was stopped, cancelled or

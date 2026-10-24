@@ -921,8 +921,22 @@
 
 - An answer stopped with esc stays in the history, marked as stopped there, so the model knows
   what it had said. `/continue` starts a turn without a prompt: stopped before any answer, the
-  model answers the prompt waiting; stopped later, a note tells it to go on from where it was and
-  redo what was cancelled if still needed.
+  model answers the prompt waiting.
+- `/continue` is invisible to the model: the replies the stop cut in the turn go, those that ran
+  calls keeping them and their results, and the model is asked again from there with no note. The
+  cut reply is kept as it was until then, so `/continue keep` can still send it marked, with the
+  note that tells the model to go on. The mark is a field of the message, `stopped`, never sent,
+  rather than the text the reply ends with, which the model could write or a compaction change.
+- A stop has three strengths. esc, or `/stop`, cuts the reply being written and lets the calls
+  running end with their results; those not started never run and go from the reply. `/stop
+  next` lets the whole round end. esc again, `/stop now` or ctrl+c stop everything at once, as esc
+  did before: a call cut mid-way leaves its work undone with no word of it to the model, so the
+  default never does it. Each esc stops sooner than the stop asked; another stop replaces it and
+  `/stop cancel` takes it back unless it stopped already.
+- A stop reaches the subagents as the main agent. An `agent` call whose subagents stopped when
+  asked is kept without a result, as one cut by a stop at once, so `/continue` runs it as resumed
+  and the main agent waits for them again. The team tells the call through a mark in its context,
+  since the call itself ends normally.
 
 ## While the model works
 

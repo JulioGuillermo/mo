@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jg/mo/internal/llm"
@@ -56,6 +57,10 @@ type earlyRunner struct {
 	finished chan struct{}
 	calls    []*earlyCall
 	started  sync.Once
+	// callsHeld is set by a stop that lets the call running end and runs
+	// no other; wake tells the loop at once.
+	callsHeld atomic.Bool
+	wake      chan struct{}
 	// beforeStart shows what the reply wrote before its first call runs,
 	// so it reads before the call.
 	beforeStart func()
@@ -64,7 +69,8 @@ type earlyRunner struct {
 func (a *Agent) startEarly(ctx context.Context, hooks Hooks, beforeStart func()) *earlyRunner {
 	runCtx, cancel := context.WithCancel(ctx)
 	r := &earlyRunner{agent: a, hooks: hooks, ctx: runCtx, cancel: cancel,
-		incoming: make(chan *earlyCall, 16), finished: make(chan struct{}), beforeStart: beforeStart}
+		incoming: make(chan *earlyCall, 16), finished: make(chan struct{}), wake: make(chan struct{}, 1), beforeStart: beforeStart}
+	a.runningEarly(r)
 	go r.run()
 	return r
 }
@@ -106,8 +112,11 @@ func (r *earlyRunner) sendPiece(index int) {
 }
 
 func (r *earlyRunner) send(call llm.ToolCall) {
-	r.incoming <- &earlyCall{call: call}
-	r.sent++
+	select {
+	case r.incoming <- &earlyCall{call: call}:
+		r.sent++
+	case <-r.finished:
+	}
 }
 
 // finish sends the calls of the ended reply not sent yet and waits for every
@@ -130,6 +139,24 @@ func (r *earlyRunner) finish(calls []llm.ToolCall) []*earlyCall {
 // stopped; the calls already run keep their results.
 func (r *earlyRunner) abort() []*earlyCall {
 	r.cancel()
+	r.stop()
+	<-r.finished
+	return r.calls
+}
+
+// holdBack keeps the calls not run yet from running; the one running ends.
+func (r *earlyRunner) holdBack() {
+	r.callsHeld.Store(true)
+	select {
+	case r.wake <- struct{}{}:
+	default:
+	}
+}
+
+// letRunningEnd ends a reply a stop cut, once the call running ends: the
+// calls run keep their results, the others are left unfinished.
+func (r *earlyRunner) letRunningEnd() []*earlyCall {
+	r.holdBack()
 	r.stop()
 	<-r.finished
 	return r.calls
@@ -159,6 +186,7 @@ func (r *earlyRunner) run() {
 	defer close(r.finished)
 	defer r.cancel()
 	defer func() { r.agent.inReply = nil }()
+	defer r.agent.runningEarly(nil)
 	type answered struct {
 		call  *earlyCall
 		reply Reply
@@ -168,7 +196,7 @@ func (r *earlyRunner) run() {
 	incoming := r.incoming
 	next, running, waiting := 0, false, 0
 	for {
-		for !running && next < len(r.calls) {
+		for !running && next < len(r.calls) && !r.callsHeld.Load() {
 			call := r.calls[next]
 			if call.asked && call.reply == nil {
 				break
@@ -192,16 +220,19 @@ func (r *earlyRunner) run() {
 			running, call.ran = true, true
 			call.timing.Start = time.Now()
 			go func(call *earlyCall) {
-				call.result, call.isError = r.agent.runTool(r.ctx, call.pending.call)
+				var cutShort bool
+				call.result, call.isError, cutShort = r.agent.runTool(r.ctx, call.pending.call)
 				call.timing.End = time.Now()
-				call.interrupted = r.ctx.Err() != nil
+				call.interrupted = r.ctx.Err() != nil || cutShort
 				results <- call
 			}(call)
 		}
-		if incoming == nil && !running && waiting == 0 && next == len(r.calls) {
+		allDone := incoming == nil && waiting == 0 && next == len(r.calls)
+		if !running && (allDone || r.callsHeld.Load()) {
 			return
 		}
 		select {
+		case <-r.wake:
 		case call, ok := <-incoming:
 			if !ok {
 				incoming = nil
@@ -213,7 +244,13 @@ func (r *earlyRunner) run() {
 				call.asked = true
 				call.timing.Asked = time.Now()
 				waiting++
-				go func() { answers <- answered{call, r.agent.interact(r.ctx, interaction, r.hooks)} }()
+				go func() {
+					reply := r.agent.interact(r.ctx, interaction, r.hooks)
+					select {
+					case answers <- answered{call, reply}:
+					case <-r.finished:
+					}
+				}()
 			}
 			r.calls = append(r.calls, call)
 		case answer := <-answers:
@@ -249,11 +286,16 @@ func (r *earlyRunner) seen() {
 
 // earlyHistory is the reply with the calls that have a result, then the
 // results: what was run while it was written. Calls a stop cut short go,
-// as if the model had not made them.
-func earlyHistory(message llm.Message, calls []*earlyCall) []llm.Message {
+// as if the model had not made them, but for those resumable, kept without
+// a result to go on with.
+func earlyHistory(message llm.Message, calls []*earlyCall, resumable func(name string) bool) []llm.Message {
 	message.ToolCalls = nil
 	var results []llm.Message
 	for _, call := range calls {
+		if call.done && call.interrupted && call.ran && resumable(call.pending.call.Name) {
+			message.ToolCalls = append(message.ToolCalls, call.call)
+			continue
+		}
 		if !call.done || call.interrupted || (call.result == cancelledResult && !call.ran) {
 			continue
 		}
@@ -285,9 +327,11 @@ func (a *Agent) answerEarly(ctx context.Context, ran []*earlyCall, calls []llm.T
 		result, isError := "Not run: the reply changed this call after it was written.", true
 		if i < len(ran) {
 			result, isError = ran[i].result, ran[i].isError
-			if ran[i].interrupted || (ctx.Err() != nil && !ran[i].ran) {
+			if ran[i].interrupted || !ran[i].done || (ctx.Err() != nil && !ran[i].ran) {
 				unfinished[call.ID] = true
 			}
+		} else if a.heldBack() {
+			unfinished[call.ID] = true
 		}
 		timing := llm.StartedNow()
 		if i < len(ran) {
@@ -300,11 +344,17 @@ func (a *Agent) answerEarly(ctx context.Context, ran []*earlyCall, calls []llm.T
 
 // keepEarly puts in the history what a reply that broke off ran while it
 // was written, with the text it had, and tells whether it ran anything.
-func (a *Agent) keepEarly(early *earlyRunner, stopped bool) bool {
+// letRunningEnd waits for the call running instead of stopping it.
+func (a *Agent) keepEarly(early *earlyRunner, stopped, letRunningEnd bool) bool {
 	if early == nil {
 		return false
 	}
-	calls := early.abort()
+	var calls []*earlyCall
+	if letRunningEnd {
+		calls = early.letRunningEnd()
+	} else {
+		calls = early.abort()
+	}
 	if !early.any() {
 		return false
 	}
@@ -312,10 +362,11 @@ func (a *Agent) keepEarly(early *earlyRunner, stopped bool) bool {
 	text := strings.TrimSpace(a.partial.String())
 	a.partialMu.Unlock()
 	a.resetPartial()
+	message := llm.Message{Role: llm.RoleAssistant, Text: text, Timing: a.stoppedTiming()}
 	if stopped && text != "" {
-		text += stoppedMark
+		message.Text, message.Stopped = text+stoppedMark, true
 	}
-	a.History = append(a.History, earlyHistory(llm.Message{Role: llm.RoleAssistant, Text: text, Timing: a.stoppedTiming()}, calls)...)
+	a.History = append(a.History, earlyHistory(message, calls, a.Tools.Resumable)...)
 	return true
 }
 

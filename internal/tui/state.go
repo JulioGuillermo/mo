@@ -39,9 +39,13 @@ func statePalette(dark bool) stateColors {
 // currentState works out what the agent is doing from what it last sent.
 func (m model) currentState() state {
 	colors := statePalette(m.printer == nil || m.printer.isDark())
-	switch {
-	case m.dialog != nil:
+	if m.dialog != nil {
 		return state{word: "your turn", detail: "answer above", tint: colors.yours}
+	}
+	if stopping, asked := m.stoppingState(colors); asked {
+		return stopping
+	}
+	switch {
 	case m.waitingFor != "":
 		return state{word: "waiting", detail: m.waitingFor, tint: colors.waiting}
 	case m.activity != "":

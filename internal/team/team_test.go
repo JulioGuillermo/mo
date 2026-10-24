@@ -25,6 +25,7 @@ package team
 // | TM-21 | Happy    | Those started in the background go on when everything stopped them, not when stopped on their own | P0 |
 // | TM-22 | Happy    | Saved and restored, a resumed call still finds its subagents and goes on with them | P0 |
 // | TM-23 | Happy    | A subagent is built with its type, kept with its provider when saved and restored; its permissions are its agent's | P0 |
+// | TM-24 | Happy    | A stop asked of all lets each subagent end its step; the call that waited is cut short and resumed | P0 |
 
 import (
 	"context"
@@ -523,6 +524,30 @@ func TestTeam(t *testing.T) {
 
 		if records[0].StartedBy != "call-9" || len(restored.List()) != 1 || !strings.Contains(report, "## agent 1 · s · done") {
 			t.Errorf("started by %q agents %d report:\n%s", records[0].StartedBy, len(restored.List()), report)
+		}
+	})
+
+	t.Run("TM-24 a stop asked of all lets each subagent end its step; the call that waited is cut short and resumed", func(t *testing.T) {
+		team, model := newTeam(t, wide)
+		registry := tools.NewRegistry(tools.Env{WorkDir: t.TempDir(), Agents: team.Main()}, tools.Options{})
+		call := llm.ToolCall{ID: "call-11", Name: tools.AgentName, Args: json.RawMessage(`{"task":"slow","name":"s"}`)}
+		go func() {
+			waitState(t, team, 1, Running)
+			team.StopAllAfter(agent.StopAfterCalls)
+		}()
+		marked, cutShort := tools.WithCutShortMark(ctx)
+
+		within(t, "the stop", func() { _, _ = registry.Run(marked, call) })
+		stopped := team.List()[0].State
+		close(model.release)
+		var report string
+		within(t, "the resumed call", func() { report, _ = registry.Run(tools.WithResume(ctx), call) })
+
+		if !cutShort.Load() || stopped != Stopped {
+			t.Fatalf("cut short %v state %s", cutShort.Load(), stopped)
+		}
+		if !strings.Contains(report, "slow is done") || len(team.List()) != 1 {
+			t.Errorf("agents %+v report:\n%s", team.List(), report)
 		}
 	})
 }

@@ -123,7 +123,7 @@ func TestMCPSwitches(t *testing.T) {
 		if !open || !closed || !again || stopped || !m.running {
 			t.Errorf("open %v closed %v again %v stopped %v", open, closed, again, stopped)
 		}
-		m = keys(t, m, keyEsc, keyEsc)
+		m = keys(t, m, keyEsc, keyEsc, keyEsc)
 		if !stopped {
 			t.Error("esc with the suggestions closed does not stop the model")
 		}
