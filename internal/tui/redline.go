@@ -14,7 +14,7 @@ var (
 var (
 	redlineDark = uiColors{
 		background: "#03060f", sidebar: "#060b19", statusBase: "#0b0308",
-		panel: "#151a2e", block: "#0b1122", body: "#0f172e", button: "#3a1020", tab: "#161d38", done: "#0c1326",
+		panel: "#1a0910", block: "#0b1122", body: "#0f172e", button: "#3a1020", tab: "#161d38", done: "#0c1326",
 		segment: "#3d0c1a", segmentDim: "#2a0812", segmentDeep: "#1c050c",
 		peer: "#151a2a", popup: "#080c18", queued: "#2a1a0e",
 		cursorLine: "#2a0a14", blockCursor: "#3a0f1c", vimCursor: "#30101a",
