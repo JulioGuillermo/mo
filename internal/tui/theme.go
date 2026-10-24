@@ -75,6 +75,13 @@ func markdownStyle(dark bool) ansi.StyleConfig {
 	colors := ui(dark)
 	codeText, codeBackground, blockBackground := colors.inlineCode, colors.inlineCodeBack, colors.codeBlockBack
 	config.Code.Color, config.Code.BackgroundColor = &codeText, &codeBackground
+	if heading := colors.heading; heading != "" {
+		titleText, titleBackground := colors.onAccent, colors.accent
+		config.Heading.Color = &heading
+		config.H1.Color, config.H1.BackgroundColor = &titleText, &titleBackground
+		linkText, address := heading, colors.cyan
+		config.LinkText.Color, config.Link.Color = &linkText, &address
+	}
 	if config.CodeBlock.Chroma != nil {
 		chroma := *config.CodeBlock.Chroma
 		chroma.Background.BackgroundColor = &blockBackground

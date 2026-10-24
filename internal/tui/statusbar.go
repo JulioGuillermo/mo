@@ -146,7 +146,7 @@ func (m model) statusSegments(show statusParts) []segment {
 	}
 	modelName := lipgloss.NewStyle().Foreground(colors.model).Bold(true).Render(shortModelName(m.session.Model))
 	if effort := m.currentEffort(); effort != "" {
-		modelName += paint(colors.label, " · ") + paint(colors.provider, effort)
+		modelName += paint(colors.separator, " · ") + paint(colors.provider, effort)
 	}
 	pickModel := func(m model) (tea.Model, tea.Cmd) { return m.runCommand("/model") }
 	openProviders := func(m model) (tea.Model, tea.Cmd) { return m.runCommand("/providers") }
@@ -158,7 +158,7 @@ func (m model) statusSegments(show statusParts) []segment {
 		provider = firstLetter(m.session.Provider)
 	}
 	if provider != "" {
-		provider = paint(colors.provider, provider) + paint(colors.label, " › ")
+		provider = paint(colors.provider, provider) + paint(colors.separator, " › ")
 	}
 	width := ansi.StringWidth(provider)
 	segments = append(segments, segment{text: provider + modelName, bg: colors.segment, do: pickModel, menu: pickModel,
@@ -237,7 +237,7 @@ func (m model) renderStatus(left, right []segment, width int) (string, []region)
 	plain := m.statusStyle() == statusPlain
 	colors := statusPalette(m.printer == nil || m.printer.isDark())
 	if plain {
-		separator := lipgloss.NewStyle().Foreground(colors.empty).Render(" │ ")
+		separator := lipgloss.NewStyle().Foreground(colors.separator).Render(" │ ")
 		for i, seg := range left {
 			if i > 0 {
 				write(separator)
@@ -264,7 +264,7 @@ func (m model) renderStatus(left, right []segment, width int) (string, []region)
 	for i, seg := range right {
 		if plain {
 			if i > 0 {
-				tail.WriteString(lipgloss.NewStyle().Foreground(colors.label).Render(" · "))
+				tail.WriteString(lipgloss.NewStyle().Foreground(colors.separator).Render(" · "))
 			}
 			start := ansi.StringWidth(tail.String())
 			tail.WriteString(seg.text)

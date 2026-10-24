@@ -7,12 +7,16 @@ package tui
 // | UT-03 | Happy    | A look chosen colours the dialogs, the status line, the diffs and the accent | P0     |
 // | UT-04 | Happy    | The theme's background follows the mode: dark, light, or auto as the terminal is; a colour of its own sets the darkness | P0 |
 // | UT-05 | Happy    | Settings saves the look and the mode when not the default, and previews the look hovered | P1 |
+// | UT-06 | Happy    | Redline's own colours reach the separators, the context, tables, headings, line numbers and the cursor line | P1 |
+// | UT-07 | Happy    | A look without colours of its own keeps faint separators and numbers, green context and its grounds for tables | P0 |
 
 import (
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+
+	"charm.land/glamour/v2/styles"
 
 	"github.com/jg/mo/internal/config"
 )
@@ -47,6 +51,9 @@ func TestUIThemes(t *testing.T) {
 				colors := theme.colors(dark)
 				fields := reflect.ValueOf(colors)
 				for i := range fields.NumField() {
+					if fields.Type().Field(i).Anonymous {
+						continue
+					}
 					if value := fields.Field(i).String(); !strings.HasPrefix(value, "#") || len(value) != 7 {
 						t.Errorf("%s dark=%v %s = %q", theme.name, dark, fields.Type().Field(i).Name, value)
 					}
@@ -99,6 +106,37 @@ func TestUIThemes(t *testing.T) {
 		}
 		if background := uiThemeNamed("catppuccin").light.background; !strings.Contains(preview, strings.TrimPrefix(sgrOf(background), "38")) {
 			t.Errorf("the preview is not on %s", background)
+		}
+	})
+
+	t.Run("UT-06 redline's own colours reach the separators, the context, tables, headings, line numbers and the cursor line", func(t *testing.T) {
+		usingUI(t, "redline", true)
+		red := uiNow()
+
+		status, table, markdown := statusPalette(true), tablePalette(true), markdownStyle(true)
+
+		if status.separator != col(red.separator) || status.low != col(red.gauge) || table.header != col(red.tableHeader) || table.even != col(red.tableEven) {
+			t.Errorf("status %+v table %+v", status, table)
+		}
+		if markdown.Heading.Color == nil || *markdown.Heading.Color != red.heading || markdown.LinkText.Color == nil || *markdown.LinkText.Color != red.heading {
+			t.Errorf("headings and links are not red")
+		}
+		if lineNumberStyle(false).GetForeground() != col(red.lineNumber) || !strings.Contains(cursorBackground(), "42;10;20") {
+			t.Errorf("line number %v cursor %q", lineNumberStyle(false).GetForeground(), cursorBackground())
+		}
+	})
+
+	t.Run("UT-07 a look without colours of its own keeps faint separators and numbers, green context and its grounds for tables", func(t *testing.T) {
+		usingUI(t, "mo", true)
+		mo := uiNow()
+
+		status, table := statusPalette(true), tablePalette(true)
+
+		if status.separator != col(mo.faint) || status.low != col(mo.green) || table.header != col(mo.button) || table.odd != col(mo.block) {
+			t.Errorf("status %+v table %+v", status, table)
+		}
+		if !lineNumberStyle(false).GetFaint() || markdownStyle(true).LinkText.Color != styles.DarkStyleConfig.LinkText.Color {
+			t.Error("line numbers or links changed")
 		}
 	})
 }

@@ -285,7 +285,7 @@ func TestDiffCursor(t *testing.T) {
 
 			row := strings.Split(m.viewerView(), "\n")[1+each.down]
 
-			if !strings.Contains(row, backgroundOf(each.lighter)) || strings.Contains(row, backgroundOf(each.plain)) || strings.Contains(row, cursorBackground) {
+			if !strings.Contains(row, backgroundOf(each.lighter)) || strings.Contains(row, backgroundOf(each.plain)) || strings.Contains(row, cursorBackground()) {
 				t.Errorf("row %d = %q", each.down, row)
 			}
 		}

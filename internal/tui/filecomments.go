@@ -350,14 +350,18 @@ func (m *model) completeMention(chosen command) {
 
 // cursorBackground is the cursor line's background as an escape
 // sequence, put back after each reset of the highlighting's colours.
-const cursorBackground = "\x1b[48;2;41;46;66m"
+func cursorBackground() string {
+	red, green, blue, _ := col(uiNow().cursorLine).RGBA()
+	return fmt.Sprintf("\x1b[48;2;%d;%d;%dm", red>>8, green>>8, blue>>8)
+}
 
 // cursorRow paints the background of the line the viewer's cursor is on,
 // keeping the colours of its highlighting, to the width of the screen.
 func cursorRow(line string, width int) string {
 	padded := line + strings.Repeat(" ", max(width-ansi.StringWidth(line), 0))
+	background := cursorBackground()
 	for _, reset := range []string{"\x1b[0m", "\x1b[m"} {
-		padded = strings.ReplaceAll(padded, reset, reset+cursorBackground)
+		padded = strings.ReplaceAll(padded, reset, reset+background)
 	}
-	return cursorBackground + padded + "\x1b[m"
+	return background + padded + "\x1b[m"
 }

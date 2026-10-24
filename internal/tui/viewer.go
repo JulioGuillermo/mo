@@ -777,7 +777,7 @@ func (m model) viewerBody(width int) string {
 				mark = commentMark().Render("◆")
 			}
 			if v.file != "" {
-				mark += dimStyle.Render(fmt.Sprintf("%*d ", gutter-2, i+1))
+				mark += lineNumberStyle(i == v.cursor).Render(fmt.Sprintf("%*d ", gutter-2, i+1))
 			}
 			line = mark + line
 		}
@@ -847,4 +847,18 @@ func shebangLexer(text string) chroma.Lexer {
 		}
 	}
 	return nil
+}
+
+// lineNumberStyle colours the number of a file's line as the theme says, the
+// cursor's apart; faint where it says nothing.
+func lineNumberStyle(onCursor bool) lipgloss.Style {
+	colors := uiNow()
+	number := colors.lineNumber
+	if onCursor && colors.lineNumberCursor != "" {
+		number = colors.lineNumberCursor
+	}
+	if number == "" {
+		return dimStyle
+	}
+	return lipgloss.NewStyle().Foreground(col(number)).Bold(onCursor)
 }

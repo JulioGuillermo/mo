@@ -18,12 +18,12 @@ type tableColors struct {
 
 func tablePalette(dark bool) tableColors {
 	c := ui(dark)
-	code := c.cyan
+	code := c.inlineCode
 	if !dark {
 		code = c.orange
 	}
 	return tableColors{
-		header: col(c.button), even: col(c.body), odd: col(c.block),
+		header: col(orDefault(c.tableHeader, c.button)), even: col(orDefault(c.tableEven, c.body)), odd: col(orDefault(c.tableOdd, c.block)),
 		text: col(c.text), code: col(code), link: col(c.accent),
 	}
 }

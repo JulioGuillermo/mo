@@ -1564,7 +1564,7 @@ func contextBar(share float64, cells int, fill, empty color.Color, style string)
 }
 
 type statusColors struct {
-	provider, model, label, low, mid, high, empty, prompt, generation color.Color
+	provider, model, label, separator, low, mid, high, empty, prompt, generation color.Color
 	// base is what segments are shaded from; segment, segmentDim and
 	// segmentDeep are the backgrounds of the model, the context and the
 	// speeds; text and branch colour the folder and the branch.
@@ -1587,8 +1587,8 @@ func (c statusColors) mode(mode permissions.Mode) color.Color {
 func statusPalette(dark bool) statusColors {
 	c := ui(dark)
 	return statusColors{
-		provider: col(c.accent), model: col(c.purple), label: col(c.faint),
-		low: col(c.green), mid: col(c.warning), high: col(c.red), empty: col(c.empty),
+		provider: col(c.accent), model: col(c.purple), label: col(c.faint), separator: col(orDefault(c.separator, c.faint)),
+		low: col(orDefault(c.gauge, c.green)), mid: col(c.warning), high: col(c.red), empty: col(c.empty),
 		prompt: col(c.cyan), generation: col(c.teal),
 		base: col(c.statusBase), segment: col(c.segment), segmentDim: col(c.segmentDim),
 		segmentDeep: col(c.segmentDeep), text: col(c.subtext), branch: col(c.warning),

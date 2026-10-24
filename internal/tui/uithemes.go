@@ -26,6 +26,22 @@ type uiColors struct {
 	// onAccent is text on the accent, as a chosen row is.
 	onAccent                                                      string
 	accent, warning, green, red, purple, cyan, teal, orange, pink string
+	uiExtras
+}
+
+// uiExtras are the colours a theme may set apart; empty, each takes the
+// colour after it: the separators of the status line (faint), the
+// context's fill while it has room (green), and a table's header and rows
+// (button, body and block). heading colours the headings of markdown, the
+// first on the accent, and its links, the words in it and the address
+// cyan; empty, they are glamour's own. lineNumber and lineNumberCursor
+// colour the numbers of a file's lines, and that of the cursor's; empty,
+// they are faint text.
+type uiExtras struct {
+	separator, gauge                 string
+	tableHeader, tableEven, tableOdd string
+	heading                          string
+	lineNumber, lineNumberCursor     string
 }
 
 // uiTheme is a look of the screen for dark backgrounds and one for light.

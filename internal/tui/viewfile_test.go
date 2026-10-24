@@ -109,11 +109,11 @@ func TestViewFile(t *testing.T) {
 		lines := strings.Split(opened.(model).View().Content, "\n")
 		cursor := lines[1]
 
-		if !strings.Contains(cursor, cursorBackground) || !strings.Contains(cursor, "38;2;") || !strings.Contains(ansi.Strip(cursor), "package main") {
+		if !strings.Contains(cursor, cursorBackground()) || !strings.Contains(cursor, "38;2;") || !strings.Contains(ansi.Strip(cursor), "package main") {
 			t.Errorf("cursor line = %q", cursor)
 		}
 		reset := strings.LastIndex(cursor[:len(cursor)-len("\x1b[m")], "\x1b[m")
-		if reset >= 0 && !strings.HasPrefix(cursor[reset+len("\x1b[m"):], cursorBackground) {
+		if reset >= 0 && !strings.HasPrefix(cursor[reset+len("\x1b[m"):], cursorBackground()) {
 			t.Errorf("the background should come back after each reset: %q", cursor)
 		}
 	})
