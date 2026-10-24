@@ -99,6 +99,7 @@ func derived(background string, p basePalette, accent string, dark bool) uiColor
 // uiThemes are the looks of the screen, mo's own first.
 var uiThemes = []*uiTheme{
 	{name: "mo", about: "mo's own, deep blue", dark: moDark, light: moLight},
+	{name: "redline", about: "a machine's display on alert: reds on a night blue", dark: redlineDark, light: redlineLight},
 	{name: "tokyo night", about: "Tokyo Night Storm and Day", dark: derived("#24283b", tokyoNight, tokyoNight.blue, true), light: derived("#e1e2e7", tokyoDay, tokyoDay.blue, false)},
 	{name: "one", about: "One Dark and One Light", dark: derived("#282c34", oneDark, oneDark.blue, true), light: derived("#fafafa", oneLight, oneLight.blue, false)},
 	{name: "catppuccin", about: "Catppuccin Mocha and Latte", dark: derived("#1e1e2e", mocha, mocha.purple, true), light: derived("#eff1f5", latte, latte.purple, false)},

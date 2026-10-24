@@ -203,6 +203,7 @@ func monokaiColors(p basePalette) syntaxColors {
 var syntaxThemes = []*syntaxTheme{
 	{name: "mo", about: "mo's own, as it has always been", dark: moColors(tokyoNight, "#89ddff", "#e0af68"), light: moColors(tokyoDay, "#006a83", "#8c6c3e")},
 	{name: "mo vivid", about: "mo's colours with every piece told apart", dark: vivid(tokyoNight), light: vivid(tokyoDay), styled: true},
+	{name: "redline", about: "reds, amber and white, steel blue types", dark: redlineColors(redlineNight, "#ffffff"), light: redlineColors(redlineAsh, "#1a0a0e"), styled: true},
 	{name: "tokyo night", about: "Tokyo Night and Tokyo Night Day", dark: tokyoColors(tokyoNight), light: tokyoColors(tokyoDay), styled: true},
 	{name: "one", about: "One Dark and One Light", dark: oneLike(oneDark), light: oneLike(oneLight), styled: true},
 	{name: "catppuccin", about: "Catppuccin Mocha and Latte", dark: catppuccinColors(mocha), light: catppuccinColors(latte), styled: true},

@@ -307,6 +307,7 @@ func Run(session Session) error {
 		peers:        newPeerSession(),
 	}
 	defer m.config.close()
+	m.input.SetStyles(inputStyles(m.input.Styles(), screen.dark))
 	printer.setKind(m.toolKind)
 	m.configureJobs()
 	m.paceAnimations()
