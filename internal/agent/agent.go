@@ -351,7 +351,9 @@ func (a *Agent) steps(ctx context.Context, hooks Hooks) error {
 		if err != nil {
 			stopped := ctx.Err() != nil || a.heldBack()
 			waits := stopped && ctx.Err() == nil
-			if !a.keepEarly(early, stopped, waits) && stopped {
+			if a.keepEarly(early, stopped, waits) {
+				a.noteToolImages()
+			} else if stopped {
 				a.keepPartial()
 			}
 			if stopped {
@@ -408,13 +410,11 @@ func (a *Agent) steps(ctx context.Context, hooks Hooks) error {
 		// cut short by a stop that let the others end.
 		if ctx.Err() != nil || len(unfinished) > 0 {
 			a.dropUnfinished(asked, unfinished)
+			a.noteToolImages()
 			a.step(hooks)
 			return context.Canceled
 		}
-		results := a.History[len(a.History)-len(response.Message.ToolCalls):]
-		if note, found := toolImages(response.Message.ToolCalls, results); found {
-			a.History = append(a.History, stamped(note))
-		}
+		a.noteToolImages()
 		a.step(hooks)
 		if a.looping() {
 			return ErrLooping

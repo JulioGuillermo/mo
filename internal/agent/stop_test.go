@@ -9,11 +9,16 @@ package agent
 // | ST-05 | Happy    | A stop amid a reply that runs a call cuts the reply, lets the call end and keeps it    | P0       |
 // | ST-06 | Happy    | Continue drops the cut text, keeps the call that ran and tells the model nothing       | P0       |
 // | ST-07 | Happy    | A resumable call a stop cut short stays without a result; continue resumes it          | P0       |
+// | ST-08 | Happy    | A stop that holds calls back still shows the model the images the calls that ran read  | P1       |
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/png"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -57,9 +62,16 @@ func slowCall(id, name string) llm.ToolCall {
 
 func slowAgent(t *testing.T, provider llm.Provider, slow *slowTool) *Agent {
 	t.Helper()
-	agent := newAgent(t, provider)
-	agent.Tools = tools.NewRegistry(tools.Env{WorkDir: t.TempDir()}, tools.Options{Extra: []tools.Tool{slow.tool()}})
+	agent, _ := slowAgentIn(t, provider, slow)
 	return agent
+}
+
+func slowAgentIn(t *testing.T, provider llm.Provider, slow *slowTool) (*Agent, string) {
+	t.Helper()
+	agent := newAgent(t, provider)
+	workDir := t.TempDir()
+	agent.Tools = tools.NewRegistry(tools.Env{WorkDir: workDir}, tools.Options{Extra: []tools.Tool{slow.tool()}})
+	return agent, workDir
 }
 
 // cutProvider writes the start of a reply, has the test stop it, and ends
@@ -239,6 +251,33 @@ func TestSoftStop(t *testing.T) {
 		}
 		if err != nil || len(resumed) != 2 || !resumed[1] || agent.History[len(agent.History)-1].Text != "all done" {
 			t.Errorf("err = %v resumed = %v history = %+v", err, resumed, agent.History)
+		}
+	})
+
+	t.Run("ST-08 a stop that holds calls back still shows the model the images the calls that ran read", func(t *testing.T) {
+		provider := &scriptedProvider{replies: []llm.Message{{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+			toolCall("1", "read", `{"path":"shot.png"}`), slowCall("2", "a"), slowCall("3", "b"),
+		}}}}
+		slow := &slowTool{}
+		agent, workDir := slowAgentIn(t, provider, slow)
+		slow.during = func(string) { agent.RequestStop(StopAfterCalls) }
+		picture, err := os.Create(filepath.Join(workDir, "shot.png"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := png.Encode(picture, image.NewRGBA(image.Rect(0, 0, 4, 4))); err != nil {
+			t.Fatal(err)
+		}
+		picture.Close()
+
+		stopped := agent.Run(ctx, "look", Hooks{})
+
+		note := agent.History[len(agent.History)-1]
+		if !errors.Is(stopped, context.Canceled) || strings.Join(slow.names(), ",") != "a" {
+			t.Fatalf("stopped = %v ran = %v", stopped, slow.names())
+		}
+		if note.Role != llm.RoleUser || len(note.Images) != 1 || !strings.Contains(note.Text, "shot.png") {
+			t.Errorf("last = %+v", note)
 		}
 	})
 }

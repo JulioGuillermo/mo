@@ -62,6 +62,37 @@ func (a *Agent) promptMessageNaming(prompt, own string, hooks Hooks) llm.Message
 	return message
 }
 
+// noteToolImages adds, after the last reply's results, the images its read
+// and MCP calls marked in them, for the model to see; a call a stop left
+// without a result has none.
+func (a *Agent) noteToolImages() {
+	reply := -1
+	for i := len(a.History) - 1; i >= 0 && reply < 0; i-- {
+		if a.History[i].Role == llm.RoleAssistant {
+			reply = i
+		}
+	}
+	if reply < 0 {
+		return
+	}
+	resultOf := map[string]llm.Message{}
+	for _, message := range a.History[reply+1:] {
+		if message.Role == llm.RoleTool {
+			resultOf[message.ToolCallID] = message
+		}
+	}
+	var calls []llm.ToolCall
+	var results []llm.Message
+	for _, call := range a.History[reply].ToolCalls {
+		if result, answered := resultOf[call.ID]; answered {
+			calls, results = append(calls, call), append(results, result)
+		}
+	}
+	if note, found := toolImages(calls, results); found {
+		a.History = append(a.History, stamped(note))
+	}
+}
+
 // toolImages loads the images that read and MCP tools marked in their
 // results, as a note for the model to see them.
 func toolImages(calls []llm.ToolCall, results []llm.Message) (llm.Message, bool) {
