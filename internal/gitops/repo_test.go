@@ -15,6 +15,9 @@ package gitops
 // | GR-07 | Error    | A merge or cherry-pick over uncommitted changes is refused           | P0       |
 // | GR-08 | Edge     | The git command sees the merge mo left in progress                   | P2       |
 // | GR-09 | Security | A plain commit is refused while a changed file holds conflict markers | P1      |
+// | GR-10 | Happy    | Commit with paths stages them first and names what it recorded       | P0       |
+// | GR-11 | Error    | Commit with nothing staged names the changes left out, adds none     | P0       |
+// | GR-12 | Error    | Commit with no changes at all says there is nothing to commit        | P2       |
 
 import (
 	"os"
@@ -173,7 +176,7 @@ func TestMerging(t *testing.T) {
 
 		stopped, err := tr.r.Merge("feature")
 		check, _ := tr.r.Check()
-		_, refusedCommit := tr.r.Commit("done")
+		_, refusedCommit := tr.r.Commit("done", nil)
 		_, refusedContinue := tr.r.Continue()
 
 		if err != nil || !strings.Contains(stopped, "conflicts in 1 files: main.go") || !strings.Contains(stopped, "<<<<<<< master") || !strings.Contains(stopped, ">>>>>>> feature") {
@@ -265,9 +268,48 @@ func TestMerging(t *testing.T) {
 		tr.write(map[string]string{"main.go": "<<<<<<< HEAD\na\n=======\nb\n>>>>>>> other\n"})
 		_, _ = tr.r.Add(nil)
 
-		_, err := tr.r.Commit("oops")
+		_, err := tr.r.Commit("oops", nil)
 
 		if err == nil || !strings.Contains(err.Error(), "main.go: line 1") {
+			t.Errorf("err = %v", err)
+		}
+	})
+
+	t.Run("GR-10 commit with paths stages them first and names what it recorded", func(t *testing.T) {
+		tr := newRepo(t)
+		tr.write(map[string]string{"main.go": "package main\n", "new.go": "package main\n", "other.go": "package other\n"})
+
+		out, err := tr.r.Commit("two files", []string{"main.go", "new.go"})
+
+		if err != nil || !strings.Contains(out, "main.go, new.go;") {
+			t.Fatalf("out = %q, err = %v", out, err)
+		}
+		if _, err := tr.headCommit().File("other.go"); err == nil {
+			t.Error("other.go was committed without being named")
+		}
+	})
+
+	t.Run("GR-11 commit with nothing staged names the changes left out, adds none", func(t *testing.T) {
+		tr := newRepo(t)
+		tr.write(map[string]string{"main.go": "package main\n", "new.go": "package main\n"})
+		before := tr.headCommit().Hash
+
+		_, err := tr.r.Commit("nothing", nil)
+
+		if err == nil || !strings.Contains(err.Error(), "nothing is staged") || !strings.Contains(err.Error(), "main.go\nnew.go") {
+			t.Errorf("err = %v", err)
+		}
+		if tr.headCommit().Hash != before {
+			t.Error("a commit was made")
+		}
+	})
+
+	t.Run("GR-12 commit with no changes at all says there is nothing to commit", func(t *testing.T) {
+		tr := newRepo(t)
+
+		_, err := tr.r.Commit("empty", nil)
+
+		if err == nil || !strings.Contains(err.Error(), "there are no changes") {
 			t.Errorf("err = %v", err)
 		}
 	})

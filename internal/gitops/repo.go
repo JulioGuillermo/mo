@@ -510,9 +510,14 @@ func (r *Repo) addEverything() (string, error) {
 	return "staged every change", nil
 }
 
-// Commit records what is staged. It refuses while conflict markers are
-// left, and finishes a merge or cherry-pick in progress.
-func (r *Repo) Commit(message string) (string, error) {
+// Commit stages paths, when given, then records what is staged. It refuses
+// while conflict markers are left, and finishes a merge or cherry-pick in progress.
+func (r *Repo) Commit(message string, paths []string) (string, error) {
+	if len(paths) > 0 {
+		if _, err := r.Add(paths); err != nil {
+			return "", err
+		}
+	}
 	if op := r.inProgress(); op != nil {
 		if strings.TrimSpace(message) != "" {
 			op.message = message
@@ -525,11 +530,44 @@ func (r *Repo) Commit(message string) (string, error) {
 	if left, err := r.markersLeft(); err != nil || len(left) > 0 {
 		return "", refuseMarkers(left, err)
 	}
+	staged, err := r.stagedFiles()
+	if err != nil {
+		return "", err
+	}
 	hash, err := r.tree.Commit(message, &git.CommitOptions{Author: r.signature()})
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("committed %s; hooks do not run here", hash.String()[:7]), nil
+	return fmt.Sprintf("committed %s: %s; hooks do not run here", hash.String()[:7], strings.Join(staged, ", ")), nil
+}
+
+// stagedFiles lists what a commit would record. With nothing staged it
+// fails naming the changes left out, as go-git would call the tree clean.
+func (r *Repo) stagedFiles() ([]string, error) {
+	status, err := r.status()
+	if err != nil {
+		return nil, err
+	}
+	var staged, notStaged []string
+	for path, file := range status {
+		switch {
+		case file.Staging != git.Unmodified && file.Staging != git.Untracked:
+			staged = append(staged, path)
+		case file.Worktree != git.Unmodified:
+			notStaged = append(notStaged, path)
+		}
+	}
+	slices.Sort(staged)
+	slices.Sort(notStaged)
+	switch {
+	case len(staged) > 0:
+		return staged, nil
+	case len(notStaged) > 0:
+		return nil, fmt.Errorf("nothing is staged, so nothing was committed. Changes not staged:\n%s\n"+
+			"Give commit the paths to record, or stage them with add first", strings.Join(notStaged, "\n"))
+	default:
+		return nil, errors.New("nothing to commit: there are no changes")
+	}
 }
 
 func refuseMarkers(left []string, err error) error {

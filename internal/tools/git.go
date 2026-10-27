@@ -42,7 +42,7 @@ var gitHelp = []helpTopic{
 	{"stash_list", "the stashes, 0 the newest."},
 	{"tags", "the tags."},
 	{"add", "paths: stage them; none: stage everything."},
-	{"commit", "message: commit what is staged."},
+	{"commit", "message: commit what is staged. paths: stage them first, then commit."},
 	{"branch", "name or branch: create a branch at HEAD."},
 	{"switch", "name or branch: switch to a branch; create: true makes it first."},
 	{"merge", "revision: merge it into the current branch."},
@@ -163,7 +163,7 @@ func runGit(_ context.Context, env Env, raw json.RawMessage) (string, error) {
 	case "add":
 		return repo.Add(args.Paths)
 	case "commit":
-		return repo.Commit(args.Message)
+		return repo.Commit(args.Message, args.Paths)
 	case "branch":
 		branch, err := args.branchName()
 		if err != nil {
