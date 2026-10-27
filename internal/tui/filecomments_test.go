@@ -11,6 +11,9 @@ package tui
 // | FC-07 | Happy    | A comment longer than the line wraps, its end in view as it is typed        | P0       |
 // | FC-08 | Happy    | The arrows move in the comment, and typing goes where the cursor is        | P1       |
 // | FC-09 | Edge     | Past three lines the comment scrolls inside; the line commented stays in view above it | P0 |
+// | FC-10 | Happy    | v then the arrows select lines; c comments them together and ends the selection | P0 |
+// | FC-11 | Happy    | shift+↑↓ select from the cursor; y copies the lines selected                | P1       |
+// | FC-12 | Edge     | The arrows alone, or esc, let a selection go; c comments the cursor's line again | P1 |
 
 import (
 	"fmt"
@@ -190,6 +193,48 @@ func TestFileComments(t *testing.T) {
 		}
 		if height := strings.Count(screen, "\n") + 1; height > 10 {
 			t.Errorf("the view is %d rows on a screen of 10", height)
+		}
+	})
+
+	t.Run("FC-10 v then the arrows select lines; c comments them together and ends the selection", func(t *testing.T) {
+		m := typeText(t, openMain(t), "vjj")
+		selected := strings.Count(m.View().Content, viewerPicked.Render("func main() {}"))
+		m = typeText(t, m, "cthese three")
+		m = keys(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+
+		comments := m.comments()
+
+		if selected != 1 || len(comments) != 1 || comments[0].from != 0 || comments[0].to != 2 || comments[0].text != "these three" {
+			t.Errorf("selected shown %d comments %+v", selected, comments)
+		}
+		if m.viewer.selecting || m.viewer.selected {
+			t.Error("the selection should end with the comment")
+		}
+	})
+
+	t.Run("FC-11 shift+↑↓ select from the cursor; y copies the lines selected", func(t *testing.T) {
+		m := typeText(t, openMain(t), "j")
+		m = keys(t, m, tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModShift})
+		from, to, ok := m.viewer.selectedLines()
+		_, cmd := m.viewerKey("y")
+
+		if !ok || from != 1 || to != 2 || cmd == nil || m.viewer.cursor != 2 {
+			t.Errorf("selected %d-%d %v, cursor %d", from, to, ok, m.viewer.cursor)
+		}
+	})
+
+	t.Run("FC-12 the arrows alone, or esc, let a selection go; c comments the cursor's line again", func(t *testing.T) {
+		shifted := keys(t, openMain(t), tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModShift})
+		moved := typeText(t, shifted, "j")
+		escaped := keys(t, typeText(t, openMain(t), "vj"), tea.KeyPressMsg{Code: tea.KeyEscape})
+
+		if moved.viewer.selected || escaped.viewer.selected || escaped.viewer.selecting || escaped.viewer == nil {
+			t.Fatalf("moved %v escaped %v %v", moved.viewer.selected, escaped.viewer.selected, escaped.viewer.selecting)
+		}
+		m := typeText(t, moved, "cone")
+		m = keys(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		if comments := m.comments(); len(comments) != 1 || comments[0].from != 2 || comments[0].to != 2 {
+			t.Errorf("comments = %+v", comments)
 		}
 	})
 }

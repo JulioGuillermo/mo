@@ -130,7 +130,7 @@ func (m model) typeComment(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	v := m.viewer
 	switch msg.String() {
 	case "enter":
-		v.commenting, v.selected = false, false
+		v.commenting, v.selected, v.selecting = false, false, false
 		from, fromOK := v.anchor(v.commentFrom)
 		to, toOK := v.anchor(v.commentTo)
 		if !toOK {

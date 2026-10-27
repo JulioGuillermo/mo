@@ -26,7 +26,7 @@ const (
 	viewerRefresh = 300 * time.Millisecond
 	viewerShift   = 8
 	viewerHelp    = "↑↓ pgup pgdn home end scroll · ←→ long lines · / search · n N next · drag or y copy · b background · x kill · esc close"
-	fileHelp      = "↑↓ move · c comment the line or what you dragged over · d delete it · a attach to your message · B blame · H history · / search · y copy · t tree · esc close"
+	fileHelp      = "↑↓ move · v or shift+↑↓ select · c comment the line or the lines selected · d delete it · a attach to your message · B blame · H history · / search · y copy · t tree · esc close"
 	drawingHelp   = "drag, ↑↓ ←→ hjkl or the wheel pan · s code or drawing · / search · y copy · esc close"
 	viewMaxBytes  = 8 << 20
 )
@@ -91,8 +91,10 @@ type outputViewer struct {
 	panStart point
 	// cursor is the line comments go on, selected set when lines were
 	// dragged over; commenting while one is typed, on those lines.
-	cursor      int
-	selected    bool
+	cursor   int
+	selected bool
+	// selecting is set from v until v again: the arrows grow the selection.
+	selecting   bool
 	commenting  bool
 	commentFrom int
 	commentTo   int
@@ -551,6 +553,9 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 			return next, cmd
 		}
 	}
+	if m.selectKey(pressed) {
+		return m, nil
+	}
 	switch pressed {
 	case "tab":
 		if v.tree != nil {
@@ -635,7 +640,7 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 	case "f":
 		m.toggleWholeDiff()
 	case "y":
-		return m, m.copyViewer(strings.Join(v.lines, "\n"), fmt.Sprintf("copied all %d lines", len(v.lines)))
+		return m, m.copySelection()
 	case "b":
 		if !v.showsJob() {
 			return m, nil
@@ -754,7 +759,7 @@ func (m model) viewerBody(width int) string {
 		plain := ansi.Strip(strings.ReplaceAll(v.lines[i], "\t", "    "))
 		line := ansi.Cut(plain, v.left, v.left+room)
 		switch {
-		case v.picking && i >= from && i <= to:
+		case !v.commenting && (v.picking || v.selected) && i >= from && i <= to:
 			line = viewerPicked.Render(line)
 		case re != nil && re.MatchString(plain):
 			style := viewerMatch

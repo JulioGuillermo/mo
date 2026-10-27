@@ -787,8 +787,9 @@ between the tree and the file, esc clears the search and then closes, a click on
 enter does. In a file `/view` opened, `t` opens the tree on that file, and again hides it. A
 terminal narrower than 60 columns has no room for both and lists the folder to pick from instead.
 
-In a file `/view` opened, ↑↓ move a cursor, and `c` comments its line, or the lines you dragged
-over; the file is not touched. The comment is written over the help line as a message is, up to
+In a file `/view` opened, ↑↓ move a cursor, and `c` comments its line, or the lines selected: dragged
+over, or picked with `v` and the arrows or with shift+↑↓ (`y` copies them, esc lets them go); the
+file is not touched. The comment is written over the help line as a message is, up to
 three lines tall and scrolled inside past them, the lines it is on kept in view: the arrows move
 in it, shift+enter starts a new line, enter keeps it. `c` on a comment edits it, `d` deletes it. `a` closes the viewer and
 attaches the file to your message: as `[comments name]` with comments, which the model gets with

@@ -310,7 +310,7 @@ func (m model) toggleWholeDiff() {
 func (m model) diffChanged() {
 	v := m.viewer
 	v.lines = v.diff.lines()
-	v.selected = false
+	v.selected, v.selecting = false, false
 	v.findMatches()
 	m.moveCursor(0)
 }
