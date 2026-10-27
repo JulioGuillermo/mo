@@ -12,6 +12,7 @@ import (
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
 
+	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -95,7 +96,8 @@ type outputViewer struct {
 	commenting  bool
 	commentFrom int
 	commentTo   int
-	commentText string
+	// commentInput is where the comment is written.
+	commentInput textarea.Model
 	// blame is who last changed each line of the file, once read; blameOn
 	// shows the cursor's at its end, and blameNote what is going on before.
 	blame     []gitops.LineBlame
@@ -287,7 +289,7 @@ func (m model) reloadViewer() error {
 // viewerRows is how many lines of output fit between the header and the
 // help.
 func (m model) viewerRows() int {
-	return max(m.height-2, 1)
+	return max(m.height-2-m.commentRows(), 1)
 }
 
 func (v *outputViewer) findMatches() {
@@ -470,6 +472,10 @@ func (m model) updateViewer(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, m.copyViewer(strings.Join(v.lines[from:to+1], "\n"), fmt.Sprintf("copied lines %d-%d", from+1, to+1))
+	case tea.PasteMsg:
+		if v.commenting {
+			return m, m.editComment(msg)
+		}
 	case tea.KeyPressMsg:
 		switch {
 		case v.commenting:
@@ -797,9 +803,10 @@ func (m model) viewerBody(width int) string {
 				where = v.diff.describe(from)
 			}
 		}
-		footer = commentMark().Render("◆ "+where+": ") + v.commentText + "▏" + dimStyle.Render("  enter keep · esc cancel · empty deletes it")
+		out = append(out, v.commentInput.View())
+		footer = commentMark().Render("◆ "+where) + dimStyle.Render(" · "+commentHelp)
 	case v.annotatable() && onComment && !v.typing:
-		footer = commentFooter().Render("◆ "+comment.text) + dimStyle.Render(" · c edit · d delete")
+		footer = commentFooter().Render("◆ "+oneLine(comment.text, width)) + dimStyle.Render(" · c edit · d delete")
 	case v.typing:
 		footer = keyStyle().Render("/") + v.typed + "▏" + dimStyle.Render("  enter search · esc cancel")
 	case v.notice != "":

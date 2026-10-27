@@ -7,8 +7,14 @@ package tui
 // | FC-03 | Happy    | a attaches the file with its comments, which the model gets with the lines | P0      |
 // | FC-04 | Happy    | Without comments a attaches the file alone                                | P1       |
 // | FC-05 | Happy    | @ offers the files that match, the name's first; tab attaches one          | P0       |
+// | FC-06 | Happy    | shift+enter starts a new line; the comment keeps its lines, the model gets them indented | P0 |
+// | FC-07 | Happy    | A comment longer than the line wraps, its end in view as it is typed        | P0       |
+// | FC-08 | Happy    | The arrows move in the comment, and typing goes where the cursor is        | P1       |
+// | FC-09 | Edge     | Past three lines the comment scrolls inside; the line commented stays in view above it | P0 |
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -117,6 +123,73 @@ func TestFileComments(t *testing.T) {
 		}
 		if strings.Contains(ansi.Strip(m.View().Content), "@") && len(m.suggestions()) > 0 {
 			t.Error("suggestions should be gone once picked")
+		}
+	})
+
+	t.Run("FC-06 shift+enter starts a new line; the comment keeps its lines, the model gets them indented", func(t *testing.T) {
+		m := typeText(t, openMain(t), "jjcfirst")
+		m = keys(t, m, tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift})
+		m = typeText(t, m, "second")
+		m = keys(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+
+		comments := m.comments()
+		told := commentNote("main.go", strings.Split("package main\n\nfunc main() {}", "\n"), comments)
+
+		if len(comments) != 1 || comments[0].text != "first\nsecond" {
+			t.Fatalf("comments = %+v", comments)
+		}
+		if !strings.Contains(told, "first\n  second") {
+			t.Errorf("told:\n%s", told)
+		}
+	})
+
+	t.Run("FC-07 a comment longer than the line wraps, its end in view as it is typed", func(t *testing.T) {
+		long := strings.Repeat("word ", 30) + "theend"
+		m := typeText(t, typeText(t, openMain(t), "c"), long)
+
+		screen := ansi.Strip(m.View().Content)
+
+		if !strings.Contains(screen, "theend") || strings.Contains(screen, "…") || m.commentRows() < 2 {
+			t.Errorf("rows %d screen:\n%s", m.commentRows(), screen)
+		}
+	})
+
+	t.Run("FC-08 the arrows move in the comment, and typing goes where the cursor is", func(t *testing.T) {
+		m := typeText(t, typeText(t, openMain(t), "c"), "world")
+		m = keys(t, m, tea.KeyPressMsg{Code: tea.KeyHome})
+		m = typeText(t, m, "hello ")
+		m = keys(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+
+		if comments := m.comments(); len(comments) != 1 || comments[0].text != "hello world" {
+			t.Errorf("comments = %+v", comments)
+		}
+	})
+
+	t.Run("FC-09 past three lines the comment scrolls inside; the line commented stays in view above it", func(t *testing.T) {
+		m := viewModel(t)
+		m.height = 10
+		var lines []string
+		for i := range 40 {
+			lines = append(lines, fmt.Sprintf("line number %d", i+1))
+		}
+		if err := os.WriteFile(filepath.Join(m.session.WorkDir, "long.txt"), []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		opened, _ := m.runCommand("/view long.txt")
+		m = opened.(model)
+		m = typeText(t, m, strings.Repeat("j", 39)+"c")
+		for i := range 5 {
+			m = typeText(t, m, fmt.Sprintf("note %d", i+1))
+			m = keys(t, m, tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift})
+		}
+
+		screen := ansi.Strip(m.View().Content)
+
+		if m.commentRows() != commentInputLines || !strings.Contains(screen, "line number 40") || !strings.Contains(screen, "note 5") || strings.Contains(screen, "note 1") {
+			t.Errorf("rows %d screen:\n%s", m.commentRows(), screen)
+		}
+		if height := strings.Count(screen, "\n") + 1; height > 10 {
+			t.Errorf("the view is %d rows on a screen of 10", height)
 		}
 	})
 }

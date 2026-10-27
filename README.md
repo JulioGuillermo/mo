@@ -788,7 +788,9 @@ enter does. In a file `/view` opened, `t` opens the tree on that file, and again
 terminal narrower than 60 columns has no room for both and lists the folder to pick from instead.
 
 In a file `/view` opened, ↑↓ move a cursor, and `c` comments its line, or the lines you dragged
-over; the file is not touched. `c` on a comment edits it, `d` deletes it. `a` closes the viewer and
+over; the file is not touched. The comment is written over the help line as a message is, up to
+three lines tall and scrolled inside past them, the lines it is on kept in view: the arrows move
+in it, shift+enter starts a new line, enter keeps it. `c` on a comment edits it, `d` deletes it. `a` closes the viewer and
 attaches the file to your message: as `[comments name]` with comments, which the model gets with
 the path, the lines and their first line quoted; as `[file name]` without. In the input, `@` and a
 few letters offer the files of the project whose name or path holds them, or their letters in

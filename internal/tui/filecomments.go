@@ -115,10 +115,13 @@ func (m model) startComment() {
 		v.notice = "a fold has nothing to comment: e shows its lines"
 		return
 	}
-	v.commenting, v.commentFrom, v.commentTo, v.commentText = true, from, to, ""
+	v.commenting, v.commentFrom, v.commentTo = true, from, to
+	text := ""
 	if comment, _, ok := m.commentAt(from); ok {
-		v.commentFrom, v.commentTo, v.commentText = v.rowOf(comment.from), v.rowOf(comment.to), comment.text
+		v.commentFrom, v.commentTo, text = v.rowOf(comment.from), v.rowOf(comment.to), comment.text
 	}
+	v.commentInput = newCommentInput(text, m.viewerWidth(), m.printer == nil || m.printer.isDark())
+	m.keepCommentedInView()
 }
 
 // typeComment edits the comment being written; enter keeps it, esc drops
@@ -134,20 +137,12 @@ func (m model) typeComment(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			to, toOK = v.anchor(v.commentTo - 1)
 		}
 		if fromOK && toOK {
-			m.setComment(from, to, strings.TrimSpace(v.commentText))
+			m.setComment(from, to, strings.TrimSpace(v.commentInput.Value()))
 		}
 	case "esc":
 		v.commenting = false
-	case "backspace":
-		if runes := []rune(v.commentText); len(runes) > 0 {
-			v.commentText = string(runes[:len(runes)-1])
-		}
-	case "ctrl+u":
-		v.commentText = ""
 	default:
-		if msg.Text != "" {
-			v.commentText += msg.Text
-		}
+		return m, m.editComment(msg)
 	}
 	return m, nil
 }
@@ -237,7 +232,7 @@ func commentNote(file string, lines []string, comments []fileComment) string {
 		if comment.from < len(lines) {
 			quoted = quote(lines[comment.from])
 		}
-		fmt.Fprintf(&b, "\n- %s (`%s`): %s", where, quoted, comment.text)
+		fmt.Fprintf(&b, "\n- %s (`%s`): %s", where, quoted, strings.ReplaceAll(comment.text, "\n", "\n  "))
 	}
 	return b.String()
 }
