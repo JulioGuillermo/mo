@@ -6,6 +6,7 @@ package tui
 // | HI-02 | Edge     | A command from the history is gone through too; the suggestions do not take the arrows | P1 |
 // | HI-03 | Edge     | With text written, up moves in it instead; edited, an entry is a draft    | P1       |
 // | HI-04 | Happy    | What is sent is kept between sessions, a repeat once, several lines whole  | P0       |
+// | HI-05 | Happy    | An entry of several lines is gone through line by line before the next one, up and down | P0 |
 
 import (
 	"os"
@@ -79,6 +80,29 @@ func TestInputHistory(t *testing.T) {
 		back := loadHistory()
 		if !slices.Equal(back.entries, []string{"line one\nline two", "/help"}) || info.Mode().Perm() != 0o600 {
 			t.Errorf("kept %q", back.entries)
+		}
+	})
+}
+
+func TestInputHistoryLines(t *testing.T) {
+	t.Run("HI-05 an entry of several lines is gone through line by line before the next one, up and down", func(t *testing.T) {
+		m := historyModel(t, "older", "a\nb\nc", "newer")
+		type place struct {
+			value string
+			line  int
+		}
+		var seen []place
+		for _, key := range []tea.KeyPressMsg{keyUp, keyUp, keyUp, keyUp, keyUp, keyDown, keyDown, keyDown, keyDown, keyDown, keyDown} {
+			m = keys(t, m, key)
+			seen = append(seen, place{m.input.Value(), m.input.Line()})
+		}
+
+		want := []place{
+			{"newer", 0}, {"a\nb\nc", 2}, {"a\nb\nc", 1}, {"a\nb\nc", 0}, {"older", 0},
+			{"a\nb\nc", 0}, {"a\nb\nc", 1}, {"a\nb\nc", 2}, {"newer", 0}, {"", 0}, {"", 0},
+		}
+		if !slices.Equal(seen, want) {
+			t.Errorf("seen %v", seen)
 		}
 	})
 }

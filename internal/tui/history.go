@@ -92,9 +92,24 @@ func (m model) browsing() bool {
 	return shown > 0 && shown <= len(m.history.entries) && m.input.Value() == m.history.entries[shown-1]
 }
 
+// onFirstRow tells whether the input's cursor is on its first row, with
+// none above to go up to.
+func (m model) onFirstRow() bool {
+	return m.input.Line() == 0 && m.input.LineInfo().RowOffset == 0
+}
+
+// onLastRow tells whether the input's cursor is on its last row, with
+// none below to go down to.
+func (m model) onLastRow() bool {
+	info := m.input.LineInfo()
+	return m.input.Line() == m.input.LineCount()-1 && info.RowOffset >= info.Height-1
+}
+
 // historyKey goes back or forward through the history: up on an empty
 // input or while going through it, down while going through it, past the
-// newest to an empty input again.
+// newest to an empty input again. An entry of many lines is gone through
+// first: the arrows leave it only from its first row or its last, and come
+// into it on its last row going up, on its first going down.
 func (m model) historyKey(key string) (bool, tea.Model, tea.Cmd) {
 	// Up on an empty input brings back what waits for the model, all of it,
 	// to edit and send again: it goes first, as what is in view is that.
@@ -110,7 +125,7 @@ func (m model) historyKey(key string) (bool, tea.Model, tea.Cmd) {
 	}
 	browsing := m.browsing()
 	switch {
-	case key == "up" && (m.input.Value() == "" || browsing) && len(m.history.entries) > 0:
+	case key == "up" && (m.input.Value() == "" || browsing && m.onFirstRow()) && len(m.history.entries) > 0:
 		shown := len(m.history.entries)
 		if browsing {
 			shown = max(m.history.shown-1, 1)
@@ -119,7 +134,7 @@ func (m model) historyKey(key string) (bool, tea.Model, tea.Cmd) {
 		m.input.SetValue(m.history.entries[shown-1])
 		m.suggestion = 0
 		return true, m, nil
-	case key == "down" && browsing:
+	case key == "down" && browsing && m.onLastRow():
 		if m.history.shown >= len(m.history.entries) {
 			m.history.shown = 0
 			m.input.Reset()
@@ -127,6 +142,7 @@ func (m model) historyKey(key string) (bool, tea.Model, tea.Cmd) {
 		}
 		m.history.shown++
 		m.input.SetValue(m.history.entries[m.history.shown-1])
+		m.input.MoveToBegin()
 		m.suggestion = 0
 		return true, m, nil
 	}
