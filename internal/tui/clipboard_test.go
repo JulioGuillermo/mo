@@ -14,9 +14,11 @@ package tui
 // | CB-10 | Edge     | Without kitty images a prompt shows no thumbnails                     | P1       |
 // | TB-01 | Happy    | Tables are drawn apart, code blocks with bars are left to markdown    | P0       |
 // | TB-02 | Edge     | Bars inside code and escaped bars stay in their cell                 | P1       |
+// | TB-03 | Edge     | Code and links in a header take the text's colour where their own hardly shows on it | P0 |
 
 import (
 	"context"
+	"image/color"
 	"os"
 	"path/filepath"
 	"slices"
@@ -125,6 +127,29 @@ func TestTables(t *testing.T) {
 
 		if len(cells) != 3 || cells[0] != "`a|b`" || cells[1] != "c | d" {
 			t.Errorf("cells = %q", cells)
+		}
+	})
+}
+
+func TestTableHeaderColors(t *testing.T) {
+	t.Run("TB-03 code and links in a header take the text's colour where their own hardly shows on it", func(t *testing.T) {
+		defer useUITheme("mo", true)
+		for _, theme := range uiThemes {
+			for _, dark := range []bool{true, false} {
+				useUITheme(theme.name, dark)
+				colors := tablePalette(dark)
+				header := colors.on(colors.header)
+				for _, shown := range []color.Color{header.code, header.link} {
+					if shown != colors.text && contrast(shown, colors.header) < minTextContrast {
+						t.Errorf("%s dark=%v: contrast %.1f", theme.name, dark, contrast(shown, colors.header))
+					}
+				}
+			}
+		}
+		useUITheme("redline", true)
+		colors := tablePalette(true)
+		if colors.on(colors.header).code != colors.text || colors.on(colors.even).code != colors.code {
+			t.Error("redline's red code should turn to the text's colour on its red header alone")
 		}
 	})
 }

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"image/color"
+	"math"
 	"regexp"
 	"strings"
 
@@ -144,7 +145,10 @@ func (p *printer) Table(text string) string {
 		return colors.odd
 	}
 	cell := func(text string, row int) string {
-		return inlineCell(text, colors, background(row), row == table.HeaderRow)
+		if row == table.HeaderRow {
+			return inlineCell(text, colors.on(colors.header), colors.header, true)
+		}
+		return inlineCell(text, colors, background(row), false)
 	}
 	shownHeader := make([]string, columns)
 	for i := range columns {
@@ -172,6 +176,44 @@ func (p *printer) Table(text string) string {
 		drawn = drawn.Width(limit).Wrap(true)
 	}
 	return indent(drawn.String(), "  ")
+}
+
+// minTextContrast is the least contrast a colour of code or a link needs
+// with its background to be read, as WCAG asks of large text.
+const minTextContrast = 3
+
+// on is the colours of the text on a background: code and links in the
+// text's colour where their own would hardly show, as red on a red header.
+func (c tableColors) on(background color.Color) tableColors {
+	if contrast(c.code, background) < minTextContrast {
+		c.code = c.text
+	}
+	if contrast(c.link, background) < minTextContrast {
+		c.link = c.text
+	}
+	return c
+}
+
+// contrast is how far apart two colours look, from 1 to 21, as WCAG
+// measures it.
+func contrast(a, b color.Color) float64 {
+	lighter, darker := relativeLuminance(a), relativeLuminance(b)
+	if lighter < darker {
+		lighter, darker = darker, lighter
+	}
+	return (lighter + 0.05) / (darker + 0.05)
+}
+
+func relativeLuminance(c color.Color) float64 {
+	r, g, b, _ := c.RGBA()
+	linear := func(channel uint32) float64 {
+		v := float64(channel) / 0xffff
+		if v <= 0.04045 {
+			return v / 12.92
+		}
+		return math.Pow((v+0.055)/1.055, 2.4)
+	}
+	return 0.2126*linear(r) + 0.7152*linear(g) + 0.0722*linear(b)
 }
 
 // inlineCell draws the code, bold, italic, struck and links of a cell, each
