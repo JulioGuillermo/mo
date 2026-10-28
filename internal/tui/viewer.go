@@ -26,7 +26,7 @@ const (
 	viewerRefresh = 300 * time.Millisecond
 	viewerShift   = 8
 	viewerHelp    = "↑↓ pgup pgdn home end scroll · ←→ long lines · / search · n N next · drag or y copy · b background · x kill · esc close"
-	fileHelp      = "↑↓ move · v or shift+↑↓ select · c comment the line or the lines selected · d delete it · i edit them · a attach to your message · B blame · H history · / search · y copy · t tree · esc close"
+	fileHelp      = "↑↓ move · v or shift+↑↓ select · c comment the line or the lines selected · d delete it · i edit them · u undo · a attach to your message · B blame · H history · / search · y copy · t tree · esc close"
 	drawingHelp   = "drag, ↑↓ ←→ hjkl or the wheel pan · s code or drawing · / search · y copy · esc close"
 	viewMaxBytes  = 8 << 20
 )
@@ -102,6 +102,8 @@ type outputViewer struct {
 	inputFrom  int
 	inputTo    int
 	input      textarea.Model
+	// undo are the edits saved, the last one last.
+	undo []savedEdit
 	// blame is who last changed each line of the file, once read; blameOn
 	// shows the cursor's at its end, and blameNote what is going on before.
 	blame     []gitops.LineBlame
@@ -594,6 +596,10 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 		}
 	case "i":
 		m.startEdit()
+	case "u":
+		if v.file != "" {
+			return m, m.undoEdit()
+		}
 	case "d":
 		if comment, _, ok := m.commentAt(v.cursor); ok && v.annotatable() {
 			m.setComment(comment.from, comment.to, "")

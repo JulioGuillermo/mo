@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -116,10 +118,59 @@ func (m model) writeEdit() error {
 	if err := os.WriteFile(path, []byte(out), 0o644); err != nil {
 		return err
 	}
+	v.undo = append(v.undo, savedEdit{before: data, after: []byte(out), lines: v.lines, cursor: v.cursor,
+		comments: slices.Clone(m.fileComments[v.commentKey()])})
 	m.shiftComments(v.inputTo, len(edited)-len(original))
 	v.setLines(lines)
 	v.cursor = min(v.inputFrom+len(edited)-1, len(lines)-1)
 	v.notice = "saved " + v.editedLines()
+	return nil
+}
+
+// savedEdit is what an edit saved replaced, to take it back.
+type savedEdit struct {
+	before, after []byte
+	lines         []string
+	cursor        int
+	comments      []fileComment
+}
+
+// undoEdit puts the file back as it was before the last edit saved, when
+// it is still as that edit left it.
+func (m model) undoEdit() tea.Cmd {
+	v := m.viewer
+	if len(v.undo) == 0 {
+		v.notice = "nothing to undo"
+		return nil
+	}
+	last := v.undo[len(v.undo)-1]
+	path := m.viewedPath()
+	data, err := os.ReadFile(path)
+	switch {
+	case err != nil:
+		v.notice = err.Error()
+		return nil
+	case !bytes.Equal(data, last.after):
+		v.notice = "the file changed since the edit: not undone"
+		return nil
+	}
+	if err := os.WriteFile(path, last.before, 0o644); err != nil {
+		v.notice = err.Error()
+		return nil
+	}
+	v.undo = v.undo[:len(v.undo)-1]
+	v.setLines(last.lines)
+	v.cursor = last.cursor
+	if len(last.comments) == 0 {
+		delete(m.fileComments, v.commentKey())
+	} else {
+		m.fileComments[v.commentKey()] = last.comments
+	}
+	v.notice = fmt.Sprintf("undone · %d more to undo", len(v.undo))
+	if v.blameOn {
+		v.blame, v.blameNote = nil, ""
+		return m.readBlame()
+	}
 	return nil
 }
 

@@ -8,6 +8,8 @@ package tui
 // | VE-04 | Edge     | Tabs of the indentation show as spaces and are written back as tabs; CRLF kept | P0 |
 // | VE-05 | Edge     | esc leaves the file as it was                                            | P1       |
 // | VE-06 | Security | A file changed on disk since it was opened is not overwritten            | P0       |
+// | VE-07 | Happy    | u takes back the edits saved, the last first, comments in place again    | P0       |
+// | VE-08 | Security | u leaves a file changed on disk since the edit as it is                  | P0       |
 
 import (
 	"os"
@@ -122,6 +124,53 @@ func TestViewerEdit(t *testing.T) {
 		m, _ = press(m, keyEnter)
 
 		if got := onDisk(t, path); got != "from the model\n" || !strings.Contains(m.viewer.notice, "changed since it was opened") {
+			t.Errorf("file = %q, notice %q", got, m.viewer.notice)
+		}
+	})
+
+	t.Run("VE-07 u takes back the edits saved, the last first, comments in place again", func(t *testing.T) {
+		m, path := editFile(t, "one\ntwo\n")
+		m = typeText(t, m, "jcnote")
+		m, _ = press(m, keyEnter)
+		m = typeText(t, m, "ki")
+		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnd})
+		m, _ = press(m, keyNewLine)
+		m = typeText(t, m, "added")
+		m, _ = press(m, keyEnter)
+		m = typeText(t, m, "i")
+		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnd})
+		m = typeText(t, m, "!")
+		m, _ = press(m, keyEnter)
+		if got := onDisk(t, path); got != "one\nadded!\ntwo\n" {
+			t.Fatalf("file = %q", got)
+		}
+
+		m = typeText(t, m, "u")
+		once := onDisk(t, path)
+		m = typeText(t, m, "u")
+
+		if once != "one\nadded\ntwo\n" || onDisk(t, path) != "one\ntwo\n" {
+			t.Errorf("after one undo %q, after two %q", once, onDisk(t, path))
+		}
+		if comments := m.comments(); len(comments) != 1 || comments[0].from != 1 {
+			t.Errorf("comments = %+v", comments)
+		}
+		if m = typeText(t, m, "u"); m.viewer.notice != "nothing to undo" {
+			t.Errorf("notice %q", m.viewer.notice)
+		}
+	})
+
+	t.Run("VE-08 u leaves a file changed on disk since the edit as it is", func(t *testing.T) {
+		m, path := editFile(t, "one\n")
+		m = typeText(t, m, "i!")
+		m, _ = press(m, keyEnter)
+		if err := os.WriteFile(path, []byte("from the model\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		m = typeText(t, m, "u")
+
+		if got := onDisk(t, path); got != "from the model\n" || !strings.Contains(m.viewer.notice, "not undone") {
 			t.Errorf("file = %q, notice %q", got, m.viewer.notice)
 		}
 	})

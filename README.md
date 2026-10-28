@@ -801,8 +801,8 @@ the path, the lines and their first line quoted; as `[file name]` without.
 
 `i` edits the cursor's line, or the lines selected, in the file itself, for quick changes: they
 are written in the same place, up to ten lines tall; shift+enter starts a new line, enter saves,
-esc leaves the file as it was. Tabs of the indentation show as four spaces and go back as tabs,
-and the line endings are kept. A file changed on disk since the viewer opened it is not saved over.
+esc leaves the file as it was, and `u` takes back the edits saved, the last first. Tabs of the indentation show as four spaces and go back as tabs,
+and the line endings are kept. A file changed on disk since the viewer opened it, or since the edit to undo, is left alone.
 
 In the input, `@` and a
 few letters offer the files of the project whose name or path holds them, or their letters in
