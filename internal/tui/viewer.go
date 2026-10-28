@@ -26,7 +26,7 @@ const (
 	viewerRefresh = 300 * time.Millisecond
 	viewerShift   = 8
 	viewerHelp    = "↑↓ pgup pgdn home end scroll · ←→ long lines · / search · n N next · drag or y copy · b background · x kill · esc close"
-	fileHelp      = "↑↓ move · v or shift+↑↓ select · c comment the line or the lines selected · d delete it · a attach to your message · B blame · H history · / search · y copy · t tree · esc close"
+	fileHelp      = "↑↓ move · v or shift+↑↓ select · c comment the line or the lines selected · d delete it · i edit them · a attach to your message · B blame · H history · / search · y copy · t tree · esc close"
 	drawingHelp   = "drag, ↑↓ ←→ hjkl or the wheel pan · s code or drawing · / search · y copy · esc close"
 	viewMaxBytes  = 8 << 20
 )
@@ -90,16 +90,18 @@ type outputViewer struct {
 	panFrom  point
 	panStart point
 	// cursor is the line comments go on, selected set when lines were
-	// dragged over; commenting while one is typed, on those lines.
+	// dragged over.
 	cursor   int
 	selected bool
 	// selecting is set from v until v again: the arrows grow the selection.
-	selecting   bool
-	commenting  bool
-	commentFrom int
-	commentTo   int
-	// commentInput is where the comment is written.
-	commentInput textarea.Model
+	selecting bool
+	// commenting while a comment is typed in input, editing while the
+	// text of the lines is, those from inputFrom to inputTo.
+	commenting bool
+	editing    bool
+	inputFrom  int
+	inputTo    int
+	input      textarea.Model
 	// blame is who last changed each line of the file, once read; blameOn
 	// shows the cursor's at its end, and blameNote what is going on before.
 	blame     []gitops.LineBlame
@@ -291,7 +293,7 @@ func (m model) reloadViewer() error {
 // viewerRows is how many lines of output fit between the header and the
 // help.
 func (m model) viewerRows() int {
-	return max(m.height-2-m.commentRows(), 1)
+	return max(m.height-2-m.inputRows(), 1)
 }
 
 func (v *outputViewer) findMatches() {
@@ -475,13 +477,15 @@ func (m model) updateViewer(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.copyViewer(strings.Join(v.lines[from:to+1], "\n"), fmt.Sprintf("copied lines %d-%d", from+1, to+1))
 	case tea.PasteMsg:
-		if v.commenting {
+		if v.inputOpen() {
 			return m, m.editComment(msg)
 		}
 	case tea.KeyPressMsg:
 		switch {
 		case v.commenting:
 			return m.typeComment(msg)
+		case v.editing:
+			return m.typeEdit(msg)
 		case v.typing:
 			return m.typeQuery(msg)
 		case m.treeShown() && v.treeFocus:
@@ -588,6 +592,8 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 		if v.annotatable() {
 			m.startComment()
 		}
+	case "i":
+		m.startEdit()
 	case "d":
 		if comment, _, ok := m.commentAt(v.cursor); ok && v.annotatable() {
 			m.setComment(comment.from, comment.to, "")
@@ -759,7 +765,7 @@ func (m model) viewerBody(width int) string {
 		plain := ansi.Strip(strings.ReplaceAll(v.lines[i], "\t", "    "))
 		line := ansi.Cut(plain, v.left, v.left+room)
 		switch {
-		case !v.commenting && (v.picking || v.selected) && i >= from && i <= to:
+		case !v.inputOpen() && (v.picking || v.selected) && i >= from && i <= to:
 			line = viewerPicked.Render(line)
 		case re != nil && re.MatchString(plain):
 			style := viewerMatch
@@ -768,10 +774,10 @@ func (m model) viewerBody(width int) string {
 			}
 			line = re.ReplaceAllStringFunc(line, func(found string) string { return style.Render(found) })
 		case v.diff != nil:
-			onCursor := (i == v.cursor && !v.commenting) || (v.commenting && i >= v.commentFrom && i <= v.commentTo)
+			onCursor := v.onCursor(i)
 			line = ansi.Cut(v.diff.paint(i, dark, onCursor), v.left, v.left+room)
 			line = v.diff.fillRow(i, line, room, dark, onCursor)
-		case (v.annotatable() && i == v.cursor && !v.commenting) || (v.commenting && i >= v.commentFrom && i <= v.commentTo):
+		case v.annotatable() && v.onCursor(i):
 			if v.coloured() {
 				line = ansi.Cut(v.colouredLine(i, dark), v.left, v.left+room)
 			}
@@ -798,18 +804,21 @@ func (m model) viewerBody(width int) string {
 	comment, _, onComment := m.commentAt(v.cursor)
 	switch {
 	case v.commenting:
-		where := fmt.Sprintf("line %d", v.commentFrom+1)
-		if v.commentTo > v.commentFrom {
-			where = fmt.Sprintf("lines %d-%d", v.commentFrom+1, v.commentTo+1)
+		where := fmt.Sprintf("line %d", v.inputFrom+1)
+		if v.inputTo > v.inputFrom {
+			where = fmt.Sprintf("lines %d-%d", v.inputFrom+1, v.inputTo+1)
 		}
 		if v.diff != nil {
-			where = fmt.Sprintf("%d lines", v.commentTo-v.commentFrom+1)
-			if from, ok := v.diff.edit(v.commentFrom); ok && v.commentTo == v.commentFrom {
+			where = fmt.Sprintf("%d lines", v.inputTo-v.inputFrom+1)
+			if from, ok := v.diff.edit(v.inputFrom); ok && v.inputTo == v.inputFrom {
 				where = v.diff.describe(from)
 			}
 		}
-		out = append(out, v.commentInput.View())
+		out = append(out, v.input.View())
 		footer = commentMark().Render("◆ "+where) + dimStyle.Render(" · "+commentHelp)
+	case v.editing:
+		out = append(out, v.input.View())
+		footer = editMark().Render("✎ "+v.editedLines()) + dimStyle.Render(" · "+editHelp)
 	case v.annotatable() && onComment && !v.typing:
 		footer = commentFooter().Render("◆ "+oneLine(comment.text, width)) + dimStyle.Render(" · c edit · d delete")
 	case v.typing:

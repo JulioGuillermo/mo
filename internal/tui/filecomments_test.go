@@ -152,8 +152,8 @@ func TestFileComments(t *testing.T) {
 
 		screen := ansi.Strip(m.View().Content)
 
-		if !strings.Contains(screen, "theend") || strings.Contains(screen, "…") || m.commentRows() < 2 {
-			t.Errorf("rows %d screen:\n%s", m.commentRows(), screen)
+		if !strings.Contains(screen, "theend") || strings.Contains(screen, "…") || m.inputRows() < 2 {
+			t.Errorf("rows %d screen:\n%s", m.inputRows(), screen)
 		}
 	})
 
@@ -188,8 +188,8 @@ func TestFileComments(t *testing.T) {
 
 		screen := ansi.Strip(m.View().Content)
 
-		if m.commentRows() != commentInputLines || !strings.Contains(screen, "line number 40") || !strings.Contains(screen, "note 5") || strings.Contains(screen, "note 1") {
-			t.Errorf("rows %d screen:\n%s", m.commentRows(), screen)
+		if m.inputRows() != commentInputLines || !strings.Contains(screen, "line number 40") || !strings.Contains(screen, "note 5") || strings.Contains(screen, "note 1") {
+			t.Errorf("rows %d screen:\n%s", m.inputRows(), screen)
 		}
 		if height := strings.Count(screen, "\n") + 1; height > 10 {
 			t.Errorf("the view is %d rows on a screen of 10", height)

@@ -797,7 +797,14 @@ file is not touched. The comment is written over the help line as a message is, 
 three lines tall and scrolled inside past them, the lines it is on kept in view: the arrows move
 in it, shift+enter starts a new line, enter keeps it. `c` on a comment edits it, `d` deletes it. `a` closes the viewer and
 attaches the file to your message: as `[comments name]` with comments, which the model gets with
-the path, the lines and their first line quoted; as `[file name]` without. In the input, `@` and a
+the path, the lines and their first line quoted; as `[file name]` without.
+
+`i` edits the cursor's line, or the lines selected, in the file itself, for quick changes: they
+are written in the same place, up to ten lines tall; shift+enter starts a new line, enter saves,
+esc leaves the file as it was. Tabs of the indentation show as four spaces and go back as tabs,
+and the line endings are kept. A file changed on disk since the viewer opened it is not saved over.
+
+In the input, `@` and a
 few letters offer the files of the project whose name or path holds them, or their letters in
 order; tab or enter attaches the one picked.
 

@@ -115,12 +115,12 @@ func (m model) startComment() {
 		v.notice = "a fold has nothing to comment: e shows its lines"
 		return
 	}
-	v.commenting, v.commentFrom, v.commentTo = true, from, to
+	v.commenting, v.inputFrom, v.inputTo = true, from, to
 	text := ""
 	if comment, _, ok := m.commentAt(from); ok {
-		v.commentFrom, v.commentTo, text = v.rowOf(comment.from), v.rowOf(comment.to), comment.text
+		v.inputFrom, v.inputTo, text = v.rowOf(comment.from), v.rowOf(comment.to), comment.text
 	}
-	v.commentInput = newCommentInput(text, m.viewerWidth(), m.printer == nil || m.printer.isDark())
+	v.input = newCommentInput(text, m.viewerWidth(), m.printer == nil || m.printer.isDark())
 	m.keepCommentedInView()
 }
 
@@ -131,13 +131,13 @@ func (m model) typeComment(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
 		v.commenting, v.selected, v.selecting = false, false, false
-		from, fromOK := v.anchor(v.commentFrom)
-		to, toOK := v.anchor(v.commentTo)
+		from, fromOK := v.anchor(v.inputFrom)
+		to, toOK := v.anchor(v.inputTo)
 		if !toOK {
-			to, toOK = v.anchor(v.commentTo - 1)
+			to, toOK = v.anchor(v.inputTo - 1)
 		}
 		if fromOK && toOK {
-			m.setComment(from, to, strings.TrimSpace(v.commentInput.Value()))
+			m.setComment(from, to, strings.TrimSpace(v.input.Value()))
 		}
 	case "esc":
 		v.commenting = false

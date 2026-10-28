@@ -31,35 +31,49 @@ func newCommentInput(text string, width int, dark bool) textarea.Model {
 	return input
 }
 
-// editComment gives the comment being written a key or a paste, and keeps
-// the lines it is on in view as it grows.
+// editComment gives the comment or the lines being written a key or a
+// paste, and keeps the lines it is on in view as it grows.
 func (m model) editComment(msg tea.Msg) tea.Cmd {
 	v := m.viewer
-	v.commentInput.SetWidth(m.viewerWidth())
+	v.input.SetWidth(m.viewerWidth())
 	var cmd tea.Cmd
-	v.commentInput, cmd = v.commentInput.Update(msg)
+	v.input, cmd = v.input.Update(msg)
 	m.keepCommentedInView()
 	return cmd
 }
 
-// commentRows is how many rows the comment being written takes over the
-// help line.
-func (m model) commentRows() int {
-	if m.viewer == nil || !m.viewer.commenting {
+// inputRows is how many rows the comment or the lines being written take
+// over the help line.
+func (m model) inputRows() int {
+	if m.viewer == nil || !m.viewer.inputOpen() {
 		return 0
 	}
-	return m.viewer.commentInput.Height()
+	return m.viewer.input.Height()
 }
 
-// keepCommentedInView scrolls so the last line commented stays in view
-// above the comment.
+// inputOpen tells whether a comment or the lines are being written.
+func (v *outputViewer) inputOpen() bool {
+	return v.commenting || v.editing
+}
+
+// onCursor tells whether row i is drawn as the cursor's: the cursor, or a
+// line being commented or edited.
+func (v *outputViewer) onCursor(i int) bool {
+	if v.inputOpen() {
+		return i >= v.inputFrom && i <= v.inputTo
+	}
+	return i == v.cursor
+}
+
+// keepCommentedInView scrolls so the last line commented or edited stays
+// in view above the input.
 func (m model) keepCommentedInView() {
 	v := m.viewer
 	rows := m.viewerRows()
 	switch {
-	case v.commentTo >= v.top+rows:
-		v.top = v.commentTo - rows + 1
-	case v.commentFrom < v.top:
-		v.top = v.commentFrom
+	case v.inputTo >= v.top+rows:
+		v.top = v.inputTo - rows + 1
+	case v.inputFrom < v.top:
+		v.top = v.inputFrom
 	}
 }
