@@ -4,7 +4,9 @@ package tui
 // | ID    | Category | Description                                                                | Priority |
 // | HI-01 | Happy    | Up on an empty input goes back through what was sent; down comes forward, past the newest to empty | P0 |
 // | HI-02 | Edge     | A command from the history is gone through too; the suggestions do not take the arrows | P1 |
-// | HI-03 | Edge     | With text written, up moves in it instead; edited, an entry is a draft    | P1       |
+// | HI-03 | Happy    | Up from what is typed goes to the history; down past the newest brings it back | P0 |
+// | HI-06 | Edge     | Up below the first line of what is typed moves in it; edited, an entry is the draft | P1 |
+// | HI-07 | Edge     | A command's suggestions keep the arrows                                    | P1       |
 // | HI-04 | Happy    | What is sent is kept between sessions, a repeat once, several lines whole  | P0       |
 // | HI-05 | Happy    | An entry of several lines is gone through line by line before the next one, up and down | P0 |
 
@@ -51,17 +53,41 @@ func TestInputHistory(t *testing.T) {
 		}
 	})
 
-	t.Run("HI-03 with text written, up moves in it instead; edited, an entry is a draft", func(t *testing.T) {
+	t.Run("HI-03 up from what is typed goes to the history; down past the newest brings it back", func(t *testing.T) {
 		m := historyModel(t, "older", "newer")
 		m.input.SetValue("my draft")
 
-		m = keys(t, m, keyUp)
-		written := m.input.Value()
-		m.input.Reset()
-		m = keys(t, m, keyUp, tea.KeyPressMsg{Code: 'x', Text: "x"}, keyUp)
+		m = keys(t, m, keyUp, keyUp)
+		up := m.input.Value()
+		m = keys(t, m, keyDown, keyDown)
 
-		if written != "my draft" || m.input.Value() != "newerx" {
-			t.Errorf("written %q after edit %q", written, m.input.Value())
+		if up != "older" || m.input.Value() != "my draft" || m.history.draft != "" {
+			t.Errorf("up %q, back %q", up, m.input.Value())
+		}
+	})
+
+	t.Run("HI-06 up below the first line of what is typed moves in it; edited, an entry is the draft", func(t *testing.T) {
+		m := historyModel(t, "older", "newer")
+		m.input.SetValue("one\ntwo")
+
+		m = keys(t, m, keyUp)
+		moved := m.input.Value() == "one\ntwo" && m.input.Line() == 0
+		m.input.Reset()
+		m = keys(t, m, keyUp, tea.KeyPressMsg{Code: 'x', Text: "x"}, keyUp, keyDown)
+
+		if !moved || m.input.Value() != "newerx" {
+			t.Errorf("moved %v, after edit %q", moved, m.input.Value())
+		}
+	})
+
+	t.Run("HI-07 a command's suggestions keep the arrows", func(t *testing.T) {
+		m := historyModel(t, "older")
+		m.input.SetValue("/mo")
+
+		m = keys(t, m, keyUp)
+
+		if m.input.Value() != "/mo" || m.history.shown != 0 {
+			t.Errorf("input %q shown %d", m.input.Value(), m.history.shown)
 		}
 	})
 

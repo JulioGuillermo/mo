@@ -162,8 +162,8 @@ func TestQueuedMessages(t *testing.T) {
 		delivered.session.Agent.TakeQueued()
 		delivered = keys(t, delivered, keyUp)
 
-		if typed.session.Agent.QueuedCount() != 1 || len(typed.queued) != 1 || typed.input.Value() == "please also do X" {
-			t.Errorf("typed: input %q queued %v waiting %d", typed.input.Value(), typed.queued, typed.session.Agent.QueuedCount())
+		if typed.session.Agent.QueuedCount() != 1 || len(typed.queued) != 1 || typed.history.draft != "half a thought" {
+			t.Errorf("typed: draft %q queued %v waiting %d", typed.history.draft, typed.queued, typed.session.Agent.QueuedCount())
 		}
 		if delivered.history.shown == 0 || delivered.session.Agent.QueuedCount() != 0 {
 			t.Errorf("up did not go through the history: shown %d", delivered.history.shown)

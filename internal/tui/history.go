@@ -15,13 +15,17 @@ import (
 const historyLimit = 1000
 
 // inputHistory is what was sent before, prompts and commands, to bring back
-// with the arrows: up on an empty input goes back, down comes forward.
+// with the arrows: up from the first row goes back, down from the last
+// comes forward.
 type inputHistory struct {
 	// entries go from the oldest to the newest.
 	entries []string
 	// shown is the entry shown while going through them, counted from 1;
 	// 0 when not going through them.
 	shown int
+	// draft is what was typed when up left it for the history, back past
+	// the newest entry.
+	draft string
 }
 
 func historyFile() string {
@@ -105,11 +109,11 @@ func (m model) onLastRow() bool {
 	return m.input.Line() == m.input.LineCount()-1 && info.RowOffset >= info.Height-1
 }
 
-// historyKey goes back or forward through the history: up on an empty
-// input or while going through it, down while going through it, past the
-// newest to an empty input again. An entry of many lines is gone through
-// first: the arrows leave it only from its first row or its last, and come
-// into it on its last row going up, on its first going down.
+// historyKey goes back or forward through the history: up from the first
+// row of the input, down from the last while going through it, past the
+// newest to what was typed before. An entry of many lines is gone through
+// first: the arrows come into it on its last row going up, on its first
+// going down. A command's suggestions keep the arrows.
 func (m model) historyKey(key string) (bool, tea.Model, tea.Cmd) {
 	// Up on an empty input brings back what waits for the model, all of it,
 	// to edit and send again: it goes first, as what is in view is that.
@@ -124,11 +128,16 @@ func (m model) historyKey(key string) (bool, tea.Model, tea.Cmd) {
 		}
 	}
 	browsing := m.browsing()
+	if !browsing && len(m.suggestions()) > 0 {
+		return false, m, nil
+	}
 	switch {
-	case key == "up" && (m.input.Value() == "" || browsing && m.onFirstRow()) && len(m.history.entries) > 0:
+	case key == "up" && m.onFirstRow() && len(m.history.entries) > 0:
 		shown := len(m.history.entries)
 		if browsing {
 			shown = max(m.history.shown-1, 1)
+		} else {
+			m.history.draft = m.input.Value()
 		}
 		m.history.shown = shown
 		m.input.SetValue(m.history.entries[shown-1])
@@ -137,7 +146,9 @@ func (m model) historyKey(key string) (bool, tea.Model, tea.Cmd) {
 	case key == "down" && browsing && m.onLastRow():
 		if m.history.shown >= len(m.history.entries) {
 			m.history.shown = 0
-			m.input.Reset()
+			m.input.SetValue(m.history.draft)
+			m.history.draft = ""
+			m.suggestion = 0
 			return true, m, nil
 		}
 		m.history.shown++
