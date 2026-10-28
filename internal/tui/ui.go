@@ -581,6 +581,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.tickJobs()
 	case vimPasteMsg:
 		return m.vimPasted(msg)
+	case planUsageMsg:
+		return m.emit(string(msg))
 	case loginMsg:
 		return m.loggedIn(msg)
 	case titledMsg:
@@ -1072,6 +1074,8 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		return m.login(argument)
 	case "logout":
 		return m.logout(argument)
+	case "usage":
+		return m.usageCommand(argument)
 	case "continue":
 		if m.running {
 			return m.emit(m.printer.Note("the model is working already"))

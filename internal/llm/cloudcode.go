@@ -410,6 +410,23 @@ func (p *CloudCode) projectFor(ctx context.Context, headers map[string]string) (
 
 // ListModels returns the models the account can use.
 func (p *CloudCode) ListModels(ctx context.Context) ([]string, error) {
+	models, err := p.availableModels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for id := range models {
+		if strings.HasPrefix(id, "gemini") || strings.HasPrefix(id, "claude") || strings.HasPrefix(id, "gpt") {
+			ids = append(ids, id)
+		}
+	}
+	slices.Sort(ids)
+	return ids, nil
+}
+
+// availableModels are the models the account can use, each as the API
+// describes it.
+func (p *CloudCode) availableModels(ctx context.Context) (map[string]json.RawMessage, error) {
 	headers, project, err := p.prepare(ctx)
 	if err != nil {
 		return nil, err
@@ -422,17 +439,8 @@ func (p *CloudCode) ListModels(ctx context.Context) ([]string, error) {
 	var list struct {
 		Models map[string]json.RawMessage `json:"models"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
-		return nil, err
-	}
-	var ids []string
-	for id := range list.Models {
-		if strings.HasPrefix(id, "gemini") || strings.HasPrefix(id, "claude") || strings.HasPrefix(id, "gpt") {
-			ids = append(ids, id)
-		}
-	}
-	slices.Sort(ids)
-	return ids, nil
+	err = json.NewDecoder(resp.Body).Decode(&list)
+	return list.Models, err
 }
 
 func (p *CloudCode) url(path string) string {

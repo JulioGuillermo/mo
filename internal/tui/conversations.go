@@ -446,7 +446,7 @@ func ago(when time.Time) string {
 // work while the model does: settings saved then apply when it finishes.
 var whileRunning = map[string]bool{
 	"help": true, "stop": true, "settings": true, "providers": true, "mcp": true, "plugins": true, "notify": true,
-	"sidebar": true, "vim": true, "jobs": true, "agents": true, "kill": true, "view": true, "git": true, "peers": true, "quit": true, "exit": true, "title": true, "model": true, "effort": true, "login": true, "logout": true,
+	"sidebar": true, "vim": true, "jobs": true, "agents": true, "kill": true, "view": true, "git": true, "peers": true, "quit": true, "exit": true, "title": true, "model": true, "effort": true, "login": true, "logout": true, "usage": true,
 }
 
 // queue keeps a message written while the model works for its next step.

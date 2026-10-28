@@ -46,6 +46,7 @@ var builtinCommands = []command{
 	{name: "effort", argument: "[level]", description: "how hard the model thinks: default for its own, or a level it takes"},
 	{name: "login", argument: "[provider]", description: "sign in to a provider that uses OAuth, the one in use by default"},
 	{name: "logout", argument: "[provider]", description: "forget a provider's sign-in"},
+	{name: "usage", argument: "[provider]", description: "how much of the plan's limits is used: 5h, week, per model, as each provider tells"},
 	{name: "title", description: "name the conversation: /title <name>, or /title auto for the model to"},
 	{name: "cache", argument: "clear", description: "llama-server: erase what every slot holds, its KV cache"},
 	{name: "compact", argument: "[instruction]", description: "summarize the conversation to free context; an instruction is added under the summary prompt, as yours"},
@@ -157,14 +158,23 @@ func (m model) suggestions() []command {
 	return matches
 }
 
-// providerSuggestions are the providers /login can sign in to, or /logout
-// has a sign-in to forget, that start with what was typed. Each is a
+// providerSuggestions are the providers /login can sign in to, /logout
+// has a sign-in to forget, or /usage can ask about, that start with what
+// was typed. Each is a
 // command ready to run, so enter runs it as it is.
 func (m model) providerSuggestions(name, partial string) []command {
-	if (name != "login" && name != "logout") || strings.Contains(partial, " ") {
+	if (name != "login" && name != "logout" && name != "usage") || strings.Contains(partial, " ") {
 		return nil
 	}
 	var matches []command
+	if name == "usage" {
+		for _, provider := range slices.Sorted(maps.Keys(m.session.Config.Providers)) {
+			if strings.HasPrefix(provider, partial) && hasPlan(m.session.Config.Providers[provider]) {
+				matches = append(matches, command{name: "usage " + provider})
+			}
+		}
+		return matches
+	}
 	for _, provider := range slices.Sorted(maps.Keys(m.session.Config.Providers)) {
 		settings := m.session.Config.Providers[provider]
 		if !strings.HasPrefix(provider, partial) || settings.OAuth == nil || settings.OAuth.Flow == config.OAuthClient {
