@@ -19,9 +19,12 @@ and applied at once, keeping the conversation:
 - `/providers`: add a provider, or edit or delete one: type, URL, model and where its key comes from.
 - `/mcp`: shows which servers answered, then adds, edits or deletes one; they reconnect on save.
 
-Paths in a prompt, pasted or dropped from a file manager, are attached: images go to the model with
-the message (when it has vision; otherwise mo sends it without them), other files are listed for it
-to read. An image the model opens with `read` reaches it too. The status line shows the context in
+Paths in a prompt, pasted or dropped from a file manager, are attached: images, audio (wav, mp3,
+flac, ogg, m4a) and video (mp4, webm, mov, mkv, avi) go to the model with the message, other files
+are listed for it to read. One the model opens with `read` reaches it too. What the provider does
+not take goes as a line saying so: Anthropic and Codex take images only, Gemini takes all three,
+and llama-server what its model reads, as its `/v1/models` says (audio and video for an omni model
+such as LFM3-Omni). A server that refuses them gets the message again without them. The status line shows the context in
 use and the speed of the last reply: `pp` (prompt read) and `tg` (answer written) in tokens per
 second, from llama-server's own timings when it sends them.
 
@@ -350,7 +353,8 @@ head and the tail. `bash`, `git` and `memory` take an `action`, and `help` expla
 
 `read` looks at the first 8 KB of a file before reading the rest. Binary data (a NUL byte, or over a
 tenth control characters or broken UTF-8) is refused saying what it looks like (PDF, zip…) and
-pointing to `file`, `xxd` or `strings`; UTF-16 text is read as text, and images are seen as always.
+pointing to `file`, `xxd` or `strings`; UTF-16 text is read as text, and images, audio and video
+reach the model as attached (images up to 8 MB, audio and video up to 20 MB).
 A file over `tools.read_max_size` (10 MB) is refused whole, with its size; asked for a part with
 `offset`, `limit` or `match`, it is read a line at a time without holding it, so the last lines of a
 log of gigabytes take a second or two.

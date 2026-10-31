@@ -139,11 +139,11 @@ func TestTypedInput(t *testing.T) {
 
 	t.Run("IN-08 an image dropped for a model without vision keeps the text as typed", func(t *testing.T) {
 		agent, _ := answered(t)
-		agent.History = []llm.Message{{Role: llm.RoleUser, Text: "see this", Images: []llm.Image{{MIME: "image/png", Data: []byte{1}}}}}
+		agent.History = []llm.Message{{Role: llm.RoleUser, Text: "see this", Media: []llm.Media{{MIME: "image/png", Data: []byte{1}}}}}
 
-		agent.withoutImages()
+		agent.withoutMedia()
 
-		if got := PromptText(agent.History[0]); got != "see this" || agent.History[0].Images != nil {
+		if got := PromptText(agent.History[0]); got != "see this" || agent.History[0].Media != nil {
 			t.Errorf("shown %q", got)
 		}
 	})

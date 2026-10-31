@@ -9,6 +9,7 @@ package llm
 // | RS-05 | Error    | A failed response is an error with its message                           | P1       |
 // | RS-06 | Happy    | ListModels returns the visible models                                    | P2       |
 // | RS-07 | Happy    | Claude Code's requests carry its beta header and system line first       | P0       |
+// | RS-08 | Edge     | Audio and video go as a line saying they were not sent                   | P1       |
 
 import (
 	"context"
@@ -89,7 +90,7 @@ func TestResponsesToolCalls(t *testing.T) {
 		t.Fatalf("calls %+v pieces %v", calls, pieces)
 	}
 	history := []Message{
-		{Role: RoleUser, Text: "go", Images: []Image{{MIME: "image/png", Data: []byte("x")}}},
+		{Role: RoleUser, Text: "go", Media: []Media{{MIME: "image/png", Data: []byte("x")}}},
 		{Role: RoleAssistant, Text: "ok", ToolCalls: calls},
 		{Role: RoleTool, ToolCallID: "c1", Text: "contents"},
 	}
@@ -159,4 +160,16 @@ func TestAnthropicSubscription(t *testing.T) {
 	if len(sent.System) != 1 || sent.System[0].Text != "mine" {
 		t.Fatalf("without the preamble, system %+v", sent.System)
 	}
+}
+
+func TestResponsesMedia(t *testing.T) {
+	t.Run("RS-08 audio and video go as a line saying they were not sent", func(t *testing.T) {
+		message := Message{Role: RoleUser, Text: "watch", Media: []Media{{MIME: "video/mp4", Data: []byte("v")}}}
+
+		content := toResponsesItems(message)[0].Content
+
+		if len(content) != 2 || content[1].Type != "input_text" || content[1].Text != "[video not sent: this model does not take video]" {
+			t.Errorf("content = %+v", content)
+		}
+	})
 }

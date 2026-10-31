@@ -96,7 +96,7 @@ func (a *Agent) deliverQueued(hooks Hooks) {
 			merged.Text = message.Text + "\n\n" + previous.Text
 			merged = withInput(merged, joinedTyped)
 		}
-		merged.Images = append(merged.Images, message.Images...)
+		merged.Media = append(merged.Media, message.Media...)
 		if merged.Timing == nil {
 			merged.Timing = message.Timing
 		}

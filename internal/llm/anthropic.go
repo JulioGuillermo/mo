@@ -278,7 +278,11 @@ func toAnthropicMessages(messages []Message) []anthropicMessage {
 			out = append(out, anthropicMessage{Role: "assistant", Content: blocks})
 		default:
 			blocks := []anthropicBlock{{Type: "text", Text: message.Text}}
-			for _, image := range message.Images {
+			for _, image := range message.Media {
+				if image.Kind() != "image" {
+					blocks = append(blocks, anthropicBlock{Type: "text", Text: image.notTaken()})
+					continue
+				}
 				source := &imageSource{Type: "base64", MediaType: image.MIME, Data: base64.StdEncoding.EncodeToString(image.Data)}
 				blocks = append(blocks, anthropicBlock{Type: "image", Source: source})
 			}

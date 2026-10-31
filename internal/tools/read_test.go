@@ -8,6 +8,7 @@ package tools
 // | RD-04 | Happy    | A UTF-16 file reads as text                                               | P2       |
 // | RD-05 | Happy    | An image over the limit is still seen                                     | P0       |
 // | RD-06 | Edge     | A size is said as people read it                                          | P2       |
+// | RD-07 | Happy    | An audio or video file is marked for the model to get, not refused as binary | P0    |
 
 import (
 	"context"
@@ -133,4 +134,22 @@ func shortened(text string) string {
 		return text[:300] + "…"
 	}
 	return text
+}
+
+func TestReadRecordings(t *testing.T) {
+	t.Run("RD-07 an audio or video file is marked for the model to get, not refused as binary", func(t *testing.T) {
+		env := newEnv(t)
+		voicePath := writeFile(t, env, "voice.wav", "RIFF\x00\x00\x00\x00WAVE"+strings.Repeat("\x00", 3000))
+		clipPath := writeFile(t, env, "clip.MP4", strings.Repeat("\x00", 2048))
+
+		voice, voiceErr := callLimited(t, env, 0, map[string]any{"path": "voice.wav"})
+		clip, clipErr := callLimited(t, env, 0, map[string]any{"path": "clip.MP4"})
+
+		if voiceErr || voice != "[audio wav, 2 KB: "+voicePath+"]" {
+			t.Errorf("audio read = %q", voice)
+		}
+		if clipErr || clip != "[video mp4, 2 KB: "+clipPath+"]" {
+			t.Errorf("video read = %q", clip)
+		}
+	})
 }

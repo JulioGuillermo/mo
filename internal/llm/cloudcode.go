@@ -302,8 +302,8 @@ func toCloudCodeContent(message Message, names map[string]string) ccContent {
 		return ccContent{Role: "user", Parts: []ccPart{part}}
 	}
 	content := ccContent{Role: "user", Parts: []ccPart{{Text: message.Text}}}
-	for _, image := range message.Images {
-		content.Parts = append(content.Parts, ccPart{InlineData: &ccBlob{MIMEType: image.MIME, Data: base64.StdEncoding.EncodeToString(image.Data)}})
+	for _, media := range message.Media {
+		content.Parts = append(content.Parts, ccPart{InlineData: &ccBlob{MIMEType: media.MIME, Data: base64.StdEncoding.EncodeToString(media.Data)}})
 	}
 	return content
 }

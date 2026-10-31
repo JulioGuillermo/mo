@@ -10,6 +10,7 @@ package llm
 // | LA-06 | Happy    | Sends the API key and version headers                             | P0       |
 // | LA-07 | Error    | A tool_use cut at max_tokens keeps the history serializable       | P0       |
 // | LA-08 | Edge     | Whitespace-only assistant text is not sent back                   | P1       |
+// | LA-09 | Edge     | Audio and video go as a line saying they were not sent            | P1       |
 
 import (
 	"context"
@@ -179,6 +180,18 @@ func TestAnthropicEdges(t *testing.T) {
 		})
 
 		if blocks := messages[1].Content; len(blocks) != 1 || blocks[0].Type != "tool_use" {
+			t.Errorf("blocks = %+v", blocks)
+		}
+	})
+}
+
+func TestAnthropicMedia(t *testing.T) {
+	t.Run("LA-09 audio and video go as a line saying they were not sent", func(t *testing.T) {
+		media := []Media{{MIME: "image/png", Data: []byte("p")}, {MIME: "audio/wav", Data: []byte("a")}}
+
+		blocks := toAnthropicMessages([]Message{{Role: RoleUser, Text: "hear", Media: media}})[0].Content
+
+		if len(blocks) != 3 || blocks[1].Type != "image" || blocks[2].Text != "[audio not sent: this model does not take audio]" {
 			t.Errorf("blocks = %+v", blocks)
 		}
 	})

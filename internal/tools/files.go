@@ -29,7 +29,7 @@ const readMaxLineBytes = 2000
 func readTool() Tool {
 	return Tool{
 		Name:        "read",
-		Description: "Read a text file, or see an image.",
+		Description: "Read a text file, see an image, or hear an audio or video file.",
 		Schema:      json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`),
 		Run:         runRead,
 		View:        true,
@@ -58,6 +58,9 @@ func runRead(ctx context.Context, env Env, raw json.RawMessage) (string, error) 
 	}
 	if render.IsImageFile(path) {
 		return describeImage(path, info.Size())
+	}
+	if mime := render.RecordingMIME(path); mime != "" {
+		return describeRecording(path, mime, info.Size()), nil
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -187,6 +190,14 @@ func describeImage(path string, size int64) (string, error) {
 		return "", fmt.Errorf("unreadable image: %w", err)
 	}
 	return render.ImageMarker(fmt.Sprintf("%s %dx%d", format, config.Width, config.Height), path), nil
+}
+
+// describeRecording answers a read of an audio or video file with its
+// format, its size and a marker, for the model to get it.
+func describeRecording(path, mime string, size int64) string {
+	kind, _, _ := strings.Cut(mime, "/")
+	format := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
+	return render.MediaMarker(kind, fmt.Sprintf("%s, %d KB", format, size>>10), path)
 }
 
 // sniffBinary tells binary data by the start of a file: a NUL byte, or

@@ -5,6 +5,8 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 )
 
 type Role string
@@ -25,7 +27,7 @@ type Message struct {
 	// Thinking are the provider's reasoning blocks as they came, signature
 	// and all, to send back unchanged; never read.
 	Thinking   json.RawMessage `json:",omitempty"`
-	Images     []Image
+	Media      []Media         `json:"Images,omitempty"`
 	ToolCalls  []ToolCall
 	ToolCallID string
 	IsError    bool
@@ -36,10 +38,22 @@ type Message struct {
 	Stopped bool `json:",omitempty"`
 }
 
-// Image is a picture sent to the model with a user message.
-type Image struct {
+// Media is a picture, a recording or a video sent to the model with a user
+// message.
+type Media struct {
 	MIME string
 	Data []byte
+}
+
+// Kind is image, audio or video, the first part of the MIME type.
+func (m Media) Kind() string {
+	kind, _, _ := strings.Cut(m.MIME, "/")
+	return kind
+}
+
+// notTaken is the line sent in place of media the provider does not take.
+func (m Media) notTaken() string {
+	return fmt.Sprintf("[%s not sent: this model does not take %s]", m.Kind(), m.Kind())
 }
 
 type ToolCall struct {

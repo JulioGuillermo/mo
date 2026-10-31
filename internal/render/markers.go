@@ -35,18 +35,37 @@ var extensionByMIME = map[string]string{
 	"image/webp": ".webp", "image/bmp": ".bmp", "image/svg+xml": ".svg",
 }
 
-var imageMarker = regexp.MustCompile(`\[image [^\]:]*: (/[^\]\s]+|[A-Za-z]:\\[^\]\n]+)\]`)
+var mediaMarker = regexp.MustCompile(`\[(image|audio|video) [^\]:]*: (/[^\]\s]+|[A-Za-z]:\\[^\]\n]+)\]`)
 
-// ImageMarker is how a tool result points at an image: the model reads what
-// it is and where, and the UI draws it below the call.
-func ImageMarker(description, path string) string {
-	return fmt.Sprintf("[image %s: %s]", description, path)
+// MediaMarker is how a tool result points at an image, a recording or a
+// video: the model reads what it is and where, and gets the file with it.
+func MediaMarker(kind, description, path string) string {
+	return fmt.Sprintf("[%s %s: %s]", kind, description, path)
 }
 
+// ImageMarker is the MediaMarker of an image, which the UI also draws below
+// the call.
+func ImageMarker(description, path string) string {
+	return MediaMarker("image", description, path)
+}
+
+// MarkedImages are the paths of the images a text marks.
 func MarkedImages(text string) []string {
 	var paths []string
-	for _, match := range imageMarker.FindAllStringSubmatch(text, -1) {
-		paths = append(paths, match[1])
+	for _, match := range mediaMarker.FindAllStringSubmatch(text, -1) {
+		if match[1] == "image" {
+			paths = append(paths, match[2])
+		}
+	}
+	return paths
+}
+
+// MarkedMedia are the paths of the images, recordings and videos a text
+// marks.
+func MarkedMedia(text string) []string {
+	var paths []string
+	for _, match := range mediaMarker.FindAllStringSubmatch(text, -1) {
+		paths = append(paths, match[2])
 	}
 	return paths
 }

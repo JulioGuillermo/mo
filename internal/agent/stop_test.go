@@ -276,7 +276,7 @@ func TestSoftStop(t *testing.T) {
 		if !errors.Is(stopped, context.Canceled) || strings.Join(slow.names(), ",") != "a" {
 			t.Fatalf("stopped = %v ran = %v", stopped, slow.names())
 		}
-		if note.Role != llm.RoleUser || len(note.Images) != 1 || !strings.Contains(note.Text, "shot.png") {
+		if note.Role != llm.RoleUser || len(note.Media) != 1 || !strings.Contains(note.Text, "shot.png") {
 			t.Errorf("last = %+v", note)
 		}
 	})

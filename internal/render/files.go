@@ -34,6 +34,18 @@ func (r Renderer) File(path string) (string, error) {
 	return r.ImageData(data)
 }
 
+// recordingMIME are the audio and video files models take, by extension.
+var recordingMIME = map[string]string{
+	".wav": "audio/wav", ".mp3": "audio/mpeg", ".flac": "audio/flac", ".ogg": "audio/ogg", ".m4a": "audio/mp4",
+	".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime", ".mkv": "video/x-matroska", ".avi": "video/x-msvideo",
+}
+
+// RecordingMIME is the MIME type of an audio or video file, empty for any
+// other file.
+func RecordingMIME(path string) string {
+	return recordingMIME[strings.ToLower(filepath.Ext(path))]
+}
+
 func IsImageFile(path string) bool {
 	extension := strings.ToLower(filepath.Ext(path))
 	return extension == ".svg" || slices.Contains(imageExtensions, extension)

@@ -30,7 +30,7 @@ var builtinKeywords = map[string][]string{
 	"bash": slices.Concat(topic("shell"), []string{"run", "run command", "powershell", "pwsh", "cmdlet", "script", "background", "job", "build", "compile", "make", "test",
 		"install", "kill", "output", "stdout", "pipe", "sh", "zsh", "linux", "ssh", "docker", "npm", "go test", "ejecutar", "correr", "compilar", "proceso"}),
 	"read": slices.Concat(topic("files"), []string{"open", "view", "show", "cat", "print", "display", "contents", "content", "load", "image", "picture",
-		"photo", "screenshot", "png", "jpg", "pdf", "leer", "abrir", "ver", "mostrar", "imagen"}),
+		"photo", "screenshot", "png", "jpg", "pdf", "leer", "abrir", "ver", "mostrar", "imagen", "audio", "video", "sound", "listen", "recording", "wav", "mp3", "mp4", "escuchar"}),
 	"write": slices.Concat(topic("files", "change"), []string{"create", "new", "save", "overwrite", "output", "generate", "put", "dump", "store", "touch",
 		"escribir", "crear", "guardar", "generar", "sobrescribir"}),
 	"edit": slices.Concat(topic("files", "change"), []string{"replace", "substitute", "patch", "rewrite", "fix", "refactor", "rename", "sed", "swap",

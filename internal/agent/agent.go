@@ -337,9 +337,9 @@ func (a *Agent) steps(ctx context.Context, hooks Hooks) error {
 		replyCtx, replyEnded := a.writingReply(ctx)
 		response, repeated, err := a.streamRetrying(replyCtx, hooks, early)
 		_, limited := llm.LimitOf(err)
-		if err != nil && !limited && replyCtx.Err() == nil && (early == nil || !early.any()) && a.withoutImages() {
+		if err != nil && !limited && replyCtx.Err() == nil && (early == nil || !early.any()) && a.withoutMedia() {
 			if hooks.OnNotice != nil {
-				hooks.OnNotice(fmt.Sprintf("the model did not take the images (%v); sending without them", err))
+				hooks.OnNotice(fmt.Sprintf("the model did not take the images, audio or video (%v); sending without them", err))
 			}
 			if early != nil {
 				early.abort()
@@ -352,7 +352,7 @@ func (a *Agent) steps(ctx context.Context, hooks Hooks) error {
 			stopped := ctx.Err() != nil || a.heldBack()
 			waits := stopped && ctx.Err() == nil
 			if a.keepEarly(early, stopped, waits) {
-				a.noteToolImages()
+				a.noteToolMedia()
 			} else if stopped {
 				a.keepPartial()
 			}
@@ -410,11 +410,11 @@ func (a *Agent) steps(ctx context.Context, hooks Hooks) error {
 		// cut short by a stop that let the others end.
 		if ctx.Err() != nil || len(unfinished) > 0 {
 			a.dropUnfinished(asked, unfinished)
-			a.noteToolImages()
+			a.noteToolMedia()
 			a.step(hooks)
 			return context.Canceled
 		}
-		a.noteToolImages()
+		a.noteToolMedia()
 		a.step(hooks)
 		if a.looping() {
 			return ErrLooping

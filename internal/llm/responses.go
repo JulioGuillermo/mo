@@ -214,7 +214,11 @@ func toResponsesItems(message Message) []respItem {
 		return []respItem{{Type: "function_call_output", CallID: message.ToolCallID, Output: &output}}
 	}
 	content := []respContent{{Type: "input_text", Text: message.Text}}
-	for _, image := range message.Images {
+	for _, image := range message.Media {
+		if image.Kind() != "image" {
+			content = append(content, respContent{Type: "input_text", Text: image.notTaken()})
+			continue
+		}
 		content = append(content, respContent{Type: "input_image", ImageURL: "data:" + image.MIME + ";base64," + base64.StdEncoding.EncodeToString(image.Data)})
 	}
 	return []respItem{{Type: "message", Role: "user", Content: content}}

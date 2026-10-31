@@ -28,6 +28,7 @@ package render
 // | RD-24 | Happy    | A thumbnail fits in its cells, proportions kept, upload apart        | P1       |
 // | RD-25 | Happy    | A marker with a Windows path, spaces too, is found                   | P0       |
 // | RD-26 | Error    | A diagram the text drawing panics on comes back as its source        | P0       |
+// | RD-27 | Happy    | Audio and video markers are media, never images to draw              | P0       |
 
 import (
 	"bytes"
@@ -423,6 +424,18 @@ func TestSVGSizes(t *testing.T) {
 
 		if err == nil || !strings.HasPrefix(shown, "```mermaid\nflowchart BT") {
 			t.Errorf("err = %v shown = %q", err, shown)
+		}
+	})
+}
+
+func TestMediaMarkers(t *testing.T) {
+	t.Run("RD-27 audio and video markers are media, never images to draw", func(t *testing.T) {
+		text := ImageMarker("png 1x1", "/a.png") + " " + MediaMarker("audio", "wav, 1 KB", "/b.wav") + " " + MediaMarker("video", "mp4, 1 KB", "/c.mp4")
+
+		images, media := MarkedImages(text), MarkedMedia(text)
+
+		if strings.Join(images, ",") != "/a.png" || strings.Join(media, ",") != "/a.png,/b.wav,/c.mp4" {
+			t.Errorf("images %v media %v", images, media)
 		}
 	})
 }

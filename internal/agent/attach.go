@@ -12,12 +12,13 @@ import (
 )
 
 const (
-	largestImage    = 8 << 20
-	moNotePrefix    = "[mo] "
-	attachedNote    = moNotePrefix + "The user attached these files; read them with the read tool when you need them:"
-	toolImagesNote  = moNotePrefix + "The images the tool calls above returned, in order: %s"
-	noVisionNote    = "[image not sent: this model does not take images]"
-	attachedSummary = "attached: %s"
+	largestImage     = 8 << 20
+	largestRecording = 20 << 20
+	moNotePrefix     = "[mo] "
+	attachedNote     = moNotePrefix + "The user attached these files; read them with the read tool when you need them:"
+	toolMediaNote    = moNotePrefix + "The files the tool calls above returned, in order: %s"
+	noMediaNote      = "[media not sent: this model does not take it]"
+	attachedSummary  = "attached: %s"
 )
 
 var imageMIME = map[string]string{".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}
@@ -34,8 +35,8 @@ func ownText(text string) string {
 }
 
 // promptMessage is the user's prompt with the files it names, as pasted or
-// dropped paths: images go with it, other files are listed for the model to
-// read.
+// dropped paths: images, audio and video go with it, other files are listed
+// for the model to read.
 func (a *Agent) promptMessage(prompt string, hooks Hooks) llm.Message {
 	return a.promptMessageNaming(prompt, ownText(prompt), hooks)
 }
@@ -47,8 +48,8 @@ func (a *Agent) promptMessageNaming(prompt, own string, hooks Hooks) llm.Message
 	var others, names []string
 	for _, path := range namedFiles(own, a.Tools.WorkDir()) {
 		names = append(names, filepath.Base(path))
-		if image, err := loadImage(path); err == nil {
-			message.Images = append(message.Images, image)
+		if media, err := loadMedia(path); err == nil {
+			message.Media = append(message.Media, media)
 			continue
 		}
 		others = append(others, path)
@@ -62,10 +63,10 @@ func (a *Agent) promptMessageNaming(prompt, own string, hooks Hooks) llm.Message
 	return message
 }
 
-// noteToolImages adds, after the last reply's results, the images its read
-// and MCP calls marked in them, for the model to see; a call a stop left
-// without a result has none.
-func (a *Agent) noteToolImages() {
+// noteToolMedia adds, after the last reply's results, the images, audio and
+// video its read and MCP calls marked in them, for the model to get; a call
+// a stop left without a result has none.
+func (a *Agent) noteToolMedia() {
 	reply := -1
 	for i := len(a.History) - 1; i >= 0 && reply < 0; i-- {
 		if a.History[i].Role == llm.RoleAssistant {
@@ -88,62 +89,65 @@ func (a *Agent) noteToolImages() {
 			calls, results = append(calls, call), append(results, result)
 		}
 	}
-	if note, found := toolImages(calls, results); found {
+	if note, found := toolMedia(calls, results); found {
 		a.History = append(a.History, stamped(note))
 	}
 }
 
-// toolImages loads the images that read and MCP tools marked in their
-// results, as a note for the model to see them.
-func toolImages(calls []llm.ToolCall, results []llm.Message) (llm.Message, bool) {
+// toolMedia loads the media that read and MCP tools marked in their
+// results, as a note for the model to get them.
+func toolMedia(calls []llm.ToolCall, results []llm.Message) (llm.Message, bool) {
 	note := llm.Message{Role: llm.RoleUser}
 	var names []string
 	for i, call := range calls {
 		if call.Name != "read" && !strings.HasPrefix(call.Name, "mcp__") {
 			continue
 		}
-		for _, path := range render.MarkedImages(results[i].Text) {
-			if image, err := loadImage(path); err == nil {
-				note.Images = append(note.Images, image)
+		for _, path := range render.MarkedMedia(results[i].Text) {
+			if media, err := loadMedia(path); err == nil {
+				note.Media = append(note.Media, media)
 				names = append(names, filepath.Base(path))
 			}
 		}
 	}
-	note.Text = fmt.Sprintf(toolImagesNote, strings.Join(names, ", "))
-	return note, len(note.Images) > 0
+	note.Text = fmt.Sprintf(toolMediaNote, strings.Join(names, ", "))
+	return note, len(note.Media) > 0
 }
 
-func loadImage(path string) (llm.Image, error) {
-	mime, isImage := imageMIME[strings.ToLower(filepath.Ext(path))]
-	if !isImage {
-		return llm.Image{}, fmt.Errorf("%s is not a picture the model takes", path)
+func loadMedia(path string) (llm.Media, error) {
+	mime, largest := imageMIME[strings.ToLower(filepath.Ext(path))], int64(largestImage)
+	if mime == "" {
+		mime, largest = render.RecordingMIME(path), largestRecording
+	}
+	if mime == "" {
+		return llm.Media{}, fmt.Errorf("%s is not an image, audio or video the model takes", path)
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return llm.Image{}, err
+		return llm.Media{}, err
 	}
-	if info.Size() > largestImage {
-		return llm.Image{}, fmt.Errorf("%s is larger than %d MB", path, largestImage>>20)
+	if info.Size() > largest {
+		return llm.Media{}, fmt.Errorf("%s is larger than %d MB", path, largest>>20)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return llm.Image{}, err
+		return llm.Media{}, err
 	}
-	return llm.Image{MIME: mime, Data: data}, nil
+	return llm.Media{MIME: mime, Data: data}, nil
 }
 
-// withoutImages replaces every image in the history with a line saying it
-// was not sent, and tells whether there was any.
-func (a *Agent) withoutImages() bool {
+// withoutMedia replaces every image, audio and video in the history with a
+// line saying it was not sent, and tells whether there was any.
+func (a *Agent) withoutMedia() bool {
 	found := false
 	for i := range a.History {
-		if len(a.History[i].Images) == 0 {
+		if len(a.History[i].Media) == 0 {
 			continue
 		}
 		found = true
 		typed := PromptText(a.History[i])
-		a.History[i].Images = nil
-		a.History[i].Text += "\n" + noVisionNote
+		a.History[i].Media = nil
+		a.History[i].Text += "\n" + noMediaNote
 		if isPrompt(a.History[i]) {
 			a.History[i] = withInput(a.History[i], typed)
 		}

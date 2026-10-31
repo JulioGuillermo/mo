@@ -16,6 +16,9 @@ package llm
 // | LO-12 | Edge     | ContextWindow is 0 when the server has no /props                | P1       |
 // | LO-13 | Error    | A request cut by the network on a new connection is sent again  | P1       |
 // | LO-14 | Happy    | Tool calls stream as pieces: the name, then the arguments        | P1       |
+// | LO-15 | Happy    | Images, audio and video go as image_url, input_audio and input_video | P0   |
+// | LO-16 | Happy    | Media the server's model does not read go as a line saying so    | P0       |
+// | LO-17 | Edge     | A server that does not say what its model reads gets all media   | P1       |
 
 import (
 	"context"
@@ -363,4 +366,66 @@ func TestOpenAIHeaders(t *testing.T) {
 	if seen.Get("Editor-Version") != "vscode/1" || seen.Get("Authorization") != "Bearer tok" {
 		t.Errorf("headers %v", seen)
 	}
+}
+
+func TestOpenAIMedia(t *testing.T) {
+	media := []Media{{MIME: "image/png", Data: []byte("p")}, {MIME: "audio/mpeg", Data: []byte("a")}, {MIME: "video/mp4", Data: []byte("v")}}
+	request := Request{Model: "m", Messages: []Message{{Role: RoleUser, Text: "look", Media: media}}}
+
+	mediaServer := func(t *testing.T, models string) (*httptest.Server, *[]byte) {
+		t.Helper()
+		var sent []byte
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/models" {
+				fmt.Fprint(w, models)
+				return
+			}
+			sent, _ = io.ReadAll(r.Body)
+			fmt.Fprint(w, "data: [DONE]\n\n")
+		}))
+		t.Cleanup(server.Close)
+		return server, &sent
+	}
+
+	t.Run("LO-15 images, audio and video go as image_url, input_audio and input_video", func(t *testing.T) {
+		parts := openAIContent(request.Messages[0]).([]openAIPart)
+
+		wire, _ := json.Marshal(parts)
+		want := `[{"type":"text","text":"look"},` +
+			`{"type":"image_url","image_url":{"url":"data:image/png;base64,cA=="}},` +
+			`{"type":"input_audio","input_audio":{"data":"YQ==","format":"mp3"}},` +
+			`{"type":"input_video","input_video":{"data":"dg=="}}]`
+		if string(wire) != want {
+			t.Errorf("parts = %s", wire)
+		}
+	})
+
+	t.Run("LO-16 media the server's model does not read go as a line saying so", func(t *testing.T) {
+		server, sent := mediaServer(t, `{"data":[{"id":"other.gguf","architecture":{"input_modalities":["text","audio"]}}]}`)
+
+		if _, err := (&OpenAI{BaseURL: server.URL}).Stream(context.Background(), request, func(Event) {}); err != nil {
+			t.Fatal(err)
+		}
+
+		body := string(*sent)
+		if !strings.Contains(body, "input_audio") || strings.Contains(body, "image_url") || strings.Contains(body, "input_video") {
+			t.Errorf("sent %s", body)
+		}
+		if !strings.Contains(body, "[image not sent: this model does not take image]") || !strings.Contains(body, "[video not sent") {
+			t.Errorf("no line for the media left out: %s", body)
+		}
+	})
+
+	t.Run("LO-17 a server that does not say what its model reads gets all media", func(t *testing.T) {
+		server, sent := mediaServer(t, `{"data":[{"id":"m"}]}`)
+
+		if _, err := (&OpenAI{BaseURL: server.URL}).Stream(context.Background(), request, func(Event) {}); err != nil {
+			t.Fatal(err)
+		}
+
+		body := string(*sent)
+		if !strings.Contains(body, "image_url") || !strings.Contains(body, "input_audio") || !strings.Contains(body, "input_video") {
+			t.Errorf("sent %s", body)
+		}
+	})
 }

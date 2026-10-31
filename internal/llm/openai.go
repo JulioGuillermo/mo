@@ -24,7 +24,8 @@ type OpenAI struct {
 	// Only for llama-server: other servers may refuse the field.
 	PromptProgress bool
 	// refused are the models the server took no effort for.
-	refused refusedEfforts
+	refused    refusedEfforts
+	modalities inputModalities
 }
 
 type openAIMessage struct {
@@ -112,6 +113,7 @@ func (p *OpenAI) Stream(ctx context.Context, req Request, onEvent func(Event)) (
 	if err != nil {
 		return Response{}, err
 	}
+	req.Messages = p.takenMedia(ctx, req)
 	resp, err := postJSON(ctx, clientOrDefault(p.Client), p.url("/chat/completions"), headers, p.buildRequest(req))
 	if err != nil && req.Effort != "" && refusesEffort(err) {
 		// The server takes no effort for this model: once more without it,
@@ -282,21 +284,46 @@ type openAIPart struct {
 	ImageURL *struct {
 		URL string `json:"url"`
 	} `json:"image_url,omitempty"`
+	InputAudio *openAIAudio `json:"input_audio,omitempty"`
+	InputVideo *openAIVideo `json:"input_video,omitempty"`
 }
 
-// openAIContent is the text alone, or the text and the images as parts.
+type openAIAudio struct {
+	Data   string `json:"data"`
+	Format string `json:"format"`
+}
+
+type openAIVideo struct {
+	Data string `json:"data"`
+}
+
+// audioFormats are the names OpenAI gives the audio formats; llama-server
+// tells the format by the data.
+var audioFormats = map[string]string{"audio/mpeg": "mp3", "audio/wav": "wav", "audio/flac": "flac", "audio/ogg": "ogg", "audio/mp4": "m4a"}
+
+// openAIContent is the text alone, or the text and the media as parts.
 func openAIContent(message Message) any {
-	if len(message.Images) == 0 {
+	if len(message.Media) == 0 {
 		return message.Text
 	}
 	parts := []openAIPart{{Type: "text", Text: message.Text}}
-	for _, image := range message.Images {
-		part := openAIPart{Type: "image_url", ImageURL: &struct {
-			URL string `json:"url"`
-		}{URL: "data:" + image.MIME + ";base64," + base64.StdEncoding.EncodeToString(image.Data)}}
-		parts = append(parts, part)
+	for _, media := range message.Media {
+		parts = append(parts, openAIMediaPart(media))
 	}
 	return parts
+}
+
+func openAIMediaPart(media Media) openAIPart {
+	data := base64.StdEncoding.EncodeToString(media.Data)
+	switch media.Kind() {
+	case "audio":
+		return openAIPart{Type: "input_audio", InputAudio: &openAIAudio{Data: data, Format: audioFormats[media.MIME]}}
+	case "video":
+		return openAIPart{Type: "input_video", InputVideo: &openAIVideo{Data: data}}
+	}
+	return openAIPart{Type: "image_url", ImageURL: &struct {
+		URL string `json:"url"`
+	}{URL: "data:" + media.MIME + ";base64," + data}}
 }
 
 func toOpenAIMessage(message Message) openAIMessage {

@@ -21,14 +21,14 @@ func TestSessions(t *testing.T) {
 	t.Run("SS-01 a saved conversation loads back whole, images included", func(t *testing.T) {
 		dir := t.TempDir()
 		record := Record{Info: Info{ID: NewID(), WorkDir: "/w", Title: "hi", Usage: llm.Usage{InputTokens: 9}}, History: []llm.Message{
-			{Role: llm.RoleUser, Text: "hi", Images: []llm.Image{{MIME: "image/png", Data: []byte{1, 2, 3}}}},
+			{Role: llm.RoleUser, Text: "hi", Media: []llm.Media{{MIME: "image/png", Data: []byte{1, 2, 3}}}},
 			{Role: llm.RoleAssistant, Text: "hello", Reasoning: "think", ToolCalls: []llm.ToolCall{{ID: "a", Name: "ls", Args: []byte(`{}`)}}},
 		}}
 
 		err := Save(dir, record)
 		loaded, loadErr := Load(dir, record.ID)
 
-		if err != nil || loadErr != nil || loaded.History[0].Images[0].Data[2] != 3 || loaded.History[1].Reasoning != "think" || string(loaded.History[1].ToolCalls[0].Args) != "{}" || loaded.Usage.InputTokens != 9 {
+		if err != nil || loadErr != nil || loaded.History[0].Media[0].Data[2] != 3 || loaded.History[1].Reasoning != "think" || string(loaded.History[1].ToolCalls[0].Args) != "{}" || loaded.Usage.InputTokens != 9 {
 			t.Errorf("loaded = %+v err = %v %v", loaded, err, loadErr)
 		}
 	})
