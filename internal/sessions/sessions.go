@@ -175,14 +175,25 @@ func Older(dir, workDir string, when time.Time) ([]Info, error) {
 	return slices.DeleteFunc(infos, func(info Info) bool { return !info.Updated.Before(when) }), nil
 }
 
-// ShareJobs gives a fork the output of the commands run before it, as hard
-// links, or copies where links cannot be made: each conversation keeps its
-// own, and deleting one leaves the other whole.
-func ShareJobs(dir, from, to string) error {
+// SpeechDir is where the replies a model said in its voice are kept.
+func SpeechDir(dir, id string) string {
+	return filepath.Join(dir, id, "speech")
+}
+
+// ShareFiles gives a fork the output of the commands run before it, and the
+// replies said, as hard links, or copies where links cannot be made: each
+// conversation keeps its own, and deleting one leaves the other whole.
+func ShareFiles(dir, from, to string) error {
 	if from == "" || to == "" {
 		return nil
 	}
-	source, target := JobsDir(dir, from), JobsDir(dir, to)
+	if err := shareDir(JobsDir(dir, from), JobsDir(dir, to)); err != nil {
+		return err
+	}
+	return shareDir(SpeechDir(dir, from), SpeechDir(dir, to))
+}
+
+func shareDir(source, target string) error {
 	entries, err := os.ReadDir(source)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil

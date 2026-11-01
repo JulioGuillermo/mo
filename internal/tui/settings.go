@@ -328,7 +328,7 @@ func (m model) finishSettings(msg settingsSavedMsg) (tea.Model, tea.Cmd) {
 			m.pendingSession = &msg.session
 			// What is the screen's alone applies at once, to this turn
 			// too; the session, with the model, waits for its end.
-			m.session.Config.Render, m.session.Config.Notify = msg.session.Config.Render, msg.session.Config.Notify
+			m.session.Config.Render, m.session.Config.Notify, m.session.Config.Voice = msg.session.Config.Render, msg.session.Config.Notify, msg.session.Config.Voice
 			applied := m.applyUI()
 			return m, tea.Batch(applied, printText(m.printer.Note("settings saved to "+where+" · the model's apply when it finishes this turn; the look, keys and notifications already do")))
 		}
@@ -341,6 +341,9 @@ func (m model) finishSettings(msg settingsSavedMsg) (tea.Model, tea.Cmd) {
 
 // useSession makes a session built from saved settings the one in use.
 func (m model) useSession(session Session) (tea.Model, tea.Cmd) {
+	if m.session.Agent != nil {
+		endVoice(m.session.Agent.Provider)
+	}
 	m.session = session
 	m.printer.setKind(m.toolKind)
 	m.configureJobs()

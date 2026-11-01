@@ -215,7 +215,7 @@ func (m *model) ensureThread() {
 	}
 	m.thread.id, m.thread.created = sessions.NewID(), time.Now()
 	if m.thread.parent != "" {
-		_ = sessions.ShareJobs(config.SessionDir(), m.thread.parent, m.thread.id)
+		_ = sessions.ShareFiles(config.SessionDir(), m.thread.parent, m.thread.id)
 	}
 	m.trackThread()
 }

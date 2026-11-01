@@ -6,6 +6,7 @@ package sessions
 // | SS-02 | Happy    | Only the folder's conversations are listed, the latest first         | P0       |
 // | SS-03 | Security | Files are the user's only; an id cannot leave the folder             | P0       |
 // | SS-04 | Edge     | The title is the first line of the first prompt, cut short           | P2       |
+// | SS-05 | Happy    | A fork shares the replies said with the output; deleting one keeps the other's | P0 |
 
 import (
 	"os"
@@ -71,6 +72,31 @@ func TestSessions(t *testing.T) {
 
 		if Title("  fix the bug\nin main.go") != "fix the bug" || len([]rune(long)) != titleLength {
 			t.Errorf("titles = %q %q", Title("fix the bug\nx"), long)
+		}
+	})
+}
+
+func TestSpeechFiles(t *testing.T) {
+	t.Run("SS-05 a fork shares the replies said with the output; deleting one keeps the other's", func(t *testing.T) {
+		dir := t.TempDir()
+		for _, folder := range []string{JobsDir(dir, "a"), SpeechDir(dir, "a")} {
+			_ = os.MkdirAll(folder, 0o700)
+			_ = os.WriteFile(filepath.Join(folder, "kept"), []byte("data"), 0o600)
+		}
+
+		err := ShareFiles(dir, "a", "b")
+		deleteErr := Delete(dir, "a")
+
+		for _, folder := range []string{JobsDir(dir, "b"), SpeechDir(dir, "b")} {
+			if data, readErr := os.ReadFile(filepath.Join(folder, "kept")); string(data) != "data" {
+				t.Errorf("%s: %q %v", folder, data, readErr)
+			}
+		}
+		if err != nil || deleteErr != nil {
+			t.Errorf("share %v delete %v", err, deleteErr)
+		}
+		if _, statErr := os.Stat(SpeechDir(dir, "a")); !os.IsNotExist(statErr) {
+			t.Errorf("the deleted one's speech is left: %v", statErr)
 		}
 	})
 }

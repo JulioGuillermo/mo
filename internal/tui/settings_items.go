@@ -132,6 +132,22 @@ var settingsSections = []settingsSection{
 		}
 		return d.notifyMethod + " · sound " + d.notifySound + " · " + strings.Join(when, ", ")
 	}, note: func(model, *settingsMenu) string { return "/notify sends a test" }, items: notifyItems},
+	{key: "voice", title: "Voice", summary: func(d *settingsDraft) string {
+		played := "plays when it ends"
+		switch {
+		case !d.voiceAutoplay:
+			played = "plays on a click"
+		case d.voiceLive:
+			played = "plays as it comes"
+		}
+		saved := "not saved"
+		if d.voiceSave {
+			saved = "saved"
+		}
+		return d.voiceMode + " · " + played + " · " + saved
+	}, note: func(model, *settingsMenu) string {
+		return "for a model that talks, once /voice turns it on"
+	}, items: voiceItems},
 	{key: "appearance", title: "Look and keys", summary: func(d *settingsDraft) string {
 		return fmt.Sprintf("keys %s · panel %s · status %s", d.keys, d.sidebar, d.statusStyle)
 	}, items: appearanceItems},
@@ -760,6 +776,27 @@ func notifyItems(model, *settingsMenu) []settingItem {
 				Validate(existingFileOrEmpty).Value(&d.soundFile)
 		}},
 		flag("Notify while you look at mo", "no: only when the terminal is not focused", func(d *settingsDraft) *bool { return &d.notifyFocused }),
+	}
+}
+
+func voiceItems(model, *settingsMenu) []settingItem {
+	flag := func(title, description string, value func(d *settingsDraft) *bool) settingItem {
+		return settingItem{title, func(d *settingsDraft) string { return yesNo(*value(d)) }, func(d *settingsDraft) huh.Field {
+			return huh.NewConfirm().Title(title).Description(description).Value(value(d))
+		}}
+	}
+	return []settingItem{
+		{"Replies", func(d *settingsDraft) string { return d.voiceMode }, func(d *settingsDraft) huh.Field {
+			return huh.NewSelect[string]().Title("Replies").Options(
+				huh.NewOption("text+audio: written and said", config.VoiceTextAudio),
+				huh.NewOption("audio: only said; small models may not make sense this way", config.VoiceAudio),
+				huh.NewOption("auto: written, said or both, as the model chooses", config.VoiceAuto),
+			).Value(&d.voiceMode)
+		}},
+		flag("Play replies by themselves", "no: only when you click their ♪ line", func(d *settingsDraft) *bool { return &d.voiceAutoplay }),
+		flag("Play as it is said", "no: once the reply ends · as it comes needs pw-play, paplay or aplay; elsewhere it plays at the end", func(d *settingsDraft) *bool { return &d.voiceLive }),
+		flag("Say replies that only call tools", "no: their speech is dropped · played as it is said in audio or auto, one may be heard in part", func(d *settingsDraft) *bool { return &d.voiceSpeakCalls }),
+		flag("Save what is said", "with the conversation, as .wav files, about 48 KB a second; deleted with it", func(d *settingsDraft) *bool { return &d.voiceSave }),
 	}
 }
 

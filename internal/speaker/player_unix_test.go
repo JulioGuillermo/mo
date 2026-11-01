@@ -7,6 +7,8 @@ package speaker
 // | SP-02 | Happy    | Recordings play one after another, each once, through the player found | P0     |
 // | SP-03 | Happy    | Stop ends the one playing and drops the ones waiting                 | P0       |
 // | SP-04 | Error    | Without a player, Play says which to install                         | P1       |
+// | SP-05 | Happy    | Speech played as it comes reaches the player in order, after the one before | P0 |
+// | SP-06 | Happy    | Stop ends speech still coming, and the player with it                | P0       |
 
 import (
 	"os"
@@ -16,13 +18,13 @@ import (
 	"time"
 )
 
-// fakePlayer is a pw-play that logs the first bytes of what it plays and
-// takes pause seconds.
+// fakePlayer is a pw-play that logs the last bytes of the file it plays, or
+// all it reads when its last argument is -, and takes pause seconds.
 func fakePlayer(t *testing.T, pause string) string {
 	t.Helper()
 	bin := t.TempDir()
 	log := filepath.Join(t.TempDir(), "played")
-	script := "#!/bin/sh\ntail -c 2 \"$1\" >> " + log + "\nsleep " + pause + "\n"
+	script := "#!/bin/sh\nfor last; do :; done\nif [ \"$last\" = - ]; then cat >> " + log + "; else tail -c 2 \"$last\" >> " + log + "; fi\nsleep " + pause + "\n"
 	if err := os.WriteFile(filepath.Join(bin, "pw-play"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -80,6 +82,42 @@ func TestPlayer(t *testing.T) {
 
 		if err == nil || !strings.Contains(err.Error(), "pw-play") {
 			t.Errorf("err = %v", err)
+		}
+	})
+}
+
+func TestLivePlayer(t *testing.T) {
+	t.Run("SP-05 speech played as it comes reaches the player in order, after the one before", func(t *testing.T) {
+		log := fakePlayer(t, "0.1")
+		var player Player
+		live := NewLive(24000)
+
+		player.Play(WAV([]byte("a1"), 8000))
+		player.PlayLive(live)
+		live.Write([]byte("b2"))
+		live.Write([]byte("c3"))
+		live.Close()
+		time.Sleep(50 * time.Millisecond)
+		waitIdle(t, &player)
+
+		if played, _ := os.ReadFile(log); string(played) != "a1b2c3" {
+			t.Errorf("played %q", played)
+		}
+	})
+
+	t.Run("SP-06 stop ends speech still coming, and the player with it", func(t *testing.T) {
+		fakePlayer(t, "0")
+		var player Player
+		live := NewLive(24000)
+		player.PlayLive(live)
+		live.Write([]byte("b2"))
+		time.Sleep(100 * time.Millisecond)
+
+		player.Stop()
+		waitIdle(t, &player)
+
+		if player.Playing() {
+			t.Error("still playing")
 		}
 	})
 }

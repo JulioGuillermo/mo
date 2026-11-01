@@ -39,6 +39,9 @@ type Message struct {
 	// Speech is the reply in the model's own voice, when it was asked to
 	// speak; never sent nor saved.
 	Speech *Speech `json:"-"`
+	// SpeechFile names the file Speech was saved to, in the conversation's
+	// folder; never sent.
+	SpeechFile string `json:",omitempty"`
 }
 
 // Speech is mono 16-bit PCM audio.
@@ -94,8 +97,10 @@ type Request struct {
 	// NoThinking leaves thinking at the model's default, for the short
 	// requests of titles and the auto-mode judge.
 	NoThinking bool
-	// Speak asks a model that talks for its reply in its own voice too.
-	Speak bool
+	// Voice asks a model that talks to say its reply in its own voice:
+	// written and said (text+audio), only said (audio), or as the model
+	// chooses (auto). Empty asks for text alone.
+	Voice string
 }
 
 // Usage is what a reply cost, and how fast the prompt was read and the
@@ -118,6 +123,9 @@ const (
 	// EventPromptProgress says how far the server is in reading the prompt,
 	// before the answer starts. Only llama-server sends it.
 	EventPromptProgress
+	// EventSpeech is a piece of the reply said in the model's voice, as it
+	// comes.
+	EventSpeech
 )
 
 // PromptProgress is how much of the prompt the server has read: Done of
@@ -146,6 +154,8 @@ type Event struct {
 	ID   string
 	// Progress is set on EventPromptProgress.
 	Progress PromptProgress
+	// Speech is set on EventSpeech.
+	Speech *Speech
 }
 
 type Response struct {

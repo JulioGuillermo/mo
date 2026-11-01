@@ -42,6 +42,7 @@ type Config struct {
 	Loop         Loop                      `toml:"loop,omitempty"`
 	Permissions  Permissions               `toml:"permissions,omitempty"`
 	Notify       Notify                    `toml:"notify,omitempty"`
+	Voice        Voice                     `toml:"voice,omitempty"`
 	Agents       Agents                    `toml:"agents,omitempty"`
 	Peers        Peers                     `toml:"peers,omitempty"`
 	Providers    map[string]ProviderConfig `toml:"providers,omitempty"`
@@ -152,6 +153,27 @@ type Notify struct {
 	Sound     string `toml:"sound,omitempty"`
 	SoundFile string `toml:"sound_file,omitempty"`
 }
+
+// Voice is how the replies of a model that talks are said, once /voice
+// turns it on: what they are made of, when they play and whether they are
+// kept with the conversation.
+type Voice struct {
+	Mode       string `toml:"mode,omitempty"`
+	Autoplay   *bool  `toml:"autoplay,omitempty"`
+	Live       *bool  `toml:"live,omitempty"`
+	SpeakCalls *bool  `toml:"speak_calls,omitempty"`
+	Save       *bool  `toml:"save,omitempty"`
+}
+
+// The modes of the voice: the reply written and said, only said, or as the
+// model chooses.
+const (
+	VoiceTextAudio = "text+audio"
+	VoiceAudio     = "audio"
+	VoiceAuto      = "auto"
+)
+
+var VoiceModes = []string{VoiceTextAudio, VoiceAudio, VoiceAuto}
 
 // Permissions are the mode tool calls start in and the rules for shell
 // commands and fetches. Projects holds rules that apply only in one
@@ -613,6 +635,7 @@ func Defaults() Config {
 		Peers:       Peers{Enabled: ptr(false), Incoming: "ask", Outgoing: "tools", Wake: ptr(true), Network: "off"},
 		Permissions: Permissions{Mode: "edits"},
 		Notify:      Notify{Finish: ptr(true), Approval: ptr(true), Method: "auto", Focused: ptr(false), Sound: "off"},
+		Voice:       Voice{Mode: VoiceTextAudio, Autoplay: ptr(true), Live: ptr(false), SpeakCalls: ptr(false), Save: ptr(true)},
 		Providers:   presets(),
 	}
 }
@@ -744,6 +767,9 @@ func validate(cfg Config) error {
 		if server.DescriptionChars < 0 {
 			return fmt.Errorf("mcp.%s.description_chars %d: use a number of characters, or 0 for %d", name, server.DescriptionChars, DefaultDescriptionChars)
 		}
+	}
+	if !slices.Contains(VoiceModes, cfg.Voice.Mode) {
+		return fmt.Errorf("voice.mode %q: use text+audio, audio or auto", cfg.Voice.Mode)
 	}
 	if !slices.Contains(notify.Methods, notify.Method(cfg.Notify.Method)) {
 		return fmt.Errorf("notify.method %q: use auto, terminal, desktop, bell or off", cfg.Notify.Method)
@@ -936,6 +962,7 @@ func merge(base, layer Config) Config {
 	}
 	base.Permissions = mergePermissions(base.Permissions, layer.Permissions)
 	base.Notify = mergeNotify(base.Notify, layer.Notify)
+	base.Voice = mergeVoice(base.Voice, layer.Voice)
 	base.Agents = mergeAgents(base.Agents, layer.Agents)
 	base.Peers = mergePeers(base.Peers, layer.Peers)
 	return base
@@ -974,6 +1001,18 @@ func mergeNotify(base, layer Notify) Notify {
 	base.SoundFile = override(base.SoundFile, layer.SoundFile)
 	for _, field := range []struct{ base, layer **bool }{
 		{&base.Finish, &layer.Finish}, {&base.Approval, &layer.Approval}, {&base.Focused, &layer.Focused},
+	} {
+		if *field.layer != nil {
+			*field.base = *field.layer
+		}
+	}
+	return base
+}
+
+func mergeVoice(base, layer Voice) Voice {
+	base.Mode = override(base.Mode, layer.Mode)
+	for _, field := range []struct{ base, layer **bool }{
+		{&base.Autoplay, &layer.Autoplay}, {&base.Live, &layer.Live}, {&base.SpeakCalls, &layer.SpeakCalls}, {&base.Save, &layer.Save},
 	} {
 		if *field.layer != nil {
 			*field.base = *field.layer

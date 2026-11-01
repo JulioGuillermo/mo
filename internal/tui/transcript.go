@@ -31,6 +31,8 @@ type block struct {
 	open      bool
 	reasoning string
 	tool      *toolRun
+	// speech is the key of the reply said that the block's line plays.
+	speech string
 }
 
 // redraw draws a block again, open or not, and keeps what the screen paints
@@ -338,6 +340,11 @@ func (m *model) replay(history []llm.Message) string {
 					m.blocks = append(m.blocks, block{text: kittyUploads.ReplaceAllString(drawn, "")})
 				} else {
 					m.blocks = append(m.blocks, block{text: drawn, draw: func(bool) string { return printer.Answer(text) }})
+				}
+			}
+			if path := m.speechPath(message.SpeechFile); path != "" {
+				if seconds, kept := savedSpeechSeconds(path); kept {
+					m.addSpeechLine(path, seconds)
 				}
 			}
 			for _, call := range message.ToolCalls {

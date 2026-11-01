@@ -144,13 +144,24 @@ weekly windows of `claude-code`, the windows of `codex`, and what is left per mo
 
 `/voice` turns on the model's own voice, for a model whose server lists audio among what it writes
 (llama-server with an omni model such as LFM3-Omni). Replies then come through the server's
-`/v1/realtime`: the text as always, and the same reply said by the model, which mo plays with the
-system's player (`pw-play`, `paplay`, `aplay` or `ffplay` on Linux, `afplay` on macOS, PowerShell on
-Windows). A line under the reply gives its length; `/voice play` plays the last again, `/voice stop`
-silences it, and `♪ voice` in the status line does either with a click. `/voice` again, or
-`/voice off`, goes back to text. The realtime conversation holds a slot of the server while it is
-open; a request that does not speak, as a title, closes it, and the next spoken one starts again
-from a transcript of the conversation.
+`/v1/realtime`, and mo plays them with the system's player (`pw-play`, `paplay`, `aplay` or `ffplay`
+on Linux, `afplay` on macOS, PowerShell on Windows). Each reply said gets a `♪ 2.4 s` line under it:
+a click plays it, or stops what plays. `/voice play` plays the last again, `/voice stop` silences it,
+and `♪ voice` in the status line does either. `/voice` again, or `/voice off`, goes back to text.
+
+`/settings voice` sets how it speaks, in `[voice]`:
+
+| Setting | Default | |
+|---|---|---|
+| `mode` | `text+audio` | `text+audio`: written and said · `audio`: only said · `auto`: as the model chooses |
+| `autoplay` | `true` | play each reply by itself; `false`: only on a click of its line |
+| `live` | `false` | play as it is said, with `pw-play`, `paplay` or `aplay`; elsewhere, and off, once the reply ends |
+| `speak_calls` | `false` | say replies that only call tools; their speech is dropped otherwise |
+| `save` | `true` | keep what is said with the conversation, as `.wav` files of about 48 KB a second, so `/resume` brings the lines back; deleted with it |
+
+The realtime conversation holds a slot of the server while it is open; a request that does not
+speak, as a title, closes it, and the next spoken one starts again from a transcript of the
+conversation.
 
 ### Notes
 

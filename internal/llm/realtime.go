@@ -92,7 +92,7 @@ func (p *OpenAI) streamSpoken(ctx context.Context, req Request, onEvent func(Eve
 		socket.conn.SetReadDeadline(time.Now())
 	})
 	defer stopReading()
-	reply, err := session.answer(news, req.MaxTokens, onEvent)
+	reply, err := session.answer(news, req, onEvent)
 	if err != nil {
 		session.close()
 		if ctx.Err() != nil {
@@ -136,7 +136,7 @@ func (p *OpenAI) openVoice(ctx context.Context, req Request, tools []realtimeToo
 		return err
 	}
 	session.outputRate = created.Session.Audio.Output.Format.Rate
-	update := map[string]any{"type": "realtime", "instructions": req.System, "output_modalities": []string{"text", "audio"}}
+	update := map[string]any{"type": "realtime", "instructions": req.System, "output_modalities": nil}
 	if len(tools) > 0 {
 		update["tools"] = tools
 	}
@@ -167,18 +167,26 @@ func (s *voiceSession) newMessages(req Request, tools string) ([]Message, bool) 
 	return news, true
 }
 
-// answer sends the messages and asks for a reply, which it reads whole.
-func (s *voiceSession) answer(messages []Message, maxTokens int, onEvent func(Event)) (Message, error) {
+// voiceModalities are what a reply of each voice mode is made of; auto
+// leaves it to the model.
+var voiceModalities = map[string][]string{"text+audio": {"text", "audio"}, "audio": {"audio"}}
+
+// answer sends the messages and asks for a reply in the voice mode of req,
+// which it reads whole.
+func (s *voiceSession) answer(messages []Message, req Request, onEvent func(Event)) (Message, error) {
 	for _, message := range messages {
 		if err := s.send(realtimeItem(message)); err != nil {
 			return Message{}, err
 		}
 	}
-	create := map[string]any{"type": "response.create"}
-	if maxTokens > 0 {
-		create["response"] = map[string]any{"max_output_tokens": maxTokens}
+	response := map[string]any{}
+	if modalities, chosen := voiceModalities[req.Voice]; chosen {
+		response["output_modalities"] = modalities
 	}
-	if err := s.send(create); err != nil {
+	if req.MaxTokens > 0 {
+		response["max_output_tokens"] = req.MaxTokens
+	}
+	if err := s.send(map[string]any{"type": "response.create", "response": response}); err != nil {
 		return Message{}, err
 	}
 	return s.readReply(onEvent)
@@ -189,7 +197,6 @@ type spokenCall struct {
 	args     strings.Builder
 }
 
-// readReply reads the reply as it comes; one without text keeps no speech.
 func (s *voiceSession) readReply(onEvent func(Event)) (Message, error) {
 	var text strings.Builder
 	var pcm []byte
@@ -210,6 +217,7 @@ func (s *voiceSession) readReply(onEvent func(Event)) (Message, error) {
 				return Message{}, fmt.Errorf("unreadable audio from the server: %w", err)
 			}
 			pcm = append(pcm, chunk...)
+			onEvent(Event{Kind: EventSpeech, Speech: &Speech{PCM: chunk, Rate: s.outputRate}})
 		case "response.output_item.added":
 			if event.Item.Type != "function_call" {
 				continue
@@ -234,7 +242,7 @@ func (s *voiceSession) readReply(onEvent func(Event)) (Message, error) {
 			for _, call := range calls {
 				reply.ToolCalls = append(reply.ToolCalls, newToolCall(call.id, call.name, call.args.String()))
 			}
-			if len(pcm) > 0 && strings.TrimSpace(reply.Text) != "" {
+			if len(pcm) > 0 {
 				reply.Speech = &Speech{PCM: pcm, Rate: s.outputRate}
 			}
 			return reply, nil
@@ -276,7 +284,12 @@ func (s *voiceSession) expect(kind string) (realtimeEvent, error) {
 	}
 }
 
-// end closes the conversation, which holds a slot of the server while open.
+// EndVoice closes the realtime conversation, which holds a slot of the
+// server while open.
+func (p *OpenAI) EndVoice() {
+	p.voice.end()
+}
+
 func (s *voiceSession) end() {
 	s.mu.Lock()
 	defer s.mu.Unlock()

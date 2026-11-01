@@ -125,11 +125,11 @@ func (m model) applyFiles(files config.Files, whole bool) (tea.Model, tea.Cmd) {
 	current := m.session
 	if m.pendingSession != nil {
 		current = *m.pendingSession
-		m.pendingSession.Config.Render, m.pendingSession.Config.Notify = disk.Render, disk.Notify
+		m.pendingSession.Config.Render, m.pendingSession.Config.Notify, m.pendingSession.Config.Voice = disk.Render, disk.Notify, disk.Voice
 	}
 	uiChanged := !reflect.DeepEqual(disk.Render, m.session.Config.Render) || !reflect.DeepEqual(disk.Notify, m.session.Config.Notify)
-	m.session.Config.Render, m.session.Config.Notify = disk.Render, disk.Notify
-	current.Config.Render, current.Config.Notify = disk.Render, disk.Notify
+	m.session.Config.Render, m.session.Config.Notify, m.session.Config.Voice = disk.Render, disk.Notify, disk.Voice
+	current.Config.Render, current.Config.Notify, current.Config.Voice = disk.Render, disk.Notify, disk.Voice
 	var cmds []tea.Cmd
 	if uiChanged {
 		cmds = append(cmds, m.applyUI())

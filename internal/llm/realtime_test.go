@@ -2,11 +2,11 @@ package llm
 
 // Test Traceability Table
 // | ID    | Category | Description                                                                 | Priority |
-// | RT-01 | Happy    | A spoken reply streams its text and calls, and comes with its speech         | P0       |
-// | RT-02 | Happy    | The session asks for text and audio, with the system prompt and the tools    | P0       |
+// | RT-01 | Happy    | A spoken reply streams its text, calls and speech, and comes with its speech | P0       |
+// | RT-02 | Happy    | The session has the system prompt and tools; each reply asks the voice mode  | P0       |
 // | RT-03 | Happy    | The next request sends only the results and prompts the server does not hold | P0       |
 // | RT-04 | Edge     | A history that does not go on from what the server holds starts a new one, as a transcript | P0 |
-// | RT-05 | Edge     | A reply without text keeps no speech                                         | P1       |
+// | RT-05 | Edge     | A reply without text keeps its speech; the agent decides what to drop        | P1       |
 // | RT-06 | Error    | An error event is an error, and the next request starts a new conversation  | P1       |
 // | RT-07 | Happy    | A request that does not speak closes the conversation, freeing the slot     | P0       |
 // | RT-08 | Happy    | Speaks tells a model that writes audio from one that does not               | P0       |
@@ -163,7 +163,7 @@ func calling() []map[string]any {
 func speak(t *testing.T, provider *OpenAI, messages []Message) (Response, []Event, error) {
 	t.Helper()
 	var events []Event
-	request := Request{Model: "omni", System: "be brief", Speak: true, Messages: messages,
+	request := Request{Model: "omni", System: "be brief", Voice: "text+audio", Messages: messages,
 		Tools: []ToolSpec{{Name: "read", Description: "Read a file.", Schema: json.RawMessage(`{"type":"object"}`)}}}
 	response, err := provider.Stream(context.Background(), request, func(event Event) { events = append(events, event) })
 	return response, events, err
@@ -187,25 +187,41 @@ func TestRealtime(t *testing.T) {
 		if reply.Speech == nil || string(reply.Speech.PCM) != "\x01\x02\x03\x04" || reply.Speech.Rate != 24000 {
 			t.Errorf("speech = %+v", reply.Speech)
 		}
-		if len(events) != 4 || events[0].Text != "Reading it." || events[1].Name != "read" || events[3].Text != `"a.txt"}` {
-			t.Errorf("events = %+v", events)
+		if len(events) != 5 || events[0].Text != "Reading it." || events[1].Name != "read" || events[3].Text != `"a.txt"}` {
+			t.Fatalf("events = %+v", events)
+		}
+		if piece := events[4]; piece.Kind != EventSpeech || string(piece.Speech.PCM) != "\x01\x02\x03\x04" || piece.Speech.Rate != 24000 {
+			t.Errorf("speech event = %+v", piece)
 		}
 		if response.Usage.OutputTokens != 7 || response.Usage.InputTokens == 0 {
 			t.Errorf("usage = %+v", response.Usage)
 		}
 	})
 
-	t.Run("RT-02 the session asks for text and audio, with the system prompt and the tools", func(t *testing.T) {
-		fake, provider := newFakeRealtime(t, spokenText("hi", []byte{0, 0}))
-
-		if _, _, err := speak(t, provider, []Message{prompt}); err != nil {
-			t.Fatal(err)
+	t.Run("RT-02 the session has the system prompt and tools; each reply asks the voice mode", func(t *testing.T) {
+		fake, provider := newFakeRealtime(t, spokenText("hi", []byte{0, 0}), spokenText("hm", nil), spokenText("ok", nil))
+		history := []Message{prompt}
+		for _, mode := range []string{"text+audio", "audio", "auto"} {
+			response, err := provider.Stream(context.Background(), Request{Model: "omni", System: "be brief", Voice: mode, Messages: history,
+				Tools: []ToolSpec{{Name: "read", Description: "Read a file.", Schema: json.RawMessage(`{"type":"object"}`)}}}, func(Event) {})
+			if err != nil {
+				t.Fatal(err)
+			}
+			history = append(history, response.Message, Message{Role: RoleUser, Text: "again"})
 		}
 
 		session, _ := json.Marshal(fake.events("session.update")[0]["session"])
-		want := `{"instructions":"be brief","output_modalities":["text","audio"],"tools":[{"description":"Read a file.","name":"read","parameters":{"type":"object"},"type":"function"}],"type":"realtime"}`
+		want := `{"instructions":"be brief","output_modalities":null,"tools":[{"description":"Read a file.","name":"read","parameters":{"type":"object"},"type":"function"}],"type":"realtime"}`
 		if string(session) != want {
 			t.Errorf("session = %s", session)
+		}
+		var asked []string
+		for _, create := range fake.events("response.create") {
+			wire, _ := json.Marshal(create["response"].(map[string]any)["output_modalities"])
+			asked = append(asked, string(wire))
+		}
+		if strings.Join(asked, " ") != `["text","audio"] ["audio"] null` || fake.connections != 1 {
+			t.Errorf("asked %v, connections %d", asked, fake.connections)
 		}
 	})
 
@@ -244,12 +260,12 @@ func TestRealtime(t *testing.T) {
 		}
 	})
 
-	t.Run("RT-05 a reply without text keeps no speech", func(t *testing.T) {
+	t.Run("RT-05 a reply without text keeps its speech; the agent decides what to drop", func(t *testing.T) {
 		_, provider := newFakeRealtime(t, spokenText("", []byte{9, 9}))
 
 		response, _, err := speak(t, provider, []Message{prompt})
 
-		if err != nil || response.Message.Speech != nil {
+		if err != nil || response.Message.Speech == nil || string(response.Message.Speech.PCM) != "\x09\x09" {
 			t.Errorf("err %v speech %+v", err, response.Message.Speech)
 		}
 	})

@@ -55,9 +55,11 @@ type Agent struct {
 	// Effort is how hard a model that reasons thinks in the turns; empty
 	// is its default. Compaction and the auto-mode judge keep the default.
 	Effort string
-	// Speak asks the model for its replies in its own voice too, when it
-	// talks.
-	Speak        bool
+	// Voice asks a model that talks to say its replies, in the mode of
+	// llm.Request's Voice; SpeakCalls keeps the speech of a reply that only
+	// calls tools, which is dropped otherwise.
+	Voice        string
+	SpeakCalls   bool
 	Tools        *tools.Registry
 	ConfirmTools []string
 
@@ -172,6 +174,12 @@ type Hooks struct {
 	// Interact asks the user everything the calls of a reply need at once;
 	// it takes the place of Approve.
 	Interact func(ctx context.Context, interaction Interaction) Reply
+	// SaveSpeech keeps a reply's speech, and names the file it went to;
+	// an empty name is a speech not kept.
+	SaveSpeech func(speech llm.Speech) string
+	// OnReplyEnd hears each reply once whole, with what it said in the
+	// model's voice, if anything was kept.
+	OnReplyEnd func(reply llm.Message)
 }
 
 func (a *Agent) Run(ctx context.Context, prompt string, hooks Hooks) error {
@@ -372,6 +380,7 @@ func (a *Agent) steps(ctx context.Context, hooks Hooks) error {
 			}
 			continue
 		}
+		a.keepSpeech(&response.Message, hooks)
 		markSilent(&response.Message)
 		// The early calls' goroutine reads the history: it is done before
 		// the history changes.
@@ -398,6 +407,9 @@ func (a *Agent) steps(ctx context.Context, hooks Hooks) error {
 		a.step(hooks)
 		if early == nil && hooks.OnAssistant != nil {
 			hooks.OnAssistant(response.Message)
+		}
+		if hooks.OnReplyEnd != nil {
+			hooks.OnReplyEnd(response.Message)
 		}
 		if len(response.Message.ToolCalls) == 0 {
 			return nil
@@ -436,8 +448,25 @@ func stamped(message llm.Message) llm.Message {
 // markSilent makes an answer with no text and no call say so, as the
 // provider stopped it without telling why: shown, and kept for the model.
 func markSilent(message *llm.Message) {
-	if strings.TrimSpace(message.Text) == "" && len(message.ToolCalls) == 0 {
-		message.Text = llm.SilentNote
+	if strings.TrimSpace(message.Text) != "" || len(message.ToolCalls) > 0 {
+		return
+	}
+	message.Text = llm.SilentNote
+	if message.Speech != nil {
+		message.Text = spokenNote
+	}
+}
+
+const spokenNote = "[answered aloud only, without text]"
+
+// keepSpeech drops the speech of a reply that only calls tools, unless
+// SpeakCalls keeps it, and has SaveSpeech save the rest.
+func (a *Agent) keepSpeech(reply *llm.Message, hooks Hooks) {
+	if reply.Speech != nil && strings.TrimSpace(reply.Text) == "" && len(reply.ToolCalls) > 0 && !a.SpeakCalls {
+		reply.Speech = nil
+	}
+	if reply.Speech != nil && hooks.SaveSpeech != nil {
+		reply.SpeechFile = hooks.SaveSpeech(*reply.Speech)
 	}
 }
 
@@ -563,7 +592,7 @@ func (a *Agent) request() llm.Request {
 		Tools:     a.Tools.Specs(a.History),
 		MaxTokens: a.MaxTokens,
 		Effort:    a.Effort,
-		Speak:     a.Speak,
+		Voice:     a.Voice,
 	}
 }
 

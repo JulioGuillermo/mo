@@ -725,8 +725,10 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.queuedRead(int(msg))
 	case cacheClearedMsg:
 		return m.cacheCleared(msg)
-	case speechMsg:
-		return m.speech(msg)
+	case speechPieceMsg:
+		return m.speechPiece(msg)
+	case replyEndedMsg:
+		return m.replyEnded(msg)
 	case voiceCheckedMsg:
 		return m.voiceChecked(msg)
 	case voiceChangedMsg:
@@ -751,6 +753,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focused = false
 		return m, nil
 	case runDoneMsg:
+		m.silenceUnfinished()
 		finished, cmd := m.finishRun(msg.err)
 		done := finished.(model)
 		read := done.readRepo()
@@ -1036,7 +1039,9 @@ func (m model) start(first tea.Cmd, work func(context.Context, agent.Hooks) erro
 	m.tellPeers()
 	m.cancel = cancel
 	m.finished = finished
+	m.speakWith(&m.session.Agent.Voice, &m.session.Agent.SpeakCalls)
 	hooks := m.bridge.hooks()
+	hooks.SaveSpeech = m.speechSaver()
 	bridge := m.bridge
 	runAgent := func() tea.Msg {
 		defer close(finished)
@@ -1137,8 +1142,11 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 	case "help":
 		return m, drawText(m.helpView)
 	case "settings":
-		if argument == "project" {
+		switch argument {
+		case "project":
 			m.openSection = menuProject
+		case "voice":
+			m.openSection = "voice"
 		}
 		m.settingsInFlight = true
 		return m, tea.Sequence(printText(m.printer.Note("looking for providers…")), loadSettings(m.session, generalSettings))

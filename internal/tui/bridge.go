@@ -42,6 +42,9 @@ type bridge struct {
 	exited  chan struct{}
 	// pacer holds what the model writes as render.reply_refresh says.
 	pacer *pacer
+	// wrote says the reply being written has text, for its speech to play
+	// as it comes.
+	wrote bool
 }
 
 // paceReply draws what the model writes at the pace given.
@@ -88,6 +91,13 @@ func (b *bridge) send(msg tea.Msg) {
 func (b *bridge) hooks() agent.Hooks {
 	hooks := agent.Hooks{
 		OnEvent: func(event llm.Event) {
+			switch event.Kind {
+			case llm.EventSpeech:
+				b.send(speechPieceMsg{speech: *event.Speech, afterText: b.wrote})
+				return
+			case llm.EventText:
+				b.wrote = true
+			}
 			if b.pacer != nil {
 				b.pacer.event(event)
 				return
@@ -102,10 +112,10 @@ func (b *bridge) hooks() agent.Hooks {
 			if text := strings.TrimSpace(message.Text); text != "" {
 				b.draw(func() string { return b.printer.Answer(text) })
 			}
-			if message.Speech != nil {
-				b.print(b.printer.speechLine(message.Speech))
-				b.send(speechMsg(*message.Speech))
-			}
+		},
+		OnReplyEnd: func(reply llm.Message) {
+			b.wrote = false
+			b.send(replyEndedMsg{speech: reply.Speech, file: reply.SpeechFile})
 		},
 		OnToolStart: func(call llm.ToolCall, summary string) {
 			b.send(toolStartMsg{call: call, summary: summary})
@@ -167,6 +177,9 @@ func (b *bridge) flushingFirst(hooks agent.Hooks) agent.Hooks {
 	onActivity, onUsage, onNotice, onLoopCut, onCompact, onQueued, interact := hooks.OnActivity, hooks.OnUsage, hooks.OnNotice, hooks.OnLoopCut, hooks.OnCompact, hooks.OnQueued, hooks.Interact
 	if onStep := hooks.OnStep; onStep != nil {
 		hooks.OnStep = func(history []llm.Message) { first(func() { onStep(history) })() }
+	}
+	if onReplyEnd := hooks.OnReplyEnd; onReplyEnd != nil {
+		hooks.OnReplyEnd = func(reply llm.Message) { first(func() { onReplyEnd(reply) })() }
 	}
 	hooks.OnAssistant = func(message llm.Message) { first(func() { onAssistant(message) })() }
 	hooks.OnToolStart = func(call llm.ToolCall, summary string) { first(func() { onToolStart(call, summary) })() }

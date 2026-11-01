@@ -62,6 +62,9 @@ func (m model) click(x, y int) (tea.Model, tea.Cmd) {
 		if drawn, ok := m.drawingAt(y); ok && !drawn.code && drawn.widest > m.printer.width {
 			return m.openDrawing(drawn)
 		}
+		if speech, ok := m.speechAt(y); ok {
+			return m.playSpeech(speech)
+		}
 		m.clickDetails(y)
 	}
 	return m, nil

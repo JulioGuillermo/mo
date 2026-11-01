@@ -22,7 +22,7 @@ type settingsGroup struct {
 }
 
 var settingsGroups = []settingsGroup{
-	{key: groupPrefix + "model", title: "Model", sections: []string{"model"}, extras: []string{menuProviders}},
+	{key: groupPrefix + "model", title: "Model", sections: []string{"model", "voice"}, extras: []string{menuProviders}},
 	{key: groupPrefix + "conversation", title: "Conversation", sections: []string{"context", "instructions", "memory"}},
 	{key: groupPrefix + "tools", title: "Tools", sections: []string{"tools", "toolmodes", "descriptions", "web"}, extras: []string{menuMCP}},
 	{key: groupPrefix + "skills", title: "Skills", sections: []string{"skills", "skillmodes"}},

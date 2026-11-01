@@ -136,6 +136,12 @@ type settingsDraft struct {
 	notifySound    string
 	soundFile      string
 
+	voiceMode       string
+	voiceAutoplay   bool
+	voiceLive       bool
+	voiceSpeakCalls bool
+	voiceSave       bool
+
 	// plugins are the settings of each plugin, by its name.
 	plugins map[string]map[string]any
 }
@@ -244,6 +250,12 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		notifyFocused:  *cfg.Notify.Focused,
 		notifySound:    cfg.Notify.Sound,
 		soundFile:      cfg.Notify.SoundFile,
+
+		voiceMode:       cfg.Voice.Mode,
+		voiceAutoplay:   *cfg.Voice.Autoplay,
+		voiceLive:       *cfg.Voice.Live,
+		voiceSpeakCalls: *cfg.Voice.SpeakCalls,
+		voiceSave:       *cfg.Voice.Save,
 
 		permMode: cfg.Permissions.Mode,
 		allow:    strings.Join(cfg.Permissions.Allow, "\n"),
@@ -437,6 +449,13 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 		Focused:   unlessDefaultFlag(d.notifyFocused, *defaults.Notify.Focused),
 		Sound:     unlessDefault(d.notifySound, defaults.Notify.Sound),
 		SoundFile: strings.TrimSpace(d.soundFile),
+	}
+	layer.Voice = config.Voice{
+		Mode:       unlessDefault(d.voiceMode, defaults.Voice.Mode),
+		Autoplay:   unlessDefaultFlag(d.voiceAutoplay, *defaults.Voice.Autoplay),
+		Live:       unlessDefaultFlag(d.voiceLive, *defaults.Voice.Live),
+		SpeakCalls: unlessDefaultFlag(d.voiceSpeakCalls, *defaults.Voice.SpeakCalls),
+		Save:       unlessDefaultFlag(d.voiceSave, *defaults.Voice.Save),
 	}
 	return d.applyPermissions(layer)
 }

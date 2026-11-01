@@ -109,7 +109,7 @@ type openAIChunk struct {
 }
 
 func (p *OpenAI) Stream(ctx context.Context, req Request, onEvent func(Event)) (Response, error) {
-	if req.Speak {
+	if req.Voice != "" {
 		return p.streamSpoken(ctx, req, onEvent)
 	}
 	p.voice.end()

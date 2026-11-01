@@ -35,6 +35,7 @@ package config
 // | CF-32 | Happy    | A file written with fetch, the tool's old name, gets web_fetch in every list and map | P0 |
 // | CF-33 | Edge     | Set under both names, the new one's is kept                          | P1       |
 // | CF-34 | Happy    | render.icons takes nerd, emoji or text, and refuses another         | P1       |
+// | CF-35 | Happy    | [voice] defaults to text+audio, played at the end and saved; a file changes each part, an unknown mode is refused | P0 |
 
 import (
 	"fmt"
@@ -623,6 +624,31 @@ func TestIconSets(t *testing.T) {
 		writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), "[render]\nicons = \"unicorns\"\n")
 		if _, err := Load(t.TempDir()); err == nil || !strings.Contains(err.Error(), "nerd, emoji or text") {
 			t.Errorf("an unknown set was taken: %v", err)
+		}
+	})
+}
+
+func TestVoiceSettings(t *testing.T) {
+	t.Run("CF-35 [voice] defaults to text+audio, played at the end and saved; a file changes each part, an unknown mode is refused", func(t *testing.T) {
+		isolatedHome(t)
+		defaults, err := Load(t.TempDir())
+		voice := defaults.Voice
+		if err != nil || voice.Mode != VoiceTextAudio || !*voice.Autoplay || *voice.Live || *voice.SpeakCalls || !*voice.Save {
+			t.Errorf("defaults %+v err %v", voice, err)
+		}
+
+		configHome := isolatedHome(t)
+		writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), "[voice]\nmode = \"audio\"\nautoplay = false\nlive = true\nspeak_calls = true\nsave = false\n")
+		set, err := Load(t.TempDir())
+		voice = set.Voice
+		if err != nil || voice.Mode != VoiceAudio || *voice.Autoplay || !*voice.Live || !*voice.SpeakCalls || *voice.Save {
+			t.Errorf("set %+v err %v", voice, err)
+		}
+
+		configHome = isolatedHome(t)
+		writeConfig(t, filepath.Join(configHome, "mo", "config.toml"), "[voice]\nmode = \"sing\"\n")
+		if _, err := Load(t.TempDir()); err == nil || !strings.Contains(err.Error(), "text+audio, audio or auto") {
+			t.Errorf("an unknown mode was taken: %v", err)
 		}
 	})
 }
