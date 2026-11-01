@@ -7,12 +7,16 @@ import (
 	"sync"
 )
 
-// inputModalities remembers what each model reads, as the server's /models
-// says it: llama-server lists text, image, audio and video there. A model
-// the server says nothing of maps to nil.
-type inputModalities struct {
+// modelModalities remembers what each model reads and writes, as the
+// server's /models says it: llama-server lists text, image, audio and video
+// there. A model the server says nothing of has neither.
+type modelModalities struct {
 	mu     sync.Mutex
-	models map[string][]string
+	models map[string]modalities
+}
+
+type modalities struct {
+	reads, writes []string
 }
 
 // takenMedia is the request's messages with the media the server says its
@@ -22,7 +26,7 @@ func (p *OpenAI) takenMedia(ctx context.Context, req Request) []Message {
 	if !slices.ContainsFunc(req.Messages, func(message Message) bool { return len(message.Media) > 0 }) {
 		return req.Messages
 	}
-	reads := p.readsOf(ctx, req.Model)
+	reads := p.modalitiesOf(ctx, req.Model).reads
 	if reads == nil {
 		return req.Messages
 	}
@@ -41,33 +45,39 @@ func (p *OpenAI) takenMedia(ctx context.Context, req Request) []Message {
 	return messages
 }
 
-func (p *OpenAI) readsOf(ctx context.Context, model string) []string {
+// Speaks tells whether the server says the model writes audio.
+func (p *OpenAI) Speaks(ctx context.Context, model string) bool {
+	return slices.Contains(p.modalitiesOf(ctx, model).writes, "audio")
+}
+
+func (p *OpenAI) modalitiesOf(ctx context.Context, model string) modalities {
 	p.modalities.mu.Lock()
 	defer p.modalities.mu.Unlock()
-	if reads, known := p.modalities.models[model]; known {
-		return reads
+	if known, found := p.modalities.models[model]; found {
+		return known
 	}
 	var list struct {
 		Data []struct {
 			ID           string `json:"id"`
 			Architecture *struct {
-				InputModalities []string `json:"input_modalities"`
+				InputModalities  []string `json:"input_modalities"`
+				OutputModalities []string `json:"output_modalities"`
 			} `json:"architecture"`
 		} `json:"data"`
 	}
 	if p.getJSON(ctx, http.MethodGet, p.url("/models"), nil, &list) != nil {
-		return nil
+		return modalities{}
 	}
-	var reads []string
+	var found modalities
 	for _, entry := range list.Data {
 		listed := entry.ID == model || len(list.Data) == 1
 		if listed && entry.Architecture != nil {
-			reads = entry.Architecture.InputModalities
+			found = modalities{reads: entry.Architecture.InputModalities, writes: entry.Architecture.OutputModalities}
 		}
 	}
 	if p.modalities.models == nil {
-		p.modalities.models = map[string][]string{}
+		p.modalities.models = map[string]modalities{}
 	}
-	p.modalities.models[model] = reads
-	return reads
+	p.modalities.models[model] = found
+	return found
 }

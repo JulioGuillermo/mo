@@ -163,6 +163,9 @@ func (m model) statusSegments(show statusParts) []segment {
 	width := ansi.StringWidth(provider)
 	segments = append(segments, segment{text: provider + modelName, bg: colors.segment, do: pickModel, menu: pickModel,
 		inner: []region{{y: 0, x0: 0, x1: width, do: openProviders, menu: openProviders}}})
+	if voice, on := m.voiceSegment(colors); on {
+		segments = append(segments, voice)
+	}
 	if !m.sidebarShown() {
 		if context := m.contextPart(show, colors); context != "" {
 			segments = append(segments, segment{text: context, bg: colors.segmentDim})

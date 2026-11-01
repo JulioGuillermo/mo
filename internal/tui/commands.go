@@ -47,6 +47,7 @@ var builtinCommands = []command{
 	{name: "login", argument: "[provider]", description: "sign in to a provider that uses OAuth, the one in use by default"},
 	{name: "logout", argument: "[provider]", description: "forget a provider's sign-in"},
 	{name: "usage", argument: "[provider]", description: "how much of the plan's limits is used: 5h, week, per model, as each provider tells"},
+	{name: "voice", argument: "[on|off|play|stop]", description: "a model that talks says its replies in its own voice too; play hears the last again, stop silences it"},
 	{name: "title", description: "name the conversation: /title <name>, or /title auto for the model to"},
 	{name: "cache", argument: "clear", description: "llama-server: erase what every slot holds, its KV cache"},
 	{name: "compact", argument: "[instruction]", description: "summarize the conversation to free context; an instruction is added under the summary prompt, as yours"},

@@ -142,6 +142,16 @@ Subscription logins have their own providers.
 weekly windows of `claude-code`, the windows of `codex`, and what is left per model of
 `antigravity`. `/usage <provider>` asks only that one. Providers paid by use or local have none.
 
+`/voice` turns on the model's own voice, for a model whose server lists audio among what it writes
+(llama-server with an omni model such as LFM3-Omni). Replies then come through the server's
+`/v1/realtime`: the text as always, and the same reply said by the model, which mo plays with the
+system's player (`pw-play`, `paplay`, `aplay` or `ffplay` on Linux, `afplay` on macOS, PowerShell on
+Windows). A line under the reply gives its length; `/voice play` plays the last again, `/voice stop`
+silences it, and `♪ voice` in the status line does either with a click. `/voice` again, or
+`/voice off`, goes back to text. The realtime conversation holds a slot of the server while it is
+open; a request that does not speak, as a title, closes it, and the next spoken one starts again
+from a transcript of the conversation.
+
 ### Notes
 
 - `copilot` needs a GitHub account with Copilot; it sends the headers in `[providers.copilot.headers]`.
@@ -936,5 +946,5 @@ examples; [docs/examples/plugins/git.lua](docs/examples/plugins/git.lua) is a co
 | click on the branch | the files changed, each with its kind |
 | right click | a small menu by the pointer, over the screen (↑↓ or j k, enter or a click, esc or a click outside closes it): the mode: all modes to pick · a task: change its state or delete it · a job in the panel, or a bash call still running: watch its output live, its last lines, send it to the background, kill it · an image drawn, its caption, or a path of a file written anywhere: copy the file as a file manager does (to paste it in one, a browser or a chat), copy the image as PNG, copy its path, open it in mo or with the system's app (copying goes through the terminal when it speaks kitty's clipboard protocol, else wl-copy or xclip, macOS's own, or on Windows Windows PowerShell) · a link, its words or an address written anywhere: open it in the browser, copy the link, copy its words |
 | wheel over the side panel | scroll its tasks and jobs |
-| `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/usage [provider]` `/compact [instruction]` `/cache clear` `/settings` `/reload` `/providers` `/mcp` `/plugins` `/agents` `/view [file]` `/git <action> [repo]` `/peers` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
+| `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/usage [provider]` `/voice [on|off|play|stop]` `/compact [instruction]` `/cache clear` `/settings` `/reload` `/providers` `/mcp` `/plugins` `/agents` `/view [file]` `/git <action> [repo]` `/peers` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
 | `/<name> text` | a plugin command |

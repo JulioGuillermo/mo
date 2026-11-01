@@ -275,6 +275,7 @@ type model struct {
 	// shownSpeeds are the live speeds as last shown, kept to the pace the
 	// reply is drawn at; nil shows them as they are.
 	shownSpeeds *shownSpeeds
+	voice       *voice
 }
 
 const agentShutdownWait = 3 * time.Second
@@ -305,7 +306,9 @@ func Run(session Session) error {
 		svgs:         &svgFrames{kitty: printer.images == render.ModeKitty, ready: func() { bridge.send(svgReadyMsg{}) }},
 		config:       watchConfig(session.WorkDir),
 		peers:        newPeerSession(),
+		voice:        &voice{},
 	}
+	m.voice.player.Changed = func() { go bridge.send(voiceChangedMsg{}) }
 	defer m.config.close()
 	m.input.SetStyles(inputStyles(m.input.Styles(), screen.dark))
 	printer.setKind(m.toolKind)
@@ -722,6 +725,12 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.queuedRead(int(msg))
 	case cacheClearedMsg:
 		return m.cacheCleared(msg)
+	case speechMsg:
+		return m.speech(msg)
+	case voiceCheckedMsg:
+		return m.voiceChecked(msg)
+	case voiceChangedMsg:
+		return m, nil
 	case usageMsg:
 		m.usage = llm.Usage(msg)
 		m.metrics = liveMetrics{}
@@ -1076,6 +1085,8 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		return m.logout(argument)
 	case "usage":
 		return m.usageCommand(argument)
+	case "voice":
+		return m.voiceCommand(argument)
 	case "continue":
 		if m.running {
 			return m.emit(m.printer.Note("the model is working already"))

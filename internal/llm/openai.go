@@ -25,7 +25,8 @@ type OpenAI struct {
 	PromptProgress bool
 	// refused are the models the server took no effort for.
 	refused    refusedEfforts
-	modalities inputModalities
+	modalities modelModalities
+	voice      voiceSession
 }
 
 type openAIMessage struct {
@@ -108,6 +109,10 @@ type openAIChunk struct {
 }
 
 func (p *OpenAI) Stream(ctx context.Context, req Request, onEvent func(Event)) (Response, error) {
+	if req.Speak {
+		return p.streamSpoken(ctx, req, onEvent)
+	}
+	p.voice.end()
 	clock := newSpeedClock()
 	headers, err := p.headers(ctx)
 	if err != nil {

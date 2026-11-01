@@ -36,6 +36,15 @@ type Message struct {
 	// Stopped marks a reply the user stopped while it was written, its
 	// text cut where it was; never sent.
 	Stopped bool `json:",omitempty"`
+	// Speech is the reply in the model's own voice, when it was asked to
+	// speak; never sent nor saved.
+	Speech *Speech `json:"-"`
+}
+
+// Speech is mono 16-bit PCM audio.
+type Speech struct {
+	PCM  []byte
+	Rate int
 }
 
 // Media is a picture, a recording or a video sent to the model with a user
@@ -85,6 +94,8 @@ type Request struct {
 	// NoThinking leaves thinking at the model's default, for the short
 	// requests of titles and the auto-mode judge.
 	NoThinking bool
+	// Speak asks a model that talks for its reply in its own voice too.
+	Speak bool
 }
 
 // Usage is what a reply cost, and how fast the prompt was read and the

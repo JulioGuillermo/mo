@@ -54,7 +54,10 @@ type Agent struct {
 	MaxTokens    int
 	// Effort is how hard a model that reasons thinks in the turns; empty
 	// is its default. Compaction and the auto-mode judge keep the default.
-	Effort       string
+	Effort string
+	// Speak asks the model for its replies in its own voice too, when it
+	// talks.
+	Speak        bool
 	Tools        *tools.Registry
 	ConfirmTools []string
 
@@ -560,6 +563,7 @@ func (a *Agent) request() llm.Request {
 		Tools:     a.Tools.Specs(a.History),
 		MaxTokens: a.MaxTokens,
 		Effort:    a.Effort,
+		Speak:     a.Speak,
 	}
 }
 

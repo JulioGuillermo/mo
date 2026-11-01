@@ -102,6 +102,10 @@ func (b *bridge) hooks() agent.Hooks {
 			if text := strings.TrimSpace(message.Text); text != "" {
 				b.draw(func() string { return b.printer.Answer(text) })
 			}
+			if message.Speech != nil {
+				b.print(b.printer.speechLine(message.Speech))
+				b.send(speechMsg(*message.Speech))
+			}
 		},
 		OnToolStart: func(call llm.ToolCall, summary string) {
 			b.send(toolStartMsg{call: call, summary: summary})
