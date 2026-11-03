@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	changeHelp = "↑↓ move · v select · e E on ⋯ show lines · f whole file · c comment · a attach · H history · / search · y copy · t tree · esc close"
+	changeHelp = "? keys · ↑↓ move · v select · e E on ⋯ show lines · f whole file · c comment · a attach · H history · / search · y copy · t tree · esc close"
 )
 
 func changeAdded() color.Color    { return col(uiNow().green) }

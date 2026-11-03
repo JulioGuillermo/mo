@@ -81,6 +81,7 @@ var keyHelp = [][2]string{
 	{"!!command", "run it, and the model reads it with your next message"},
 	{"ctrl+x", "clear what is typed; the run goes on"},
 	{"↑ with nothing typed", "bring back the messages waiting for the model, to edit them"},
+	{"f1", "the keys of the view you are in, to search"},
 	{"ctrl+t", "with /tree on, go to the files at the left and back"},
 	{"ctrl+b", "send the command that blocks the model to the background"},
 	{"vim keys", "esc normal · i a A I o insert · ctrl+h/j/k/l panes · j k gg G ctrl+d ctrl+u move · l h open and fold · v y select and copy · dd x D w b 0 $ edit · : command"},

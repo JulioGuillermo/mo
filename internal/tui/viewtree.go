@@ -16,7 +16,7 @@ const (
 	// treeNarrow is the columns a terminal needs for the tree beside a file:
 	// under it the tree has no room and folders are listed to pick from.
 	treeNarrow = 60
-	treeHelp   = "↑↓ move · →/enter open · ← close · / find · tab file · t hide"
+	treeHelp   = "↑↓ move · →/enter open · ← close · c C fold · / find · tab file · ? keys"
 )
 
 func treeFolder() lipgloss.Style { return lipgloss.NewStyle().Foreground(accent()) }
@@ -171,13 +171,7 @@ func (t *fileTree) reveal(path string, height int) {
 		t.expanded[dir] = true
 	}
 	t.rebuild()
-	for i, row := range t.rows {
-		if row.path == path {
-			t.cursor = i
-			break
-		}
-	}
-	t.show(height)
+	t.cursorTo(path, height)
 }
 
 // search applies what was typed: the files of the root that hold it, by the
@@ -450,6 +444,12 @@ func (t *fileTree) navigate(pressed string, height int) bool {
 			return false
 		}
 		t.toggle(row)
+	case "c":
+		if onRow {
+			t.foldUnder(row, height)
+		}
+	case "C":
+		t.foldAll(height)
 	default:
 		return false
 	}
@@ -465,6 +465,55 @@ func (t *fileTree) cursorToParent(row treeRow, height int) {
 			return
 		}
 	}
+}
+
+// foldUnder closes the folder of a row, the row itself when it is one, and
+// every folder inside it, the cursor put on it.
+func (t *fileTree) foldUnder(row treeRow, height int) {
+	folder := row.path
+	if !row.dir {
+		folder = filepath.Dir(row.path)
+	}
+	if folder == t.root {
+		t.foldAll(height)
+		return
+	}
+	inside := folder + string(filepath.Separator)
+	for path := range t.expanded {
+		if path == folder || strings.HasPrefix(path, inside) {
+			delete(t.expanded, path)
+		}
+	}
+	t.rebuild()
+	t.cursorTo(folder, height)
+}
+
+// foldAll closes every folder, the cursor put on the one at the top that
+// held it.
+func (t *fileTree) foldAll(height int) {
+	row, onRow := t.selected()
+	clear(t.expanded)
+	t.rebuild()
+	if !onRow {
+		return
+	}
+	relative, err := filepath.Rel(t.root, row.path)
+	if err != nil {
+		return
+	}
+	top, _, _ := strings.Cut(relative, string(filepath.Separator))
+	t.cursorTo(filepath.Join(t.root, top), height)
+}
+
+// cursorTo puts the cursor on the row of a path, if it is listed.
+func (t *fileTree) cursorTo(path string, height int) {
+	for i, row := range t.rows {
+		if row.path == path {
+			t.cursor = i
+			break
+		}
+	}
+	t.show(height)
 }
 
 // toggle opens a folder, or closes it if open.

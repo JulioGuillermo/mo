@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-const leftTreeHelp = "enter open · / find · esc"
+const leftTreeHelp = "enter open · c C fold · ? keys"
 
 // leftTreeShown tells whether the files of the project show at the left of
 // the conversation: /tree opened them, and the conversation keeps

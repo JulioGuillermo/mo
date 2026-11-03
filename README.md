@@ -398,6 +398,10 @@ opens by itself. ctrl+t goes to it and back, enter or a click opens a file in th
 agent goes on, and esc there comes back to the conversation with the tree kept. `/tree width N
 [session|global|project]` sets its columns, 30 by default, `tree_width` in `[render]`; the tree of
 `/view` takes the same width.
+In either tree, c folds the folder under the cursor with every folder inside it, and C folds them all.
+
+f1, or ? when nothing is being written, opens the keys of the view you are in, in a box you can
+scroll and search by typing.
 
 Every `bash` command is a job of the conversation, numbered, with its whole output kept in
 `~/.local/share/mo/sessions/<conversation>/jobs/`: the first and the last 25 MB of each, and up to

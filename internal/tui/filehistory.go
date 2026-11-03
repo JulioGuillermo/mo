@@ -14,8 +14,8 @@ import (
 const (
 	historyMinWidth = 34
 	historyMaxWidth = 56
-	historyListHelp = "↑↓ move · enter open · / find · ctrl+n p next prev · tab diff · t hide"
-	historyHelp     = "ctrl+n p next prev commit · tab list · e E on ⋯ show lines · f whole file · c comment · a attach · / search · y copy · t list · esc back"
+	historyListHelp = "? keys · ↑↓ move · enter open · / find · ctrl+n p next prev · tab diff · t hide"
+	historyHelp     = "? keys · ctrl+n p next prev commit · tab list · e E on ⋯ show lines · f whole file · c comment · a attach · / search · y copy · t list · esc back"
 )
 
 // historyEntry is a commit that changed the file, or its changes not

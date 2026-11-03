@@ -253,6 +253,8 @@ type model struct {
 	// left of the conversation; leftTreeFocus says it has the keys.
 	leftTree      *fileTree
 	leftTreeFocus bool
+	// keys, when open, is the dialog of the keys of the view under it.
+	keys *keysDialog
 	// sidebarSession is the side panel's mode /sidebar set for the session;
 	// empty follows the setting.
 	sidebarSession string
@@ -535,6 +537,15 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if key, ok := msg.(tea.KeyPressMsg); ok && m.pluginsTookKey(key) {
 		return m, nil
+	}
+	if m.keys != nil {
+		switch msg.(type) {
+		case tea.KeyPressMsg, tea.MouseClickMsg, tea.MouseWheelMsg, tea.MouseMotionMsg, tea.MouseReleaseMsg:
+			return m.updateKeys(msg)
+		}
+	}
+	if key, ok := msg.(tea.KeyPressMsg); ok && m.opensKeys(key) {
+		return m.openKeys()
 	}
 	if m.popup != nil && !isAgentMsg(msg) {
 		if _, tick := msg.(viewerTickMsg); !tick {
@@ -1367,6 +1378,9 @@ func (m model) View() tea.View {
 		}
 		view = tea.NewView(drawn)
 		view.WindowTitle = "mo"
+	}
+	if m.keys != nil {
+		view.Content = m.overKeys(view.Content)
 	}
 	if m.printer.showsSixel() {
 		view.Content = m.sixel.mark(view.Content)

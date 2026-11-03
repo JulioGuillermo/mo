@@ -11,7 +11,7 @@ import (
 	"github.com/jg/mo/internal/render"
 )
 
-const markdownHelp = "↑↓ scroll · m source · i images · / search · n N next · y copy the source · esc source"
+const markdownHelp = "? keys · ↑↓ scroll · m source · i images · / search · n N next · y copy the source · esc source"
 
 // markdownView is a markdown file shown rendered in the viewer, as the
 // conversation draws an answer; source is what it was drawn from, and
