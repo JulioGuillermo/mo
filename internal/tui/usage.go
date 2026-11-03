@@ -39,21 +39,15 @@ type providerUsage struct {
 	err  error
 }
 
-// usageCommand asks the providers signed in to a plan, or the one named,
-// how much of their plan's limits is used.
+const usageAll = "all"
+
+// usageCommand asks the provider named, the one in use when none is, or
+// with all every provider signed in to a plan, how much of their plan's
+// limits is used.
 func (m model) usageCommand(argument string) (tea.Model, tea.Cmd) {
-	var providers []string
-	for _, name := range slices.Sorted(maps.Keys(m.session.Config.Providers)) {
-		if hasPlan(m.session.Config.Providers[name]) {
-			providers = append(providers, name)
-		}
-	}
-	named := strings.TrimSpace(argument)
-	if named != "" {
-		if _, ok := m.session.Config.Providers[named]; !ok {
-			return m.emit(m.printer.Note("no provider " + named + " · /providers lists them"))
-		}
-		providers = []string{named}
+	providers, every := m.usageProviders(strings.TrimSpace(argument))
+	if providers == nil {
+		return m.emit(m.printer.Note("no provider " + strings.TrimSpace(argument) + " · /providers lists them"))
 	}
 	clients := map[string]*http.Client{}
 	for _, name := range providers {
@@ -71,11 +65,53 @@ func (m model) usageCommand(argument string) (tea.Model, tea.Cmd) {
 			wait.Go(func() { found[i] = askUsage(ctx, name, settings[name], clients[name]) })
 		}
 		wait.Wait()
-		if named == "" {
+		if every {
 			found = slices.DeleteFunc(found, func(usage providerUsage) bool { return errors.Is(usage.err, auth.ErrNeedsLogin) })
 		}
 		return planUsageMsg(drawUsage(found, colors, barStyle, time.Now()))
 	})
+}
+
+// usageProviders are the providers /usage asks with what was typed: the
+// one named, the one in use when nothing was, or all the ones signed in to
+// a plan; every says it is all of them. None when the name is unknown.
+func (m model) usageProviders(named string) (providers []string, every bool) {
+	if named == "" {
+		named = m.session.Provider
+	}
+	if _, ok := m.session.Config.Providers[named]; ok {
+		return []string{named}, false
+	}
+	if named != usageAll && named != "" {
+		return nil, false
+	}
+	providers = []string{}
+	for _, name := range slices.Sorted(maps.Keys(m.session.Config.Providers)) {
+		if hasPlan(m.session.Config.Providers[name]) {
+			providers = append(providers, name)
+		}
+	}
+	return providers, true
+}
+
+// usageSuggestions are what /usage can ask about that starts with what was
+// typed: the provider in use first, so it is the one chosen, then the
+// others signed in to a plan, then all of them.
+func (m model) usageSuggestions(partial string) []command {
+	var matches []command
+	current := m.session.Provider
+	if _, ok := m.session.Config.Providers[current]; ok && strings.HasPrefix(current, partial) {
+		matches = append(matches, command{name: "usage " + current, description: "in use"})
+	}
+	for _, provider := range slices.Sorted(maps.Keys(m.session.Config.Providers)) {
+		if provider != current && strings.HasPrefix(provider, partial) && hasPlan(m.session.Config.Providers[provider]) {
+			matches = append(matches, command{name: "usage " + provider})
+		}
+	}
+	if strings.HasPrefix(usageAll, partial) {
+		matches = append(matches, command{name: "usage " + usageAll, description: "every provider signed in to a plan"})
+	}
+	return matches
 }
 
 // hasPlan tells a provider signed in to a plan with limits to ask about.

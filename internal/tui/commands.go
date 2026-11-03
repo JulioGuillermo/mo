@@ -46,7 +46,7 @@ var builtinCommands = []command{
 	{name: "effort", argument: "[level]", description: "how hard the model thinks: default for its own, or a level it takes"},
 	{name: "login", argument: "[provider]", description: "sign in to a provider that uses OAuth, the one in use by default"},
 	{name: "logout", argument: "[provider]", description: "forget a provider's sign-in"},
-	{name: "usage", argument: "[provider]", description: "how much of the plan's limits is used: 5h, week, per model, as each provider tells"},
+	{name: "usage", argument: "[provider|all]", description: "how much of the plan's limits is used: 5h, week, per model; the provider in use unless another or all is named"},
 	{name: "voice", argument: "[on|off|play|stop]", description: "a model that talks says its replies in its own voice too; play hears the last again, stop silences it; /settings voice for how"},
 	{name: "title", description: "name the conversation: /title <name>, or /title auto for the model to"},
 	{name: "cache", argument: "clear", description: "llama-server: erase what every slot holds, its KV cache"},
@@ -174,12 +174,7 @@ func (m model) providerSuggestions(name, partial string) []command {
 	}
 	var matches []command
 	if name == "usage" {
-		for _, provider := range slices.Sorted(maps.Keys(m.session.Config.Providers)) {
-			if strings.HasPrefix(provider, partial) && hasPlan(m.session.Config.Providers[provider]) {
-				matches = append(matches, command{name: "usage " + provider})
-			}
-		}
-		return matches
+		return m.usageSuggestions(partial)
 	}
 	for _, provider := range slices.Sorted(maps.Keys(m.session.Config.Providers)) {
 		settings := m.session.Config.Providers[provider]

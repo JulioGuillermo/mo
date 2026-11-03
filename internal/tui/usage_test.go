@@ -6,6 +6,9 @@ package tui
 // | US-02 | Edge     | A provider without limits, or failing, says so on its line             | P1       |
 // | US-03 | Happy    | The reset reads as minutes, hours or days from now, with the time      | P1       |
 // | US-04 | Happy    | Only sign-ins to Claude, ChatGPT or Antigravity plans are asked        | P0       |
+// | US-05 | Happy    | /usage alone asks the provider in use, a name that one, all every plan | P0       |
+// | US-06 | Happy    | The suggestions put the provider in use first, then the plans, then all | P0      |
+// | US-07 | Edge     | An unknown name asks nothing; with no provider in use, all are asked   | P1       |
 
 import (
 	"errors"
@@ -82,6 +85,67 @@ func TestUsage(t *testing.T) {
 			if hasPlan(c.settings) != c.want {
 				t.Errorf("%+v: want %v", c.settings.Protocol, c.want)
 			}
+		}
+	})
+	usageModel := func() model {
+		m := conversationModel()
+		m.session.Provider = "local"
+		m.session.Config.Providers = map[string]config.ProviderConfig{
+			"local":  {Protocol: "openai"},
+			"claude": {Protocol: "claude-code", TokenFrom: "claude"},
+			"codex":  {Protocol: "responses", TokenFrom: "codex"},
+		}
+		return m
+	}
+
+	t.Run("US-05 /usage alone asks the provider in use, a name that one, all every plan", func(t *testing.T) {
+		m := usageModel()
+
+		alone, aloneAll := m.usageProviders("")
+		named, _ := m.usageProviders("codex")
+		all, every := m.usageProviders("all")
+
+		if strings.Join(alone, ",") != "local" || aloneAll {
+			t.Errorf("alone %v %v", alone, aloneAll)
+		}
+		if strings.Join(named, ",") != "codex" {
+			t.Errorf("named %v", named)
+		}
+		if strings.Join(all, ",") != "claude,codex" || !every {
+			t.Errorf("all %v %v", all, every)
+		}
+	})
+
+	t.Run("US-06 the suggestions put the provider in use first, then the plans, then all", func(t *testing.T) {
+		m := usageModel()
+		m.input.SetValue("/usage ")
+
+		var names []string
+		for _, each := range m.suggestions() {
+			names = append(names, each.name)
+		}
+		first := m.suggestions()[0]
+
+		if strings.Join(names, ",") != "usage local,usage claude,usage codex,usage all" {
+			t.Errorf("names %v", names)
+		}
+		if first.description != "in use" {
+			t.Errorf("first %+v", first)
+		}
+	})
+
+	t.Run("US-07 an unknown name asks nothing; with no provider in use, all are asked", func(t *testing.T) {
+		m := usageModel()
+
+		unknown, _ := m.usageProviders("nope")
+		m.session.Provider = ""
+		none, every := m.usageProviders("")
+
+		if unknown != nil {
+			t.Errorf("unknown %v", unknown)
+		}
+		if strings.Join(none, ",") != "claude,codex" || !every {
+			t.Errorf("none %v %v", none, every)
 		}
 	})
 }
