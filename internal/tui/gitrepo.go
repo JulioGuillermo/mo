@@ -147,14 +147,23 @@ func countBranches(count int) string {
 // pickRepo lists the repositories below dir, which is not one, to take
 // one for the request; the only one found is taken at once.
 func (m model) pickRepo(request gitRequest, dir string) (tea.Model, tea.Cmd) {
+	return m.chooseRepo(dir, "/git "+request.action, func(m model, repo string) (tea.Model, tea.Cmd) {
+		request.repo = repo
+		return m.runGitRequest(request)
+	})
+}
+
+// chooseRepo offers the repositories below dir, which is none, for the
+// command named: one found is taken at once, several are listed to pick
+// from; take gets the one chosen, by its full path.
+func (m model) chooseRepo(dir, command string, take func(m model, repo string) (tea.Model, tea.Cmd)) (tea.Model, tea.Cmd) {
 	repos, more := gitops.ReposBelow(dir)
 	switch len(repos) {
 	case 0:
-		return m.emit(m.printer.Note(fmt.Sprintf("not a git repository: %s, nor is any in the %d levels below it; /git %s <repo> takes a deeper one",
-			m.shortDir(dir), gitops.SearchDepth, request.action)))
+		return m.emit(m.printer.Note(fmt.Sprintf("not a git repository: %s, nor is any in the %d levels below it; %s <repo> takes a deeper one",
+			m.shortDir(dir), gitops.SearchDepth, command)))
 	case 1:
-		request.repo = filepath.Join(dir, repos[0])
-		return m.runGitRequest(request)
+		return take(m, filepath.Join(dir, repos[0]))
 	}
 	description := fmt.Sprintf("%s is not a repository; these are in the %d levels below it, deeper ones are not listed", m.shortDir(dir), gitops.SearchDepth)
 	if more {
@@ -165,14 +174,13 @@ func (m model) pickRepo(request gitRequest, dir string) (tea.Model, tea.Cmd) {
 	for _, repo := range repos {
 		options = append(options, huh.NewOption(repo, repo))
 	}
-	list := huh.NewSelect[string]().Title("Repository · /git " + request.action).Description(description).
+	list := huh.NewSelect[string]().Title("Repository · " + command).Description(description).
 		Filtering(true).Options(options...).Value(&picked)
 	if m.height > 0 {
 		list.Height(min(len(options)+3, max(m.height-4, settingsMinHeight)))
 	}
 	next := func(m model) (tea.Model, tea.Cmd) {
-		request.repo = filepath.Join(dir, picked)
-		return m.runGitRequest(request)
+		return take(m, filepath.Join(dir, picked))
 	}
 	closed := func(m model) (tea.Model, tea.Cmd) { return m, nil }
 	form := newForm(huh.NewGroup(list)).WithShowHelp(false)

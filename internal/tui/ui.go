@@ -264,9 +264,10 @@ type model struct {
 	// treeStatusSession is what /tree status set for the session; empty
 	// follows the setting.
 	treeStatusSession string
-	// repoRoot is the root of the repository of the work folder, as last
-	// read with the changes.
-	repoRoot string
+	// treeMarks are what git says of the files the trees list, by full
+	// path, as last read: of the repository of the work folder, or of every
+	// one below it out of any.
+	treeMarks map[string]rune
 	// keys, when open, is the dialog of the keys of the view under it.
 	keys *keysDialog
 	// sidebarSession is the side panel's mode /sidebar set for the session;

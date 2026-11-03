@@ -106,10 +106,7 @@ func (m model) treeCommand(argument string) (tea.Model, tea.Cmd) {
 	case "status":
 		return m.treeStatusCommand(words[1:])
 	case leftChanged, leftBoth:
-		if len(words) > 2 {
-			return m.emit(m.printer.Note("/tree " + first + " takes a branch or commit to compare with, or nothing for the changes not committed"))
-		}
-		return m, loadLeftChanges(m.session.WorkDir, strings.Join(words[1:], ""), first, false)
+		return m.treeChangesCommand(first, strings.Join(words[1:], " "))
 	case "":
 		if m.leftMode != "" {
 			return m.hideLeftTree()
@@ -133,7 +130,8 @@ func (m model) treeCommand(argument string) (tea.Model, tea.Cmd) {
 	if !m.leftTreeShown() {
 		note = fmt.Sprintf("files at the left from %d columns", m.treeWidth()+1+mainMinWidth)
 	}
-	return m, tea.Batch(m.fitWidth(), printText(m.printer.Note(note)))
+	read := m.readRepo()
+	return m, tea.Batch(m.fitWidth(), read, printText(m.printer.Note(note)))
 }
 
 func (m model) hideLeftTree() (tea.Model, tea.Cmd) {
@@ -145,6 +143,11 @@ func (m model) treeSuggestions(partial string) []command {
 	if rest, ok := strings.CutPrefix(partial, "width "); ok {
 		return m.widthSuggestions(treeSize, rest)
 	}
+	for _, mode := range []string{leftChanged, leftBoth} {
+		if rest, ok := strings.CutPrefix(partial, mode+" "); ok {
+			return m.treeChangesSuggestions(mode, rest)
+		}
+	}
 	status := "off"
 	if m.treeStatusOn() {
 		status = "on"
@@ -154,9 +157,9 @@ func (m model) treeSuggestions(partial string) []command {
 		{name: "tree " + sidebarOff, description: "hide them"},
 		{name: "tree files", description: "the files of the project, the tree /tree opens"},
 		{name: "tree changes", description: "the files changed and not committed, each opening its diff"},
-		{name: "tree changes ", description: "what this branch changed over another branch or a commit", argument: "<branch>", more: true},
+		{name: "tree changes ", description: "of a repository, over a branch or a commit", argument: "[repo] [branch]", more: true},
 		{name: "tree both", description: "the files above, the changes not committed below"},
-		{name: "tree both ", description: "the files above, what this branch changed over another below", argument: "<branch>", more: true},
+		{name: "tree both ", description: "the files above, the changes of a repository or over a branch below", argument: "[repo] [branch]", more: true},
 		{name: "tree status on", description: "now " + status + " · a dot in the colour of what git says of each file and folder"},
 		{name: "tree status off", description: "now " + status + " · the files without the dots of git"},
 		{name: "tree width ", description: fmt.Sprintf("now %d columns · say or set it, for the session, global or project", m.treeWidth()), more: true},

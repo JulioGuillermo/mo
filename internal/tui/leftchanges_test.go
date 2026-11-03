@@ -7,11 +7,15 @@ package tui
 // | LC-03 | Happy    | Read again after the files change, it lists the new ones, keeps the cursor and the folders closed | P0 |
 // | LC-04 | Happy    | /tree files goes back to the files; /tree off hides it and stops reading it   | P1       |
 // | LC-05 | Happy    | /tree changes <branch> lists what the branch changed over the other one       | P1       |
-// | LC-06 | Edge     | Outside a repository it says so and leaves the tree as it was                 | P1       |
+// | LC-06 | Edge     | Outside a repository, with none below, it says so and leaves the tree as it was | P1     |
 // | LC-07 | Happy    | /tree both shows the files above and the changes below, tab goes between them | P0       |
 // | LC-08 | Happy    | In both, a click on the lower half opens the diff, one on the upper the file  | P0       |
 // | LC-09 | Happy    | A file changed has a dot of its colour in the tree of files, its folders too  | P0       |
 // | LC-10 | Happy    | /tree status off takes the dots away, on brings them; the setting too         | P1       |
+// | LC-11 | Happy    | In a folder over several repositories /tree changes asks which, and lists the one picked, named | P0 |
+// | LC-12 | Happy    | /tree changes <repo> [branch] takes that repository, as /git does; one alone below is taken | P0 |
+// | LC-13 | Happy    | In a folder over repositories the dots mark the changes of all of them and their folders | P0 |
+// | LC-14 | Happy    | /tree changes suggests the repositories below and the branches               | P1       |
 
 import (
 	"path/filepath"
@@ -19,6 +23,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -164,18 +169,17 @@ func TestLeftChanges(t *testing.T) {
 		}
 	})
 
-	t.Run("LC-06 outside a repository it says so and leaves the tree as it was", func(t *testing.T) {
+	t.Run("LC-06 outside a repository, with none below, it says so and leaves the tree as it was", func(t *testing.T) {
 		m := withTree(t)
 		tree := m.leftTree
 
-		next, cmd := m.runCommand("/tree changes")
-		read, _ := next.(model).Update(cmd())
-		m = read.(model)
+		next, _ := m.runCommand("/tree changes")
+		m = next.(model)
 
 		if m.leftTree != tree || m.leftChanges != nil {
 			t.Error("the tree should stay as it was")
 		}
-		if !strings.Contains(seen(m), "no changes to show") {
+		if !strings.Contains(seen(m), "not a git repository") {
 			t.Errorf("screen:\n%s", seen(m))
 		}
 	})
@@ -281,4 +285,91 @@ func TestLeftChanges(t *testing.T) {
 			t.Errorf("on %v, setting off %v", on.(model).treeStatusOn(), m.treeStatusOn())
 		}
 	})
+
+	t.Run("LC-11 in a folder over several repositories /tree changes asks which, and lists the one picked, named", func(t *testing.T) {
+		m, parent := parentOfRepos(t, "alpha", "beta")
+
+		asked, _ := m.runCommand("/tree changes")
+		form := asked.(model).settings
+		cmd := loadLeftChanges(filepath.Join(parent, "beta"), "", leftChanged, false)
+		read, _ := m.Update(cmd())
+		m = read.(model)
+
+		if form == nil || !strings.Contains(ansi.Strip(form.form.View()), "alpha") {
+			t.Fatalf("it should ask which repository: %+v", form)
+		}
+		if changedNames(m) != "beta.txt" || !strings.Contains(seen(m), "beta · 1 file changed") {
+			t.Errorf("files %s:\n%s", changedNames(m), seen(m))
+		}
+	})
+
+	t.Run("LC-12 /tree changes <repo> [branch] takes that repository, as /git does; one alone below is taken", func(t *testing.T) {
+		m, parent := parentOfRepos(t, "alpha", "beta")
+		single, singleParent := parentOfRepos(t, "only")
+		repo, _ := git.PlainOpen(filepath.Join(parent, "alpha"))
+		head, _ := repo.Head()
+		_ = repo.Storer.SetReference(plumbing.NewHashReference("refs/heads/base", head.Hash()))
+		commitFiles(t, repo, filepath.Join(parent, "alpha"), map[string]string{"later.go": "package main\n"})
+
+		named := changesTree(t, m, "alpha")
+		overBase := changesTree(t, m, "alpha base")
+		alone := changesTree(t, single, "")
+
+		if changedNames(named) != "alpha.txt" || changedNames(overBase) != "later.go" {
+			t.Errorf("named %s, over base %s", changedNames(named), changedNames(overBase))
+		}
+		if alone.leftChanges == nil || alone.leftChanges.root != filepath.Join(singleParent, "only") {
+			t.Errorf("alone %+v", alone.leftChanges)
+		}
+	})
+
+	t.Run("LC-13 in a folder over repositories the dots mark the changes of all of them and their folders", func(t *testing.T) {
+		m, parent := parentOfRepos(t, "alpha", "group/beta")
+		opened, _ := m.runCommand("/tree")
+		m = opened.(model)
+		m.repoReading = false
+
+		updated, _ := m.Update(m.readRepo()())
+		marks := updated.(model).gitMarksFor(updated.(model).leftTree)
+
+		for _, path := range []string{"alpha/alpha.txt", "alpha", "group", "group/beta", "group/beta/beta.txt"} {
+			if marks[filepath.Join(parent, path)] == 0 {
+				t.Errorf("%s has no mark: %v", path, marks)
+			}
+		}
+	})
+
+	t.Run("LC-14 /tree changes suggests the repositories below and the branches", func(t *testing.T) {
+		m, _ := parentOfRepos(t, "alpha", "beta")
+		m.input.SetValue("/tree changes ")
+
+		var names []string
+		for _, each := range m.suggestions() {
+			names = append(names, each.name)
+		}
+
+		if strings.Join(names, ",") != "tree changes alpha,tree changes beta" {
+			t.Errorf("names %v", names)
+		}
+	})
+}
+
+// parentOfRepos is a model in a folder that is no repository, over the
+// ones named, each with a file not committed named after it.
+func parentOfRepos(t *testing.T, names ...string) (model, string) {
+	t.Helper()
+	m, _ := gitModel(t)
+	m.width, m.height = 100, 30
+	parent := t.TempDir()
+	for _, name := range names {
+		dir := filepath.Join(parent, name)
+		repo, err := git.PlainInit(dir, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		commitFiles(t, repo, dir, map[string]string{"kept.txt": "x\n"})
+		writeFile(t, filepath.Join(dir, filepath.Base(name)+".txt"), "new\n")
+	}
+	m.session.WorkDir = parent
+	return m, parent
 }

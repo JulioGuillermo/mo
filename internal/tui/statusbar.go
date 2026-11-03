@@ -318,9 +318,10 @@ func shade(c, base color.Color, amount float64) color.Color {
 // repoMsg is the branch checked out in the working directory and the files
 // changed there, read off the UI goroutine.
 type repoMsg struct {
-	root    string
 	branch  string
 	changes []gitops.Change
+	// marks are what git says of the files the trees list, by full path.
+	marks map[string]rune
 }
 
 // readRepo reads the branch and the changes when they may have changed: at
@@ -334,13 +335,17 @@ func (m *model) readRepo() tea.Cmd {
 	}
 	m.repoReading = true
 	workDir := m.session.WorkDir
+	marksBelow := m.treeStatusOn() && m.anyTreeShown()
 	return func() tea.Msg {
 		repo, err := gitops.Open(workDir)
 		if err != nil {
+			if marksBelow {
+				return repoMsg{marks: gitMarksBelow(workDir)}
+			}
 			return repoMsg{}
 		}
 		changes, _ := repo.Changes()
-		return repoMsg{root: repo.Root(), branch: repo.CurrentBranch(), changes: changes}
+		return repoMsg{branch: repo.CurrentBranch(), changes: changes, marks: gitMarks(repo.Root(), repo.Root(), changes)}
 	}
 }
 
@@ -349,7 +354,7 @@ func (m *model) readRepo() tea.Cmd {
 func (m *model) repoRead(msg repoMsg) tea.Cmd {
 	branchChanged := m.branch != msg.branch
 	m.branch, m.changes, m.repoReading = msg.branch, msg.changes, false
-	m.repoRoot = msg.root
+	m.treeMarks = msg.marks
 	var rename tea.Cmd
 	if branchChanged {
 		m.tellPeers()

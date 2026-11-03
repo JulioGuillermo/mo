@@ -48,25 +48,49 @@ func (m model) gitMarksFor(tree *fileTree) map[string]rune {
 	if tree == nil || tree.kinds != nil || !m.treeStatusOn() {
 		return nil
 	}
-	return gitMarks(m.repoRoot, m.changes)
+	return m.treeMarks
 }
 
-// gitMarks are what git says of each file changed, by its full path, and a
-// folder holding any of them marked as changed.
-func gitMarks(root string, changes []gitops.Change) map[string]rune {
-	if root == "" || len(changes) == 0 {
-		return nil
-	}
+// anyTreeShown tells whether a tree of files is on the screen: at the
+// left, or in the viewer.
+func (m model) anyTreeShown() bool {
+	return m.leftMode != "" || m.viewer != nil && m.viewer.tree != nil
+}
+
+// gitMarks are what git says of each file changed of the repository at
+// root, by its full path, and each folder holding any of them, up to top,
+// marked as changed.
+func gitMarks(top, root string, changes []gitops.Change) map[string]rune {
 	marks := map[string]rune{}
+	addGitMarks(marks, top, root, changes)
+	return marks
+}
+
+func addGitMarks(marks map[string]rune, top, root string, changes []gitops.Change) {
 	for _, change := range changes {
 		path := filepath.Join(root, filepath.FromSlash(change.Path))
 		marks[path] = change.Kind
-		for dir := filepath.Dir(path); strings.HasPrefix(dir, root) && dir != root; dir = filepath.Dir(dir) {
+		for dir := filepath.Dir(path); dir != top && strings.HasPrefix(dir, top); dir = filepath.Dir(dir) {
 			if _, marked := marks[dir]; marked {
 				break
 			}
 			marks[dir] = gitops.ChangeModified
 		}
+	}
+}
+
+// gitMarksBelow are the marks of every repository below a folder that is
+// in none, as /git finds them, their folders up to it marked too.
+func gitMarksBelow(dir string) map[string]rune {
+	repos, _ := gitops.ReposBelow(dir)
+	marks := map[string]rune{}
+	for _, relative := range repos {
+		repo, err := gitops.Open(filepath.Join(dir, relative))
+		if err != nil {
+			continue
+		}
+		changes, _ := repo.Changes()
+		addGitMarks(marks, dir, repo.Root(), changes)
 	}
 	return marks
 }

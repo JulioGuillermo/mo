@@ -348,7 +348,7 @@ func (m model) openExplorer(dir string) (tea.Model, tea.Cmd) {
 	}
 	v := &outputViewer{placeholder: true, pickFrom: -1, tree: newFileTree(dir), treeFocus: true}
 	m.viewer = v
-	return m, nil
+	return m, m.readRepo()
 }
 
 // showTree opens the tree beside the file the viewer shows, on that file, or
