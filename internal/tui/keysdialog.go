@@ -61,7 +61,7 @@ func (m model) writing() bool {
 		return false
 	}
 	if m.agentView == nil && m.leftTreeFocused() {
-		return m.leftTree.typing
+		return m.activeLeftHalf().tree.typing
 	}
 	return true
 }

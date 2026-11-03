@@ -183,7 +183,7 @@ func TestLeftTree(t *testing.T) {
 		if off.(model).leftTree != nil || stillOff.(model).leftTree != nil || wrong.(model).leftTree != nil {
 			t.Error("/tree off should hide it, and stay off")
 		}
-		if !strings.Contains(seen(wrong.(model)), "/tree takes on, off or width") {
+		if !strings.Contains(seen(wrong.(model)), "/tree takes on, off, files, changes") {
 			t.Error("a wrong argument should get a note")
 		}
 	})

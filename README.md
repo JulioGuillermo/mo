@@ -399,6 +399,15 @@ opens by itself. ctrl+t goes to it and back, enter or a click opens a file in th
 agent goes on, and esc there comes back to the conversation with the tree kept. `/tree width N
 [session|global|project]` sets its columns, 30 by default, `tree_width` in `[render]`; the tree of
 `/view` takes the same width.
+`/tree changes` lists only the files changed and not committed, and `/tree changes <branch>` what
+this branch changed over another; enter opens the diff. `/tree both` puts the files above and the
+changes below, tab going from one to the other, and `/tree files` goes back to the files alone. The
+changes are read again whenever the status line reads git.
+
+A file the tree of files lists has a dot of what git says of it at the end of its row, green new,
+amber changed, red deleted, and so has a folder holding any; `/tree status` turns them off and on,
+`tree_status` in `[render]` keeps it.
+
 In either tree, c folds the folder under the cursor with every folder inside it, and C folds them all.
 
 f1, or ? when nothing is being written, opens the keys of the view you are in, in a box you can

@@ -11,19 +11,33 @@ import (
 
 const leftTreeHelp = "enter open · c C fold · ? keys"
 
-// leftTreeShown tells whether the files of the project show at the left of
-// the conversation: /tree opened them, and the conversation keeps
-// mainMinWidth beside them.
-func (m model) leftTreeShown() bool {
-	return m.leftTree != nil && m.width >= m.treeWidth()+1+mainMinWidth
+// What the panel at the left lists.
+const (
+	leftFiles   = "files"
+	leftChanged = "changes"
+	leftBoth    = "both"
+)
+
+// leftHalf is a tree of the panel at the left and the rows it takes, from
+// the panel's top row.
+type leftHalf struct {
+	tree      *fileTree
+	top, rows int
+	changes   bool
 }
 
-// leftTreeFocused tells whether the keys go to the tree at the left.
+// leftTreeShown tells whether the panel at the left shows: /tree opened
+// it, and the conversation keeps mainMinWidth beside it.
+func (m model) leftTreeShown() bool {
+	return m.leftMode != "" && m.width >= m.treeWidth()+1+mainMinWidth
+}
+
+// leftTreeFocused tells whether the keys go to the panel at the left.
 func (m model) leftTreeFocused() bool {
 	return m.leftTreeFocus && m.leftTreeShown()
 }
 
-// leftPanelWidth is the columns the tree at the left takes, and the line
+// leftPanelWidth is the columns the panel at the left takes, and the line
 // after it.
 func (m model) leftPanelWidth() int {
 	if !m.leftTreeShown() {
@@ -42,46 +56,109 @@ func (m model) panelRows() int {
 	return rows
 }
 
+// leftHalves are the trees the panel at the left shows, in height rows:
+// one, or the files over the changes.
+func (m model) leftHalves(height int) []leftHalf {
+	switch m.leftMode {
+	case leftChanged:
+		return []leftHalf{{tree: m.leftChanges.tree, rows: height, changes: true}}
+	case leftBoth:
+		upper := height / 2
+		return []leftHalf{
+			{tree: m.leftTree, rows: upper},
+			{tree: m.leftChanges.tree, top: upper, rows: height - upper, changes: true},
+		}
+	}
+	return []leftHalf{{tree: m.leftTree, rows: height}}
+}
+
+// activeLeftHalf is the tree of the panel at the left the keys go to.
+func (m model) activeLeftHalf() leftHalf {
+	halves := m.leftHalves(m.panelRows())
+	if len(halves) == 2 && m.leftOnChanges {
+		return halves[1]
+	}
+	return halves[0]
+}
+
+// leftHalfAt is the tree of the panel at the left at a row of the screen.
+func (m model) leftHalfAt(y int) leftHalf {
+	halves := m.leftHalves(m.panelRows())
+	if len(halves) == 2 && y >= halves[1].top {
+		return halves[1]
+	}
+	return halves[0]
+}
+
 // treeCommand is /tree: alone it shows the files of the project at the
-// left, the keys in them, or hides them; on and off say which; /tree width
-// says the width, or sets it.
+// left, the keys in them, or hides them; files, changes and both pick what
+// it lists, on and off whether it shows; status the marks of git; width
+// its columns.
 func (m model) treeCommand(argument string) (tea.Model, tea.Cmd) {
 	words := strings.Fields(argument)
-	if len(words) > 0 && words[0] == "width" {
+	first := ""
+	if len(words) > 0 {
+		first = words[0]
+	}
+	switch first {
+	case "width":
 		return m.widthCommand(treeSize, words[1:])
-	}
-	show := m.leftTree == nil
-	switch argument = strings.TrimSpace(argument); argument {
+	case "status":
+		return m.treeStatusCommand(words[1:])
+	case leftChanged, leftBoth:
+		if len(words) > 2 {
+			return m.emit(m.printer.Note("/tree " + first + " takes a branch or commit to compare with, or nothing for the changes not committed"))
+		}
+		return m, loadLeftChanges(m.session.WorkDir, strings.Join(words[1:], ""), first, false)
 	case "":
+		if m.leftMode != "" {
+			return m.hideLeftTree()
+		}
 	case sidebarOn:
-		show = true
+		if m.leftMode != "" {
+			m.leftTreeFocus = true
+			return m, nil
+		}
 	case sidebarOff:
-		show = false
+		return m.hideLeftTree()
+	case leftFiles:
 	default:
-		return m.emit(m.printer.Note("/tree takes on, off or width [columns] [session|global|project]"))
+		return m.emit(m.printer.Note("/tree takes on, off, files, changes [branch], both [branch], status [on|off] or width [columns] [session|global|project]"))
 	}
-	if !show {
-		m.leftTree, m.leftTreeFocus = nil, false
-		return m, tea.Batch(m.fitWidth(), printText(m.printer.Note("files hidden")))
-	}
-	note := "files at the left · ctrl+t goes to them and back · /tree hides them"
+	m.leftMode, m.leftChanges, m.leftOnChanges, m.leftTreeFocus = leftFiles, nil, false, true
 	if m.leftTree == nil {
 		m.leftTree = newFileTree(m.session.WorkDir)
 	}
-	m.leftTreeFocus = true
+	note := "files at the left · ctrl+t goes to them and back · /tree changes or both for what changed · /tree off hides them"
 	if !m.leftTreeShown() {
 		note = fmt.Sprintf("files at the left from %d columns", m.treeWidth()+1+mainMinWidth)
 	}
 	return m, tea.Batch(m.fitWidth(), printText(m.printer.Note(note)))
 }
 
+func (m model) hideLeftTree() (tea.Model, tea.Cmd) {
+	m.leftMode, m.leftTree, m.leftChanges, m.leftTreeFocus = "", nil, nil, false
+	return m, tea.Batch(m.fitWidth(), printText(m.printer.Note("files hidden")))
+}
+
 func (m model) treeSuggestions(partial string) []command {
 	if rest, ok := strings.CutPrefix(partial, "width "); ok {
 		return m.widthSuggestions(treeSize, rest)
 	}
+	status := "off"
+	if m.treeStatusOn() {
+		status = "on"
+	}
 	options := []command{
 		{name: "tree " + sidebarOn, description: "the files of the project at the left, until /tree off"},
 		{name: "tree " + sidebarOff, description: "hide them"},
+		{name: "tree files", description: "the files of the project, the tree /tree opens"},
+		{name: "tree changes", description: "the files changed and not committed, each opening its diff"},
+		{name: "tree changes ", description: "what this branch changed over another branch or a commit", argument: "<branch>", more: true},
+		{name: "tree both", description: "the files above, the changes not committed below"},
+		{name: "tree both ", description: "the files above, what this branch changed over another below", argument: "<branch>", more: true},
+		{name: "tree status on", description: "now " + status + " · a dot in the colour of what git says of each file and folder"},
+		{name: "tree status off", description: "now " + status + " · the files without the dots of git"},
 		{name: "tree width ", description: fmt.Sprintf("now %d columns · say or set it, for the session, global or project", m.treeWidth()), more: true},
 	}
 	var matches []command
@@ -93,15 +170,16 @@ func (m model) treeSuggestions(partial string) []command {
 	return matches
 }
 
-// leftTreeKey is a key pressed while the tree at the left has the focus.
+// leftTreeKey is a key pressed while the panel at the left has the focus.
 func (m model) leftTreeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	tree := m.leftTree
+	half := m.activeLeftHalf()
+	tree := half.tree
 	if tree.typing {
 		tree.typeSearch(msg)
 		return m, nil
 	}
 	pressed := msg.String()
-	if tree.navigate(pressed, m.panelRows()-2) {
+	if tree.navigate(pressed, half.rows-2) {
 		return m, nil
 	}
 	row, onFile := tree.selected()
@@ -113,11 +191,17 @@ func (m model) leftTreeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.leftTreeFocus = false
-	case "tab", "ctrl+t":
+	case "tab":
+		if m.leftMode == leftBoth {
+			m.leftOnChanges = !m.leftOnChanges
+			return m, nil
+		}
+		m.leftTreeFocus = false
+	case "ctrl+t":
 		m.leftTreeFocus = false
 	case "right", "l", "enter", "space":
 		if onFile {
-			return m.openFromLeftTree(row.path)
+			return m.openFromLeftTree(half, row.path)
 		}
 	case "/":
 		tree.typing, tree.typed = true, tree.filter
@@ -125,28 +209,32 @@ func (m model) leftTreeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// openFromLeftTree shows a file over the conversation, with the same tree
-// beside it, while the agent goes on; closing it comes back here.
-func (m model) openFromLeftTree(path string) (tea.Model, tea.Cmd) {
+// openFromLeftTree shows a file over the conversation, or its diff when it
+// is one of the changes, with the same tree beside it, while the agent goes
+// on; closing it comes back here.
+func (m model) openFromLeftTree(half leftHalf, path string) (tea.Model, tea.Cmd) {
+	if half.changes {
+		return m.openLeftChange(path)
+	}
 	next, cmd := m.viewPath(path)
 	opened := next.(model)
 	if opened.viewer == nil {
 		return opened, cmd
 	}
 	opened.leftTreeFocus = false
-	opened.viewer.tree = opened.leftTree
-	opened.leftTree.current = path
-	opened.leftTree.show(opened.treeHeight())
+	opened.viewer.tree = half.tree
+	half.tree.current = path
+	half.tree.show(opened.treeHeight())
 	return opened, cmd
 }
 
-// inLeftTree tells whether a cell of the screen is on the tree at the left.
+// inLeftTree tells whether a cell of the screen is on the panel at the left.
 func (m model) inLeftTree(x, y int) bool {
 	return m.leftTreeShown() && x < m.treeWidth() && y < m.panelRows()
 }
 
 // paneX is a column of the screen as the conversation and the side panel
-// count it, past the tree at the left over the input.
+// count it, past the panel at the left over the input.
 func (m model) paneX(x, y int) int {
 	if y >= m.panelRows() {
 		return x
@@ -154,16 +242,17 @@ func (m model) paneX(x, y int) int {
 	return max(x-m.leftPanelWidth(), 0)
 }
 
-// leftTreeClick is a click on the tree at the left, row y of the screen.
+// leftTreeClick is a click on the panel at the left, row y of the screen.
 func (m model) leftTreeClick(y int) (tea.Model, tea.Cmd) {
-	m.leftTreeFocus = true
-	if file, picked := m.leftTree.pick(y); picked {
-		return m.openFromLeftTree(file)
+	half := m.leftHalfAt(y)
+	m.leftTreeFocus, m.leftOnChanges = true, half.changes
+	if file, picked := half.tree.pick(y - half.top); picked {
+		return m.openFromLeftTree(half, file)
 	}
 	return m, nil
 }
 
-// withLeftTree puts the tree on the left of the rows over the input.
+// withLeftTree puts the panel on the left of the rows over the input.
 func (m model) withLeftTree(screen string) string {
 	if !m.leftTreeShown() {
 		return screen
@@ -172,9 +261,20 @@ func (m model) withLeftTree(screen string) string {
 	rows := strings.Split(screen, "\n")
 	height := min(m.panelRows(), len(rows))
 	focused := m.leftTreeFocused()
-	tree := m.leftTree.lines(width, height, focused, m.treeIconSet())
-	if !m.leftTree.typing {
-		tree[len(tree)-1] = padTo(dimStyle.Render(ansi.Truncate(leftTreeHelp, width, "…")), width)
+	halves := m.leftHalves(height)
+	var left []string
+	for i, half := range halves {
+		active := focused && (len(halves) == 1 || half.changes == m.leftOnChanges)
+		lines := half.tree.lines(width, half.rows, active, m.treeIconSet(), m.gitMarksFor(half.tree))
+		last := len(lines) - 1
+		switch {
+		case half.tree.typing:
+		case i < len(halves)-1:
+			lines[last] = dimStyle.Render(strings.Repeat("─", width))
+		default:
+			lines[last] = padTo(dimStyle.Render(ansi.Truncate(leftTreeHelp, width, "…")), width)
+		}
+		left = append(left, lines...)
 	}
 	divider := dimStyle.Render("│")
 	if focused {
@@ -182,16 +282,18 @@ func (m model) withLeftTree(screen string) string {
 	}
 	room := m.width - width - 1
 	for i := range height {
-		rows[i] = tree[i] + divider + ansi.Truncate(rows[i], room, "")
+		rows[i] = left[i] + divider + ansi.Truncate(rows[i], room, "")
 	}
 	return strings.Join(rows, "\n")
 }
 
-// scrollLeftTree moves the cursor of the tree at the left as the wheel turns.
-func (m *model) scrollLeftTree(up bool) {
+// scrollLeftTree moves the cursor of the tree under the pointer as the
+// wheel turns.
+func (m *model) scrollLeftTree(y int, up bool) {
 	by := sidebarWheelStep
 	if up {
 		by = -by
 	}
-	m.leftTree.move(by, m.panelRows()-2)
+	half := m.leftHalfAt(y)
+	half.tree.move(by, half.rows-2)
 }

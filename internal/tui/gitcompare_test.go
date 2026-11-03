@@ -97,8 +97,8 @@ func TestGitCompare(t *testing.T) {
 		tree := m.viewer.tree
 		tree.cursor = 2
 
-		focused := tree.lines(40, 10, true, iconsText)
-		blurred := tree.lines(40, 10, false, iconsText)
+		focused := tree.lines(40, 10, true, iconsText, nil)
+		blurred := tree.lines(40, 10, false, iconsText, nil)
 
 		red := "38;2;247;118;142"
 		for name, lines := range map[string][]string{"focused": focused, "blurred": blurred} {

@@ -875,6 +875,11 @@ func appearanceItems(_ model, menu *settingsMenu) []settingItem {
 				Description("who last changed the cursor's line and in which commit, at its end; B turns it on and off there\nit reads the file's whole history, which takes seconds in a large repository").
 				Affirmative("On").Negative("Off").Value(&d.blame)
 		}},
+		{"File tree git marks", func(d *settingsDraft) string { return onOff(d.treeStatus) }, func(d *settingsDraft) huh.Field {
+			return huh.NewConfirm().Title("File tree git marks").
+				Description("a dot beside each file and folder of /tree and /view, green new, amber changed, red deleted\n/tree status turns it on and off for the session").
+				Affirmative("On").Negative("Off").Value(&d.treeStatus)
+		}},
 	}, replyItems(menu)...)
 }
 

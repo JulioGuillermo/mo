@@ -131,7 +131,7 @@ func (m model) lens() model {
 	info, _ := m.agentInfo(view.id)
 	v := m
 	v.agentView, v.lensOf, v.popup, v.shownSpeeds = nil, view.id, nil, nil
-	v.leftTree = nil
+	v.leftTree, v.leftChanges, v.leftMode = nil, nil, ""
 	v.height = max(m.height-1, 3)
 	v.blocks, v.todos = view.blocks, view.todos
 	v.top, v.scrolled = view.top, view.scrolled

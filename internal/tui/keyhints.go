@@ -16,9 +16,13 @@ var treeMoveHints = []keyHint{
 var leftTreeHints = append(append([]keyHint{}, treeMoveHints...),
 	keyHint{"→ l", "open the folder"},
 	keyHint{"enter, space, → l on a file, click", "show the file in the viewer while the agent goes on; esc there comes back"},
-	keyHint{"esc, tab, ctrl+t", "back to the conversation, the tree kept"},
+	keyHint{"esc, ctrl+t", "back to the conversation, the tree kept"},
+	keyHint{"tab", "with /tree both, from the files to the changes and back; else back to the conversation"},
 	keyHint{"wheel", "move along the tree"},
-	keyHint{"/tree off, /tree width N", "hide it, set its columns"},
+	keyHint{"/tree changes [branch]", "the files changed, not committed or over a branch; enter shows the diff"},
+	keyHint{"/tree both [branch]", "the files above, the changes below"},
+	keyHint{"/tree status", "the dots of git beside the files, on or off"},
+	keyHint{"/tree files, /tree off, /tree width N", "the files again, hide it, set its columns"},
 )
 
 var viewerTreeHints = append(append([]keyHint{}, treeMoveHints...),

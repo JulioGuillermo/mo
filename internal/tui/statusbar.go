@@ -318,6 +318,7 @@ func shade(c, base color.Color, amount float64) color.Color {
 // repoMsg is the branch checked out in the working directory and the files
 // changed there, read off the UI goroutine.
 type repoMsg struct {
+	root    string
 	branch  string
 	changes []gitops.Change
 }
@@ -339,7 +340,7 @@ func (m *model) readRepo() tea.Cmd {
 			return repoMsg{}
 		}
 		changes, _ := repo.Changes()
-		return repoMsg{branch: repo.CurrentBranch(), changes: changes}
+		return repoMsg{root: repo.Root(), branch: repo.CurrentBranch(), changes: changes}
 	}
 }
 
@@ -348,6 +349,7 @@ func (m *model) readRepo() tea.Cmd {
 func (m *model) repoRead(msg repoMsg) tea.Cmd {
 	branchChanged := m.branch != msg.branch
 	m.branch, m.changes, m.repoReading = msg.branch, msg.changes, false
+	m.repoRoot = msg.root
 	var rename tea.Cmd
 	if branchChanged {
 		m.tellPeers()

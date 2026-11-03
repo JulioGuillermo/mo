@@ -253,6 +253,20 @@ type model struct {
 	// left of the conversation; leftTreeFocus says it has the keys.
 	leftTree      *fileTree
 	leftTreeFocus bool
+	// leftMode is what the panel at the left lists, files, changes or both,
+	// empty when hidden; leftChanges is the comparison it lists, over
+	// leftChangesBase or not committed when empty; leftOnChanges says the
+	// keys go to the changes when both show.
+	leftMode        string
+	leftChanges     *changeView
+	leftChangesBase string
+	leftOnChanges   bool
+	// treeStatusSession is what /tree status set for the session; empty
+	// follows the setting.
+	treeStatusSession string
+	// repoRoot is the root of the repository of the work folder, as last
+	// read with the changes.
+	repoRoot string
 	// keys, when open, is the dialog of the keys of the view under it.
 	keys *keysDialog
 	// sidebarSession is the side panel's mode /sidebar set for the session;
@@ -678,7 +692,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.tickJobs(), read)
 	case tea.MouseWheelMsg:
 		if m.inLeftTree(msg.X, msg.Y) {
-			m.scrollLeftTree(msg.Button == tea.MouseWheelUp)
+			m.scrollLeftTree(msg.Y, msg.Button == tea.MouseWheelUp)
 			return m, nil
 		}
 		if m.sidebarShown() && m.paneX(msg.X, msg.Y) > m.mainWidth() {
@@ -774,7 +788,12 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, read
 	case repoMsg:
 		again := m.repoRead(msg)
-		return m, again
+		if m.leftTree != nil && m.leftTree.filter == "" {
+			m.leftTree.rebuild()
+		}
+		return m, tea.Batch(again, m.readLeftChangesAgain())
+	case leftChangesMsg:
+		return m.leftChangesRead(msg)
 	case tea.BlurMsg:
 		m.focused = false
 		return m, nil

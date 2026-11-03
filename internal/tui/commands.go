@@ -60,7 +60,7 @@ var builtinCommands = []command{
 	{name: "mcp", description: "MCP servers: status, add, edit, delete"},
 	{name: "plugins", description: "plugins and their commands"},
 	{name: "notify", description: "send a test notification"},
-	{name: "tree", argument: "[on|off|width]", description: "show or hide the files of the project at the left; ctrl+t goes to them, enter opens one while the agent works"},
+	{name: "tree", argument: "[on|off|files|changes|both|status|width]", description: "show or hide the files of the project at the left; ctrl+t goes to them, enter opens one while the agent works"},
 	{name: "sidebar", description: "show or hide the side panel of tasks and jobs; auto, on or off"},
 	{name: "vim", description: "vim keys on or off for this session; render.keys in /settings keeps it"},
 	{name: "jobs", argument: "[tell]", description: "background jobs; tell: let the model hear the ones that ended now"},

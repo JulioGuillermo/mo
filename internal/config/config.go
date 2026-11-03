@@ -466,6 +466,9 @@ type Render struct {
 	// Blame shows, in the file viewer, who last changed the line the
 	// cursor is on and in which commit; off unless true.
 	Blame *bool `toml:"blame,omitempty"`
+	// TreeStatus marks each file and folder of the file trees with a dot in
+	// the colour of what git says of it; on unless false.
+	TreeStatus *bool `toml:"tree_status,omitempty"`
 }
 
 // The side panel's width in columns.
@@ -1156,6 +1159,9 @@ func mergeHarmless(base, layer Config) Config {
 	base.Render.Mode = override(base.Render.Mode, layer.Render.Mode)
 	if layer.Render.Blame != nil {
 		base.Render.Blame = layer.Render.Blame
+	}
+	if layer.Render.TreeStatus != nil {
+		base.Render.TreeStatus = layer.Render.TreeStatus
 	}
 	base.Render.Icons = override(base.Render.Icons, layer.Render.Icons)
 	base.Loop = mergeLoop(base.Loop, layer.Loop)

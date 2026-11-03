@@ -57,6 +57,8 @@ type fileTree struct {
 	// unset; kinds is what happened to each file of a comparison, by path.
 	listing func(dir string) (folders, files []string)
 	kinds   map[string]rune
+	// label, when set, is the title in place of the root's name.
+	label string
 }
 
 func newFileTree(root string) *fileTree {
@@ -194,7 +196,7 @@ func (t *fileTree) search(typed string) {
 
 // lines are height lines of the tree, each width wide: the title, the rows from
 // the top, the help.
-func (t *fileTree) lines(width, height int, focused bool, icons string) []string {
+func (t *fileTree) lines(width, height int, focused bool, icons string, marks map[string]rune) []string {
 	title := treeTitle(t, width)
 	out := []string{padTo(title, width)}
 	for i := t.top; i < t.top+height-2; i++ {
@@ -203,61 +205,8 @@ func (t *fileTree) lines(width, height int, focused bool, icons string) []string
 			continue
 		}
 		row := t.rows[i]
-		indent := strings.Repeat("  ", row.depth)
-		icon, hasIcon := iconOf(icons, filepath.Base(row.name), row.dir, row.open)
-		var mark, tint string
-		switch {
-		case hasIcon:
-			mark = icon.glyph + " "
-			tint = mark
-			if icon.color != nil {
-				tint = lipgloss.NewStyle().Foreground(icon.color).Render(icon.glyph) + " "
-			}
-		case row.dir && row.open:
-			mark, tint = "▾ ", "▾ "
-		case row.dir:
-			mark, tint = "▸ ", "▸ "
-		case t.filter == "":
-			mark, tint = "  ", "  "
-		}
-		name := row.name
-		if row.dir && !hasIcon {
-			name += "/"
-		}
-		// What the row says, as plain text, for the cursor to colour whole, and
-		// as it is coloured otherwise.
-		plain := ansi.Truncate(indent+mark+name, width, "…")
-		var text string
-		kind, changed := t.kinds[row.path]
-		switch {
-		case i == t.cursor && changed:
-			// A changed file keeps its colour under the cursor, the cursor
-			// shown by the colour's ground or by underlining it.
-			style := changeStyle(kind, row.path == t.current)
-			if focused {
-				style = style.Reverse(true)
-				plain = padTo(plain, width)
-			} else {
-				style = style.Underline(true)
-			}
-			text = style.Render(plain)
-		case i == t.cursor && focused:
-			text = treeFocused.Render(padTo(plain, width))
-		case i == t.cursor:
-			text = treeBlurred.Render(plain)
-		default:
-			label := name
-			switch {
-			case row.dir:
-				label = treeFolder().Render(name)
-			case changed:
-				label = changeStyle(kind, row.path == t.current).Render(name)
-			case row.path == t.current:
-				label = treeOpened().Render(name)
-			}
-			text = ansi.Truncate(indent+tint+label, width, "…")
-		}
-		out = append(out, padTo(text, width))
+		mark, marked := marks[row.path]
+		out = append(out, t.rowLine(i, row, width, focused, icons, mark, marked))
 	}
 	help := treeHelp
 	if t.typing {
@@ -267,12 +216,85 @@ func (t *fileTree) lines(width, height int, focused bool, icons string) []string
 	return out
 }
 
+// rowLine is a row of the tree drawn width wide, with the dot of what git
+// says of it at its end when marked.
+func (t *fileTree) rowLine(i int, row treeRow, width int, focused bool, icons string, kind rune, marked bool) string {
+	if !marked {
+		return t.rowText(i, row, width, focused, icons)
+	}
+	dot := changeStyle(kind, false).Render(treeStatusDot)
+	return padTo(t.rowText(i, row, width-2, focused, icons), width-2) + " " + dot
+}
+
+// rowText is what a row of the tree says, width wide: its name, indented,
+// with its icon, coloured by what it is and whether the cursor is on it.
+func (t *fileTree) rowText(i int, row treeRow, width int, focused bool, icons string) string {
+	indent := strings.Repeat("  ", row.depth)
+	icon, hasIcon := iconOf(icons, filepath.Base(row.name), row.dir, row.open)
+	var mark, tint string
+	switch {
+	case hasIcon:
+		mark = icon.glyph + " "
+		tint = mark
+		if icon.color != nil {
+			tint = lipgloss.NewStyle().Foreground(icon.color).Render(icon.glyph) + " "
+		}
+	case row.dir && row.open:
+		mark, tint = "▾ ", "▾ "
+	case row.dir:
+		mark, tint = "▸ ", "▸ "
+	case t.filter == "":
+		mark, tint = "  ", "  "
+	}
+	name := row.name
+	if row.dir && !hasIcon {
+		name += "/"
+	}
+	// What the row says, as plain text, for the cursor to colour whole, and
+	// as it is coloured otherwise.
+	plain := ansi.Truncate(indent+mark+name, width, "…")
+	var text string
+	kind, changed := t.kinds[row.path]
+	switch {
+	case i == t.cursor && changed:
+		// A changed file keeps its colour under the cursor, the cursor
+		// shown by the colour's ground or by underlining it.
+		style := changeStyle(kind, row.path == t.current)
+		if focused {
+			style = style.Reverse(true)
+			plain = padTo(plain, width)
+		} else {
+			style = style.Underline(true)
+		}
+		text = style.Render(plain)
+	case i == t.cursor && focused:
+		text = treeFocused.Render(padTo(plain, width))
+	case i == t.cursor:
+		text = treeBlurred.Render(plain)
+	default:
+		label := name
+		switch {
+		case row.dir:
+			label = treeFolder().Render(name)
+		case changed:
+			label = changeStyle(kind, row.path == t.current).Render(name)
+		case row.path == t.current:
+			label = treeOpened().Render(name)
+		}
+		text = ansi.Truncate(indent+tint+label, width, "…")
+	}
+	return padTo(text, width)
+}
+
 func treeTitle(t *fileTree, width int) string {
 	switch {
 	case t.typing:
 		return keyStyle().Render("/") + ansi.Truncate(t.typed, width-3, "") + "▏"
 	case t.filter != "":
 		return keyStyle().Render("/") + ansi.Truncate(t.filter, width-12, "…") + dimStyle.Render(fmt.Sprintf(" · %d found", len(t.found)))
+	}
+	if t.label != "" {
+		return toolName().Render(ansi.Truncate(t.label, width, "…"))
 	}
 	return toolName().Render(ansi.Truncate(filepath.Base(t.root)+"/", width, "…"))
 }
@@ -516,6 +538,17 @@ func (t *fileTree) cursorTo(path string, height int) {
 	t.show(height)
 }
 
+// knows tells whether a tree of changes lists a folder, open or not.
+func (t *fileTree) knows(folder string) bool {
+	inside := folder + string(filepath.Separator)
+	for _, path := range t.indexed {
+		if strings.HasPrefix(filepath.Join(t.root, path), inside) {
+			return true
+		}
+	}
+	return false
+}
+
 // toggle opens a folder, or closes it if open.
 func (t *fileTree) toggle(folder treeRow) {
 	if folder.open {
@@ -598,7 +631,7 @@ func (m model) treeLayout(body string) string {
 	v := m.viewer
 	width := m.treeWidth()
 	rows := strings.Split(body, "\n")
-	left := v.tree.lines(width, len(rows), v.treeFocus, m.treeIconSet())
+	left := v.tree.lines(width, len(rows), v.treeFocus, m.treeIconSet(), m.gitMarksFor(v.tree))
 	divider := dimStyle.Render("│")
 	if v.treeFocus {
 		divider = treeFolder().Render("│")

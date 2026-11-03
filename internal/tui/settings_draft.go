@@ -59,6 +59,7 @@ type settingsDraft struct {
 	images       string
 	cellSize     string
 	blame        bool
+	treeStatus   bool
 	syntax       string
 	uiTheme      string
 	uiMode       string
@@ -191,6 +192,7 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		images:           string(cfg.Render.Images),
 		cellSize:         cfg.Render.CellSize,
 		blame:            cfg.Render.Blame != nil && *cfg.Render.Blame,
+		treeStatus:       cfg.Render.TreeStatus == nil || *cfg.Render.TreeStatus,
 		syntax:           cfg.Render.Syntax,
 		uiTheme:          cfg.Render.Theme,
 		uiMode:           cfg.Render.Mode,
@@ -442,6 +444,7 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	}
 	layer.Render.CellSize = unlessDefault(cellSize, defaults.Render.CellSize)
 	layer.Render.Blame = unlessDefaultFlag(d.blame, false)
+	layer.Render.TreeStatus = unlessDefaultFlag(d.treeStatus, true)
 	layer.Render.Syntax = unlessDefault(d.syntax, defaults.Render.Syntax)
 	layer.Render.Theme = unlessDefault(d.uiTheme, defaults.Render.Theme)
 	layer.Render.Mode = unlessDefault(d.uiMode, defaults.Render.Mode)
