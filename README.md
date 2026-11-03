@@ -393,6 +393,12 @@ above the input while a task is left. With `sidebar = "on"` the panel shows on a
 terminal too, as long as the conversation keeps 30 columns. `/sidebar` hides or shows it for the
 session, and `/sidebar auto|on|off` picks the mode.
 
+`/tree` shows the files of the project at the left of the conversation, until `/tree off`; it never
+opens by itself. ctrl+t goes to it and back, enter or a click opens a file in the viewer while the
+agent goes on, and esc there comes back to the conversation with the tree kept. `/tree width N
+[session|global|project]` sets its columns, 30 by default, `tree_width` in `[render]`; the tree of
+`/view` takes the same width.
+
 Every `bash` command is a job of the conversation, numbered, with its whole output kept in
 `~/.local/share/mo/sessions/<conversation>/jobs/`: the first and the last 25 MB of each, and up to
 500 MB a conversation, the oldest going first. A long output reaches the model cut, with the job

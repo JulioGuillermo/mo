@@ -11,7 +11,6 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/team"
 	"github.com/jg/mo/internal/tools"
 )
@@ -45,25 +44,20 @@ type jobStartedMsg tools.JobStatus
 // auto shows it when the terminal is wide, on whenever the conversation
 // keeps mainMinWidth beside it.
 func (m model) sidebarShown() bool {
+	room := m.width - m.leftPanelWidth()
 	switch m.sidebarMode() {
 	case sidebarOff:
 		return false
 	case sidebarOn:
-		return m.width >= m.sidebarWidth()+1+mainMinWidth
+		return room >= m.sidebarWidth()+1+mainMinWidth
 	}
-	return m.width >= m.sidebarWidth()+sidebarAutoRoom
+	return room >= m.sidebarWidth()+sidebarAutoRoom
 }
 
 // sidebarWidth is the side panel's columns: those /sidebar width set for
 // the session, else the setting's.
 func (m model) sidebarWidth() int {
-	if m.sidebarSessionWidth > 0 {
-		return m.sidebarSessionWidth
-	}
-	if width := m.session.Config.Render.SidebarWidth; width > 0 {
-		return width
-	}
-	return config.DefaultSidebarWidth
+	return m.panelWidth(sidebarSize)
 }
 
 // sidebarMode is the side panel's mode: the one /sidebar set for the
@@ -79,7 +73,7 @@ var sidebarModes = []string{sidebarAuto, sidebarOn, sidebarOff}
 // /sidebar width says the width, or sets it.
 func (m model) sidebarCommand(argument string) (tea.Model, tea.Cmd) {
 	if rest, ok := strings.CutPrefix(strings.TrimSpace(argument), "width"); ok && (rest == "" || rest[0] == ' ') {
-		return m.sidebarWidthCommand(strings.Fields(rest))
+		return m.widthCommand(sidebarSize, strings.Fields(rest))
 	}
 	mode := strings.TrimSpace(argument)
 	switch {
@@ -105,7 +99,7 @@ func (m model) sidebarSuggestions(partial string) []command {
 		sidebarOff:  "never: tasks above the input",
 	}
 	if rest, ok := strings.CutPrefix(partial, "width "); ok {
-		return m.sidebarWidthSuggestions(rest)
+		return m.widthSuggestions(sidebarSize, rest)
 	}
 	var matches []command
 	if strings.HasPrefix("width", partial) {
@@ -127,10 +121,11 @@ func (m model) sidebarSuggestions(partial string) []command {
 // mainWidth is the width of the conversation, beside the side panel when
 // it shows.
 func (m model) mainWidth() int {
+	width := m.width - m.leftPanelWidth()
 	if m.sidebarShown() {
-		return m.width - m.sidebarWidth() - 1
+		return width - m.sidebarWidth() - 1
 	}
-	return m.width
+	return width
 }
 
 // fitWidth draws again at the conversation's width after the side panel

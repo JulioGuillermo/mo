@@ -249,12 +249,19 @@ type model struct {
 	// itself, with kitty's clipboard protocol: files and images too, over
 	// SSH as well.
 	terminalCopies bool
+	// leftTree, when /tree opened it, is the files of the project at the
+	// left of the conversation; leftTreeFocus says it has the keys.
+	leftTree      *fileTree
+	leftTreeFocus bool
 	// sidebarSession is the side panel's mode /sidebar set for the session;
 	// empty follows the setting.
 	sidebarSession string
 	// sidebarSessionWidth is the side panel's width /sidebar width set for
 	// the session; 0 keeps the setting's.
 	sidebarSessionWidth int
+	// treeSessionWidth is the file tree's width /tree width set for the
+	// session; 0 keeps the setting's.
+	treeSessionWidth int
 	// sidebarScroll is how many of the panel's lines the wheel scrolled past.
 	sidebarScroll int
 	// openSection is the settings section to open once settings load, as
@@ -451,8 +458,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.thumbnailDrawn(msg)
 	case blameReadMsg:
 		return m.blameRead(msg)
-	case sidebarWidthSaved:
-		return m.sidebarWidthSaved(msg)
+	case panelWidthSaved:
+		return m.panelWidthSaved(msg)
 	case historyReadMsg:
 		return m.historyRead(msg)
 	case mcpTestedMsg:
@@ -610,20 +617,24 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.addReasoning(string(msg))
 		return m, nil
 	case tea.MouseClickMsg:
-		switch msg.Button {
-		case tea.MouseLeft:
-			return m.press(msg.X, msg.Y)
-		case tea.MouseRight:
+		if msg.Button == tea.MouseRight {
 			return m.rightClick(msg.X, msg.Y)
 		}
-		return m, nil
+		if msg.Button != tea.MouseLeft {
+			return m, nil
+		}
+		if m.inLeftTree(msg.X, msg.Y) {
+			return m.leftTreeClick(msg.Y)
+		}
+		m.leftTreeFocus = false
+		return m.press(m.paneX(msg.X, msg.Y), msg.Y)
 	case tea.MouseMotionMsg:
 		if msg.Button != tea.MouseLeft {
 			return m, nil
 		}
-		return m.drag(msg.X, msg.Y)
+		return m.drag(m.paneX(msg.X, msg.Y), msg.Y)
 	case tea.MouseReleaseMsg:
-		return m.release(msg.X, msg.Y)
+		return m.release(m.paneX(msg.X, msg.Y), msg.Y)
 	case modeSaveMsg:
 		return m.saveMode(msg)
 	case modeSavedMsg:
@@ -655,7 +666,11 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		read := m.readRepo()
 		return m, tea.Batch(m.tickJobs(), read)
 	case tea.MouseWheelMsg:
-		if m.sidebarShown() && msg.X > m.mainWidth() {
+		if m.inLeftTree(msg.X, msg.Y) {
+			m.scrollLeftTree(msg.Button == tea.MouseWheelUp)
+			return m, nil
+		}
+		if m.sidebarShown() && m.paneX(msg.X, msg.Y) > m.mainWidth() {
 			m.scrollSidebar(msg.Button == tea.MouseWheelUp)
 			return m, nil
 		}
@@ -794,6 +809,13 @@ func (m *model) resize(size tea.WindowSizeMsg) tea.Cmd {
 func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.dialog != nil {
 		return m.handleDialogKey(msg)
+	}
+	if m.leftTreeFocused() {
+		return m.leftTreeKey(msg)
+	}
+	if msg.String() == "ctrl+t" && m.leftTreeShown() {
+		m.leftTreeFocus = true
+		return m, nil
 	}
 	if m.vimOn() {
 		if handled, next, cmd := m.vimKey(msg); handled {
@@ -1120,6 +1142,8 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		return m.emit(m.printer.Note("vim keys " + state))
 	case "sidebar":
 		return m.sidebarCommand(argument)
+	case "tree":
+		return m.treeCommand(argument)
 	case "jobs":
 		if argument == "tell" {
 			return m.tellJobs()
@@ -1334,7 +1358,7 @@ func (m model) View() tea.View {
 		}
 	} else {
 		screen, _ := m.screenLayout()
-		drawn := m.highlight(screen)
+		drawn := m.withLeftTree(m.highlight(screen))
 		if m.uiOpen != 0 {
 			drawn = m.overUI(drawn)
 		}

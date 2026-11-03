@@ -65,6 +65,7 @@ type settingsDraft struct {
 	background   string
 	sidebar      string
 	sidebarWidth string
+	treeWidth    string
 	statusStyle  string
 	bar          string
 	// replyRefresh is how often what the model writes is drawn, with
@@ -196,6 +197,7 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		background:       cfg.Render.Background,
 		sidebar:          cfg.Render.Sidebar,
 		sidebarWidth:     strconv.Itoa(cfg.Render.SidebarWidth),
+		treeWidth:        strconv.Itoa(cfg.Render.TreeWidth),
 		statusStyle:      cfg.Render.Status,
 		bar:              cfg.Render.Bar,
 		replyRefresh:     cfg.Render.ReplyRefresh,
@@ -390,11 +392,16 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	}
 	layer.Render.Background = unlessDefault(strings.TrimSpace(d.background), defaults.Render.Background)
 	layer.Render.Sidebar = unlessDefault(d.sidebar, defaults.Render.Sidebar)
-	sidebarWidth, err := parseSidebarWidth(d.sidebarWidth)
+	sidebarWidth, err := sidebarSize.parseWidth(d.sidebarWidth)
 	if err != nil {
 		return layer, fmt.Errorf("side panel width: %w", err)
 	}
 	layer.Render.SidebarWidth = unlessDefault(sidebarWidth, defaults.Render.SidebarWidth)
+	treeWidth, err := treeSize.parseWidth(d.treeWidth)
+	if err != nil {
+		return layer, fmt.Errorf("file tree width: %w", err)
+	}
+	layer.Render.TreeWidth = unlessDefault(treeWidth, defaults.Render.TreeWidth)
 	layer.Render.Status = unlessDefault(d.statusStyle, defaults.Render.Status)
 	layer.Render.Bar = unlessDefault(d.bar, defaults.Render.Bar)
 	everyMS, err := parseAtLeast(d.replyEveryMS, 10)

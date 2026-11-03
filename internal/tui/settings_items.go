@@ -828,6 +828,11 @@ func appearanceItems(_ model, menu *settingsMenu) []settingItem {
 				Description(fmt.Sprintf("columns, %d to %d; %d by default · /sidebar width changes it for the session", config.MinSidebarWidth, config.MaxSidebarWidth, config.DefaultSidebarWidth)).
 				Validate(validSidebarWidth).Value(&d.sidebarWidth)
 		}},
+		{"File tree width", func(d *settingsDraft) string { return d.treeWidth + " columns" }, func(d *settingsDraft) huh.Field {
+			return huh.NewInput().Title("File tree width").
+				Description(fmt.Sprintf("columns, %d to %d; %d by default · the tree of /tree and of /view · /tree width changes it for the session", config.MinTreeWidth, config.MaxTreeWidth, config.DefaultTreeWidth)).
+				Validate(validTreeWidth).Value(&d.treeWidth)
+		}},
 		{"Status line", func(d *settingsDraft) string { return d.statusStyle }, func(d *settingsDraft) huh.Field {
 			return huh.NewSelect[string]().Title("Status line").Options(
 				huh.NewOption("powerline: segments on backgrounds joined by arrows; needs a Nerd Font or a powerline font", statusPowerline),

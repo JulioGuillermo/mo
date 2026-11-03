@@ -221,13 +221,13 @@ func TestSidebarSections(t *testing.T) {
 
 	t.Run("SB-08 /sidebar width sets the panel's columns for the session; alone it says them and where they come from", func(t *testing.T) {
 		m := sidebarModel(t, 140)
-		before := m.sidebarWidthNote()
+		before := m.widthNote(sidebarSize)
 
 		updated, _ := m.runCommand("/sidebar width 50")
 		m = updated.(model)
 
-		if !strings.Contains(before, "36 columns, from the default") || m.sidebarWidth() != 50 || m.mainWidth() != 140-50-1 || !strings.Contains(m.sidebarWidthNote(), "from this session") {
-			t.Errorf("before %q now %d main %d note %q", before, m.sidebarWidth(), m.mainWidth(), m.sidebarWidthNote())
+		if !strings.Contains(before, "36 columns, from the default") || m.sidebarWidth() != 50 || m.mainWidth() != 140-50-1 || !strings.Contains(m.widthNote(sidebarSize), "from this session") {
+			t.Errorf("before %q now %d main %d note %q", before, m.sidebarWidth(), m.mainWidth(), m.widthNote(sidebarSize))
 		}
 		if line := strings.Split(ansi.Strip(m.View().Content), "\n")[0]; ansi.StringWidth(line) > 140 {
 			t.Errorf("a row is %d wide", ansi.StringWidth(line))
@@ -242,11 +242,11 @@ func TestSidebarSections(t *testing.T) {
 		m.session.WorkDir = t.TempDir()
 
 		updated, _ := m.runCommand("/sidebar width 44 global")
-		globalErr := saveSidebarWidth(m.session.WorkDir, scopeGlobal, 44)
+		globalErr := saveWidth(sidebarSize, m.session.WorkDir, scopeGlobal, 44)
 		global, _ := config.ReadUserLayer()
-		projectErr := saveSidebarWidth(m.session.WorkDir, scopeProject, 30)
+		projectErr := saveWidth(sidebarSize, m.session.WorkDir, scopeProject, 30)
 		inProject, _ := config.ReadProject(m.session.WorkDir)
-		saveSidebarWidth(m.session.WorkDir, scopeGlobal, config.DefaultSidebarWidth)
+		saveWidth(sidebarSize, m.session.WorkDir, scopeGlobal, config.DefaultSidebarWidth)
 		reset, _ := config.ReadUserLayer()
 
 		if updated.(model).sidebarWidth() != 44 || globalErr != nil || projectErr != nil {

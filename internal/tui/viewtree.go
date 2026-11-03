@@ -13,8 +13,6 @@ import (
 )
 
 const (
-	treeMinWidth = 22
-	treeMaxWidth = 38
 	// treeNarrow is the columns a terminal needs for the tree beside a file:
 	// under it the tree has no room and folders are listed to pick from.
 	treeNarrow = 60
@@ -295,9 +293,10 @@ func padTo(line string, width int) string {
 	return line
 }
 
-// treeWidth is the columns the tree takes beside a file.
+// treeWidth is the columns the tree takes, beside a file or the
+// conversation.
 func (m model) treeWidth() int {
-	return min(max(m.width/4, treeMinWidth), treeMaxWidth)
+	return m.panelWidth(treeSize)
 }
 
 // treeShown tells whether the tree is drawn: there is one, and the terminal
@@ -394,29 +393,120 @@ func (m model) openFromTree(path string, focusFile bool) (tea.Model, tea.Cmd) {
 	return opened, cmd
 }
 
+// typeSearch is a key pressed while the search is typed: enter applies it,
+// esc leaves it.
+func (t *fileTree) typeSearch(msg tea.KeyPressMsg) {
+	switch msg.String() {
+	case "enter":
+		t.typing = false
+		t.search(t.typed)
+	case "esc":
+		t.typing = false
+	case "backspace":
+		if runes := []rune(t.typed); len(runes) > 0 {
+			t.typed = string(runes[:len(runes)-1])
+		}
+	default:
+		t.typed += msg.Text
+	}
+}
+
+// navigate moves the cursor and opens or closes folders, height rows in
+// view; it tells whether the key was one of those.
+func (t *fileTree) navigate(pressed string, height int) bool {
+	row, onRow := t.selected()
+	switch pressed {
+	case "up", "k":
+		t.move(-1, height)
+	case "down", "j":
+		t.move(1, height)
+	case "pgup":
+		t.move(-height, height)
+	case "pgdown":
+		t.move(height, height)
+	case "home", "g":
+		t.move(-len(t.rows), height)
+	case "end", "G":
+		t.move(len(t.rows), height)
+	case "right", "l":
+		if !onRow || !row.dir {
+			return false
+		}
+		if row.open {
+			t.move(1, height)
+		} else {
+			t.toggle(row)
+		}
+	case "left", "h":
+		switch {
+		case !onRow:
+		case row.dir && row.open:
+			t.toggle(row)
+		default:
+			t.cursorToParent(row, height)
+		}
+	case "enter", "space":
+		if !onRow || !row.dir {
+			return false
+		}
+		t.toggle(row)
+	default:
+		return false
+	}
+	return true
+}
+
+// cursorToParent puts the cursor on the folder over a row.
+func (t *fileTree) cursorToParent(row treeRow, height int) {
+	for i := t.cursor - 1; i >= 0; i-- {
+		if t.rows[i].dir && t.rows[i].depth < row.depth {
+			t.cursor = i
+			t.show(height)
+			return
+		}
+	}
+}
+
+// toggle opens a folder, or closes it if open.
+func (t *fileTree) toggle(folder treeRow) {
+	if folder.open {
+		delete(t.expanded, folder.path)
+	} else {
+		t.expanded[folder.path] = true
+	}
+	t.rebuild()
+}
+
+// pick chooses the row at line y of the tree as drawn: a folder opens or
+// closes, a file is given back.
+func (t *fileTree) pick(y int) (string, bool) {
+	row := t.top + y - 1
+	if y < 1 || row >= len(t.rows) {
+		return "", false
+	}
+	t.cursor = row
+	picked := t.rows[row]
+	if !picked.dir {
+		return picked.path, true
+	}
+	t.toggle(picked)
+	return "", false
+}
+
 // treeKey is a key pressed while the tree has the focus.
 func (m model) treeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	v := m.viewer
 	tree := v.tree
-	height := m.treeHeight()
-	pressed := msg.String()
 	if tree.typing {
-		switch pressed {
-		case "enter":
-			tree.typing = false
-			tree.search(tree.typed)
-		case "esc":
-			tree.typing = false
-		case "backspace":
-			if runes := []rune(tree.typed); len(runes) > 0 {
-				tree.typed = string(runes[:len(runes)-1])
-			}
-		default:
-			tree.typed += msg.Text
-		}
+		tree.typeSearch(msg)
 		return m, nil
 	}
-	row, onRow := tree.selected()
+	pressed := msg.String()
+	if tree.navigate(pressed, m.treeHeight()) {
+		return m, nil
+	}
+	row, onFile := tree.selected()
+	onFile = onFile && !row.dir
 	switch pressed {
 	case "esc":
 		if tree.filter != "" {
@@ -426,56 +516,12 @@ func (m model) treeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.viewer = nil
 	case "q", "ctrl+c":
 		m.viewer = nil
-	case "up", "k":
-		tree.move(-1, height)
-	case "down", "j":
-		tree.move(1, height)
-	case "pgup":
-		tree.move(-height, height)
-	case "pgdown":
-		tree.move(height, height)
-	case "home", "g":
-		tree.move(-len(tree.rows), height)
-	case "end", "G":
-		tree.move(len(tree.rows), height)
 	case "right", "l":
-		switch {
-		case !onRow:
-		case row.dir && !row.open:
-			tree.expanded[row.path] = true
-			tree.rebuild()
-		case row.dir:
-			tree.move(1, height)
-		default:
+		if onFile {
 			return m.openFromTree(row.path, false)
 		}
-	case "left", "h":
-		switch {
-		case !onRow:
-		case row.dir && row.open:
-			delete(tree.expanded, row.path)
-			tree.rebuild()
-		default:
-			// The folder over it.
-			for i := tree.cursor - 1; i >= 0; i-- {
-				if tree.rows[i].dir && tree.rows[i].depth < row.depth {
-					tree.cursor = i
-					tree.show(height)
-					break
-				}
-			}
-		}
 	case "enter", "space":
-		switch {
-		case !onRow:
-		case row.dir:
-			if row.open {
-				delete(tree.expanded, row.path)
-			} else {
-				tree.expanded[row.path] = true
-			}
-			tree.rebuild()
-		default:
+		if onFile {
 			return m.openFromTree(row.path, true)
 		}
 	case "/":
@@ -491,25 +537,11 @@ func (m model) treeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // treeClick is a click on the tree, row y of the screen: the row under it is
 // chosen, a folder opens or closes, a file is shown.
 func (m model) treeClick(y int) (tea.Model, tea.Cmd) {
-	v := m.viewer
-	tree := v.tree
-	v.treeFocus = true
-	row := tree.top + y - 1
-	if y < 1 || row >= len(tree.rows) {
-		return m, nil
+	m.viewer.treeFocus = true
+	if file, picked := m.viewer.tree.pick(y); picked {
+		return m.openFromTree(file, false)
 	}
-	tree.cursor = row
-	picked := tree.rows[row]
-	if picked.dir {
-		if picked.open {
-			delete(tree.expanded, picked.path)
-		} else {
-			tree.expanded[picked.path] = true
-		}
-		tree.rebuild()
-		return m, nil
-	}
-	return m.openFromTree(picked.path, false)
+	return m, nil
 }
 
 // treeLayout puts the tree on the left of the viewer's lines, a line between.

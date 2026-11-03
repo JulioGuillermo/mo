@@ -421,6 +421,9 @@ type Render struct {
 	// SidebarWidth is the columns of the side panel, from MinSidebarWidth
 	// to MaxSidebarWidth.
 	SidebarWidth int `toml:"sidebar_width,omitzero"`
+	// TreeWidth is the columns of the file tree, of /tree and /view, from
+	// MinTreeWidth to MaxTreeWidth.
+	TreeWidth int `toml:"tree_width,omitzero"`
 	// Status draws the status line as powerline segments, which need a
 	// font with their arrows, or "plain".
 	Status string `toml:"status,omitempty"`
@@ -470,6 +473,13 @@ const (
 	DefaultSidebarWidth = 36
 	MinSidebarWidth     = 20
 	MaxSidebarWidth     = 120
+)
+
+// The file tree's width in columns.
+const (
+	DefaultTreeWidth = 30
+	MinTreeWidth     = 16
+	MaxTreeWidth     = 80
 )
 
 // UIThemes are the looks of the screen, mo's own first.
@@ -626,7 +636,7 @@ func Defaults() Config {
 		Skills:       Skills{Mode: tools.ModeFull},
 		Instructions: Instructions{Enabled: ptr(true), Files: []string{"AGENTS.md", "AGENT.md"}},
 		Web:          Web{Search: web.SearchDuckDuckGo},
-		Render: Render{Images: render.ModeAuto, Background: BackgroundTheme, Theme: UIThemes[0], Mode: ModeDark, Sidebar: "auto", SidebarWidth: DefaultSidebarWidth, Status: "powerline", Icons: "nerd", Keys: "default", Bar: "shapes",
+		Render: Render{Images: render.ModeAuto, Background: BackgroundTheme, Theme: UIThemes[0], Mode: ModeDark, Sidebar: "auto", SidebarWidth: DefaultSidebarWidth, TreeWidth: DefaultTreeWidth, Status: "powerline", Icons: "nerd", Keys: "default", Bar: "shapes",
 			ReplyRefresh: RefreshLive, ReplyEveryMS: 100, ReplyEveryTokens: 10,
 			SpinnerMS: 80, RunningMS: 150, WritingMS: 220, ReasoningMS: 160, AskingMS: 500, UIFPS: 20, CellSize: render.CellSizeAuto,
 			Syntax: SyntaxThemes[0]},
@@ -723,6 +733,9 @@ func validate(cfg Config) error {
 	}
 	if width := cfg.Render.SidebarWidth; width < MinSidebarWidth || width > MaxSidebarWidth {
 		return fmt.Errorf("render.sidebar_width %d: use %d to %d columns", width, MinSidebarWidth, MaxSidebarWidth)
+	}
+	if width := cfg.Render.TreeWidth; width < MinTreeWidth || width > MaxTreeWidth {
+		return fmt.Errorf("render.tree_width %d: use %d to %d columns", width, MinTreeWidth, MaxTreeWidth)
 	}
 	if !slices.Contains(SyntaxThemes, cfg.Render.Syntax) {
 		return fmt.Errorf("render.syntax %q: use %s", cfg.Render.Syntax, strings.Join(SyntaxThemes, ", "))
@@ -1124,6 +1137,7 @@ func mergeHarmless(base, layer Config) Config {
 	base.Render.Background = override(base.Render.Background, layer.Render.Background)
 	base.Render.Sidebar = override(base.Render.Sidebar, layer.Render.Sidebar)
 	base.Render.SidebarWidth = override(base.Render.SidebarWidth, layer.Render.SidebarWidth)
+	base.Render.TreeWidth = override(base.Render.TreeWidth, layer.Render.TreeWidth)
 	base.Render.Keys = override(base.Render.Keys, layer.Render.Keys)
 	base.Render.Status = override(base.Render.Status, layer.Render.Status)
 	base.Render.Bar = override(base.Render.Bar, layer.Render.Bar)

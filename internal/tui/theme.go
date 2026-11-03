@@ -66,6 +66,13 @@ func (m *model) applyScreen(terminalDark bool) tea.Cmd {
 	return m.scheduleRedraw()
 }
 
+// quoteBarMark is the one column glamour draws for a quote's bar, as wide
+// as it counts it, made the bar and a space once the quote is wrapped.
+const quoteBarMark = "\U000F0000"
+
+// quoteBar is a quote's bar as it shows.
+const quoteBar = "│ "
+
 // markdownStyle is glamour's own, with code on blue instead of grey.
 func markdownStyle(dark bool) ansi.StyleConfig {
 	config := styles.DarkStyleConfig
@@ -75,6 +82,8 @@ func markdownStyle(dark bool) ansi.StyleConfig {
 	colors := ui(dark)
 	codeText, codeBackground, blockBackground := colors.inlineCode, colors.inlineCodeBack, colors.codeBlockBack
 	config.Code.Color, config.Code.BackgroundColor = &codeText, &codeBackground
+	quoteBar := quoteBarMark
+	config.BlockQuote.IndentToken = &quoteBar
 	if heading := colors.heading; heading != "" {
 		titleText, titleBackground := colors.onAccent, colors.accent
 		config.Heading.Color = &heading

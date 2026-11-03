@@ -69,7 +69,7 @@ func (m model) todoPanel() string {
 	}
 	hidden := max(len(shown)-shownTodos, 0)
 	for _, todo := range shown[:len(shown)-hidden] {
-		text := oneLine(todo.Text, max(m.width-6, 20))
+		text := oneLine(todo.Text, max(m.mainWidth()-6, 20))
 		switch todo.Status {
 		case tools.TodoCompleted:
 			lines = append(lines, lipgloss.NewStyle().Foreground(colors.label).Strikethrough(true).Render("  ✓ "+text))
@@ -82,7 +82,7 @@ func (m model) todoPanel() string {
 	if hidden > 0 {
 		lines = append(lines, dimStyle.Render(fmt.Sprintf("    … +%d more", hidden)))
 	}
-	return onPanel(lines, max(m.width, 20), sidebarPalette(m.printer == nil || m.printer.isDark()).background)
+	return onPanel(lines, max(m.mainWidth(), 20), sidebarPalette(m.printer == nil || m.printer.isDark()).background)
 }
 
 // onPanel puts lines on a background the whole width, as the side panel

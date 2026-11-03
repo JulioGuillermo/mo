@@ -525,6 +525,7 @@ func (p *printer) glamour(text string) string {
 	if err != nil {
 		return text
 	}
+	rendered = strings.ReplaceAll(rendered, quoteBarMark, quoteBar)
 	return fitLines(strings.Trim(rendered, "\n"), p.width)
 }
 

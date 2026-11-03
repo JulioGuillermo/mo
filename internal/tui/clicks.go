@@ -164,6 +164,10 @@ func (m model) rightClick(x, y int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.clickedAt, m.clicked = point{x, y}, true
+	if m.inLeftTree(x, y) {
+		return m, nil
+	}
+	x = m.paneX(x, y)
 	_, regions := m.screenLayout()
 	for _, r := range regions {
 		if r.menu != nil && r.holds(x, y) {
