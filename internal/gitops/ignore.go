@@ -10,11 +10,16 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 )
 
-// userExcludes are the patterns of the user's own ignore file, as git reads
-// it: core.excludesFile of the global or system config, else
-// $XDG_CONFIG_HOME/git/ignore.
-func userExcludes() []gitignore.Pattern {
-	data, err := os.ReadFile(userExcludesFile())
+// excludes are the patterns git reads besides .gitignore: the user's own
+// file, then the repository's info/exclude. go-git reads info/exclude through
+// the worktree, which refuses paths under .git, so it is read here.
+func excludes(gitDir string) []gitignore.Pattern {
+	patterns := patternsIn(userExcludesFile())
+	return append(patterns, patternsIn(filepath.Join(gitDir, "info", "exclude"))...)
+}
+
+func patternsIn(file string) []gitignore.Pattern {
+	data, err := os.ReadFile(file)
 	if err != nil {
 		return nil
 	}
@@ -29,6 +34,9 @@ func userExcludes() []gitignore.Pattern {
 	return patterns
 }
 
+// userExcludesFile is the user's own ignore file, as git finds it:
+// core.excludesFile of the global or system config, else
+// $XDG_CONFIG_HOME/git/ignore.
 func userExcludesFile() string {
 	for _, scope := range []config.Scope{config.GlobalScope, config.SystemScope} {
 		cfg, err := config.LoadConfig(scope)

@@ -60,11 +60,11 @@ func Open(dir string) (*Repo, error) {
 	if err != nil {
 		return nil, err
 	}
-	tree.Excludes = append(tree.Excludes, userExcludes()...)
 	gitDir := filepath.Join(tree.Filesystem.Root(), ".git")
 	if storage, ok := repo.Storer.(*filesystem.Storage); ok {
 		gitDir = storage.Filesystem().Root()
 	}
+	tree.Excludes = append(tree.Excludes, excludes(gitDir)...)
 	remember(tree.Filesystem.Root())
 	return &Repo{repo: repo, tree: tree, root: tree.Filesystem.Root(), gitDir: gitDir}, nil
 }

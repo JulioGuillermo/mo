@@ -9,6 +9,7 @@ package gitops
 // | GF-05 | Happy    | BranchesLine gives the current branch, then a few others and how many more | P2      |
 // | GF-06 | Happy    | A file the user's core.excludesFile names is not untracked, nor staged by add | P0    |
 // | GF-07 | Edge     | !/tmp/keep/ brings the folder back, not the files /tmp/keep/* ignores, as git | P0    |
+// | GF-08 | Happy    | A file .git/info/exclude names is not untracked                            | P0       |
 
 import (
 	"fmt"
@@ -133,6 +134,20 @@ func TestReposBelow(t *testing.T) {
 		slices.Sort(paths)
 		if !slices.Equal(paths, []string{".gitignore", "tmp/keep/.keep"}) {
 			t.Errorf("paths = %v", paths)
+		}
+	})
+
+	t.Run("GF-08 a file .git/info/exclude names is not untracked", func(t *testing.T) {
+		test := newRepo(t)
+		test.write(map[string]string{"sorbet/rbi/a.rbi": "x\n", "kept.txt": "x\n"})
+		os.MkdirAll(filepath.Join(test.dir, ".git", "info"), 0o755)
+		writeTestFile(t, filepath.Join(test.dir, ".git", "info", "exclude"), "# local\nsorbet/\n")
+		reopened, _ := Open(test.dir)
+
+		changes, _ := reopened.Changes()
+
+		if len(changes) != 1 || changes[0].Path != "kept.txt" {
+			t.Errorf("changes = %v", changes)
 		}
 	})
 }
