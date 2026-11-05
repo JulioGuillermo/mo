@@ -1,6 +1,6 @@
 module github.com/jg/mo
 
-go 1.27.0
+go 1.27.1
 
 require (
 	charm.land/bubbles/v2 v2.2.1
@@ -18,6 +18,9 @@ require (
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-git/go-git/v5 v5.19.3
+	github.com/go-pdfkit/extract v0.9.0
+	github.com/go-pdfkit/reader v0.10.0
+	github.com/go-pdfkit/render v0.69.1
 	github.com/kanrichan/resvg-go v0.0.1
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/odvcencio/gotreesitter v0.56.0
@@ -34,6 +37,7 @@ require (
 	github.com/JohannesKaufmann/dom v0.3.1 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
+	github.com/andybalholm/brotli v1.2.7 // indirect
 	github.com/andybalholm/cascadia v1.3.4 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
@@ -53,9 +57,16 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/elliotchance/orderedmap/v2 v2.2.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
+	github.com/go-gfx/gfx v0.37.0 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.9.2 // indirect
+	github.com/go-images/jpeg v0.3.0 // indirect
+	github.com/go-images/jpeg2000 v0.14.0 // indirect
+	github.com/go-opentype/fonts v0.14.0 // indirect
+	github.com/go-opentype/opentype v0.16.1 // indirect
+	github.com/go-pdfkit/pdffont v0.4.0 // indirect
 	github.com/go-shiori/dom v0.0.0-20230515143342-73569d674e1c // indirect
+	github.com/go-simd/highway v0.0.14 // indirect
 	github.com/gogs/chardet v0.0.0-20211120154057-b7413eaefb8f // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
@@ -76,6 +87,7 @@ require (
 	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
+	github.com/tannevaled/gobig2 v0.2.0 // indirect
 	github.com/tetratelabs/wazero v1.4.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xo/terminfo v1.0.0 // indirect

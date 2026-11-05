@@ -8,13 +8,12 @@ package tools
 // | PD-04 | Error    | More than 20 pages as images is refused, saying how to ask for fewer     | P1       |
 // | PD-05 | Error    | pages that are not a page or a range, or past the end, are refused       | P1       |
 // | PD-06 | Error    | as and pages on a file that is not a PDF are refused                     | P2       |
-// | PD-07 | Error    | Without poppler the error says what to install                           | P1       |
+// | PD-07 | Error    | A file named .pdf that is not one is refused, saying so                  | P1       |
 // | PD-08 | Happy    | The view fields apply to the text of a PDF                               | P2       |
 
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"testing"
 
@@ -56,18 +55,8 @@ func minimalPDF(pageTexts ...string) string {
 	return pdf.String()
 }
 
-func needPoppler(t *testing.T) {
-	t.Helper()
-	for _, program := range []string{"pdfinfo", "pdftotext", "pdftoppm"} {
-		if _, err := exec.LookPath(program); err != nil {
-			t.Skip(program + " is not installed")
-		}
-	}
-}
-
 func TestReadPDF(t *testing.T) {
 	t.Run("PD-01 a PDF reads as text by default, a section per page", func(t *testing.T) {
-		needPoppler(t)
 		env := newEnv(t)
 		writeFile(t, env, "doc.pdf", minimalPDF("first words", "second words"))
 
@@ -79,7 +68,6 @@ func TestReadPDF(t *testing.T) {
 	})
 
 	t.Run("PD-02 pages limits the text to a page or a range", func(t *testing.T) {
-		needPoppler(t)
 		env := newEnv(t)
 		writeFile(t, env, "doc.pdf", minimalPDF("one", "two", "three"))
 
@@ -95,7 +83,6 @@ func TestReadPDF(t *testing.T) {
 	})
 
 	t.Run("PD-03 as image gives a PNG marker per page, drawn once and kept in the cache", func(t *testing.T) {
-		needPoppler(t)
 		t.Setenv("XDG_CACHE_HOME", t.TempDir())
 		env := newEnv(t)
 		writeFile(t, env, "doc.pdf", minimalPDF("one", "two"))
@@ -116,7 +103,6 @@ func TestReadPDF(t *testing.T) {
 	})
 
 	t.Run("PD-04 more than 20 pages as images is refused, saying how to ask for fewer", func(t *testing.T) {
-		needPoppler(t)
 		env := newEnv(t)
 		writeFile(t, env, "long.pdf", minimalPDF(strings.Split(strings.Repeat("p,", 21)+"p", ",")...))
 
@@ -128,7 +114,6 @@ func TestReadPDF(t *testing.T) {
 	})
 
 	t.Run("PD-05 pages that are not a page or a range, or past the end, are refused", func(t *testing.T) {
-		needPoppler(t)
 		env := newEnv(t)
 		writeFile(t, env, "doc.pdf", minimalPDF("one", "two"))
 
@@ -151,20 +136,18 @@ func TestReadPDF(t *testing.T) {
 		}
 	})
 
-	t.Run("PD-07 without poppler the error says what to install", func(t *testing.T) {
-		t.Setenv("PATH", t.TempDir())
+	t.Run("PD-07 a file named .pdf that is not one is refused, saying so", func(t *testing.T) {
 		env := newEnv(t)
-		writeFile(t, env, "doc.pdf", minimalPDF("one"))
+		writeFile(t, env, "fake.pdf", "just some text")
 
-		output, isError := call(t, env, "read", map[string]any{"path": "doc.pdf"})
+		output, isError := call(t, env, "read", map[string]any{"path": "fake.pdf"})
 
-		if !isError || !strings.Contains(output, "pdfinfo") || !strings.Contains(output, "poppler") {
+		if !isError || !strings.Contains(output, "not a PDF") {
 			t.Fatalf("isError %v, output %q", isError, output)
 		}
 	})
 
 	t.Run("PD-08 the view fields apply to the text of a PDF", func(t *testing.T) {
-		needPoppler(t)
 		env := newEnv(t)
 		writeFile(t, env, "doc.pdf", minimalPDF("one", "two"))
 

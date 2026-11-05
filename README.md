@@ -378,8 +378,9 @@ tenth control characters or broken UTF-8) is refused saying what it looks like (
 pointing to `file`, `xxd` or `strings`; UTF-16 text is read as text, and images, audio and video
 reach the model as attached (images up to 8 MB, audio and video up to 20 MB).
 A PDF is read as text, a `## Page N` section per page, or with `as: "image"` as a PNG per page at
-100 dpi, for scans and figures, at most 20 pages a call; `pages` (`3`, `2-7`) picks them. It needs
-poppler (`pdfinfo`, `pdftotext`, `pdftoppm`); the pages drawn stay in `~/.cache/mo/pdf`.
+100 dpi, for scans and figures, at most 20 pages a call; `pages` (`3`, `2-7`) picks them. mo reads
+and draws them itself, in Go ([go-pdfkit](https://github.com/go-pdfkit)), with nothing to install;
+the pages drawn stay in `~/.cache/mo/pdf`.
 A file over `tools.read_max_size` (10 MB) is refused whole, with its size; asked for a part with
 `offset`, `limit` or `match`, it is read a line at a time without holding it, so the last lines of a
 log of gigabytes take a second or two.

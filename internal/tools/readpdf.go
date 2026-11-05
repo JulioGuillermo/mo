@@ -1,21 +1,27 @@
 package tools
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/go-pdfkit/extract"
+	"github.com/go-pdfkit/reader"
+	"github.com/go-pdfkit/render"
 )
 
 const (
 	pdfMaxImagePages = 20
-	pdfImageDPI      = "100"
+	pdfImageDPI      = 100
+	pdfPageTimeout   = 20 * time.Second
 )
 
 type pageRange struct{ first, last int }
@@ -26,35 +32,32 @@ func isPDF(path string) bool {
 
 // readPDF gives the pages of a PDF as text, a section per page, or as
 // image markers, one per page.
-func readPDF(ctx context.Context, path, as, pages string) (string, error) {
-	total, err := pdfPageCount(ctx, path)
+func readPDF(ctx context.Context, path, as, pages string) (output string, err error) {
+	defer func() {
+		if failure := recover(); failure != nil {
+			output, err = "", fmt.Errorf("the PDF could not be read: %v", failure)
+		}
+	}()
+	if as != "" && as != "text" && as != "image" {
+		return "", fmt.Errorf("as is text or image, not %q", as)
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
+	document, err := reader.Open(data)
+	if err != nil {
+		return "", fmt.Errorf("not a PDF that can be read: %w", err)
+	}
+	total := document.PageCount()
 	wanted, err := parsePages(pages, total)
 	if err != nil {
 		return "", err
 	}
-	switch as {
-	case "", "text":
-		return pdfText(ctx, path, wanted)
-	case "image":
-		return pdfImages(ctx, path, wanted, total)
+	if as == "image" {
+		return pdfImages(ctx, path, document, wanted, total)
 	}
-	return "", fmt.Errorf("as is text or image, not %q", as)
-}
-
-func pdfPageCount(ctx context.Context, path string) (int, error) {
-	output, err := runPoppler(ctx, "pdfinfo", path)
-	if err != nil {
-		return 0, err
-	}
-	for line := range strings.SplitSeq(output, "\n") {
-		if count, found := strings.CutPrefix(line, "Pages:"); found {
-			return strconv.Atoi(strings.TrimSpace(count))
-		}
-	}
-	return 0, errors.New("pdfinfo did not say how many pages the PDF has")
+	return pdfText(ctx, document, wanted)
 }
 
 // parsePages reads "5" or "2-7"; empty is every page.
@@ -77,26 +80,28 @@ func parsePages(pages string, total int) (pageRange, error) {
 	return pageRange{first, min(last, total)}, nil
 }
 
-func pdfText(ctx context.Context, path string, wanted pageRange) (string, error) {
-	output, err := runPoppler(ctx, "pdftotext", "-layout", "-f", strconv.Itoa(wanted.first), "-l", strconv.Itoa(wanted.last), path, "-")
-	if err != nil {
-		return "", err
-	}
-	pageTexts := strings.Split(strings.TrimSuffix(output, "\f"), "\f")
+func pdfText(ctx context.Context, document *reader.Document, wanted pageRange) (string, error) {
 	var text strings.Builder
-	for i, pageText := range pageTexts {
+	for page := wanted.first; page <= wanted.last; page++ {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		pageText, err := extract.Text(document, page)
+		if err != nil {
+			return "", fmt.Errorf("page %d: %w", page, err)
+		}
 		pageText = strings.TrimSpace(pageText)
 		if pageText == "" {
 			pageText = "(no text on this page: a scan or a picture; read it with as image)"
 		}
-		fmt.Fprintf(&text, "## Page %d\n\n%s\n\n", wanted.first+i, pageText)
+		fmt.Fprintf(&text, "## Page %d\n\n%s\n\n", page, pageText)
 	}
 	return strings.TrimSuffix(text.String(), "\n"), nil
 }
 
 // pdfImages draws each page wanted as a PNG in mo's cache, kept for the
 // next read of the same PDF.
-func pdfImages(ctx context.Context, path string, wanted pageRange, total int) (string, error) {
+func pdfImages(ctx context.Context, path string, document *reader.Document, wanted pageRange, total int) (string, error) {
 	if count := wanted.last - wanted.first + 1; count > pdfMaxImagePages {
 		return "", fmt.Errorf("%d pages are too many images for one read: ask for at most %d with pages, like 1-%d", count, pdfMaxImagePages, pdfMaxImagePages)
 	}
@@ -106,9 +111,12 @@ func pdfImages(ctx context.Context, path string, wanted pageRange, total int) (s
 	}
 	var markers []string
 	for page := wanted.first; page <= wanted.last; page++ {
-		pagePath, err := pdfPageImage(ctx, path, dir, page)
-		if err != nil {
+		if err := ctx.Err(); err != nil {
 			return "", err
+		}
+		pagePath, partial, err := pdfPageImage(document, dir, page)
+		if err != nil {
+			return "", fmt.Errorf("page %d: %w", page, err)
 		}
 		info, err := os.Stat(pagePath)
 		if err != nil {
@@ -118,20 +126,42 @@ func pdfImages(ctx context.Context, path string, wanted pageRange, total int) (s
 		if err != nil {
 			return "", err
 		}
+		if partial {
+			marker += " (drawn only in part: the page took too long)"
+		}
 		markers = append(markers, fmt.Sprintf("page %d of %d: %s", page, total, marker))
 	}
 	return strings.Join(markers, "\n"), nil
 }
 
-func pdfPageImage(ctx context.Context, path, dir string, page int) (string, error) {
-	base := filepath.Join(dir, fmt.Sprintf("page-%d", page))
-	pagePath := base + ".png"
+// pdfPageImage gives the PNG of a page, drawing it unless the cache has it;
+// partial tells a page drawn only as far as its time allowed, not kept.
+func pdfPageImage(document *reader.Document, dir string, page int) (string, bool, error) {
+	pagePath := filepath.Join(dir, fmt.Sprintf("page-%d.png", page))
 	if _, err := os.Stat(pagePath); err == nil {
-		return pagePath, nil
+		return pagePath, false, nil
 	}
-	number := strconv.Itoa(page)
-	_, err := runPoppler(ctx, "pdftoppm", "-png", "-r", pdfImageDPI, "-f", number, "-l", number, "-singlefile", path, base)
-	return pagePath, err
+	picture, err := render.Page(document, page, render.Options{DPI: pdfImageDPI, MaxDuration: pdfPageTimeout})
+	partial := errors.Is(err, render.ErrTimedOut)
+	if err != nil && !partial {
+		return "", false, err
+	}
+	if partial {
+		pagePath = filepath.Join(dir, fmt.Sprintf("page-%d-partial.png", page))
+	}
+	return pagePath, partial, writePNG(pagePath, picture.ToNRGBA())
+}
+
+func writePNG(path string, picture image.Image) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	if err := png.Encode(file, picture); err != nil {
+		file.Close()
+		return err
+	}
+	return file.Close()
 }
 
 // pdfCacheDir is a directory for the pages of this version of the PDF: a
@@ -149,18 +179,4 @@ func pdfCacheDir(path string) (string, error) {
 	name := fmt.Sprintf("%x", sha256.Sum256([]byte(version)))[:16]
 	dir := filepath.Join(cache, "mo", "pdf", name)
 	return dir, os.MkdirAll(dir, 0o700)
-}
-
-func runPoppler(ctx context.Context, program string, args ...string) (string, error) {
-	command := exec.CommandContext(ctx, program, args...)
-	var stderr bytes.Buffer
-	command.Stderr = &stderr
-	output, err := command.Output()
-	if errors.Is(err, exec.ErrNotFound) {
-		return "", fmt.Errorf("reading a PDF needs %s, from poppler: install poppler-utils (or poppler)", program)
-	}
-	if err != nil {
-		return "", fmt.Errorf("%s: %s", program, strings.TrimSpace(stderr.String()+" "+err.Error()))
-	}
-	return string(output), nil
 }
