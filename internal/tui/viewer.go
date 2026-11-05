@@ -613,8 +613,16 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 	case "pgdown", "shift+down", "space":
 		m.scrollViewer(rows)
 	case "home", "g":
+		if v.annotatable() {
+			m.moveCursor(-len(v.lines))
+			return m, nil
+		}
 		m.scrollViewer(-len(v.lines))
 	case "end", "G":
+		if v.annotatable() {
+			m.moveCursor(len(v.lines))
+			return m, nil
+		}
 		m.scrollViewer(len(v.lines))
 	case "left", "h":
 		m.panViewer(-viewerShift)

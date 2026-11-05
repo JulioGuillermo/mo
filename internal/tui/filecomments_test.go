@@ -14,6 +14,7 @@ package tui
 // | FC-10 | Happy    | v then the arrows select lines; c comments them together and ends the selection | P0 |
 // | FC-11 | Happy    | shift+↑↓ select from the cursor; y copies the lines selected                | P1       |
 // | FC-12 | Edge     | The arrows alone, or esc, let a selection go; c comments the cursor's line again | P1 |
+// | FC-13 | Happy    | G takes the cursor to the last line, g back to the first                   | P0       |
 
 import (
 	"fmt"
@@ -235,6 +236,18 @@ func TestFileComments(t *testing.T) {
 		m = keys(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 		if comments := m.comments(); len(comments) != 1 || comments[0].from != 2 || comments[0].to != 2 {
 			t.Errorf("comments = %+v", comments)
+		}
+	})
+
+	t.Run("FC-13 G takes the cursor to the last line, g back to the first", func(t *testing.T) {
+		atEnd := typeText(t, openMain(t), "G")
+		last := len(atEnd.viewer.lines) - 1
+		cursorAtEnd := atEnd.viewer.cursor
+
+		atStart := typeText(t, atEnd, "g")
+
+		if cursorAtEnd != last || atStart.viewer.cursor != 0 || atStart.viewer.top != 0 {
+			t.Errorf("cursor after G %d of %d, after g %d, top %d", cursorAtEnd, last, atStart.viewer.cursor, atStart.viewer.top)
 		}
 	})
 }
