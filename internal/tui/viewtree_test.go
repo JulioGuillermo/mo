@@ -19,6 +19,7 @@ package tui
 // | VT-16 | Happy    | Emoji icons: the same as emoji, rows keep their width                    | P0       |
 // | VT-17 | Edge     | Text: ▸ ▾ and a / after a folder, no icon for a file; the status line takes emoji as text | P1 |
 // | VT-18 | Edge     | Every kind has an icon in both sets, and the open and closed folder differ | P1      |
+// | VT-19 | Happy    | ctrl+t goes between the tree and the file, as tab                       | P1       |
 // | VT-13 | Edge     | Made narrower the tree is hidden and the file takes the screen; wider, it is back | P1 |
 
 import (
@@ -40,6 +41,7 @@ var (
 	keyLeftMsg   = tea.KeyPressMsg{Code: tea.KeyLeft}
 	keyEnterTree = tea.KeyPressMsg{Code: tea.KeyEnter}
 	keyTabMsg    = tea.KeyPressMsg{Code: tea.KeyTab}
+	keyCtrlTMsg  = tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl}
 )
 
 func explorer(t *testing.T) model {
@@ -158,6 +160,20 @@ func TestViewTree(t *testing.T) {
 
 		if fileMoved != 1 || stillAt.path != treeAt.path || !back || movedUp.path == treeAt.path || m.viewer.treeFocus {
 			t.Errorf("file cursor %d, tree %q→%q→%q, focus %v", fileMoved, treeAt.name, stillAt.name, movedUp.name, m.viewer.treeFocus)
+		}
+	})
+
+	t.Run("VT-19 ctrl+t goes between the tree and the file, as tab", func(t *testing.T) {
+		m := explorer(t)
+		m = keys(t, m, keyDown, keyDown, keyDown, keyDown, keyDown, keyEnterTree)
+		onFile := m.viewer.treeFocus
+
+		m = keys(t, m, keyCtrlTMsg)
+		onTree := m.viewer.treeFocus
+		m = keys(t, m, keyCtrlTMsg)
+
+		if onFile || !onTree || m.viewer.treeFocus {
+			t.Errorf("focus on the tree: %v, %v, %v", onFile, onTree, m.viewer.treeFocus)
 		}
 	})
 

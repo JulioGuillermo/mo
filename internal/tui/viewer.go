@@ -540,7 +540,7 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 		switch pressed {
 		case "esc", "q", "ctrl+c":
 			m.viewer = nil
-		case "tab", "t":
+		case "tab", "ctrl+t", "t":
 			if v.tree == nil {
 				m.toggleTree()
 			} else {
@@ -563,7 +563,7 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch pressed {
-	case "tab":
+	case "tab", "ctrl+t":
 		if v.tree != nil {
 			v.treeFocus = true
 		}

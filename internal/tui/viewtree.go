@@ -608,7 +608,7 @@ func (m model) treeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "/":
 		tree.typing, tree.typed = true, tree.filter
-	case "tab":
+	case "tab", "ctrl+t":
 		v.treeFocus = false
 	case "t":
 		m.toggleTree()

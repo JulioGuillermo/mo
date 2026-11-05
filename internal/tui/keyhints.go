@@ -28,7 +28,7 @@ var leftTreeHints = append(append([]keyHint{}, treeMoveHints...),
 var viewerTreeHints = append(append([]keyHint{}, treeMoveHints...),
 	keyHint{"→ l", "open the folder, or show the file and stay in the tree"},
 	keyHint{"enter, space, click", "open or close the folder, or show the file and go to it"},
-	keyHint{"tab", "go to the file"},
+	keyHint{"tab, ctrl+t", "go to the file"},
 	keyHint{"t", "hide the tree"},
 	keyHint{"esc, q", "close the viewer"},
 )
@@ -68,7 +68,7 @@ var fileHints = append([]keyHint{
 	{"m", "markdown rendered, or its source"},
 }, append(scrollHints,
 	keyHint{"t", "the tree of the folder beside the file, or hide it"},
-	keyHint{"tab", "go to the tree"},
+	keyHint{"tab, ctrl+t", "go to the tree"},
 	keyHint{"esc, q", "close"},
 )...)
 
@@ -83,7 +83,7 @@ var diffHints = append([]keyHint{
 	{"H", "the file's history, commit by commit"},
 }, append(scrollHints,
 	keyHint{"t", "the tree of the files changed, or hide it"},
-	keyHint{"tab", "go to the tree"},
+	keyHint{"tab, ctrl+t", "go to the tree"},
 	keyHint{"esc, q", "close"},
 )...)
 
