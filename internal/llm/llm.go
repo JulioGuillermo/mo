@@ -169,19 +169,76 @@ type Provider interface {
 	Stream(ctx context.Context, req Request, onEvent func(Event)) (Response, error)
 }
 
-const cutOffArgsError = "The arguments of this call were cut off, probably at the output token limit. Split the work into smaller calls."
+const (
+	cutOffArgsError  = "The arguments of this call were cut off at the output token limit. Split the work into smaller calls."
+	invalidArgsError = "The arguments of this call are not valid JSON (%v). Write them again as valid JSON."
+)
 
-// newToolCall checks the streamed arguments. Cut-off JSON is replaced by {}
-// and reported in ArgsError, so the call still goes back to the provider in a
-// valid shape and the model learns what happened.
+// newToolCall checks the streamed arguments. Tabs and line breaks written
+// raw inside a string, as some local models do, are escaped. JSON that is
+// still not valid is replaced by {} and reported in ArgsError, so the call
+// still goes back to the provider in a valid shape and the model learns
+// what happened.
 func newToolCall(id, name, args string) ToolCall {
 	call := ToolCall{ID: id, Name: name, Args: json.RawMessage(args)}
-	switch {
-	case args == "":
+	if args == "" {
 		call.Args = json.RawMessage("{}")
-	case !json.Valid(call.Args):
-		call.Args = json.RawMessage("{}")
-		call.ArgsError = cutOffArgsError
+		return call
 	}
+	if json.Valid(call.Args) {
+		return call
+	}
+	if escaped := escapeRawControls(args); json.Valid([]byte(escaped)) {
+		call.Args = json.RawMessage(escaped)
+		return call
+	}
+	var parsed any
+	err := json.Unmarshal(call.Args, &parsed)
+	call.Args = json.RawMessage("{}")
+	call.ArgsError = fmt.Sprintf(invalidArgsError, err)
 	return call
+}
+
+// escapeRawControls escapes the control characters inside the strings of
+// some JSON, which JSON forbids there: a tab becomes \t, a line break \n.
+func escapeRawControls(text string) string {
+	var out strings.Builder
+	inString, escaped := false, false
+	for _, char := range text {
+		switch {
+		case escaped:
+			escaped = false
+		case inString && char == '\\':
+			escaped = true
+		case char == '"':
+			inString = !inString
+		case inString && char < 0x20:
+			out.WriteString(escapedControl(char))
+			continue
+		}
+		out.WriteRune(char)
+	}
+	return out.String()
+}
+
+func escapedControl(char rune) string {
+	switch char {
+	case '\t':
+		return `\t`
+	case '\n':
+		return `\n`
+	case '\r':
+		return `\r`
+	}
+	return fmt.Sprintf(`\u%04x`, char)
+}
+
+// blameCutOff tells the model that the calls whose arguments are not valid
+// were cut off, when the provider said the reply was.
+func blameCutOff(calls []ToolCall) {
+	for i := range calls {
+		if calls[i].ArgsError != "" {
+			calls[i].ArgsError = cutOffArgsError
+		}
+	}
 }

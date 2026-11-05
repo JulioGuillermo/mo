@@ -213,6 +213,9 @@ func (p *OpenAI) Stream(ctx context.Context, req Request, onEvent func(Event)) (
 		toolCall.Extra = call.ExtraContent
 		message.ToolCalls = append(message.ToolCalls, toolCall)
 	}
+	if cutOff {
+		blameCutOff(message.ToolCalls)
+	}
 	return Response{Message: message, Usage: clock.fill(usage)}, nil
 }
 

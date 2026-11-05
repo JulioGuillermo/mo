@@ -119,6 +119,9 @@ func (s *anthropicStream) message() Message {
 	for _, toolUse := range s.toolUses {
 		message.ToolCalls = append(message.ToolCalls, newToolCall(toolUse.id, toolUse.name, toolUse.args.String()))
 	}
+	if s.cutOff {
+		blameCutOff(message.ToolCalls)
+	}
 	return message
 }
 

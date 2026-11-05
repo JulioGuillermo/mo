@@ -173,6 +173,9 @@ func (p *Responses) Stream(ctx context.Context, req Request, onEvent func(Event)
 		}
 		message.ToolCalls = append(message.ToolCalls, newToolCall(id, call.Name, string(call.Args)))
 	}
+	if cutOff {
+		blameCutOff(message.ToolCalls)
+	}
 	if cutOff && len(calls) == 0 {
 		message.Text += cutOffTextNote
 		onEvent(Event{Kind: EventText, Text: cutOffTextNote})

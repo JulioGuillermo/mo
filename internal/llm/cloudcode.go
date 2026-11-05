@@ -189,6 +189,9 @@ func (p *CloudCode) Stream(ctx context.Context, req Request, onEvent func(Event)
 		return Response{}, err
 	}
 	message := Message{Role: RoleAssistant, Text: text.String(), Reasoning: reasoning.String(), ToolCalls: calls}
+	if cutOff {
+		blameCutOff(message.ToolCalls)
+	}
 	if cutOff && len(calls) == 0 {
 		message.Text += cutOffTextNote
 		onEvent(Event{Kind: EventText, Text: cutOffTextNote})

@@ -9,7 +9,7 @@ package llm
 // | LO-05 | Happy    | Sends system, tool results and tools in chat completions shape  | P0       |
 // | LO-06 | Happy    | ListModels returns the ids in order                             | P1       |
 // | LO-07 | Edge     | Fragments without index continue the last call                 | P1       |
-// | LO-08 | Error    | Cut-off arguments become {} with an ArgsError                   | P0       |
+// | LO-08 | Error    | Cut-off arguments become {} with an ArgsError that says so      | P0       |
 // | LO-09 | Edge     | finish_reason length on text adds a cut-off note                | P2       |
 // | LO-10 | Error    | A keep-alive connection the server closed is retried            | P0       |
 // | LO-11 | Happy    | ContextWindow reads n_ctx from llama-server /props              | P1       |
@@ -19,6 +19,8 @@ package llm
 // | LO-15 | Happy    | Images, audio and video go as image_url, input_audio and input_video | P0   |
 // | LO-16 | Happy    | Media the server's model does not read go as a line saying so    | P0       |
 // | LO-17 | Edge     | A server that does not say what its model reads gets all media   | P1       |
+// | LO-18 | Edge     | Tabs and line breaks written raw inside a string are escaped     | P0       |
+// | LO-19 | Error    | Arguments not valid and not cut off say why, not that they were cut off | P1 |
 
 import (
 	"context"
@@ -214,7 +216,7 @@ func TestOpenAIStreamEdges(t *testing.T) {
 		}
 	})
 
-	t.Run("LO-08 cut-off arguments become {} with an ArgsError", func(t *testing.T) {
+	t.Run("LO-08 cut-off arguments become {} with an ArgsError that says so", func(t *testing.T) {
 		server := sseServer(t, []string{
 			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"write","arguments":"{\"path\":\"a\",\"content\":\"abc"}}]},"finish_reason":"length"}]}`,
 			`[DONE]`,
@@ -226,7 +228,7 @@ func TestOpenAIStreamEdges(t *testing.T) {
 			t.Fatal(err)
 		}
 		call := response.Message.ToolCalls[0]
-		if string(call.Args) != "{}" || call.ArgsError == "" {
+		if string(call.Args) != "{}" || call.ArgsError != cutOffArgsError {
 			t.Errorf("call = %+v", call)
 		}
 		if _, err := json.Marshal(toOpenAIMessage(response.Message)); err != nil {
@@ -244,6 +246,35 @@ func TestOpenAIStreamEdges(t *testing.T) {
 
 		if err != nil || !strings.HasSuffix(response.Message.Text, cutOffTextNote) {
 			t.Errorf("text = %q err = %v", response.Message.Text, err)
+		}
+	})
+
+	t.Run("LO-18 tabs and line breaks written raw inside a string are escaped", func(t *testing.T) {
+		server := sseServer(t, []string{
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"write","arguments":"{\"path\":\"m.go\",\t\"content\":\"a\\n\tb\nc\"}"}}]},"finish_reason":"tool_calls"}]}`,
+			`[DONE]`,
+		}, nil)
+
+		response, _ := (&OpenAI{BaseURL: server.URL}).Stream(context.Background(), Request{}, func(Event) {})
+
+		call := response.Message.ToolCalls[0]
+		var args struct{ Path, Content string }
+		if err := json.Unmarshal(call.Args, &args); err != nil || call.ArgsError != "" || args.Path != "m.go" || args.Content != "a\n\tb\nc" {
+			t.Errorf("call = %+v args = %+v err = %v", call, args, err)
+		}
+	})
+
+	t.Run("LO-19 arguments not valid and not cut off say why, not that they were cut off", func(t *testing.T) {
+		server := sseServer(t, []string{
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"write","arguments":"{\"path\": m.go}"}}]},"finish_reason":"tool_calls"}]}`,
+			`[DONE]`,
+		}, nil)
+
+		response, _ := (&OpenAI{BaseURL: server.URL}).Stream(context.Background(), Request{}, func(Event) {})
+
+		call := response.Message.ToolCalls[0]
+		if string(call.Args) != "{}" || !strings.Contains(call.ArgsError, "not valid JSON (invalid character") {
+			t.Errorf("call = %+v", call)
 		}
 	})
 }
