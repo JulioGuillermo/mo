@@ -26,11 +26,17 @@ import (
 
 const readMaxLineBytes = 2000
 
+const readSchema = `{"type":"object","properties":{
+"path":{"type":"string"},
+"as":{"type":"string","enum":["text","image"],"description":"PDF only: text (default), or an image per page for a model that sees images, for scans, figures and layout"},
+"pages":{"type":"string","description":"PDF only: a page or a range, like 3 or 2-7; images at most 20 at a time"}},
+"required":["path"]}`
+
 func readTool() Tool {
 	return Tool{
 		Name:        "read",
-		Description: "Read a text file, see an image, or hear an audio or video file.",
-		Schema:      json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`),
+		Description: "Read a text file or a PDF, see an image, or hear an audio or video file.",
+		Schema:      json.RawMessage(readSchema),
 		Run:         runRead,
 		View:        true,
 		ViewSelf:    true,
@@ -43,7 +49,9 @@ const readSniff = 8000
 
 func runRead(ctx context.Context, env Env, raw json.RawMessage) (string, error) {
 	var args struct {
-		Path string `json:"path"`
+		Path  string `json:"path"`
+		As    string `json:"as"`
+		Pages string `json:"pages"`
 	}
 	if err := decodeArgs(raw, &args); err != nil {
 		return "", err
@@ -55,6 +63,17 @@ func runRead(ctx context.Context, env Env, raw json.RawMessage) (string, error) 
 	}
 	if !info.Mode().IsRegular() {
 		return "", errors.New("not a regular file")
+	}
+	if isPDF(path) {
+		output, err := readPDF(ctx, path, args.As, args.Pages)
+		if err != nil || args.As == "image" {
+			return output, err
+		}
+		view, _ := ViewFrom(ctx)
+		return view.Apply(output), nil
+	}
+	if args.As != "" || args.Pages != "" {
+		return "", errors.New("as and pages are for a PDF")
 	}
 	if render.IsImageFile(path) {
 		return describeImage(path, info.Size())
