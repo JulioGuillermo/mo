@@ -15,6 +15,7 @@ package tui
 // | FC-11 | Happy    | shift+↑↓ select from the cursor; y copies the lines selected                | P1       |
 // | FC-12 | Edge     | The arrows alone, or esc, let a selection go; c comments the cursor's line again | P1 |
 // | FC-13 | Happy    | G takes the cursor to the last line, g back to the first                   | P0       |
+// | FC-14 | Happy    | pgdown and pgup move the cursor a page with the view, on the same row     | P1       |
 
 import (
 	"fmt"
@@ -248,6 +249,21 @@ func TestFileComments(t *testing.T) {
 
 		if cursorAtEnd != last || atStart.viewer.cursor != 0 || atStart.viewer.top != 0 {
 			t.Errorf("cursor after G %d of %d, after g %d, top %d", cursorAtEnd, last, atStart.viewer.cursor, atStart.viewer.top)
+		}
+	})
+
+	t.Run("FC-14 pgdown and pgup move the cursor a page with the view, on the same row", func(t *testing.T) {
+		m := openMain(t)
+		m.viewer.lines = make([]string, 200)
+		rows := m.viewerRows()
+		m = typeText(t, m, "jj")
+
+		down := keys(t, m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+		downCursor, downTop := down.viewer.cursor, down.viewer.top
+		up := keys(t, down, tea.KeyPressMsg{Code: tea.KeyPgUp})
+
+		if downCursor != 2+rows || downTop != rows || up.viewer.cursor != 2 || up.viewer.top != 0 {
+			t.Errorf("rows %d: after pgdown cursor %d top %d, after pgup cursor %d top %d", rows, downCursor, downTop, up.viewer.cursor, up.viewer.top)
 		}
 	})
 }

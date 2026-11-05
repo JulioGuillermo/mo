@@ -331,6 +331,15 @@ func (m model) scrollViewer(by int) {
 	v.follow = v.top == bottom
 }
 
+// pageViewer scrolls by a page, the cursor too when there is one, so it
+// stays on the same row of the screen.
+func (m model) pageViewer(by int) {
+	m.scrollViewer(by)
+	if m.viewer.annotatable() {
+		m.moveCursor(by)
+	}
+}
+
 // panViewer moves the view across by columns; a diagram stops at its
 // right edge, the longest line in view.
 func (m model) panViewer(by int) {
@@ -609,9 +618,9 @@ func (m model) viewerKey(pressed string) (tea.Model, tea.Cmd) {
 			return m.attachFile()
 		}
 	case "pgup", "shift+up":
-		m.scrollViewer(-rows)
+		m.pageViewer(-rows)
 	case "pgdown", "shift+down", "space":
-		m.scrollViewer(rows)
+		m.pageViewer(rows)
 	case "home", "g":
 		if v.annotatable() {
 			m.moveCursor(-len(v.lines))
