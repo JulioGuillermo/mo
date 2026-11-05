@@ -94,10 +94,12 @@ func (a *Agent) prepareCall(ctx context.Context, outer llm.ToolCall, hooks Hooks
 	case ctx.Err() != nil:
 		return settled(outer, cancelledResult)
 	case outer.ArgsError != "":
+		a.announceBlocked(outer, outer.ArgsError, hooks)
 		return settled(outer, outer.ArgsError)
 	}
 	call, _, err := a.Tools.Unwrap(outer)
 	if err != nil {
+		a.announceBlocked(outer, err.Error(), hooks)
 		return settled(outer, err.Error())
 	}
 	call.Name = tools.Canonical(call.Name)

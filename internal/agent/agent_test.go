@@ -9,7 +9,7 @@ package agent
 // | AG-05 | Error    | A provider error stops the run and is returned                     | P1       |
 // | AG-06 | Security | A write outside the working directory asks even when not listed    | P0       |
 // | AG-07 | Security | AllowAlways stops asking for that tool, but not outside the workdir | P0       |
-// | AG-08 | Error    | A call with cut-off arguments gets its error, without running      | P1       |
+// | AG-08 | Error    | A call with cut-off arguments gets its error, without running, and is shown failed | P1 |
 // | AG-09 | Happy    | RewritePrompt changes the prompt before it enters the history      | P1       |
 // | AG-10 | Security | BlockToolCall stops a call before anyone is asked to approve it    | P0       |
 // | AG-11 | Happy    | Reasoning stays in the history but goes back only with KeepReasoning | P0     |
@@ -230,7 +230,7 @@ func TestRun(t *testing.T) {
 		}
 	})
 
-	t.Run("AG-08 a call with cut-off arguments gets its error, without running", func(t *testing.T) {
+	t.Run("AG-08 a call with cut-off arguments gets its error, without running, and is shown failed", func(t *testing.T) {
 		call := toolCall("c1", "write", `{}`)
 		call.ArgsError = "cut off"
 		provider := &scriptedProvider{replies: []llm.Message{
@@ -238,13 +238,23 @@ func TestRun(t *testing.T) {
 			{Role: llm.RoleAssistant, Text: "retrying"},
 		}}
 		agent := newAgent(t, provider)
+		var started, shown []string
+		hooks := Hooks{
+			OnToolStart: func(call llm.ToolCall, _ string) { started = append(started, call.ID) },
+			OnToolDone: func(call llm.ToolCall, output string, isError bool) {
+				shown = append(shown, fmt.Sprintf("%s %s %v", call.ID, output, isError))
+			},
+		}
 
-		if err := agent.Run(context.Background(), "write", Hooks{}); err != nil {
+		if err := agent.Run(context.Background(), "write", hooks); err != nil {
 			t.Fatal(err)
 		}
 
 		if result := agent.History[2]; !result.IsError || result.Text != "cut off" {
 			t.Errorf("result = %+v", result)
+		}
+		if len(started) != 1 || len(shown) != 1 || shown[0] != "c1 cut off true" {
+			t.Errorf("started %v shown %v", started, shown)
 		}
 	})
 }
