@@ -36,11 +36,10 @@ func (m model) showToolPick(screen *toolPickScreen, at string) (tea.Model, tea.C
 	}
 	var options []huh.Option[string]
 	for _, name := range pick.own {
-		options = append(options, huh.NewOption(tickMark(pick.ticked(name))+" "+name, name))
+		options = append(options, huh.NewOption(toolLabel(pick.ticked(name), name), name))
 	}
 	for _, server := range pick.servers {
-		label := fmt.Sprintf("%s %-*s   %s ›", serverMark(pick, server), width, server.name, dimStyle.Render(pick.serverState(server)))
-		options = append(options, huh.NewOption(label, toolPickServer+server.name))
+		options = append(options, huh.NewOption(serverLabel(pick, server, width), toolPickServer+server.name))
 	}
 	options = append(options, huh.NewOption(keyStyle().Render("‹ done"), toolPickDone))
 	if at == "" {
@@ -102,17 +101,45 @@ func (m model) showServerTools(screen *toolPickScreen, server toolServer) (tea.M
 	return m.showSettings(&settingsScreen{form: form, next: keep, back: back, help: serverToolHelp})
 }
 
-func tickMark(ticked bool) string {
+const tickedBarCells = 12
+
+func greenStyle() lipgloss.Style { return lipgloss.NewStyle().Foreground(col(uiNow().green)) }
+
+// toolLabel is a tool's row: a green ✓ and its name when ticked, a faint
+// dot and name when not.
+func toolLabel(ticked bool, name string) string {
 	if ticked {
-		return "[x]"
+		return greenStyle().Render("✓") + " " + name
 	}
-	return "[ ]"
+	return dimStyle.Render("· " + name)
 }
 
-// serverMark is [x] for all of a server, [-] for some of it.
-func serverMark(pick *toolPick, server toolServer) string {
-	if !pick.allOf(server) && len(pick.tickedOf(server)) > 0 {
-		return "[-]"
+// serverLabel is a server's row: its mark, its name, a bar of how much of
+// it is ticked and the count.
+func serverLabel(pick *toolPick, server toolServer, width int) string {
+	ticked, all := len(pick.tickedOf(server)), len(server.tools)
+	mark := dimStyle.Render("·")
+	switch {
+	case pick.allOf(server):
+		mark, ticked = greenStyle().Render("✓"), all
+	case ticked > 0:
+		mark = workingStyle().Render("◐")
 	}
-	return tickMark(pick.allOf(server))
+	name := fmt.Sprintf("%-*s", width, server.name)
+	if !pick.allOf(server) && ticked == 0 {
+		name = dimStyle.Render(name)
+	}
+	count := fmt.Sprintf("%d/%d", ticked, all)
+	filled := 0
+	if all > 0 {
+		filled = (ticked*tickedBarCells + all - 1) / all
+	}
+	if all == 0 {
+		count = "not connected"
+		if pick.allOf(server) {
+			filled, count = tickedBarCells, "all"
+		}
+	}
+	bar := greenStyle().Render(strings.Repeat("━", filled)) + dimStyle.Render(strings.Repeat("─", tickedBarCells-filled))
+	return fmt.Sprintf("%s %s  %s %s %s", mark, name, bar, dimStyle.Render(fmt.Sprintf("%7s", count)), dimStyle.Render("›"))
 }

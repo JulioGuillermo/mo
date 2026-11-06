@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"slices"
 	"strings"
 
@@ -74,20 +73,6 @@ func (p *toolPick) tickedOf(server toolServer) []string {
 // of its tools.
 func (p *toolPick) allOf(server toolServer) bool {
 	return p.wholeServer(server) || (len(server.tools) > 0 && len(p.tickedOf(server)) == len(server.tools))
-}
-
-// serverState is how much of a server is ticked: all, or a count of its
-// tools; all or none when it gave none.
-func (p *toolPick) serverState(server toolServer) string {
-	switch {
-	case p.allOf(server) && len(server.tools) == 0:
-		return "all"
-	case p.allOf(server):
-		return fmt.Sprintf("all (%d)", len(server.tools))
-	case len(server.tools) == 0:
-		return "none"
-	}
-	return fmt.Sprintf("%d of %d", len(p.tickedOf(server)), len(server.tools))
 }
 
 // toggleServer ticks all of a server, or none when it was all.

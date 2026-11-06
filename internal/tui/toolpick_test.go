@@ -46,7 +46,7 @@ func TestToolPick(t *testing.T) {
 
 		view := shownRows(m)
 
-		for _, want := range []string{"[ ] read", "[x] bash", "[-] xdr", "1 of 3", "[ ] osdx", "none"} {
+		for _, want := range []string{"· read", "✓ bash", "◐ xdr", "1/3", "· osdx", "not connected"} {
 			if !strings.Contains(view, want) {
 				t.Errorf("no %q in\n%s", want, view)
 			}
@@ -122,7 +122,7 @@ func TestToolPick(t *testing.T) {
 
 		m = pressEnter(keys(t, m, keyDown, keyDown))
 
-		if !slices.Equal(chosen, []string{"old_tool", "mcp__osdx__*"}) || !strings.Contains(shownRows(m), "[x] osdx") {
+		if !slices.Equal(chosen, []string{"old_tool", "mcp__osdx__*"}) || !strings.Contains(shownRows(m), "✓ osdx") {
 			t.Errorf("chosen %v\n%s", chosen, shownRows(m))
 		}
 	})
