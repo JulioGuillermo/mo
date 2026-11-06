@@ -94,7 +94,7 @@ func (r *Registry) modeOf(name string) Mode {
 		return mode
 	}
 	switch {
-	case r.options.Mode == ModeSearch && slices.Contains(r.options.AlwaysLoaded, name):
+	case r.options.Mode == ModeSearch && Matches(r.options.AlwaysLoaded, name):
 		return ModeFull
 	case r.options.Mode == ModeCompact || r.options.Mode == ModeSearch:
 		return r.options.Mode

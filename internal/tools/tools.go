@@ -163,7 +163,7 @@ func NewRegistry(env Env, options Options) *Registry {
 	env.ReadMaxSize = options.ReadMaxSize
 	registry := &Registry{env: env, options: options}
 	for _, tool := range append(builtinsWith(options.Searcher), options.Extra...) {
-		if slices.Contains(options.Disabled, tool.Name) || (tool.Name == titleToolName && env.Titles == nil) || (tool.Name == "ui" && env.UIs == nil) || (tool.Name == AgentName && env.Agents == nil) || (tool.Name == TellParentName && env.Parent == nil) || (tool.Name == PeersName && env.Peers == nil) {
+		if Matches(options.Disabled, tool.Name) || (tool.Name == titleToolName && env.Titles == nil) || (tool.Name == "ui" && env.UIs == nil) || (tool.Name == AgentName && env.Agents == nil) || (tool.Name == TellParentName && env.Parent == nil) || (tool.Name == PeersName && env.Peers == nil) {
 			continue
 		}
 		if tool.Name == AgentName && len(options.AgentKinds) > 0 {

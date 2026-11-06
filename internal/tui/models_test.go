@@ -118,14 +118,6 @@ func TestModelPicker(t *testing.T) {
 		section, _ := sectionByKey("agents")
 		return m, menu, section
 	}
-	itemNamed := func(m model, menu *settingsMenu, section settingsSection, title string) settingItem {
-		for _, item := range section.items(m, menu) {
-			if item.title == title {
-				return item
-			}
-		}
-		return settingItem{}
-	}
 
 	t.Run("MP-05 Subagents' provider lists the providers set up; another one goes on to its models", func(t *testing.T) {
 		m, menu, section := agentsMenu(t)
@@ -188,4 +180,13 @@ func TestModelPicker(t *testing.T) {
 			t.Errorf("err = %v", err)
 		}
 	})
+}
+
+func itemNamed(m model, menu *settingsMenu, section settingsSection, title string) settingItem {
+	for _, item := range section.items(m, menu) {
+		if item.title == title {
+			return item
+		}
+	}
+	return settingItem{}
 }

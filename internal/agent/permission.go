@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -47,7 +46,7 @@ const blockedResult = "blocked by the rule %q, so %s did not run: the user never
 // ask too.
 func (a *Agent) approvalFor(ctx context.Context, call llm.ToolCall, hooks Hooks) approval {
 	warning := a.Tools.Warning(call)
-	listed := slices.Contains(a.ConfirmTools, call.Name) && !a.alwaysAllowed[call.Name] && !a.Tools.AlreadyConfirmed(call)
+	listed := tools.Matches(a.ConfirmTools, call.Name) && !a.alwaysAllowed[call.Name] && !a.Tools.AlreadyConfirmed(call)
 	policy := a.Permissions
 	if policy == nil {
 		return approval{ask: warning != "" || listed, warning: warning}
@@ -75,7 +74,7 @@ func (a *Agent) approvalFor(ctx context.Context, call llm.ToolCall, hooks Hooks)
 	case !ruled:
 		changes := mode == permissions.ModeAsk && a.Tools.Changes(call) && !a.alwaysAllowed[call.Name]
 		return approval{ask: listed || changes}
-	case !slices.Contains(a.ConfirmTools, call.Name) || a.Tools.AlreadyConfirmed(call):
+	case !tools.Matches(a.ConfirmTools, call.Name) || a.Tools.AlreadyConfirmed(call):
 		return approval{}
 	case splitErr != nil:
 		return approval{ask: true, ruled: true, reason: "the command could not be split to check its parts"}

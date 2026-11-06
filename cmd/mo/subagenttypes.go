@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"path"
 	"slices"
 	"strings"
 	"sync"
@@ -61,7 +60,7 @@ func optionsFor(options tools.Options, kind config.AgentType) tools.Options {
 		}
 		disabled := slices.Clone(options.Disabled)
 		for _, name := range names {
-			if name != tools.AgentName && name != tools.TellParentName && !matchesAny(kind.Tools, name) {
+			if name != tools.AgentName && name != tools.TellParentName && !tools.Matches(kind.Tools, name) {
 				disabled = append(disabled, name)
 			}
 		}
@@ -69,19 +68,8 @@ func optionsFor(options tools.Options, kind config.AgentType) tools.Options {
 	}
 	if len(kind.Skills) > 0 {
 		options.Skills = slices.DeleteFunc(slices.Clone(options.Skills), func(skill skills.Skill) bool {
-			return !matchesAny(kind.Skills, skill.Name)
+			return !tools.Matches(kind.Skills, skill.Name)
 		})
 	}
 	return options
-}
-
-// matchesAny tells whether name is one of patterns, where * stands for any
-// characters.
-func matchesAny(patterns []string, name string) bool {
-	for _, pattern := range patterns {
-		if matched, _ := path.Match(pattern, name); matched {
-			return true
-		}
-	}
-	return false
 }

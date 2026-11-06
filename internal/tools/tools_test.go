@@ -32,6 +32,7 @@ package tools
 // | TL-28 | Happy    | edit fails whole across files: one edit that does not apply changes none | P0   |
 // | TL-29 | Security | Warning checks every file an edit changes, not only the call's path | P0       |
 // | TL-30 | Error    | An edit with no path, for the call or for itself, says so        | P1       |
+// | TL-31 | Happy    | A disabled pattern, as mcp__gh__*, takes out every tool it matches, no other | P0 |
 
 import (
 	"bytes"
@@ -405,6 +406,19 @@ func TestRegistry(t *testing.T) {
 
 		if !isError || !strings.Contains(output, "unknown tool") {
 			t.Errorf("output = %q isError = %v", output, isError)
+		}
+	})
+
+	t.Run("TL-31 a disabled pattern, as mcp__gh__*, takes out every tool it matches, no other", func(t *testing.T) {
+		issues, pulls, other := Tool{Name: "mcp__gh__issues"}, Tool{Name: "mcp__gh__pulls"}, Tool{Name: "mcp__xdr__search"}
+		registry := NewRegistry(newEnv(t), Options{Disabled: []string{"mcp__gh__*"}, Extra: []Tool{issues, pulls, other}})
+
+		_, issuesGone := registry.find("mcp__gh__issues")
+		_, pullsGone := registry.find("mcp__gh__pulls")
+		_, otherKept := registry.find("mcp__xdr__search")
+
+		if issuesGone || pullsGone || !otherKept {
+			t.Errorf("issues %v pulls %v other %v", issuesGone, pullsGone, otherKept)
 		}
 	})
 }

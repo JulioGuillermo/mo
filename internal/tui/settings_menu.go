@@ -310,7 +310,6 @@ func (m model) editItem(menu *settingsMenu, section settingsSection, item settin
 	draft := menu.sectionDraft(section)
 	restore := draft.snapshot()
 	off := slices.Clone(draft.skillsDisabled)
-	field := item.field(draft)
 	toSection := func(m model) (tea.Model, tea.Cmd) { return m.showSection(menu, section, item.title) }
 	keep := toSection
 	if menu.overriding(section) {
@@ -327,6 +326,11 @@ func (m model) editItem(menu *settingsMenu, section settingsSection, item settin
 		restore()
 		return toSection(m)
 	}
+	if ticked := tickedTools(section, item.title, draft); ticked != nil {
+		pick := newToolPick(toolNames(m.session), mcpNames(m, menu), ticked)
+		return m.showToolPick(&toolPickScreen{title: menu.crumb(section) + " › " + item.title, pick: pick, keep: keep, cancel: cancel}, "")
+	}
+	field := item.field(draft)
 	form := newForm(huh.NewGroup(field).Title(menu.crumb(section))).WithShowHelp(false)
 	screen := &settingsScreen{form: form, layer: menu.layer, next: keep, back: cancel, help: fieldHelp(field)}
 	if floats(field) {

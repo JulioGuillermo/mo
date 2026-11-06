@@ -224,12 +224,32 @@ func modelNote(_ model, menu *settingsMenu) string {
 	return strings.Join(notes, "\n")
 }
 
+const (
+	alwaysLoadedTitle = "Loaded from the start in search mode"
+	confirmTitle      = "Ask before running"
+	disabledTitle     = "Disabled"
+)
+
+// tickedTools is the list of tools an item of the tools section ticks, nil
+// for any other item.
+func tickedTools(section settingsSection, title string, d *settingsDraft) *[]string {
+	if section.key != "tools" {
+		return nil
+	}
+	switch title {
+	case alwaysLoadedTitle:
+		return &d.alwaysLoaded
+	case confirmTitle:
+		return &d.confirm
+	case disabledTitle:
+		return &d.disabled
+	}
+	return nil
+}
+
 func toolItems(m model, menu *settingsMenu) []settingItem {
-	names := toolNames(m.session)
 	choice := func(title string, value func(d *settingsDraft) *[]string) settingItem {
-		return settingItem{title, func(d *settingsDraft) string { return listValue(*value(d)) }, func(d *settingsDraft) huh.Field {
-			return toolChoice(title, names, value(d))
-		}}
+		return settingItem{title, func(d *settingsDraft) string { return listValue(*value(d)) }, nil}
 	}
 	items := []settingItem{
 		{"Tool mode", func(d *settingsDraft) string { return d.mode }, func(d *settingsDraft) huh.Field {
@@ -245,9 +265,9 @@ func toolItems(m model, menu *settingsMenu) []settingItem {
 				huh.NewOption("declare: declared from the next request on; restarts the prompt cache once", string(tools.LoadDeclare)),
 			).Value(&d.load)
 		}},
-		choice("Loaded from the start in search mode", func(d *settingsDraft) *[]string { return &d.alwaysLoaded }),
-		choice("Ask before running", func(d *settingsDraft) *[]string { return &d.confirm }),
-		choice("Disabled", func(d *settingsDraft) *[]string { return &d.disabled }),
+		choice(alwaysLoadedTitle, func(d *settingsDraft) *[]string { return &d.alwaysLoaded }),
+		choice(confirmTitle, func(d *settingsDraft) *[]string { return &d.confirm }),
+		choice(disabledTitle, func(d *settingsDraft) *[]string { return &d.disabled }),
 	}
 	if servers := mcpNames(m, menu); len(servers) > 0 {
 		items = append(items, settingItem{"MCP servers off", func(d *settingsDraft) string { return listValue(d.mcpDisabled) }, func(d *settingsDraft) huh.Field {

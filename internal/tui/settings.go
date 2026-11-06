@@ -78,6 +78,9 @@ type settingsScreen struct {
 	// remove, when set, deletes what the cursor of the list is on: ctrl+x,
 	// delete or a click on its mark.
 	remove func(m model) (tea.Model, tea.Cmd)
+	// toggle, when set, ticks or unticks what the cursor of the list is on:
+	// space.
+	toggle func(m model) (tea.Model, tea.Cmd)
 	// floating draws the form in a box over under, the screen it was
 	// opened from, which stays in view.
 	floating bool
@@ -219,6 +222,11 @@ func (m model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 		screen := m.settings
 		m.settings = nil
 		return screen.remove(m)
+	}
+	if key, ok := msg.(tea.KeyPressMsg); ok && m.settings.toggle != nil && key.String() == "space" && !m.filteringList() {
+		screen := m.settings
+		m.settings = nil
+		return screen.toggle(m)
 	}
 	if key, ok := msg.(tea.KeyPressMsg); ok && (key.String() == "esc" || key.String() == "ctrl+c") {
 		screen := m.settings

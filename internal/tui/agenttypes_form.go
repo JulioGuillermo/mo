@@ -20,6 +20,7 @@ const (
 	newTypeChoice     = "\x00newtype"
 	typeProviderEntry = "Provider"
 	typeModelEntry    = "Model"
+	typeToolsEntry    = "Tools"
 )
 
 // agentTypeDraft holds what the form edits for one type of subagent.
@@ -109,7 +110,7 @@ func withoutAgentType(name string) func(config.Config) (config.Config, error) {
 }
 
 // entries are the fields of a type, a row each.
-func (d *agentTypeDraft) entries(toolOptions, skillOptions []string, taken map[string]config.AgentType) []entry {
+func (d *agentTypeDraft) entries(skillOptions []string, taken map[string]config.AgentType) []entry {
 	var entries []entry
 	if d.isNew {
 		entries = append(entries, entry{"Name", func() string { return valueOr(d.name, "required") }, func() huh.Field {
@@ -132,9 +133,7 @@ func (d *agentTypeDraft) entries(toolOptions, skillOptions []string, taken map[s
 		entry{"Starts subagents", func() string { return yesNo(d.canStart) }, func() huh.Field {
 			return huh.NewConfirm().Title("Starts subagents").Description("it may start subagents of its own, while the levels allow").Value(&d.canStart)
 		}},
-		entry{"Tools", func() string { return chosenOrAll(d.tools) }, func() huh.Field {
-			return toolChoice("Tools", toolOptions, &d.tools).Description("the only ones it has; none ticked: all the session has")
-		}},
+		entry{typeToolsEntry, func() string { return chosenOrAll(d.tools) }, nil},
 		entry{"Skills", func() string { return chosenOrAll(d.skills) }, func() huh.Field {
 			return toolChoice("Skills", skillOptions, &d.skills).Description("the only ones it may load; none ticked: all")
 		}},
@@ -174,10 +173,8 @@ func chosenOrAll(names []string) string {
 	return strings.Join(names, ", ")
 }
 
-// typeToolOptions are the tools a type may be given: the session's that a
-// subagent can have, all of an MCP server at once, and what the type has
-// already.
-func typeToolOptions(m model, menu *settingsMenu, chosen []string) []string {
+// typeToolNames are the session's tools a subagent can have.
+func typeToolNames(m model) []string {
 	var names []string
 	governedElsewhere := append([]string{tools.AgentName, tools.TellParentName}, tools.MainOnly...)
 	for _, name := range toolNames(m.session) {
@@ -185,11 +182,19 @@ func typeToolOptions(m model, menu *settingsMenu, chosen []string) []string {
 			names = append(names, name)
 		}
 	}
-	servers := slices.Concat(slices.Collect(maps.Keys(m.session.Config.MCP)), slices.Collect(maps.Keys(menu.layer.MCP)))
-	for _, server := range servers {
-		names = append(names, "mcp__"+server+"__*")
+	return names
+}
+
+// pickTypeTools ticks the tools of a type; esc there puts the old ones back.
+func (m model) pickTypeTools(menu *settingsMenu, draft *agentTypeDraft, title string, back func(m model) (tea.Model, tea.Cmd)) (tea.Model, tea.Cmd) {
+	before := slices.Clone(draft.tools)
+	cancel := func(m model) (tea.Model, tea.Cmd) {
+		draft.tools = before
+		return back(m)
 	}
-	return withChosen(names, chosen)
+	pick := newToolPick(typeToolNames(m), mcpNames(m, menu), &draft.tools)
+	note := "the only ones it has; none ticked: all the session has"
+	return m.showToolPick(&toolPickScreen{title: title + " › Tools", note: note, pick: pick, keep: back, cancel: cancel}, "")
 }
 
 // withChosen adds what is chosen already to the names to pick from, so
@@ -261,7 +266,6 @@ func typeSummary(kind config.AgentType) string {
 // for Save and close, as the rest does.
 func (m model) editAgentType(menu *settingsMenu, name string) (tea.Model, tea.Cmd) {
 	draft := newAgentTypeDraft(name, menu.layer.Agents.Types[name])
-	toolOptions := typeToolOptions(m, menu, draft.tools)
 	skillOptions := withChosen(skillNames(m, menu), draft.skills)
 	title := "Type " + name
 	if draft.isNew {
@@ -277,10 +281,13 @@ func (m model) editAgentType(menu *settingsMenu, name string) (tea.Model, tea.Cm
 			case typeModelEntry:
 				shown, cmd := m.pickModelOf(menu, &draft.model, back)
 				return shown, cmd, true
+			case typeToolsEntry:
+				shown, cmd := m.pickTypeTools(menu, draft, title, back)
+				return shown, cmd, true
 			}
 			return m, nil, false
 		},
-		entries:   func() []entry { return draft.entries(toolOptions, skillOptions, menu.layer.Agents.Types) },
+		entries:   func() []entry { return draft.entries(skillOptions, menu.layer.Agents.Types) },
 		saveLabel: "Keep",
 		back:      func(m model) (tea.Model, tea.Cmd) { return m.pickAgentType(menu, name) },
 		snapshot: func() func() {

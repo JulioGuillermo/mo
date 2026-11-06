@@ -227,6 +227,7 @@ always_loaded = ["read", "edit", "write", "bash", "ask", "memory"]   # search mo
 confirm = ["bash", "rm", "web_fetch"]   # ask before these; [] never asks. A list of your own
                                         # replaces this one: keep "web_fetch" in it to be asked
 disabled = []              # e.g. ["mkdir", "ls"] to save context
+                           # always_loaded, confirm and disabled take * too: "mcp__jira__*" is all of a server
 mcp_disabled = []          # MCP servers set up but not started, e.g. ["docs"]
 max_output = 10000         # bytes of tool output sent to the model
 read_max_size = "10MB"     # larger files are read only in parts (offset, limit, match); "0" for no limit
@@ -797,6 +798,10 @@ stops, the others keep their connection. **Test connection** in a server's edito
 connects to it as it is filled in, saved or not, and says how many tools it offers or why it failed
 (a command server is started and stopped again). `/settings › Tools › MCP servers off` stops
 one without deleting it, everywhere or only in a project. A server's stderr goes to `~/.local/share/mo/logs/mcp-<name>.log`.
+Every list of tools to tick in `/settings` (`Disabled`, `Ask before running`, `Loaded from the
+start` and a subagent type's `Tools`) shows each MCP server as one row: space ticks it whole, as
+`mcp__<server>__*`, which takes the tools it adds later too; enter opens it to tick its tools one
+by one.
 A server reached by URL that asks for a sign-in (it answers 401) shows `! needs a sign-in` in
 `/mcp`. `/mcp login <server>` signs in as the MCP standard says: mo reads where the server signs in
 from its answer and metadata, registers itself there as a client (dynamic client registration), and

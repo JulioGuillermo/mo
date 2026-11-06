@@ -19,6 +19,7 @@ package agent
 // | AG-15 | Happy    | AfterToolCall changes what the model reads of a call, and what is shown | P0     |
 // | AG-16 | Happy    | EndTurn hears each turn once, with its prompt, last answer and error  | P0       |
 // | AG-17 | Happy    | StreamPiece hears every piece of text and reasoning as it comes       | P1       |
+// | AG-18 | Security | A confirm pattern, as r*, asks for every tool it matches             | P0       |
 
 import (
 	"context"
@@ -114,6 +115,25 @@ func TestRun(t *testing.T) {
 
 		result := agent.History[2]
 		if !result.IsError || result.Text != deniedResult {
+			t.Errorf("tool result = %+v", result)
+		}
+		if _, err := os.Stat(filepath.Join(workDir, "a.txt")); err != nil {
+			t.Errorf("a.txt was deleted: %v", err)
+		}
+	})
+
+	t.Run("AG-18 a confirm pattern, as r*, asks for every tool it matches", func(t *testing.T) {
+		provider := &scriptedProvider{replies: []llm.Message{
+			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("c1", "rm", `{"path":"a.txt"}`)}},
+			{Role: llm.RoleAssistant, Text: "ok"},
+		}}
+		agent, workDir := newAgentIn(t, provider, "r*")
+
+		if err := agent.Run(context.Background(), "delete a.txt", Hooks{}); err != nil {
+			t.Fatal(err)
+		}
+
+		if result := agent.History[2]; !result.IsError || result.Text != deniedResult {
 			t.Errorf("tool result = %+v", result)
 		}
 		if _, err := os.Stat(filepath.Join(workDir, "a.txt")); err != nil {

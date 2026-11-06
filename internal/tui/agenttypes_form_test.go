@@ -7,7 +7,7 @@ package tui
 // | AF-03 | Happy    | Deleting a type takes it out; the last one leaves no types               | P1       |
 // | AF-04 | Happy    | Agents shows Types ›, which lists the types with their model and opens one | P0     |
 // | AF-05 | Happy    | Saving the other settings keeps the types                                | P0       |
-// | AF-06 | Happy    | The tools to tick are the session's a subagent can have, each MCP server whole, and what the type has | P1 |
+// | AF-06 | Happy    | The tools to tick are the session's a subagent can have                   | P1       |
 // | AF-07 | Happy    | The side panel and a subagent's menu show its type and model             | P1       |
 // | AF-08 | Happy    | Types in its description is off unless turned on, and only then written   | P1       |
 
@@ -112,14 +112,13 @@ func TestAgentTypesForm(t *testing.T) {
 		}
 	})
 
-	t.Run("AF-06 the tools to tick are the session's a subagent can have, each MCP server whole, and what the type has", func(t *testing.T) {
-		m, menu := menuModel()
+	t.Run("AF-06 the tools to tick are the session's a subagent can have", func(t *testing.T) {
+		m, _ := menuModel()
 		m.session.ToolNames = []string{"read", "bash", tools.AgentName, tools.TellParentName, "title", "ui", tools.PeersName, "mcp__gh__issues"}
-		m.session.Config.MCP = map[string]config.MCPServer{"gh": {Command: "gh-mcp"}}
 
-		names := typeToolOptions(m, menu, []string{"read", "old_tool"})
+		names := typeToolNames(m)
 
-		for _, want := range []string{"read", "bash", "mcp__gh__issues", "mcp__gh__*", "old_tool"} {
+		for _, want := range []string{"read", "bash", "mcp__gh__issues"} {
 			if !slices.Contains(names, want) {
 				t.Errorf("no %s in %v", want, names)
 			}
