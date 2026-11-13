@@ -2,8 +2,11 @@ package tui
 
 // Test Traceability Table
 // | ID    | Category | Description                                                                  | Priority |
-// | MP-01 | Happy    | /model lists the provider's models, the one in use marked; the pick is saved | P0       |
-// | MP-02 | Happy    | When the project sets the model, the pick goes to the project's file         | P0       |
+// | MP-01 | Happy    | /model lists the provider's models, the one in use marked; the pick is for this session, no file changes | P0 |
+// | MP-02 | Happy    | /model global saves the pick; when the project sets the model, to the project's file | P0 |
+// | MP-09 | Happy    | /model global saves to the user's file when the project sets no model        | P0       |
+// | MP-10 | Happy    | Saving other settings keeps the session's model; picking another one in them applies it | P0 |
+// | MP-11 | Error    | /model with another argument says how it is used                             | P2       |
 // | MP-03 | Error    | A provider that cannot list its models asks for the name instead             | P1       |
 // | MP-04 | Happy    | The Model setting picks from the list too, for the provider the form has     | P1       |
 // | MP-05 | Happy    | Subagents' provider lists the providers set up; another one goes on to its models | P0  |
@@ -20,6 +23,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/config"
 )
 
@@ -40,19 +44,23 @@ func modelServer(t *testing.T, models ...string) string {
 	return server.URL + "/v1"
 }
 
-// modelModel is mo on a local provider whose server lists models.
+// modelModel is mo on a local provider whose server lists models; the
+// session rebuilt keeps the model it is built with.
 func modelModel(t *testing.T, url, project string) (model, *[]*config.Config) {
 	t.Helper()
 	m, _, reloaded := projectMenuModel(t, fmt.Sprintf("provider = \"local\"\n[providers.local]\ntype = \"openai\"\nbase_url = %q\nmodel = \"qwen3-8b\"\n", url), project)
 	m.settings = nil
 	m.session.Provider, m.session.Model = "local", "qwen3-8b"
 	m.session.Config.Providers = map[string]config.ProviderConfig{"local": {Protocol: "openai", BaseURL: url}}
+	m.session.Rebuild = func(cfg config.Config) (Session, error) {
+		return Session{Agent: &agent.Agent{}, Provider: cfg.Provider, Model: cfg.Model, Config: cfg, WorkDir: m.session.WorkDir}, nil
+	}
 	return m, reloaded
 }
 
 func TestModelPicker(t *testing.T) {
-	t.Run("MP-01 /model lists the provider's models, the one in use marked; the pick is saved", func(t *testing.T) {
-		m, _ := modelModel(t, modelServer(t, "qwen3-8b", "gemma-3-12b", "qwen3-coder-30b"), "")
+	t.Run("MP-01 /model lists the provider's models, the one in use marked; the pick is for this session, no file changes", func(t *testing.T) {
+		m, reloaded := modelModel(t, modelServer(t, "qwen3-8b", "gemma-3-12b", "qwen3-coder-30b"), "")
 
 		updated, cmd := m.runCommand("/model")
 		m = deliver(updated.(model), cmd, 3)
@@ -63,15 +71,65 @@ func TestModelPicker(t *testing.T) {
 		if !strings.Contains(list, "qwen3-8b  ● in use") || !strings.Contains(list, "gemma-3-12b") || !strings.Contains(list, "type another name") {
 			t.Errorf("list:\n%s", list)
 		}
-		if layer.Providers["local"].Model != "qwen3-coder-30b" {
+		if m.session.Model != "qwen3-coder-30b" || layer.Providers["local"].Model != "qwen3-8b" || len(*reloaded) != 0 {
+			t.Errorf("session %q saved %+v", m.session.Model, layer.Providers["local"])
+		}
+	})
+
+	t.Run("MP-09 /model global saves to the user's file when the project sets no model", func(t *testing.T) {
+		m, _ := modelModel(t, modelServer(t, "qwen3-8b", "gemma-3-12b"), "")
+
+		updated, cmd := m.runCommand("/model global")
+		m = deliver(updated.(model), cmd, 3)
+		m = pick(t, m, "gemma-3-12b")
+
+		if layer, _ := config.ReadUserLayer(); layer.Providers["local"].Model != "gemma-3-12b" {
 			t.Errorf("saved %+v", layer.Providers["local"])
 		}
 	})
 
-	t.Run("MP-02 when the project sets the model, the pick goes to the project's file", func(t *testing.T) {
+	t.Run("MP-10 saving other settings keeps the session's model; picking another one in them applies it", func(t *testing.T) {
+		m, _ := modelModel(t, modelServer(t, "qwen3-8b"), "")
+		var built []config.Config
+		m.session.Model = "picked-for-session"
+		m.session.Reload = func(user config.Config, _ *config.Config) (Session, error) {
+			built = append(built, user)
+			return Session{Agent: &agent.Agent{}, WorkDir: m.session.WorkDir}, nil
+		}
+		layer, _ := config.ReadUserLayer()
+		other := func(layer config.Config) (config.Config, error) {
+			layer.Tools.Disabled = []string{"ls"}
+			return layer, nil
+		}
+		model := func(layer config.Config) (config.Config, error) {
+			layer.Model = "gemma-3-12b"
+			return layer, nil
+		}
+
+		saveSettings(&settingsScreen{layer: layer, apply: other}, m.session, true)()
+		saveSettings(&settingsScreen{layer: layer, apply: model}, m.session, true)()
+
+		saved, _ := config.ReadUserLayer()
+		if len(built) != 2 || built[0].Model != "picked-for-session" || built[1].Model != "gemma-3-12b" || saved.Model != "gemma-3-12b" {
+			t.Errorf("built %q %q, saved %q", built[0].Model, built[1].Model, saved.Model)
+		}
+	})
+
+	t.Run("MP-11 /model with another argument says how it is used", func(t *testing.T) {
+		m, _ := modelModel(t, modelServer(t, "qwen3-8b"), "")
+
+		updated, _ := m.runCommand("/model everywhere")
+
+		after := updated.(model)
+		if after.settings != nil || len(after.blocks) == 0 || !strings.Contains(after.blocks[len(after.blocks)-1].text, "/model global to save it") {
+			t.Errorf("blocks %+v", after.blocks)
+		}
+	})
+
+	t.Run("MP-02 /model global saves the pick; when the project sets the model, to the project's file", func(t *testing.T) {
 		m, reloaded := modelModel(t, modelServer(t, "qwen3-8b", "gemma-3-12b"), "model = \"qwen3-8b\"\n")
 
-		updated, cmd := m.runCommand("/model")
+		updated, cmd := m.runCommand("/model global")
 		m = deliver(updated.(model), cmd, 3)
 		m = pick(t, m, "gemma-3-12b")
 

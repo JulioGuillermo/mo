@@ -282,7 +282,11 @@ func saveSettings(screen *settingsScreen, current Session, wait bool) tea.Cmd {
 		if err != nil {
 			return settingsSavedMsg{err: err}
 		}
-		fresh, err := current.Reload(layer, screen.project)
+		inUse, inUseProject := layer, screen.project
+		if !changesModel(screen, layer, current.WorkDir) {
+			inUse, inUseProject = withSessionModel(layer, screen.project, current)
+		}
+		fresh, err := current.Reload(inUse, inUseProject)
 		if err != nil {
 			return settingsSavedMsg{err: fmt.Errorf("not saved, these settings do not work: %w", err)}
 		}
@@ -307,6 +311,41 @@ func saveSettings(screen *settingsScreen, current Session, wait bool) tea.Cmd {
 		takeOver(fresh, current)
 		return settingsSavedMsg{session: fresh, saved: saved}
 	}
+}
+
+// changesModel tells whether the settings saved pick another provider or
+// model than the files had.
+func changesModel(screen *settingsScreen, layer config.Config, workDir string) bool {
+	if modelOf(screen.layer) != modelOf(layer) {
+		return true
+	}
+	if screen.project == nil {
+		return false
+	}
+	before, _ := config.ReadProject(workDir)
+	return modelOf(before.Layer) != modelOf(*screen.project)
+}
+
+func modelOf(layer config.Config) string {
+	return layer.Provider + "/" + config.EffectiveModel(layer)
+}
+
+// withSessionModel is the layers with the session's provider and model, the
+// one /model picked for it alone, where they set them.
+func withSessionModel(user config.Config, project *config.Config, session Session) (config.Config, *config.Config) {
+	user.Provider, user.Model = session.Provider, session.Model
+	if project == nil {
+		return user, nil
+	}
+	own := *project
+	sets := config.ProjectSets(own)
+	if sets["provider"] {
+		own.Provider = session.Provider
+	}
+	if sets["model"] {
+		own.Model = session.Model
+	}
+	return user, &own
 }
 
 // takeOver puts a fresh session in place of the current one: its MCP

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -145,18 +146,79 @@ func (m model) typeModelName(choice modelChoice, problem string) (tea.Model, tea
 	return m.showSettings(&settingsScreen{form: form, next: next, back: choice.back, help: "enter take · esc back"})
 }
 
-// switchModel is /model: a list of the models of the provider in use; the
-// one picked is saved where the model is set, the project's file when it
-// sets one, else the user's.
-func (m model) switchModel() (tea.Model, tea.Cmd) {
+// modelGlobal is the argument of /model that saves the model picked.
+const modelGlobal = "global"
+
+// switchModel is /model: a list of the models of the provider in use. The
+// one picked is for this session alone; with global it is saved where the
+// model is set, the project's file when it sets one, else the user's.
+func (m model) switchModel(argument string) (tea.Model, tea.Cmd) {
+	if argument != "" && argument != modelGlobal {
+		return m.emit(m.printer.Note("usage: /model for this session, /model global to save it"))
+	}
+	save := argument == modelGlobal
 	settings := m.session.Config.Providers[m.session.Provider]
 	closed := func(m model) (tea.Model, tea.Cmd) { return m, printText(m.printer.Note("model unchanged")) }
 	return m.chooseModel(settings, modelChoice{provider: m.session.Provider, current: m.session.Model, check: m.session.Agent, back: closed,
-		pick: func(m model, name string) (tea.Model, tea.Cmd) { return m.useModel(name) }})
+		pick: func(m model, name string) (tea.Model, tea.Cmd) {
+			if save {
+				return m.saveModel(name)
+			}
+			return m.sessionModel(name)
+		}})
 }
 
-func (m model) useModel(name string) (tea.Model, tea.Cmd) {
+// modelPickedMsg is the session built with the model picked for it alone.
+type modelPickedMsg struct {
+	session Session
+	err     error
+}
+
+// sessionModel puts the model in use for this session, the files left as
+// they are.
+func (m model) sessionModel(name string) (tea.Model, tea.Cmd) {
 	if name == "" || name == m.session.Model {
+		return m, printText(m.printer.Note("model unchanged"))
+	}
+	current := m.session
+	if m.pendingSession != nil {
+		current = *m.pendingSession
+	}
+	cfg := withoutPluginProviders(current.Config)
+	cfg.Provider, cfg.Model = current.Provider, name
+	m.settingsInFlight = true
+	return m, func() tea.Msg {
+		if current.Rebuild == nil {
+			return modelPickedMsg{err: errors.New("this session cannot change its model")}
+		}
+		session, err := current.Rebuild(cfg)
+		return modelPickedMsg{session: session, err: err}
+	}
+}
+
+// modelPicked puts the session with the model picked in place, once the
+// model ends its turn if it is working.
+func (m model) modelPicked(msg modelPickedMsg) (tea.Model, tea.Cmd) {
+	m.settingsInFlight = false
+	if msg.err != nil {
+		return m.emitError(fmt.Errorf("model not changed: %w", msg.err))
+	}
+	note := fmt.Sprintf("model %s for this session · /model global saves it", shortModelName(msg.session.Model))
+	if m.running {
+		if m.pendingSession != nil {
+			m.pendingSession.discard()
+		}
+		m.pendingSession = &msg.session
+		return m.emit(m.printer.Note(note + " · it applies when the model ends this turn"))
+	}
+	takeOver(msg.session, m.session)
+	updated, cmd := m.useSession(msg.session)
+	return updated, tea.Batch(cmd, printText(m.printer.Note(note)))
+}
+
+// saveModel saves the model picked, and puts it in use.
+func (m model) saveModel(name string) (tea.Model, tea.Cmd) {
+	if name == "" {
 		return m, printText(m.printer.Note("model unchanged"))
 	}
 	layer, err := config.ReadUserLayer()

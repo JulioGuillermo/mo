@@ -42,7 +42,7 @@ var builtinCommands = []command{
 	{name: "clean", argument: "<date or age>", description: "delete this folder's conversations last used before: /clean 2026-08-01, /clean 2 months"},
 	{name: "continue", argument: "[keep]", description: "let the model go on after you stopped it, as if it had not; keep: its cut reply stays and it is told it was stopped"},
 	{name: "stop", argument: "[next|now|cancel]", description: "stop after the calls running, as esc; next: once this round ends; now: at once, as esc esc; cancel: take back a stop asked"},
-	{name: "model", description: "pick a model of the provider in use, from the list it gives"},
+	{name: "model", argument: "[global]", description: "pick a model of the provider in use for this session; global: save it for the next ones too"},
 	{name: "effort", argument: "[level]", description: "how hard the model thinks: default for its own, or a level it takes"},
 	{name: "login", argument: "[provider]", description: "sign in to a provider that uses OAuth, the one in use by default"},
 	{name: "logout", argument: "[provider]", description: "forget a provider's sign-in"},

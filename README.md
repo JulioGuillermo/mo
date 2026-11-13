@@ -68,7 +68,11 @@ Two protocols cover almost everything (three more serve the subscription logins:
 With no provider set, mo tries llama-server, ollama and lmstudio in that order.
 With no model set on an openai-type provider, it uses the first model the server lists.
 
-`/effort` sets how hard the model thinks, saved as `/model` saves a model; `/effort` alone opens
+`/model` picks a model of the provider in use for this session only: the settings files stay as
+they are, and saving other settings keeps it. `/model global` saves the pick, to the project's file
+when it sets the model, else to the user's.
+
+`/effort` sets how hard the model thinks, saved where `/model global` saves a model; `/effort` alone opens
 a menu, and tab after `/effort ` offers `default` (the model's own) and the levels
 the model takes. The status line shows the one set, beside the model. Which levels: llama-server
 says through its chat template (gpt-oss's low to high, or `none` for a model whose thinking only

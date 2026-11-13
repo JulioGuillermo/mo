@@ -500,6 +500,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.configChanged()
 	case configBuiltMsg:
 		return m.configBuilt(msg)
+	case modelPickedMsg:
+		return m.modelPicked(msg)
 	case peerMsg:
 		return m.peerArrived(peers.Message(msg))
 	case peerJudgedMsg:
@@ -1136,7 +1138,7 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 	case "title":
 		return m.retitle(argument)
 	case "model":
-		return m.switchModel()
+		return m.switchModel(argument)
 	case "login":
 		return m.login(argument)
 	case "logout":
