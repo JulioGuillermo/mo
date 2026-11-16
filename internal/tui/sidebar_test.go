@@ -14,6 +14,7 @@ package tui
 // | SB-10 | Edge     | A width out of range, or another place, gets a note and changes nothing  | P1       |
 // | SB-11 | Happy    | /sidebar suggests width, then widths, then where to keep it              | P2       |
 // | SB-12 | Happy    | Settings › Side panel width saves the columns, the default left out; out of range is refused | P1 |
+// | SB-13 | Edge     | A long state line is cut to the conversation's width, esc to stop kept, the panel where it was | P0 |
 
 import (
 	"context"
@@ -44,6 +45,31 @@ func sidebarModel(t *testing.T, width int) model {
 }
 
 func TestSidebar(t *testing.T) {
+	t.Run("SB-13 a long state line is cut to the conversation's width, esc to stop kept, the panel where it was", func(t *testing.T) {
+		m := sidebarModel(t, 140)
+		panelColumn := func(m model) int {
+			for _, row := range strings.Split(ansi.Strip(m.View().Content), "\n") {
+				if at := strings.Index(row, "Tasks  1/2"); at >= 0 {
+					return ansi.StringWidth(row[:at])
+				}
+			}
+			return -1
+		}
+		before := panelColumn(m)
+		m.running, m.runStarted = true, time.Now()
+		m.waitingFor = strings.Repeat("a very long thing to wait for ", 10)
+
+		after := panelColumn(m)
+		line := ansi.Strip(m.stateLine(m.currentState(), " · esc to stop"))
+
+		if before < 0 || after != before {
+			t.Errorf("the panel moved from column %d to %d", before, after)
+		}
+		if ansi.StringWidth(line) > m.mainWidth() || !strings.HasSuffix(line, "… · esc to stop") {
+			t.Errorf("state line %q, %d wide of %d", line, ansi.StringWidth(line), m.mainWidth())
+		}
+	})
+
 	t.Run("SB-01 a wide terminal shows tasks and jobs beside the conversation, narrower", func(t *testing.T) {
 		m := sidebarModel(t, 140)
 

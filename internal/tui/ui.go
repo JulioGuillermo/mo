@@ -1471,7 +1471,7 @@ func (m model) upperLayout() (string, []region) {
 		if m.stopping != agent.StopNone {
 			escHint = ""
 		}
-		add(m.spinnerView()+" "+m.currentState().label(true)+dimStyle.Render(elapsed+queued+escHint), nil)
+		add(m.stateLine(m.currentState(), elapsed+queued+escHint), nil)
 	case m.worked > 0 && m.titling == nil:
 		add(dimStyle.Render("  idle · worked "+formatElapsed(m.worked)), nil)
 	}
@@ -1480,7 +1480,7 @@ func (m model) upperLayout() (string, []region) {
 		if !m.running && m.dialog == nil {
 			stop = " · esc to stop"
 		}
-		add(m.spinnerView()+" "+m.titleState().label(true)+dimStyle.Render(stop), nil)
+		add(m.stateLine(m.titleState(), stop), nil)
 		if said := m.saidLines(); said != "" {
 			add(said, nil)
 		}
@@ -1511,7 +1511,7 @@ func (m model) screenLayout() (string, []region) {
 	left := m.conversation(height).View() + "\n"
 	regions := shifted(upperRegions, height+1)
 	if upper != "" {
-		left += "\n" + upper
+		left += "\n" + lipgloss.NewStyle().MaxWidth(m.mainWidth()).Render(upper)
 	}
 	if m.sidebarShown() {
 		panel, panelRegions := m.sidebarLayout(lipgloss.Height(left))

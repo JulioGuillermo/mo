@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/llm"
@@ -321,6 +322,18 @@ func mcpTool(name string) (string, string, bool) {
 }
 
 // stateLabel is the word in its colour, and the detail after it.
+// stateLine is the spinner, the state and the tail after it, no wider than
+// the conversation: a long detail is cut first, the tail kept while it fits.
+func (m model) stateLine(s state, tail string) string {
+	width := m.mainWidth()
+	state := m.spinnerView() + " " + s.label(true)
+	room := width - lipgloss.Width(tail)
+	if lipgloss.Width(state) > room {
+		state = ansi.Truncate(state, max(room, 0), "…")
+	}
+	return ansi.Truncate(state+dimStyle.Render(tail), width, "…")
+}
+
 func (s state) label(withDetail bool) string {
 	text := lipgloss.NewStyle().Foreground(s.tint).Bold(true).Render(s.word)
 	if withDetail && s.detail != "" {
