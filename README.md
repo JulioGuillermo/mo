@@ -233,6 +233,8 @@ confirm = ["bash", "rm", "web_fetch"]   # ask before these; [] never asks. A lis
 disabled = []              # e.g. ["mkdir", "ls"] to save context
                            # always_loaded, confirm and disabled take * too: "mcp__jira__*" is all of a server
 mcp_disabled = []          # MCP servers set up but not started, e.g. ["docs"]
+btw = ["read", "grep", "ls", "git", "web_fetch", "web_search", "tool_search", "tool_list"]   # tools of /btw
+btw_bang = ["*"]           # tools of /btw!; [] for none
 max_output = 10000         # bytes of tool output sent to the model
 read_max_size = "10MB"     # larger files are read only in parts (offset, limit, match); "0" for no limit
 outputs = "disk"           # whole command output kept: disk, memory or none
@@ -527,6 +529,19 @@ to this folder unless asked for all.
 Changes outside the working directory, to mo's config, under `.git` or to hidden files in your home
 always ask, even with `-y` or after answering "always", in every mode but `all`. So do changes to
 global memories.
+
+## Side questions
+
+`/btw <question>` asks aside while the model works, without stopping it: a copy of the conversation
+so far, the replies still waiting for their results left out, goes with the question to the same
+model. Only the tools in `tools.btw` are there, and a call that would change something (a write, a
+git commit, a memory written, a command run) is refused whatever the list says. `/btw! <task>` does
+something aside with the tools in `tools.btw_bang`, all by default, asking as the model's own calls
+ask; once it ends, the model is told what it changed (`edit x.go`, `bash go test ./...`, the MCP
+tools it called), and reads it at its next step. Neither is kept in the conversation: the question
+and its answer are shown, and gone on `/resume`. What /btw asks says `asked by /btw`. Its line over
+the input says what it does; `/btw` alone stops it, and esc too while the model is idle. One at a
+time. Both lists are in `/settings`, Tools.
 
 ## Subagents
 

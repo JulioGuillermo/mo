@@ -26,6 +26,8 @@ type settingsDraft struct {
 	alwaysLoaded  []string
 	confirm       []string
 	disabled      []string
+	btw           []string
+	btwBang       []string
 	mcpDisabled   []string
 	maxOutput     string
 	readMaxSize   string
@@ -168,6 +170,8 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		alwaysLoaded:  slices.Clone(cfg.Tools.AlwaysLoaded),
 		confirm:       slices.Clone(cfg.Tools.Confirm),
 		disabled:      slices.Clone(cfg.Tools.Disabled),
+		btw:           slices.Clone(cfg.Tools.Btw),
+		btwBang:       slices.Clone(cfg.Tools.BtwBang),
 		mcpDisabled:   slices.Clone(cfg.Tools.MCPDisabled),
 		maxOutput:     strconv.Itoa(cfg.Tools.MaxOutput),
 		readMaxSize:   cfg.Tools.ReadMaxSize,
@@ -336,6 +340,8 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	layer.Tools.AlwaysLoaded = unlessDefaultList(d.alwaysLoaded, defaults.Tools.AlwaysLoaded)
 	layer.Tools.Confirm = unlessDefaultList(d.confirm, defaults.Tools.Confirm)
 	layer.Tools.Disabled = unlessDefaultList(d.disabled, defaults.Tools.Disabled)
+	layer.Tools.Btw = unlessDefaultList(d.btw, defaults.Tools.Btw)
+	layer.Tools.BtwBang = unlessDefaultList(d.btwBang, defaults.Tools.BtwBang)
 	layer.Tools.MCPDisabled = unlessDefaultList(d.mcpDisabled, defaults.Tools.MCPDisabled)
 	layer.Plugins = d.pluginSettingsToSave()
 	layer.Tools.Modes = d.modesOf(toolModes)
@@ -828,6 +834,8 @@ func (d *settingsDraft) snapshot() func() {
 	saved.alwaysLoaded = slices.Clone(d.alwaysLoaded)
 	saved.confirm = slices.Clone(d.confirm)
 	saved.disabled = slices.Clone(d.disabled)
+	saved.btw = slices.Clone(d.btw)
+	saved.btwBang = slices.Clone(d.btwBang)
 	saved.mcpDisabled = slices.Clone(d.mcpDisabled)
 	saved.skillsDisabled = slices.Clone(d.skillsDisabled)
 	saved.plugins = clonePluginSettings(d.plugins)

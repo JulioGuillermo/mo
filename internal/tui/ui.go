@@ -77,6 +77,8 @@ type Session struct {
 	Team *team.Team
 	// Peers are the other mo instances, this one among them once started.
 	Peers *peers.Node
+	// BtwTools are the tools of /btw, or of /btw! with bang.
+	BtwTools func(bang bool) *tools.Registry
 }
 
 // activate is called once a reloaded session replaces the one in use, and
@@ -145,6 +147,8 @@ type model struct {
 	history inputHistory
 	// titling is the title the model is working out, after /title auto.
 	titling *titling
+	// btw is the side question being answered, after /btw.
+	btw *btwRun
 	// promptRead is how far the server is in reading the prompt, when it
 	// says so.
 	promptRead llm.PromptProgress
@@ -756,6 +760,13 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case agentsChangedMsg:
 		m.refreshAgentView()
 		return m, m.scheduleSave()
+	case btwCallMsg:
+		if m.btw != nil {
+			m.btw.doing = string(msg)
+		}
+		return m, nil
+	case btwDoneMsg:
+		return m.btwDone(msg)
 	case historyMsg:
 		m.stepHistory = msg
 		return m, m.scheduleSave()
@@ -807,7 +818,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		read := done.readRepo()
 		return done, tea.Batch(cmd, read, done.peersAfterTurn())
 	case spinner.TickMsg:
-		if !m.running && m.titling == nil && !m.agentWorking() {
+		if !m.running && m.titling == nil && m.btw == nil && !m.agentWorking() {
 			return m, nil
 		}
 		var cmd tea.Cmd
@@ -954,6 +965,10 @@ func (m model) plainKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.titling != nil {
 			m.titling.cancel()
+			return m, nil
+		}
+		if m.btw != nil {
+			m.btw.cancel()
 			return m, nil
 		}
 		if m.working() {
@@ -1131,6 +1146,8 @@ func (m model) runCommand(command string) (tea.Model, tea.Cmd) {
 		return m.fork()
 	case "effort":
 		return m.effortCommand(argument)
+	case "btw", "btw!":
+		return m.btwCommand(argument, name == "btw!")
 	case "delete":
 		return m.deleteCurrent()
 	case "clean":
@@ -1472,7 +1489,7 @@ func (m model) upperLayout() (string, []region) {
 			escHint = ""
 		}
 		add(m.stateLine(m.currentState(), elapsed+queued+escHint), nil)
-	case m.worked > 0 && m.titling == nil:
+	case m.worked > 0 && m.titling == nil && m.btw == nil:
 		add(dimStyle.Render("  idle · worked "+formatElapsed(m.worked)), nil)
 	}
 	if m.titling != nil {
@@ -1484,6 +1501,13 @@ func (m model) upperLayout() (string, []region) {
 		if said := m.saidLines(); said != "" {
 			add(said, nil)
 		}
+	}
+	if m.btw != nil {
+		tail := " · " + formatElapsed(time.Since(m.btw.started)) + " · /btw stops it"
+		if !m.running && m.dialog == nil {
+			tail = " · " + formatElapsed(time.Since(m.btw.started)) + " · esc to stop"
+		}
+		add(m.stateLine(m.btwState(), tail), nil)
 	}
 	if matches := m.suggestions(); len(matches) > 0 {
 		add(m.suggestionLayout(matches))

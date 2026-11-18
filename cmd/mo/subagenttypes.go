@@ -54,22 +54,28 @@ func policyFor(session *permissions.Policy, kind config.AgentType) (*permissions
 // The agent and tell_parent tools stay as the levels and can_start say.
 func optionsFor(options tools.Options, kind config.AgentType) tools.Options {
 	if len(kind.Tools) > 0 {
-		names := tools.BuiltinNames()
-		for _, extra := range options.Extra {
-			names = append(names, extra.Name)
-		}
-		disabled := slices.Clone(options.Disabled)
-		for _, name := range names {
-			if name != tools.AgentName && name != tools.TellParentName && !tools.Matches(kind.Tools, name) {
-				disabled = append(disabled, name)
-			}
-		}
-		options.Disabled = disabled
+		options = onlyTools(options, append([]string{tools.AgentName, tools.TellParentName}, kind.Tools...))
 	}
 	if len(kind.Skills) > 0 {
 		options.Skills = slices.DeleteFunc(slices.Clone(options.Skills), func(skill skills.Skill) bool {
 			return !tools.Matches(kind.Skills, skill.Name)
 		})
 	}
+	return options
+}
+
+// onlyTools disables every tool of options that allowed does not match.
+func onlyTools(options tools.Options, allowed []string) tools.Options {
+	names := tools.BuiltinNames()
+	for _, extra := range options.Extra {
+		names = append(names, extra.Name)
+	}
+	disabled := slices.Clone(options.Disabled)
+	for _, name := range names {
+		if !tools.Matches(allowed, name) {
+			disabled = append(disabled, name)
+		}
+	}
+	options.Disabled = disabled
 	return options
 }

@@ -427,7 +427,7 @@ func (m model) dialogLayout() (string, []region) {
 	}
 	item := *d.item()
 	if from := d.groups[item.group].interaction.From; from != "" {
-		lines = append(lines, pad(lipgloss.NewStyle().Background(colors.body).Foreground(warning()).Bold(true).Render("? asked by subagent "+from)))
+		lines = append(lines, pad(lipgloss.NewStyle().Background(colors.body).Foreground(warning()).Bold(true).Render("? asked by "+asker(from))))
 	} else {
 		lines = append(lines, pad(""))
 	}
@@ -789,7 +789,7 @@ func (b *bridge) interact(ctx context.Context, interaction agent.Interaction) ag
 			b.draw(func() string {
 				denied := b.printer.ToolDenied(request.Call.Name, request.Call.Args, request.Summary) + "\n" + b.printer.Denied(request.Call.Name)
 				if interaction.From != "" {
-					denied = b.printer.Note("subagent "+interaction.From+":") + "\n" + denied
+					denied = b.printer.Note(asker(interaction.From)+":") + "\n" + denied
 				}
 				return denied
 			})

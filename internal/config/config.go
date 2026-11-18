@@ -80,6 +80,10 @@ type Tools struct {
 	// MCPModes set the mode of all the tools of an MCP server, or group:
 	// one entry in tool_search for the server, which finds all its tools.
 	MCPModes map[string]tools.Mode `toml:"mcp_modes,omitempty"`
+	// Btw and BtwBang are the tools /btw and /btw! may use, by name; * stands
+	// for any characters. /btw never runs a call that changes something.
+	Btw     []string `toml:"btw,omitempty"`
+	BtwBang []string `toml:"btw_bang,omitempty"`
 }
 
 // Instructions are files that tell the agent how to work, like AGENTS.md:
@@ -633,6 +637,8 @@ func Defaults() Config {
 			ReadMaxSize:  "10MB",
 			Outputs:      "disk",
 			Calls:        "streamed",
+			Btw:          []string{"read", "grep", "ls", "git", "web_fetch", "web_search", "tool_search", "tool_list"},
+			BtwBang:      []string{"*"},
 		},
 		Context:      Context{CompactAt: ptr(0.75), Strategy: "compact", KeepReasoning: ReasoningTurn},
 		Memory:       Memory{Dir: defaultMemoryDir()},
@@ -957,6 +963,12 @@ func merge(base, layer Config) Config {
 	}
 	if layer.Tools.Disabled != nil {
 		base.Tools.Disabled = layer.Tools.Disabled
+	}
+	if layer.Tools.Btw != nil {
+		base.Tools.Btw = layer.Tools.Btw
+	}
+	if layer.Tools.BtwBang != nil {
+		base.Tools.BtwBang = layer.Tools.BtwBang
 	}
 	if layer.Tools.MCPDisabled != nil {
 		base.Tools.MCPDisabled = layer.Tools.MCPDisabled

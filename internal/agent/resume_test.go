@@ -9,13 +9,14 @@ package agent
 // | RE-05 | Happy    | A resumable call a stop cut stays unanswered; continue runs it as resumed and goes on | P0 |
 // | RE-06 | Security | A call left without a result that is not resumable is answered as interrupted, never run again | P0 |
 // | RE-07 | Happy    | A new prompt instead of continue answers the call left as stopped        | P0       |
-// | RE-08 | Happy    | Each step gives a copy of the history                                    | P1       |
+// | RE-08 | Happy    | Each step gives a copy of the history, the prompt sent the first         | P1       |
 // | RE-09 | Happy    | Continue drops an answer stopped mid-way and asks the model again, with no note | P0 |
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -190,7 +191,7 @@ func TestResumable(t *testing.T) {
 		}
 	})
 
-	t.Run("RE-08 each step gives a copy of the history", func(t *testing.T) {
+	t.Run("RE-08 each step gives a copy of the history, the prompt sent the first", func(t *testing.T) {
 		provider := &scriptedProvider{replies: []llm.Message{
 			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("r1", "read", `{"path":"a.txt"}`)}},
 			{Role: llm.RoleAssistant, Text: "read it"},
@@ -200,7 +201,7 @@ func TestResumable(t *testing.T) {
 
 		_ = agent.Run(context.Background(), "read a.txt", Hooks{OnStep: func(history []llm.Message) { steps = append(steps, len(history)) }})
 
-		if len(steps) != 3 || steps[0] != 2 || steps[1] != 3 || steps[2] != 4 {
+		if !slices.Equal(steps, []int{1, 2, 3, 4}) {
 			t.Errorf("steps %v", steps)
 		}
 	})

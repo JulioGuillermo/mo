@@ -50,6 +50,8 @@ var builtinCommands = []command{
 	{name: "voice", argument: "[on|off|play|stop]", description: "a model that talks says its replies in its own voice too; play hears the last again, stop silences it; /settings voice for how"},
 	{name: "title", description: "name the conversation: /title <name>, or /title auto for the model to"},
 	{name: "cache", argument: "clear", description: "llama-server: erase what every slot holds, its KV cache"},
+	{name: "btw", argument: "<question>", description: "ask aside while the model works, with read-only tools; the answer is not kept in the conversation; /btw alone stops it"},
+	{name: "btw!", argument: "<task>", description: "do something aside with all the tools /settings gives /btw!; the model is told what it changed"},
 	{name: "compact", argument: "[instruction]", description: "summarize the conversation to free context; an instruction is added under the summary prompt, as yours"},
 	{name: "skill", argument: "[name] [text]", description: "load a skill with your message, as $name does; no name lists them"},
 	{name: "git", argument: "<action> [repo]", description: "git without the git command: show and compare in a viewer, branch to switch, status, log, commit, pull, push, stash… /git help lists them"},

@@ -228,6 +228,8 @@ const (
 	alwaysLoadedTitle = "Loaded from the start in search mode"
 	confirmTitle      = "Ask before running"
 	disabledTitle     = "Disabled"
+	btwTitle          = "Tools for /btw"
+	btwBangTitle      = "Tools for /btw!"
 )
 
 // tickedTools is the list of tools an item of the tools section ticks, nil
@@ -243,6 +245,10 @@ func tickedTools(section settingsSection, title string, d *settingsDraft) *[]str
 		return &d.confirm
 	case disabledTitle:
 		return &d.disabled
+	case btwTitle:
+		return &d.btw
+	case btwBangTitle:
+		return &d.btwBang
 	}
 	return nil
 }
@@ -268,6 +274,8 @@ func toolItems(m model, menu *settingsMenu) []settingItem {
 		choice(alwaysLoadedTitle, func(d *settingsDraft) *[]string { return &d.alwaysLoaded }),
 		choice(confirmTitle, func(d *settingsDraft) *[]string { return &d.confirm }),
 		choice(disabledTitle, func(d *settingsDraft) *[]string { return &d.disabled }),
+		choice(btwTitle, func(d *settingsDraft) *[]string { return &d.btw }),
+		choice(btwBangTitle, func(d *settingsDraft) *[]string { return &d.btwBang }),
 	}
 	if servers := mcpNames(m, menu); len(servers) > 0 {
 		items = append(items, settingItem{"MCP servers off", func(d *settingsDraft) string { return listValue(d.mcpDisabled) }, func(d *settingsDraft) huh.Field {

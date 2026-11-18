@@ -94,6 +94,8 @@ type Agent struct {
 
 	RewritePrompt func(ctx context.Context, prompt string) string
 	BlockToolCall func(ctx context.Context, call llm.ToolCall) string
+	// ReadOnly blocks every call that would change something.
+	ReadOnly bool
 	// AfterToolCall may change what a call gave before the model reads it.
 	AfterToolCall func(ctx context.Context, call llm.ToolCall, output string, isError bool) string
 	// EndTurn hears how a turn ended: the prompt, the model's last answer,
@@ -196,6 +198,7 @@ func (a *Agent) RunTyped(ctx context.Context, prompt, typed string, hooks Hooks)
 	message := a.promptMessage(prompt, hooks)
 	message.Timing = llm.StartedNow()
 	a.History = append(a.History, withInput(message, typed))
+	a.step(hooks)
 	a.currentRequest = prompt
 	a.loops = 0
 	return a.turn(ctx, hooks)

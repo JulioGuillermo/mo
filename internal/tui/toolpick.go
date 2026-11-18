@@ -48,6 +48,7 @@ func (p *toolPick) ticked(name string) bool {
 }
 
 func (p *toolPick) toggle(name string) {
+	p.spreadEverything()
 	if slices.Contains(*p.chosen, name) {
 		*p.chosen = slices.DeleteFunc(slices.Clone(*p.chosen), func(each string) bool { return each == name })
 		return
@@ -75,6 +76,19 @@ func (p *toolPick) allOf(server toolServer) bool {
 	return p.wholeServer(server) || (len(server.tools) > 0 && len(p.tickedOf(server)) == len(server.tools))
 }
 
+// spreadEverything turns a * that ticks every tool into mo's tools by
+// name and each server by its pattern, so that one can be unticked.
+func (p *toolPick) spreadEverything() {
+	if !slices.Contains(*p.chosen, "*") {
+		return
+	}
+	spread := slices.Clone(p.own)
+	for _, server := range p.servers {
+		spread = append(spread, mcpToolPrefix(server.name)+"*")
+	}
+	*p.chosen = spread
+}
+
 // toggleServer ticks all of a server, or none when it was all.
 func (p *toolPick) toggleServer(server toolServer) {
 	if p.allOf(server) {
@@ -94,6 +108,7 @@ func (p *toolPick) tickServer(server toolServer) {
 // setServer ticks these tools of a server and no others; all of them
 // become its pattern.
 func (p *toolPick) setServer(server toolServer, ticked []string) {
+	p.spreadEverything()
 	prefix := mcpToolPrefix(server.name)
 	*p.chosen = slices.DeleteFunc(slices.Clone(*p.chosen), func(each string) bool { return strings.HasPrefix(each, prefix) })
 	if len(ticked) > 0 && len(ticked) == len(server.tools) {

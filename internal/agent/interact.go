@@ -109,6 +109,10 @@ func (a *Agent) prepareCall(ctx context.Context, outer llm.ToolCall, hooks Hooks
 	if result, repeated := a.repeatedCall(call); repeated {
 		return settled(outer, a.blockRepeatedCall(call, result, hooks))
 	}
+	if a.ReadOnly && a.Tools.Changes(call) {
+		a.announceBlocked(call, readOnlyResult, hooks)
+		return settled(outer, readOnlyResult)
+	}
 	if a.BlockToolCall != nil {
 		if reason := a.BlockToolCall(ctx, call); reason != "" {
 			a.announceBlocked(call, reason, hooks)

@@ -269,6 +269,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 		ToolDescriptions: toolDescriptions(hub, loaded.plugins),
 		Team:             loaded.team,
 		Peers:            loaded.peers,
+		BtwTools:         btwTools(env, options, cfg.Tools),
 	}, nil
 }
 

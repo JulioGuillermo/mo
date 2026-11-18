@@ -49,6 +49,8 @@ var projectFields = map[string]projectField{
 	"Loaded from the start in search mode": {"tools.always_loaded", func(d *settingsDraft) any { return &d.alwaysLoaded }},
 	"Ask before running":                   {"tools.confirm", func(d *settingsDraft) any { return &d.confirm }},
 	"Disabled":                             {"tools.disabled", func(d *settingsDraft) any { return &d.disabled }},
+	"Tools for /btw":                       {"tools.btw", func(d *settingsDraft) any { return &d.btw }},
+	"Tools for /btw!":                      {"tools.btw_bang", func(d *settingsDraft) any { return &d.btwBang }},
 	"MCP servers off":                      {"tools.mcp_disabled", func(d *settingsDraft) any { return &d.mcpDisabled }},
 	"Side panel width":                     {"render.sidebar_width", func(d *settingsDraft) any { return &d.sidebarWidth }},
 	"Skill mode":                           {"skills.mode", func(d *settingsDraft) any { return &d.skillMode }},
