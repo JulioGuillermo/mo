@@ -12,6 +12,7 @@ import (
 
 	"github.com/jg/mo/internal/agent"
 	"github.com/jg/mo/internal/llm"
+	"github.com/jg/mo/internal/sessions"
 )
 
 const (
@@ -25,6 +26,8 @@ const (
 // the conversation and the box that shows it, both drawn again as it
 // streams.
 type btwAnswer struct {
+	// id is its number in the conversation's asides, once it ended.
+	id        int
 	question  string
 	bang      bool
 	text      string
@@ -61,6 +64,10 @@ type btwDoneMsg struct {
 	answer  string
 	changes []string
 	err     error
+	// history is its own exchange, from the question on, and after how many
+	// messages of the conversation it was asked.
+	history []llm.Message
+	after   int
 }
 
 // btwCommand asks aside, with the conversation so far, the files attached
@@ -98,7 +105,7 @@ func (m model) btwCommand(question string, bang bool) (tea.Model, tea.Cmd) {
 	hooks := m.btwHooks()
 	ask := func() tea.Msg {
 		err := aside.RunTyped(ctx, prompt, question, hooks)
-		done := btwDoneMsg{answer: lastAnswer(aside.History[start:]), err: err}
+		done := btwDoneMsg{answer: lastAnswer(aside.History[start:]), err: err, history: slices.Clone(aside.History[start:]), after: start}
 		if bang {
 			done.changes = aside.ChangesFrom(start)
 		}
@@ -185,12 +192,30 @@ func (m model) btwDone(msg btwDoneMsg) (tea.Model, tea.Cmd) {
 	case msg.answer == "":
 		answer.ending = "no answer"
 	}
-	if len(msg.changes) > 0 {
-		m.session.Agent.Tell("While you worked, the user ran a side task with /btw! that did:\n- " + strings.Join(msg.changes, "\n- ") +
-			"\nRead again what it changed before you rely on it.")
-	}
+	m.keepAside(answer, msg)
 	m.redrawBtw(answer)
-	return m, nil
+	return m, m.scheduleSave()
+}
+
+// keepAside numbers an aside that ended among the conversation's, for
+// btw_log to read and the conversation to save, and tells the main agent
+// it was asked, and what a /btw! changed.
+func (m *model) keepAside(answer *btwAnswer, msg btwDoneMsg) {
+	asides := m.session.Agent.Tools.Asides()
+	if asides == nil && len(answer.changes) == 0 {
+		return
+	}
+	note := fmt.Sprintf("While you worked, the user asked aside with /%s: «%s».", btwWord(answer), answer.question)
+	if asides != nil {
+		answer.id = asides.Add(sessions.Aside{Bang: answer.bang, Question: answer.question, Answer: answer.text, Ending: answer.ending,
+			Changes: answer.changes, After: msg.after, At: time.Now(), History: msg.history})
+		note = fmt.Sprintf("While you worked, the user asked aside with /%s #%d: «%s». It is not in this conversation; btw_log read %d gives it.",
+			btwWord(answer), answer.id, answer.question, answer.id)
+	}
+	if len(answer.changes) > 0 {
+		note += "\nIt did:\n- " + strings.Join(answer.changes, "\n- ") + "\nRead again what it changed before you rely on it."
+	}
+	m.session.Agent.Tell(note)
 }
 
 // redrawBtw draws the block of an answer again, as it is now.

@@ -7,6 +7,7 @@ package tui
 // | BW-03 | Edge     | While /btw answers, its state line shows; a second /btw waits; /btw alone stops it | P1     |
 // | BW-06 | Happy    | The answer streams into its opened block at the spinner's tick, and into its box | P0      |
 // | BW-07 | Happy    | Files attached to /btw reach the model as paths, as a prompt's do              | P0       |
+// | BW-09 | Happy    | An aside is numbered and kept, the model told how to read it, and it is saved and drawn again on resume | P0 |
 // | BW-08 | Happy    | /btw open and a click on its line open the box; esc closes it; right click offers it | P1   |
 // | BW-04 | Happy    | What /btw asks says /btw asks it                                               | P1       |
 // | BW-05 | Happy    | In the tool pick, a * that ticks everything spreads so one tool can be unticked | P1       |
@@ -50,13 +51,14 @@ func btwModel(t *testing.T, provider llm.Provider) (model, string) {
 	workDir := m.session.WorkDir
 	m.session.Agent.Provider = provider
 	m.session.Agent.History = slices.Clone(chat)
-	m.session.Agent.Tools = tools.NewRegistry(tools.Env{WorkDir: workDir}, tools.Options{MaxOutput: 1000})
+	asides := tools.NewAsides()
+	m.session.Agent.Tools = tools.NewRegistry(tools.Env{WorkDir: workDir, Asides: asides}, tools.Options{MaxOutput: 1000})
 	m.session.BtwTools = func(bang bool) *tools.Registry {
 		disabled := []string{"bash"}
 		if bang {
 			disabled = nil
 		}
-		return tools.NewRegistry(tools.Env{WorkDir: workDir}, tools.Options{Disabled: disabled, MaxOutput: 1000})
+		return tools.NewRegistry(tools.Env{WorkDir: workDir, Asides: asides}, tools.Options{Disabled: disabled, MaxOutput: 1000})
 	}
 	return m, workDir
 }
@@ -117,7 +119,7 @@ func TestBtw(t *testing.T) {
 		folded := shown(m)
 		m.toggleBtw(m.blocks[len(m.blocks)-1].btw)
 		opened := shown(m)
-		if !strings.Contains(folded, "btw  what did you do? · 1 line") || strings.Contains(folded, "It listed six files.") {
+		if !strings.Contains(folded, "btw #1  what did you do? · 1 line") || strings.Contains(folded, "It listed six files.") {
 			t.Errorf("folded:\n%s", folded)
 		}
 		if !strings.Contains(opened, "│") || !strings.Contains(opened, "It listed six files.") || !strings.Contains(opened, "not kept in the conversation") {
@@ -256,6 +258,33 @@ func TestBtwLive(t *testing.T) {
 		}
 		if view := ansi.Strip(menu.(model).View().Content); !strings.Contains(view, "open in a box") {
 			t.Errorf("menu:\n%s", view)
+		}
+	})
+}
+
+func TestBtwKept(t *testing.T) {
+	t.Run("BW-09 an aside is numbered and kept, the model told how to read it, and it is saved and drawn again on resume", func(t *testing.T) {
+		provider := &recording{replies: []llm.Message{{Role: llm.RoleAssistant, Text: "Six files."}, {Role: llm.RoleAssistant, Text: "ok"}}}
+		m, _ := btwModel(t, provider)
+
+		m = answered(t, m, "/btw how many files?")
+		record, _ := m.conversationRecord(m.currentHistory())
+		if err := m.session.Agent.Run(context.Background(), "go on", agent.Hooks{}); err != nil {
+			t.Fatal(err)
+		}
+		m.session.Agent.Tools.Asides().Restore(nil)
+		resumed, _ := m.resume(resumedMsg{record: record})
+
+		kept := m.session.Agent.Tools.Asides().All()
+		if len(record.Asides) != 1 || record.Asides[0].ID != 1 || record.Asides[0].Answer != "Six files." || record.Asides[0].After != len(chat) {
+			t.Errorf("saved %+v", record.Asides)
+		}
+		told := provider.requests[1].Messages
+		if last := told[len(told)-1].Text; !strings.Contains(last, "/btw #1") || !strings.Contains(last, "btw_log read 1") {
+			t.Errorf("told %q", last)
+		}
+		if len(kept) != 1 || !strings.Contains(shown(resumed.(model)), "btw #1  how many files?") {
+			t.Errorf("kept %+v, shown:\n%s", kept, shown(resumed.(model)))
 		}
 	})
 }

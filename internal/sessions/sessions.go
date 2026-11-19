@@ -26,6 +26,24 @@ type Record struct {
 	History []llm.Message `json:"history"`
 	// Agents are the subagents of the conversation, with all they did.
 	Agents []AgentRecord `json:"agents,omitempty"`
+	// Asides are the side questions asked with /btw, kept out of History.
+	Asides []Aside `json:"asides,omitempty"`
+}
+
+// Aside is a side question asked with /btw, or a side task with /btw!: what
+// was asked, its answer, how it ended when not well, what it changed, and
+// its own exchange from the question on. After is how many messages of the
+// conversation came before it.
+type Aside struct {
+	ID       int           `json:"id"`
+	Bang     bool          `json:"bang,omitempty"`
+	Question string        `json:"question"`
+	Answer   string        `json:"answer"`
+	Ending   string        `json:"ending,omitempty"`
+	Changes  []string      `json:"changes,omitempty"`
+	After    int           `json:"after"`
+	At       time.Time     `json:"at"`
+	History  []llm.Message `json:"history"`
 }
 
 // AgentRecord is a subagent as it was saved: who started it, its task,

@@ -233,7 +233,7 @@ confirm = ["bash", "rm", "web_fetch"]   # ask before these; [] never asks. A lis
 disabled = []              # e.g. ["mkdir", "ls"] to save context
                            # always_loaded, confirm and disabled take * too: "mcp__jira__*" is all of a server
 mcp_disabled = []          # MCP servers set up but not started, e.g. ["docs"]
-btw = ["read", "grep", "ls", "git", "web_fetch", "web_search", "tool_search", "tool_list"]   # tools of /btw
+btw = ["read", "grep", "ls", "git", "web_fetch", "web_search", "tool_search", "tool_list", "btw_log"]   # tools of /btw
 btw_bang = ["*"]           # tools of /btw!; [] for none
 max_output = 10000         # bytes of tool output sent to the model
 read_max_size = "10MB"     # larger files are read only in parts (offset, limit, match); "0" for no limit
@@ -532,16 +532,24 @@ global memories.
 
 ## Side questions
 
-`/btw <question>` asks aside while the model works, without stopping it: a copy of the conversation
-so far, the replies still waiting for their results left out, goes with the question to the same
-model. Only the tools in `tools.btw` are there, and a call that would change something (a write, a
-git commit, a memory written, a command run) is refused whatever the list says. `/btw! <task>` does
-something aside with the tools in `tools.btw_bang`, all by default, asking as the model's own calls
-ask; once it ends, the model is told what it changed (`edit x.go`, `bash go test ./...`, the MCP
-tools it called), and reads it at its next step. Neither is kept in the conversation: the question
-and its answer are shown, and gone on `/resume`. What /btw asks says `asked by /btw`. Its line over
-the input says what it does; `/btw` alone stops it, and esc too while the model is idle. One at a
-time. Both lists are in `/settings`, Tools.
+`/btw <question>` asks aside while the model works, without stopping it or waiting for it: a copy
+of the conversation so far, the replies still waiting for their results left out, goes with the
+question and its attached files to the same model. Only the tools in `tools.btw` are there, and a
+call that would change something (a write, a git commit, a memory written, a command run) is
+refused whatever the list says. `/btw! <task>` does something aside with the tools in
+`tools.btw_bang`, all by default, asking as the model's own calls ask (`asked by /btw`).
+
+It shows as a pill, `▸ btw #3  question · 7 lines`: a click or ctrl+o opens its answer under it,
+between a bar and a rule, and it streams there as it comes. `/btw open`, a click on its line over
+the input, or right click › open in a box show it in a box over the screen, live too (↑↓ pgup pgdn,
+`y` copies, esc closes). `/btw` alone stops it, and esc too while the model is idle. One at a time.
+
+Asides are not in the conversation, but they are kept: numbered, saved with it and drawn again on
+`/resume`. Once one ends the model is told, in a line, that it was asked and its number, and for
+`/btw!` what it changed (`edit x.go`, `bash go test ./...`, the MCP tools it called), to read again
+before relying on it. The `btw_log` tool lists them (`list`) and gives one whole (`read`, with
+`calls: true` its tool calls and results too), to the model and to later asides; `memory search`
+finds them among the saved conversations. Both lists of tools are in `/settings`, Tools.
 
 ## Subagents
 

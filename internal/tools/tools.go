@@ -105,6 +105,9 @@ type Env struct {
 	// Peers are the other mo instances; without them there is no peers
 	// tool.
 	Peers *peers.Node
+	// Asides are the side questions of the conversation; without them
+	// there is no btw_log tool.
+	Asides *Asides
 }
 
 // Resolve turns a path from the model into an absolute one, relative paths
@@ -163,7 +166,7 @@ func NewRegistry(env Env, options Options) *Registry {
 	env.ReadMaxSize = options.ReadMaxSize
 	registry := &Registry{env: env, options: options}
 	for _, tool := range append(builtinsWith(options.Searcher), options.Extra...) {
-		if Matches(options.Disabled, tool.Name) || (tool.Name == titleToolName && env.Titles == nil) || (tool.Name == "ui" && env.UIs == nil) || (tool.Name == AgentName && env.Agents == nil) || (tool.Name == TellParentName && env.Parent == nil) || (tool.Name == PeersName && env.Peers == nil) {
+		if Matches(options.Disabled, tool.Name) || (tool.Name == titleToolName && env.Titles == nil) || (tool.Name == "ui" && env.UIs == nil) || (tool.Name == AgentName && env.Agents == nil) || (tool.Name == TellParentName && env.Parent == nil) || (tool.Name == PeersName && env.Peers == nil) || (tool.Name == BtwLogName && env.Asides == nil) {
 			continue
 		}
 		if tool.Name == AgentName && len(options.AgentKinds) > 0 {
@@ -214,7 +217,7 @@ func builtins() []Tool {
 func builtinsWith(searcher web.Searcher) []Tool {
 	return []Tool{
 		bashTool(), readTool(), writeTool(), editTool(), lsTool(), mkdirTool(), rmTool(), grepTool(),
-		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), gitTool(), titleTool(), uiTool(), agentTool(nil, false), tellParentTool(), peersTool(),
+		memoryTool(), fetchTool(), webSearchTool(searcher), todoTool(), askTool(), gitTool(), titleTool(), uiTool(), agentTool(nil, false), tellParentTool(), peersTool(), btwLogTool(),
 	}
 }
 
@@ -224,6 +227,15 @@ func (r *Registry) Recall() *Recall {
 		return nil
 	}
 	return r.env.Recall
+}
+
+// Asides are the side questions of the conversation, or nil, also for no
+// registry.
+func (r *Registry) Asides() *Asides {
+	if r == nil {
+		return nil
+	}
+	return r.env.Asides
 }
 
 // Titles renames the conversation, or nil, also for no registry.

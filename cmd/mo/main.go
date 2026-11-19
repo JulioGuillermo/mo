@@ -118,6 +118,7 @@ func run() error {
 func startJobs(loaded *extensions) func() {
 	loaded.jobs = tools.NewJobs(config.SessionDir())
 	loaded.titles = tools.NewTitles()
+	loaded.asides = tools.NewAsides()
 	loaded.uis = tools.NewUIs(config.SessionDir())
 	loaded.team = team.New()
 	loaded.peers = peers.NewNode(peers.SocketDir())

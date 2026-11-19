@@ -59,7 +59,7 @@ func (m model) overBtwBox(screen string) string {
 	box := m.btwBox
 	width := max(min(m.printer.width+4, m.width-2), 20)
 	inner := width - 4
-	title := btwPill().Render(" "+btwWord(box.answer)+" ") + " " + ansi.Truncate(strings.Join(strings.Fields(box.answer.question), " "), inner-8, "…")
+	title := btwPill().Render(" "+btwLabel(box.answer)+" ") + " " + ansi.Truncate(strings.Join(strings.Fields(box.answer.question), " "), inner-8, "…")
 	if !box.answer.done {
 		title += dimStyle.Render(" · answering…")
 	}

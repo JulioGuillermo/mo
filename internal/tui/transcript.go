@@ -3,6 +3,7 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -319,7 +320,8 @@ func (m *model) replay(history []llm.Message) string {
 	m.blocks = nil
 	m.todos = m.todosFrom(history)
 	printer := m.printer
-	for _, message := range history {
+	for i, message := range history {
+		m.replayAsides(i, i+1)
 		switch {
 		case agent.IsSummary(message):
 			summary := agent.Summary(message)
@@ -357,6 +359,7 @@ func (m *model) replay(history []llm.Message) string {
 			m.finishTool(message.ToolCallID, message.Text, message.IsError)
 		}
 	}
+	m.replayAsides(len(history), math.MaxInt)
 	return uploads.String()
 }
 

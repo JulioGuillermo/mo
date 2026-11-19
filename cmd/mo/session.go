@@ -45,6 +45,9 @@ type extensions struct {
 	// titles renames the conversation from the title tool; nil when mo
 	// answers once.
 	titles *tools.Titles
+	// asides are the side questions /btw asks, for btw_log; nil when mo
+	// answers once.
+	asides *tools.Asides
 	// recall searches memories and saved conversations.
 	recall *tools.Recall
 	// uis are the interfaces the model draws; nil when mo answers once.
@@ -146,6 +149,7 @@ func buildSession(ctx context.Context, workDir string, cfg config.Config, choice
 	env := toolEnv(workDir, cfg.Memory.Dir)
 	env.Jobs = loaded.jobs
 	env.Titles = loaded.titles
+	env.Asides = loaded.asides
 	env.Recall = loaded.recall
 	env.UIs = loaded.uis
 	if *cfg.Peers.Enabled {

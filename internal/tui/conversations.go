@@ -118,7 +118,11 @@ func (m *model) conversationRecord(history []llm.Message) (sessions.Record, bool
 	if m.session.Team != nil {
 		agents = m.session.Team.Records()
 	}
-	record := sessions.Record{History: history, Agents: agents, Info: sessions.Info{
+	var asides []sessions.Aside
+	if kept := m.session.Agent.Tools.Asides(); kept != nil {
+		asides = kept.All()
+	}
+	record := sessions.Record{History: history, Agents: agents, Asides: asides, Info: sessions.Info{
 		ID: m.thread.id, WorkDir: config.ProjectKey(m.session.WorkDir), Title: m.thread.title,
 		Parent: m.thread.parent, Forked: m.thread.forked, Prompts: len(prompts),
 		Created: m.thread.created, Updated: now, Usage: m.session.Agent.LastUsage,
@@ -339,6 +343,9 @@ func (m model) resume(msg resumedMsg) (tea.Model, tea.Cmd) {
 	m.usage = record.Usage
 	m.thread = conversation{id: record.ID, title: record.Title, parent: record.Parent, forked: record.Forked, created: record.Created}
 	m.trackThread()
+	if asides := m.session.Agent.Tools.Asides(); asides != nil {
+		asides.Restore(record.Asides)
+	}
 	uploads := m.replay(record.History)
 	m.scrolled = false
 	updated, cmd := m.emit(m.printer.Note(fmt.Sprintf("resumed: %s · %d prompts · %s", orDefault(record.Title, record.ID), record.Prompts, ago(record.Updated))))
@@ -392,6 +399,7 @@ func (m model) pickPrompt() (tea.Model, tea.Cmd) {
 func (m model) rewind(prompt agent.Prompt) (tea.Model, tea.Cmd) {
 	m.thread = conversation{parent: m.thread.id, title: derivedTitle(forkPrefix, m.thread.title), forked: sessions.Title(prompt.Text)}
 	m.session.Agent.Rewind(prompt.Index)
+	m.keepAsidesBefore(len(m.session.Agent.History))
 	m.usage = llm.Usage{}
 	uploads := m.replay(m.session.Agent.History)
 	m.input.SetValue(prompt.Text)
@@ -409,6 +417,9 @@ func (m *model) newConversation() {
 		m.session.Team.Restore(nil)
 	}
 	m.usage = llm.Usage{}
+	if asides := m.session.Agent.Tools.Asides(); asides != nil {
+		asides.Restore(nil)
+	}
 	m.thread = conversation{}
 	m.trackThread()
 	m.todos = nil

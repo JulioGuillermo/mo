@@ -637,7 +637,7 @@ func Defaults() Config {
 			ReadMaxSize:  "10MB",
 			Outputs:      "disk",
 			Calls:        "streamed",
-			Btw:          []string{"read", "grep", "ls", "git", "web_fetch", "web_search", "tool_search", "tool_list"},
+			Btw:          []string{"read", "grep", "ls", "git", "web_fetch", "web_search", "tool_search", "tool_list", "btw_log"},
 			BtwBang:      []string{"*"},
 		},
 		Context:      Context{CompactAt: ptr(0.75), Strategy: "compact", KeepReasoning: ReasoningTurn},

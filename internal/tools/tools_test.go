@@ -53,7 +53,7 @@ import (
 
 func newEnv(t *testing.T) Env {
 	t.Helper()
-	return Env{WorkDir: t.TempDir(), Titles: NewTitles(), UIs: NewUIs(""), Agents: idleAgents{}, Parent: deafParent{}, Peers: peers.NewNode(t.TempDir())}
+	return Env{WorkDir: t.TempDir(), Titles: NewTitles(), UIs: NewUIs(""), Agents: idleAgents{}, Parent: deafParent{}, Peers: peers.NewNode(t.TempDir()), Asides: NewAsides()}
 }
 
 // deafParent takes notes and does nothing with them.

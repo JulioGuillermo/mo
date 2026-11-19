@@ -282,7 +282,7 @@ func (r *Recall) conversations() []recalledFile {
 			if err != nil {
 				continue
 			}
-			cached = recalledFile{modified: info.ModTime(), info: record.Info, turns: turnsOf(record.History, recalledToolOutput)}
+			cached = recalledFile{modified: info.ModTime(), info: record.Info, turns: append(turnsOf(record.History, recalledToolOutput), asideTurns(record.Asides)...)}
 			r.files[id] = cached
 		}
 		files = append(files, cached)

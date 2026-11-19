@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
@@ -8,6 +9,8 @@ import (
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/jg/mo/internal/sessions"
 )
 
 // addBtwBlock adds the block of a side question: folded to a pill that
@@ -43,7 +46,7 @@ func (p *printer) btw(answer *btwAnswer, open bool) string {
 	if open {
 		hint, mark = " · click to fold", "▾ "
 	}
-	head := "  " + btwBar().Render(mark) + btwPill().Render(" "+btwWord(answer)+" ") + " "
+	head := "  " + btwBar().Render(mark) + btwPill().Render(" "+btwLabel(answer)+" ") + " "
 	question := strings.Join(strings.Fields(answer.question), " ")
 	tail := dimStyle.Render(how + hint)
 	room := max(width-ansi.StringWidth(head)-ansi.StringWidth(tail), 10)
@@ -57,6 +60,41 @@ func (p *printer) btw(answer *btwAnswer, open bool) string {
 	}
 	lines = append(lines, "  "+btwBar().Render("╰─ ")+dimStyle.Render(btwFooter(answer)))
 	return strings.Join(lines, "\n")
+}
+
+// btwLabel is how its pill names an aside: its word, and its number once
+// it has one.
+func btwLabel(answer *btwAnswer) string {
+	if answer.id == 0 {
+		return btwWord(answer)
+	}
+	return fmt.Sprintf("%s #%d", btwWord(answer), answer.id)
+}
+
+// replayAsides adds, in a conversation drawn again, the blocks of the asides
+// asked after as many of its messages as from up to to.
+func (m *model) replayAsides(from, to int) {
+	asides := m.session.Agent.Tools.Asides()
+	if asides == nil {
+		return
+	}
+	for _, aside := range asides.All() {
+		if aside.After >= from && aside.After < to {
+			m.addBtwBlock(&btwAnswer{id: aside.ID, question: aside.Question, bang: aside.Bang, text: aside.Answer,
+				done: true, ending: aside.Ending, changes: aside.Changes})
+		}
+	}
+}
+
+// keepAsidesBefore keeps the asides asked after at most count messages,
+// for a conversation that goes back to there.
+func (m *model) keepAsidesBefore(count int) {
+	asides := m.session.Agent.Tools.Asides()
+	if asides == nil {
+		return
+	}
+	kept := slices.DeleteFunc(asides.All(), func(aside sessions.Aside) bool { return aside.After > count })
+	asides.Restore(kept)
 }
 
 // btwBody is the answer drawn as an answer of the model, or while none
