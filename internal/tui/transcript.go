@@ -33,6 +33,8 @@ type block struct {
 	tool      *toolRun
 	// speech is the key of the reply said that the block's line plays.
 	speech string
+	// btw is the side question the block shows.
+	btw *btwAnswer
 }
 
 // redraw draws a block again, open or not, and keeps what the screen paints

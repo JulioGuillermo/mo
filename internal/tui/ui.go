@@ -147,8 +147,10 @@ type model struct {
 	history inputHistory
 	// titling is the title the model is working out, after /title auto.
 	titling *titling
-	// btw is the side question being answered, after /btw.
-	btw *btwRun
+	// btw is the side question being answered, after /btw; btwBox shows
+	// one over the screen.
+	btw    *btwRun
+	btwBox *btwBox
 	// promptRead is how far the server is in reading the prompt, when it
 	// says so.
 	promptRead llm.PromptProgress
@@ -568,6 +570,12 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyPressMsg); ok && m.opensKeys(key) {
 		return m.openKeys()
 	}
+	if m.btwBox != nil {
+		switch msg.(type) {
+		case tea.KeyPressMsg, tea.MouseClickMsg, tea.MouseWheelMsg, tea.MouseMotionMsg, tea.MouseReleaseMsg:
+			return m.updateBtwBox(msg)
+		}
+	}
 	if m.popup != nil && !isAgentMsg(msg) {
 		if _, tick := msg.(viewerTickMsg); !tick {
 			return m.updatePopup(msg)
@@ -760,11 +768,10 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case agentsChangedMsg:
 		m.refreshAgentView()
 		return m, m.scheduleSave()
+	case btwEventMsg:
+		return m.btwStreamed(llm.Event(msg))
 	case btwCallMsg:
-		if m.btw != nil {
-			m.btw.doing = string(msg)
-		}
-		return m, nil
+		return m.btwCalling(string(msg))
 	case btwDoneMsg:
 		return m.btwDone(msg)
 	case historyMsg:
@@ -820,6 +827,9 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		if !m.running && m.titling == nil && m.btw == nil && !m.agentWorking() {
 			return m, nil
+		}
+		if m.btw != nil && m.btw.answer.dirty {
+			m.redrawBtw(m.btw.answer)
 		}
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -1412,6 +1422,9 @@ func (m model) View() tea.View {
 		if m.uiOpen != 0 {
 			drawn = m.overUI(drawn)
 		}
+		if m.btwBox != nil {
+			drawn = m.overBtwBox(drawn)
+		}
 		if m.popup != nil {
 			drawn = m.overPopup(drawn)
 		}
@@ -1503,11 +1516,7 @@ func (m model) upperLayout() (string, []region) {
 		}
 	}
 	if m.btw != nil {
-		tail := " · " + formatElapsed(time.Since(m.btw.started)) + " · /btw stops it"
-		if !m.running && m.dialog == nil {
-			tail = " · " + formatElapsed(time.Since(m.btw.started)) + " · esc to stop"
-		}
-		add(m.stateLine(m.btwState(), tail), nil)
+		add(m.btwStateLine())
 	}
 	if matches := m.suggestions(); len(matches) > 0 {
 		add(m.suggestionLayout(matches))

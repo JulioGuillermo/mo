@@ -1,0 +1,137 @@
+package tui
+
+import (
+	"slices"
+	"strings"
+
+	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
+)
+
+// addBtwBlock adds the block of a side question: folded to a pill that
+// says how it goes, opened with a click to its answer between two rules.
+func (m *model) addBtwBlock(answer *btwAnswer) {
+	printer := m.printer
+	b := block{btw: answer, foldable: true, draw: func(open bool) string { return printer.btw(answer, open) }}
+	b.redraw(false)
+	m.blocks = append(m.blocks, b)
+}
+
+func btwPill() lipgloss.Style {
+	return lipgloss.NewStyle().Background(accent()).Foreground(col(uiNow().onAccent)).Bold(true)
+}
+
+func btwBar() lipgloss.Style { return lipgloss.NewStyle().Foreground(accent()) }
+
+// btw draws a side question: its pill, and opened its answer under it with
+// a bar at its left, closed by a rule that says it is not kept.
+func (p *printer) btw(answer *btwAnswer, open bool) string {
+	p.mu.Lock()
+	width := p.width
+	p.mu.Unlock()
+	how := " · " + btwLines(answer)
+	switch {
+	case !answer.done:
+		how = " · answering…"
+	case answer.ending != "" && answer.text == "":
+		how = " · " + answer.ending
+	}
+	hint := " · click to open, right click for more"
+	mark := "▸ "
+	if open {
+		hint, mark = " · click to fold", "▾ "
+	}
+	head := "  " + btwBar().Render(mark) + btwPill().Render(" "+btwWord(answer)+" ") + " "
+	question := strings.Join(strings.Fields(answer.question), " ")
+	tail := dimStyle.Render(how + hint)
+	room := max(width-ansi.StringWidth(head)-ansi.StringWidth(tail), 10)
+	header := head + ansi.Truncate(question, room, "…") + tail
+	if !open {
+		return "\n" + header
+	}
+	lines := []string{"", header}
+	for _, line := range p.btwBody(answer) {
+		lines = append(lines, "  "+btwBar().Render("│")+line)
+	}
+	lines = append(lines, "  "+btwBar().Render("╰─ ")+dimStyle.Render(btwFooter(answer)))
+	return strings.Join(lines, "\n")
+}
+
+// btwBody is the answer drawn as an answer of the model, or while none
+// came yet the end of what it reasons.
+func (p *printer) btwBody(answer *btwAnswer) []string {
+	p.mu.Lock()
+	width := p.width
+	p.mu.Unlock()
+	if answer.drawn != nil && answer.drawnText == answer.text+answer.reasoning && answer.drawnWidth == width {
+		return answer.drawn
+	}
+	answer.drawn, answer.drawnText, answer.drawnWidth = p.drawBtwBody(answer), answer.text+answer.reasoning, width
+	return answer.drawn
+}
+
+func (p *printer) drawBtwBody(answer *btwAnswer) []string {
+	text := strings.TrimSpace(answer.text)
+	if text == "" {
+		reasoning := strings.Fields(answer.reasoning)
+		if len(reasoning) == 0 {
+			return []string{dimStyle.Render(" …")}
+		}
+		said := strings.Join(reasoning[max(len(reasoning)-40, 0):], " ")
+		return []string{dimStyle.Render(" " + spark() + " " + said)}
+	}
+	return strings.Split(strings.Trim(p.Answer(text), "\n"), "\n")
+}
+
+// btwFooter says the answer is not kept, how it ended when not well, and
+// what /btw! changed.
+func btwFooter(answer *btwAnswer) string {
+	parts := []string{"not kept in the conversation"}
+	if answer.ending != "" {
+		parts = append(parts, answer.ending)
+	}
+	if len(answer.changes) > 0 {
+		parts = append(parts, "the model is told it did: "+strings.Join(answer.changes, " · "))
+	}
+	return strings.Join(parts, " · ")
+}
+
+// btwAt is the side question whose block is at row y of the conversation.
+func (m model) btwAt(y int) (*btwAnswer, bool) {
+	conversation := m.conversation(m.conversationHeight())
+	i, found := m.conversationLines().blockAt(y + conversation.YOffset())
+	if !found || m.blocks[i].btw == nil {
+		return nil, false
+	}
+	return m.blocks[i].btw, true
+}
+
+// btwMenu is what a right click on a side question offers.
+func (m model) btwMenu(answer *btwAnswer) (tea.Model, tea.Cmd) {
+	options := []huh.Option[string]{huh.NewOption("open in a box", "box"), huh.NewOption("open or fold here", "fold")}
+	if strings.TrimSpace(answer.text) != "" {
+		options = append(options, huh.NewOption("copy the answer", "copy"))
+	}
+	return m.showChoices(btwWord(answer), answer.question, options, func(m model, choice string) (tea.Model, tea.Cmd) {
+		switch choice {
+		case "box":
+			return m.openBtwBox(answer)
+		case "fold":
+			m.toggleBtw(answer)
+			return m, nil
+		}
+		return m.flashCopied(answer.text, "copied the answer")
+	})
+}
+
+func (m *model) toggleBtw(answer *btwAnswer) {
+	m.blocks = slices.Clone(m.blocks)
+	for i := range m.blocks {
+		if m.blocks[i].btw == answer {
+			m.blocks[i].open = !m.blocks[i].open
+			m.blocks[i].redraw(m.blocks[i].open)
+		}
+	}
+}

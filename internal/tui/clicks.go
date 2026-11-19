@@ -185,6 +185,9 @@ func (m model) rightClick(x, y int) (tea.Model, tea.Cmd) {
 		if found, isLink := m.linkUnder(x, y); isLink {
 			return m.linkMenu(found)
 		}
+		if answer, ok := m.btwAt(y); ok {
+			return m.btwMenu(answer)
+		}
 		if run, ended := m.userRunAt(y); ended {
 			return m.userRunMenu(run)
 		}
