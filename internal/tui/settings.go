@@ -392,7 +392,7 @@ func (m model) useSession(session Session) (tea.Model, tea.Cmd) {
 	}
 	m.session = session
 	m.printer.setKind(m.toolKind)
-	m.printer.setRounded(m.statusStyle() == statusPowerline)
+	m.printer.setPointed(m.statusStyle() == statusPowerline)
 	m.configureJobs()
 	m.usage = m.session.Agent.LastUsage
 	// The model may take other efforts.

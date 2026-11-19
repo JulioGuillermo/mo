@@ -23,8 +23,6 @@ func (m *model) addBtwBlock(answer *btwAnswer) {
 	m.blocks = append(m.blocks, b)
 }
 
-const btwRoundEnd = "\ue0b4"
-
 func btwPill() lipgloss.Style {
 	return lipgloss.NewStyle().Background(accent()).Foreground(col(uiNow().onAccent)).Bold(true)
 }
@@ -38,9 +36,9 @@ func btwDetailBackground() color.Color { return col(uiNow().segment) }
 // closed by a rule that says it is not kept.
 func (p *printer) btw(answer *btwAnswer, open bool) string {
 	p.mu.Lock()
-	width, rounded := p.width, p.rounded
+	width, pointed := p.width, p.pointed
 	p.mu.Unlock()
-	lines := []string{"", p.btwHeader(answer, open, rounded)}
+	lines := []string{"", p.btwHeader(answer, open, pointed)}
 	if !open {
 		return strings.Join(lines, "\n")
 	}
@@ -56,8 +54,9 @@ func (p *printer) btw(answer *btwAnswer, open bool) string {
 
 // btwHeader is the pill, from the bar's column: its mark and name on the
 // accent, then how long it is and what a click does on a darker ground,
-// each with a round end when the font has them.
-func (p *printer) btwHeader(answer *btwAnswer, open, rounded bool) string {
+// pointed at both ends with powerline's arrows when the font has them, the
+// one before it in the column left of the bar.
+func (p *printer) btwHeader(answer *btwAnswer, open, pointed bool) string {
 	how := btwLines(answer)
 	switch {
 	case !answer.done:
@@ -72,12 +71,13 @@ func (p *printer) btwHeader(answer *btwAnswer, open, rounded bool) string {
 	detail := lipgloss.NewStyle().Background(btwDetailBackground()).Foreground(col(uiNow().subtext))
 	name := btwPill().Render(mark + " " + btwLabel(answer) + " ")
 	about := detail.Render(" " + how + " · " + hint + " ")
-	if !rounded {
+	if !pointed {
 		return "  " + name + about
 	}
-	nameEnd := lipgloss.NewStyle().Foreground(accent()).Background(btwDetailBackground()).Render(btwRoundEnd)
-	aboutEnd := lipgloss.NewStyle().Foreground(btwDetailBackground()).Render(btwRoundEnd)
-	return "  " + name + nameEnd + about + aboutEnd
+	start := lipgloss.NewStyle().Foreground(accent()).Render(arrowLeft)
+	nameEnd := lipgloss.NewStyle().Foreground(accent()).Background(btwDetailBackground()).Render(arrowRight)
+	aboutEnd := lipgloss.NewStyle().Foreground(btwDetailBackground()).Render(arrowRight)
+	return " " + start + name + nameEnd + about + aboutEnd
 }
 
 // btwQuestion is the question wrapped to the width, on the ground of what

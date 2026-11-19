@@ -7,7 +7,7 @@ package tui
 // | BW-03 | Edge     | While /btw answers, its state line shows; a second /btw waits; /btw alone stops it | P1     |
 // | BW-06 | Happy    | The answer streams into its opened block at the spinner's tick, and into its box | P0      |
 // | BW-07 | Happy    | Files attached to /btw reach the model as paths, as a prompt's do              | P0       |
-// | BW-10 | Happy    | The question wraps under the pill; with a powerline font the pill has round ends, without none | P1 |
+// | BW-10 | Happy    | The question wraps under the pill; with a powerline font the pill is pointed at both ends, its start left of the bar | P1 |
 // | BW-09 | Happy    | An aside is numbered and kept, the model told how to read it, and it is saved and drawn again on resume | P0 |
 // | BW-08 | Happy    | /btw open and a click on its line open the box; esc closes it; right click offers it | P1   |
 // | BW-04 | Happy    | What /btw asks says /btw asks it                                               | P1       |
@@ -290,18 +290,21 @@ func TestBtwKept(t *testing.T) {
 }
 
 func TestBtwLook(t *testing.T) {
-	t.Run("BW-10 the question wraps under the pill; with a powerline font the pill has round ends, without none", func(t *testing.T) {
+	t.Run("BW-10 the question wraps under the pill; with a powerline font the pill is pointed at both ends, its start left of the bar", func(t *testing.T) {
 		m, _ := btwModel(t, &recording{})
 		long := strings.Repeat("why does the cache keep the old key ", 6)
 		answer := &btwAnswer{question: long, text: "Because.", done: true}
 
-		m.printer.setRounded(true)
-		rounded := ansi.Strip(m.printer.btw(answer, true))
-		m.printer.setRounded(false)
+		m.printer.setPointed(true)
+		pointed := strings.Split(ansi.Strip(m.printer.btw(answer, true)), "\n")
+		m.printer.setPointed(false)
 		square := ansi.Strip(m.printer.btw(answer, true))
 
-		if strings.Count(rounded, btwRoundEnd) != 2 || strings.Contains(square, btwRoundEnd) {
-			t.Errorf("rounded:\n%s\nsquare:\n%s", rounded, square)
+		if !strings.HasPrefix(pointed[1], " "+arrowLeft+"▾ btw") || strings.Count(pointed[1], arrowRight) != 2 || !strings.HasPrefix(pointed[2], "  │") {
+			t.Errorf("pointed:\n%s", strings.Join(pointed, "\n"))
+		}
+		if strings.Contains(square, arrowLeft) || strings.Contains(square, arrowRight) || !strings.HasPrefix(strings.Split(square, "\n")[1], "  ▾ btw") {
+			t.Errorf("square:\n%s", square)
 		}
 		if questionRows := strings.Count(square, "│ "); questionRows < 4 || strings.Contains(square, "…") {
 			t.Errorf("question not wrapped:\n%s", square)
