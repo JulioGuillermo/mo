@@ -342,7 +342,7 @@ func Run(session Session) error {
 	defer m.config.close()
 	m.input.SetStyles(inputStyles(m.input.Styles(), screen.dark))
 	printer.setKind(m.toolKind)
-	printer.setPills(m.pillStyle())
+	printer.setPills(m.pillLook())
 	m.configureJobs()
 	m.paceAnimations()
 	program := tea.NewProgram(m, tea.WithOutput(sixelOutput{File: os.Stdout, screen: m.sixel}))

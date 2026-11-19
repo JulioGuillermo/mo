@@ -55,9 +55,8 @@ func (p *printer) btw(answer *btwAnswer, open bool) string {
 
 // btwHeader is the pill, from the bar's column: its mark and name on the
 // accent, then how long it is and what a click does on a darker ground,
-// closed at both ends as pills says, the end before it in the column left
-// of the bar.
-func (p *printer) btwHeader(answer *btwAnswer, open bool, pills string) string {
+// drawn as pills says, the end before it in the column left of the bar.
+func (p *printer) btwHeader(answer *btwAnswer, open bool, pills pillLook) string {
 	how := btwLines(answer)
 	switch {
 	case !answer.done:
@@ -69,9 +68,9 @@ func (p *printer) btwHeader(answer *btwAnswer, open bool, pills string) string {
 	if open {
 		mark, hint = "▾", "click to fold"
 	}
-	drawn := pill(pills, []string{mark + " " + btwLabel(answer) + " ", " " + how + " · " + hint + " "},
-		[]color.Color{accent(), btwDetailBackground()}, []color.Color{col(uiNow().onAccent), col(uiNow().subtext)})
-	if left, _ := pillEnds(pills); left != "" {
+	drawn := pill(pills, mark+" "+btwLabel(answer)+" ", " "+how+" · "+hint+" ",
+		accent(), col(uiNow().onAccent), btwDetailBackground(), col(uiNow().subtext))
+	if shapeNamed(pills.left).left != "" {
 		return " " + drawn
 	}
 	return "  " + drawn

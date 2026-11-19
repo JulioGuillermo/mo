@@ -867,11 +867,21 @@ func appearanceItems(_ model, menu *settingsMenu) []settingItem {
 				huh.NewOption("plain: text joined by │, for any font", statusPlain),
 			).Value(&d.statusStyle)
 		}},
-		{"Pill ends", func(d *settingsDraft) string { return d.pills }, func(d *settingsDraft) huh.Field {
-			return huh.NewSelect[string]().Title("Pill ends").Description("the ends of pills, as /btw's, with a powerline status line").Options(
-				huh.NewOption(pillSample(pillRound)+"  round", pillRound),
-				huh.NewOption(pillSample(pillArrow)+"  arrow", pillArrow),
-			).Value(&d.pills)
+		{"Pill left end", func(d *settingsDraft) string { return d.pillLeft }, func(d *settingsDraft) huh.Field {
+			return huh.NewSelect[string]().Title("Pill left end").Description("pills, as /btw's, with a powerline status line").Options(shapeOptions(false)...).Value(&d.pillLeft)
+		}},
+		{"Pill right end", func(d *settingsDraft) string { return d.pillRight }, func(d *settingsDraft) huh.Field {
+			return huh.NewSelect[string]().Title("Pill right end").Description("also where the name meets the details").Options(shapeOptions(true)...).Value(&d.pillRight)
+		}},
+		{"Pill details", func(d *settingsDraft) string { return d.pillDetails }, func(d *settingsDraft) huh.Field {
+			look := d.pillLook()
+			look.details = pillDetailsText
+			asText := pillSample(look)
+			look.details = pillDetailsSegment
+			return huh.NewSelect[string]().Title("Pill details").Description("how long it is and what a click does, beside the name").Options(
+				huh.NewOption(pillSample(look)+"  segment: on a darker ground of their own", pillDetailsSegment),
+				huh.NewOption(asText+"  text: dim, after the pill", pillDetailsText),
+			).Value(&d.pillDetails)
 		}},
 		{"Context bar", func(d *settingsDraft) string {
 			return barSample(barStyleNamed(d.bar)) + "  " + orDefault(d.bar, barStyles[0].name)

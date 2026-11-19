@@ -411,6 +411,9 @@ func (s MCPServer) DescriptionLimit() int {
 }
 
 // BarStyles are the looks of the context bar, the first the default.
+// PillShapes are the shapes the ends of a pill take.
+var PillShapes = []string{"round", "arrow", "slant", "flame", "pixel", "square"}
+
 var BarStyles = []string{"shapes", "braille", "circles", "half-circles", "squares", "half-squares", "dots", "rings", "dashes", "shade", "blocks", "halves", "line"}
 
 type Render struct {
@@ -440,9 +443,12 @@ type Render struct {
 	Keys string `toml:"keys,omitempty"`
 	// Bar is how the context bar is drawn, one of BarStyles.
 	Bar string `toml:"bar,omitempty"`
-	// Pills is how the ends of pills, as /btw's, are drawn with a powerline
-	// status line: "round" or "arrow".
-	Pills string `toml:"pills,omitempty"`
+	// PillLeft and PillRight are the shapes of the ends of pills, as
+	// /btw's, with a powerline status line, one of PillShapes; PillDetails
+	// puts what is beside the name on a "segment" of its own or as "text".
+	PillLeft    string `toml:"pill_left,omitempty"`
+	PillRight   string `toml:"pill_right,omitempty"`
+	PillDetails string `toml:"pill_details,omitempty"`
 	// ReplyRefresh is how often what the model writes is drawn: at every
 	// piece ("live"), every ReplyEveryMS milliseconds ("time") or every
 	// ReplyEveryTokens pieces ("tokens"). What asks or ends is drawn at
@@ -648,7 +654,7 @@ func Defaults() Config {
 		Skills:       Skills{Mode: tools.ModeFull},
 		Instructions: Instructions{Enabled: ptr(true), Files: []string{"AGENTS.md", "AGENT.md"}},
 		Web:          Web{Search: web.SearchDuckDuckGo},
-		Render: Render{Images: render.ModeAuto, Background: BackgroundTheme, Theme: UIThemes[0], Mode: ModeDark, Sidebar: "auto", SidebarWidth: DefaultSidebarWidth, TreeWidth: DefaultTreeWidth, Status: "powerline", Icons: "nerd", Keys: "default", Bar: "shapes", Pills: "round",
+		Render: Render{Images: render.ModeAuto, Background: BackgroundTheme, Theme: UIThemes[0], Mode: ModeDark, Sidebar: "auto", SidebarWidth: DefaultSidebarWidth, TreeWidth: DefaultTreeWidth, Status: "powerline", Icons: "nerd", Keys: "default", Bar: "shapes", PillLeft: "round", PillRight: "round", PillDetails: "segment",
 			ReplyRefresh: RefreshLive, ReplyEveryMS: 100, ReplyEveryTokens: 10,
 			SpinnerMS: 80, RunningMS: 150, WritingMS: 220, ReasoningMS: 160, AskingMS: 500, UIFPS: 20, CellSize: render.CellSizeAuto,
 			Syntax: SyntaxThemes[0]},
@@ -725,8 +731,13 @@ func validate(cfg Config) error {
 	if cfg.Render.Icons != "nerd" && cfg.Render.Icons != "emoji" && cfg.Render.Icons != "text" {
 		return fmt.Errorf("render.icons %q: use nerd, emoji or text", cfg.Render.Icons)
 	}
-	if !slices.Contains([]string{"round", "arrow"}, cfg.Render.Pills) {
-		return fmt.Errorf("render.pills %q: use round or arrow", cfg.Render.Pills)
+	for key, shape := range map[string]string{"render.pill_left": cfg.Render.PillLeft, "render.pill_right": cfg.Render.PillRight} {
+		if !slices.Contains(PillShapes, shape) {
+			return fmt.Errorf("%s %q: use %s", key, shape, strings.Join(PillShapes, ", "))
+		}
+	}
+	if !slices.Contains([]string{"segment", "text"}, cfg.Render.PillDetails) {
+		return fmt.Errorf("render.pill_details %q: use segment or text", cfg.Render.PillDetails)
 	}
 	if !slices.Contains(BarStyles, cfg.Render.Bar) {
 		return fmt.Errorf("render.bar %q: use %s", cfg.Render.Bar, strings.Join(BarStyles, ", "))
@@ -1162,7 +1173,9 @@ func mergeHarmless(base, layer Config) Config {
 	base.Render.Keys = override(base.Render.Keys, layer.Render.Keys)
 	base.Render.Status = override(base.Render.Status, layer.Render.Status)
 	base.Render.Bar = override(base.Render.Bar, layer.Render.Bar)
-	base.Render.Pills = override(base.Render.Pills, layer.Render.Pills)
+	base.Render.PillLeft = override(base.Render.PillLeft, layer.Render.PillLeft)
+	base.Render.PillRight = override(base.Render.PillRight, layer.Render.PillRight)
+	base.Render.PillDetails = override(base.Render.PillDetails, layer.Render.PillDetails)
 	base.Render.ReplyRefresh = override(base.Render.ReplyRefresh, layer.Render.ReplyRefresh)
 	base.Render.ReplyEveryMS = override(base.Render.ReplyEveryMS, layer.Render.ReplyEveryMS)
 	base.Render.ReplyEveryTokens = override(base.Render.ReplyEveryTokens, layer.Render.ReplyEveryTokens)

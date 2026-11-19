@@ -7,7 +7,8 @@ package tui
 // | BW-03 | Edge     | While /btw answers, its state line shows; a second /btw waits; /btw alone stops it | P1     |
 // | BW-06 | Happy    | The answer streams into its opened block at the spinner's tick, and into its box | P0      |
 // | BW-07 | Happy    | Files attached to /btw reach the model as paths, as a prompt's do              | P0       |
-// | BW-10 | Happy    | The question wraps under the pill, a line before the answer; the pill ends round, pointed or plain, its start left of the bar | P1 |
+// | BW-10 | Happy    | The question wraps under the pill, a line before the answer; each end takes its shape, its start left of the bar | P1 |
+// | BW-11 | Happy    | Details as text leave the pill after the name; the pill settings are saved as they differ from the defaults | P1 |
 // | BW-09 | Happy    | An aside is numbered and kept, the model told how to read it, and it is saved and drawn again on resume | P0 |
 // | BW-08 | Happy    | /btw open and a click on its line open the box; esc closes it; right click offers it | P1   |
 // | BW-04 | Happy    | What /btw asks says /btw asks it                                               | P1       |
@@ -26,6 +27,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jg/mo/internal/agent"
+	"github.com/jg/mo/internal/config"
 	"github.com/jg/mo/internal/llm"
 	"github.com/jg/mo/internal/tools"
 )
@@ -290,25 +292,24 @@ func TestBtwKept(t *testing.T) {
 }
 
 func TestBtwLook(t *testing.T) {
-	t.Run("BW-10 the question wraps under the pill, a line before the answer; the pill ends round, pointed or plain, its start left of the bar", func(t *testing.T) {
+	t.Run("BW-10 the question wraps under the pill, a line before the answer; each end takes its shape, its start left of the bar", func(t *testing.T) {
 		m, _ := btwModel(t, &recording{})
 		long := strings.Repeat("why does the cache keep the old key ", 6)
 		answer := &btwAnswer{question: long, text: "Because.", done: true}
 
-		for _, style := range []string{pillRound, pillArrow} {
-			m.printer.setPills(style)
-			left, right := pillEnds(style)
+		for _, shape := range pillShapes[:len(pillShapes)-1] {
+			m.printer.setPills(pillLook{left: shape.name, right: "flame", details: pillDetailsSegment})
 			lines := strings.Split(ansi.Strip(m.printer.btw(answer, true)), "\n")
-			if !strings.HasPrefix(lines[1], " "+left+"▾ btw") || strings.Count(lines[1], right) != 2 || !strings.HasPrefix(lines[2], "  │") {
-				t.Errorf("%s:\n%s", style, strings.Join(lines, "\n"))
+			if !strings.HasPrefix(lines[1], " "+shape.left+"▾ btw") || strings.Count(lines[1], shapeNamed("flame").right) != 2 || !strings.HasPrefix(lines[2], "  │") {
+				t.Errorf("%s:\n%s", shape.name, strings.Join(lines, "\n"))
 			}
 		}
-		m.printer.setPills(pillPlain)
+		m.printer.setPills(pillLook{left: "square", right: "square", details: pillDetailsSegment})
 		square := ansi.Strip(m.printer.btw(answer, true))
 		lines := strings.Split(square, "\n")
 		answerAt := slices.IndexFunc(lines, func(line string) bool { return strings.Contains(line, "Because.") })
 
-		if strings.ContainsAny(square, "\ue0b6\ue0b4"+arrowLeft+arrowRight) || !strings.HasPrefix(lines[1], "  ▾ btw") {
+		if strings.ContainsRune(square, '\ue0b4') || strings.ContainsRune(square, '\ue0b0') || !strings.HasPrefix(lines[1], "  ▾ btw") {
 			t.Errorf("square:\n%s", square)
 		}
 		if answerAt < 1 || strings.TrimSpace(lines[answerAt-1]) != "│" {
@@ -316,6 +317,26 @@ func TestBtwLook(t *testing.T) {
 		}
 		if questionRows := strings.Count(square, "│ "); questionRows < 4 || strings.Contains(square, "…") {
 			t.Errorf("question not wrapped:\n%s", square)
+		}
+	})
+}
+
+func TestPillSettings(t *testing.T) {
+	t.Run("BW-11 details as text leave the pill after the name; the pill settings are saved as they differ from the defaults", func(t *testing.T) {
+		asText := pill(pillLook{left: "round", right: "arrow", details: pillDetailsText}, " btw ", " 3 lines", accent(), accent(), accent(), accent())
+		draft := defaultDraft()
+		draft.pillRight, draft.pillDetails = "slant", pillDetailsText
+		layer, err := draft.applyTo(config.Config{}, nil)
+		untouched, _ := defaultDraft().applyTo(config.Config{}, nil)
+
+		if plain := ansi.Strip(asText); plain != "\ue0b6 btw \ue0b0 3 lines" {
+			t.Errorf("as text %q", plain)
+		}
+		if err != nil || layer.Render.PillLeft != "" || layer.Render.PillRight != "slant" || layer.Render.PillDetails != "text" {
+			t.Errorf("layer %+v, %v", layer.Render, err)
+		}
+		if untouched.Render.PillLeft != "" || untouched.Render.PillRight != "" || untouched.Render.PillDetails != "" {
+			t.Errorf("defaults saved %+v", untouched.Render)
 		}
 	})
 }
