@@ -71,6 +71,7 @@ type settingsDraft struct {
 	treeWidth    string
 	statusStyle  string
 	bar          string
+	pills        string
 	// replyRefresh is how often what the model writes is drawn, with
 	// its milliseconds or tokens.
 	replyRefresh string
@@ -206,6 +207,7 @@ func draftFrom(cfg config.Config, provider, model string) *settingsDraft {
 		treeWidth:        strconv.Itoa(cfg.Render.TreeWidth),
 		statusStyle:      cfg.Render.Status,
 		bar:              cfg.Render.Bar,
+		pills:            cfg.Render.Pills,
 		replyRefresh:     cfg.Render.ReplyRefresh,
 		spinnerMS:        strconv.Itoa(cfg.Render.SpinnerMS),
 		runningMS:        strconv.Itoa(cfg.Render.RunningMS),
@@ -412,6 +414,7 @@ func (d *settingsDraft) applyTo(layer config.Config, findings []detect.Finding) 
 	layer.Render.TreeWidth = unlessDefault(treeWidth, defaults.Render.TreeWidth)
 	layer.Render.Status = unlessDefault(d.statusStyle, defaults.Render.Status)
 	layer.Render.Bar = unlessDefault(d.bar, defaults.Render.Bar)
+	layer.Render.Pills = unlessDefault(d.pills, defaults.Render.Pills)
 	everyMS, err := parseAtLeast(d.replyEveryMS, 10)
 	if err != nil {
 		return layer, fmt.Errorf("reply refresh milliseconds: %w", err)

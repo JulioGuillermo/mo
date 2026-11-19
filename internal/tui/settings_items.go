@@ -867,6 +867,12 @@ func appearanceItems(_ model, menu *settingsMenu) []settingItem {
 				huh.NewOption("plain: text joined by │, for any font", statusPlain),
 			).Value(&d.statusStyle)
 		}},
+		{"Pill ends", func(d *settingsDraft) string { return d.pills }, func(d *settingsDraft) huh.Field {
+			return huh.NewSelect[string]().Title("Pill ends").Description("the ends of pills, as /btw's, with a powerline status line").Options(
+				huh.NewOption(pillSample(pillRound)+"  round", pillRound),
+				huh.NewOption(pillSample(pillArrow)+"  arrow", pillArrow),
+			).Value(&d.pills)
+		}},
 		{"Context bar", func(d *settingsDraft) string {
 			return barSample(barStyleNamed(d.bar)) + "  " + orDefault(d.bar, barStyles[0].name)
 		}, func(d *settingsDraft) huh.Field {

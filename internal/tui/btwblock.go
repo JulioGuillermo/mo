@@ -36,15 +36,16 @@ func btwDetailBackground() color.Color { return col(uiNow().segment) }
 // closed by a rule that says it is not kept.
 func (p *printer) btw(answer *btwAnswer, open bool) string {
 	p.mu.Lock()
-	width, pointed := p.width, p.pointed
+	width, pills := p.width, p.pills
 	p.mu.Unlock()
-	lines := []string{"", p.btwHeader(answer, open, pointed)}
+	lines := []string{"", p.btwHeader(answer, open, pills)}
 	if !open {
 		return strings.Join(lines, "\n")
 	}
 	for _, line := range p.btwQuestion(answer.question, width) {
 		lines = append(lines, "  "+btwBar().Render("│")+" "+line)
 	}
+	lines = append(lines, "  "+btwBar().Render("│"))
 	for _, line := range p.btwBody(answer) {
 		lines = append(lines, "  "+btwBar().Render("│")+line)
 	}
@@ -54,9 +55,9 @@ func (p *printer) btw(answer *btwAnswer, open bool) string {
 
 // btwHeader is the pill, from the bar's column: its mark and name on the
 // accent, then how long it is and what a click does on a darker ground,
-// pointed at both ends with powerline's arrows when the font has them, the
-// one before it in the column left of the bar.
-func (p *printer) btwHeader(answer *btwAnswer, open, pointed bool) string {
+// closed at both ends as pills says, the end before it in the column left
+// of the bar.
+func (p *printer) btwHeader(answer *btwAnswer, open bool, pills string) string {
 	how := btwLines(answer)
 	switch {
 	case !answer.done:
@@ -68,23 +69,22 @@ func (p *printer) btwHeader(answer *btwAnswer, open, pointed bool) string {
 	if open {
 		mark, hint = "▾", "click to fold"
 	}
-	detail := lipgloss.NewStyle().Background(btwDetailBackground()).Foreground(col(uiNow().subtext))
-	name := btwPill().Render(mark + " " + btwLabel(answer) + " ")
-	about := detail.Render(" " + how + " · " + hint + " ")
-	if !pointed {
-		return "  " + name + about
+	drawn := pill(pills, []string{mark + " " + btwLabel(answer) + " ", " " + how + " · " + hint + " "},
+		[]color.Color{accent(), btwDetailBackground()}, []color.Color{col(uiNow().onAccent), col(uiNow().subtext)})
+	if left, _ := pillEnds(pills); left != "" {
+		return " " + drawn
 	}
-	start := lipgloss.NewStyle().Foreground(accent()).Render(arrowLeft)
-	nameEnd := lipgloss.NewStyle().Foreground(accent()).Background(btwDetailBackground()).Render(arrowRight)
-	aboutEnd := lipgloss.NewStyle().Foreground(btwDetailBackground()).Render(arrowRight)
-	return " " + start + name + nameEnd + about + aboutEnd
+	return "  " + drawn
 }
 
-// btwQuestion is the question wrapped to the width, on the ground of what
-// the user writes.
+// btwQuestion is the question wrapped to the width, on the ground of the
+// user's prompts.
 func (p *printer) btwQuestion(question string, width int) []string {
 	inner := max(width-6, 10)
 	band := panel(p.isDark()).Width(inner)
+	if prompt := ui(p.isDark()).prompt; prompt != "" {
+		band = band.Background(col(prompt))
+	}
 	var lines []string
 	for _, line := range strings.Split(strings.TrimSpace(question), "\n") {
 		for _, piece := range strings.Split(ansi.Wrap(line, inner-2, " "), "\n") {

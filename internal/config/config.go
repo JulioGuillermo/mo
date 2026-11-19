@@ -440,6 +440,9 @@ type Render struct {
 	Keys string `toml:"keys,omitempty"`
 	// Bar is how the context bar is drawn, one of BarStyles.
 	Bar string `toml:"bar,omitempty"`
+	// Pills is how the ends of pills, as /btw's, are drawn with a powerline
+	// status line: "round" or "arrow".
+	Pills string `toml:"pills,omitempty"`
 	// ReplyRefresh is how often what the model writes is drawn: at every
 	// piece ("live"), every ReplyEveryMS milliseconds ("time") or every
 	// ReplyEveryTokens pieces ("tokens"). What asks or ends is drawn at
@@ -645,7 +648,7 @@ func Defaults() Config {
 		Skills:       Skills{Mode: tools.ModeFull},
 		Instructions: Instructions{Enabled: ptr(true), Files: []string{"AGENTS.md", "AGENT.md"}},
 		Web:          Web{Search: web.SearchDuckDuckGo},
-		Render: Render{Images: render.ModeAuto, Background: BackgroundTheme, Theme: UIThemes[0], Mode: ModeDark, Sidebar: "auto", SidebarWidth: DefaultSidebarWidth, TreeWidth: DefaultTreeWidth, Status: "powerline", Icons: "nerd", Keys: "default", Bar: "shapes",
+		Render: Render{Images: render.ModeAuto, Background: BackgroundTheme, Theme: UIThemes[0], Mode: ModeDark, Sidebar: "auto", SidebarWidth: DefaultSidebarWidth, TreeWidth: DefaultTreeWidth, Status: "powerline", Icons: "nerd", Keys: "default", Bar: "shapes", Pills: "round",
 			ReplyRefresh: RefreshLive, ReplyEveryMS: 100, ReplyEveryTokens: 10,
 			SpinnerMS: 80, RunningMS: 150, WritingMS: 220, ReasoningMS: 160, AskingMS: 500, UIFPS: 20, CellSize: render.CellSizeAuto,
 			Syntax: SyntaxThemes[0]},
@@ -721,6 +724,9 @@ func validate(cfg Config) error {
 	}
 	if cfg.Render.Icons != "nerd" && cfg.Render.Icons != "emoji" && cfg.Render.Icons != "text" {
 		return fmt.Errorf("render.icons %q: use nerd, emoji or text", cfg.Render.Icons)
+	}
+	if !slices.Contains([]string{"round", "arrow"}, cfg.Render.Pills) {
+		return fmt.Errorf("render.pills %q: use round or arrow", cfg.Render.Pills)
 	}
 	if !slices.Contains(BarStyles, cfg.Render.Bar) {
 		return fmt.Errorf("render.bar %q: use %s", cfg.Render.Bar, strings.Join(BarStyles, ", "))
@@ -1156,6 +1162,7 @@ func mergeHarmless(base, layer Config) Config {
 	base.Render.Keys = override(base.Render.Keys, layer.Render.Keys)
 	base.Render.Status = override(base.Render.Status, layer.Render.Status)
 	base.Render.Bar = override(base.Render.Bar, layer.Render.Bar)
+	base.Render.Pills = override(base.Render.Pills, layer.Render.Pills)
 	base.Render.ReplyRefresh = override(base.Render.ReplyRefresh, layer.Render.ReplyRefresh)
 	base.Render.ReplyEveryMS = override(base.Render.ReplyEveryMS, layer.Render.ReplyEveryMS)
 	base.Render.ReplyEveryTokens = override(base.Render.ReplyEveryTokens, layer.Render.ReplyEveryTokens)

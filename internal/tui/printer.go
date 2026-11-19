@@ -76,15 +76,15 @@ type printer struct {
 	codeBlocks []string
 	// kind tells what a tool call does, for the colour of its mark.
 	kind func(call llm.ToolCall) toolKind
-	// pointed draws pills with powerline's arrows at their ends, for fonts
-	// that have them.
-	pointed bool
+	// pills is how pills end: round, arrow, or plain for fonts without
+	// powerline's glyphs.
+	pills string
 }
 
-func (p *printer) setPointed(pointed bool) {
+func (p *printer) setPills(style string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.pointed = pointed
+	p.pills = style
 }
 
 func newPrinter() *printer {
