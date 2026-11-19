@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"slices"
 	"strings"
 
@@ -17,10 +18,12 @@ import (
 // says how it goes, opened with a click to its answer between two rules.
 func (m *model) addBtwBlock(answer *btwAnswer) {
 	printer := m.printer
-	b := block{btw: answer, foldable: true, draw: func(open bool) string { return printer.btw(answer, open) }}
-	b.redraw(false)
+	b := block{btw: answer, foldable: true, open: true, draw: func(open bool) string { return printer.btw(answer, open) }}
+	b.redraw(true)
 	m.blocks = append(m.blocks, b)
 }
+
+const btwRoundEnd = "\ue0b4"
 
 func btwPill() lipgloss.Style {
 	return lipgloss.NewStyle().Background(accent()).Foreground(col(uiNow().onAccent)).Bold(true)
@@ -28,38 +31,71 @@ func btwPill() lipgloss.Style {
 
 func btwBar() lipgloss.Style { return lipgloss.NewStyle().Foreground(accent()) }
 
-// btw draws a side question: its pill, and opened its answer under it with
-// a bar at its left, closed by a rule that says it is not kept.
+func btwDetailBackground() color.Color { return col(uiNow().segment) }
+
+// btw draws a side question: a pill that its bar comes out of, with how
+// long it is beside it, and opened the question and answer along the bar,
+// closed by a rule that says it is not kept.
 func (p *printer) btw(answer *btwAnswer, open bool) string {
 	p.mu.Lock()
-	width := p.width
+	width, rounded := p.width, p.rounded
 	p.mu.Unlock()
-	how := " · " + btwLines(answer)
-	switch {
-	case !answer.done:
-		how = " · answering…"
-	case answer.ending != "" && answer.text == "":
-		how = " · " + answer.ending
-	}
-	hint := " · click to open, right click for more"
-	mark := "▸ "
-	if open {
-		hint, mark = " · click to fold", "▾ "
-	}
-	head := "  " + btwBar().Render(mark) + btwPill().Render(" "+btwLabel(answer)+" ") + " "
-	question := strings.Join(strings.Fields(answer.question), " ")
-	tail := dimStyle.Render(how + hint)
-	room := max(width-ansi.StringWidth(head)-ansi.StringWidth(tail), 10)
-	header := head + ansi.Truncate(question, room, "…") + tail
+	lines := []string{"", p.btwHeader(answer, open, rounded)}
 	if !open {
-		return "\n" + header
+		return strings.Join(lines, "\n")
 	}
-	lines := []string{"", header}
+	for _, line := range p.btwQuestion(answer.question, width) {
+		lines = append(lines, "  "+btwBar().Render("│")+" "+line)
+	}
 	for _, line := range p.btwBody(answer) {
 		lines = append(lines, "  "+btwBar().Render("│")+line)
 	}
 	lines = append(lines, "  "+btwBar().Render("╰─ ")+dimStyle.Render(btwFooter(answer)))
 	return strings.Join(lines, "\n")
+}
+
+// btwHeader is the pill, from the bar's column: its mark and name on the
+// accent, then how long it is and what a click does on a darker ground,
+// each with a round end when the font has them.
+func (p *printer) btwHeader(answer *btwAnswer, open, rounded bool) string {
+	how := btwLines(answer)
+	switch {
+	case !answer.done:
+		how = "answering…"
+	case answer.ending != "" && answer.text == "":
+		how = answer.ending
+	}
+	mark, hint := "▸", "click to open"
+	if open {
+		mark, hint = "▾", "click to fold"
+	}
+	detail := lipgloss.NewStyle().Background(btwDetailBackground()).Foreground(col(uiNow().subtext))
+	name := btwPill().Render(mark + " " + btwLabel(answer) + " ")
+	about := detail.Render(" " + how + " · " + hint + " ")
+	if !rounded {
+		return "  " + name + about
+	}
+	nameEnd := lipgloss.NewStyle().Foreground(accent()).Background(btwDetailBackground()).Render(btwRoundEnd)
+	aboutEnd := lipgloss.NewStyle().Foreground(btwDetailBackground()).Render(btwRoundEnd)
+	return "  " + name + nameEnd + about + aboutEnd
+}
+
+// btwQuestion is the question wrapped to the width, on the ground of what
+// the user writes.
+func (p *printer) btwQuestion(question string, width int) []string {
+	inner := max(width-6, 10)
+	band := panel(p.isDark()).Width(inner)
+	var lines []string
+	for _, line := range strings.Split(strings.TrimSpace(question), "\n") {
+		for _, piece := range strings.Split(ansi.Wrap(line, inner-2, " "), "\n") {
+			prefix := "  "
+			if len(lines) == 0 {
+				prefix = "› "
+			}
+			lines = append(lines, band.Render(prefix+piece))
+		}
+	}
+	return lines
 }
 
 // btwLabel is how its pill names an aside: its word, and its number once

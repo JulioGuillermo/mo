@@ -2,11 +2,12 @@ package tui
 
 // Test Traceability Table
 // | ID    | Category | Description                                                                    | Priority |
-// | BW-01 | Happy    | /btw asks with the conversation so far and only its tools; its answer is a pill that opens, not kept | P0 |
+// | BW-01 | Happy    | /btw asks with the conversation so far and only its tools; its answer shows open under a pill that folds it, not kept | P0 |
 // | BW-02 | Happy    | /btw! tells the main agent what it changed, which it reads at its next step     | P0       |
 // | BW-03 | Edge     | While /btw answers, its state line shows; a second /btw waits; /btw alone stops it | P1     |
 // | BW-06 | Happy    | The answer streams into its opened block at the spinner's tick, and into its box | P0      |
 // | BW-07 | Happy    | Files attached to /btw reach the model as paths, as a prompt's do              | P0       |
+// | BW-10 | Happy    | The question wraps under the pill; with a powerline font the pill has round ends, without none | P1 |
 // | BW-09 | Happy    | An aside is numbered and kept, the model told how to read it, and it is saved and drawn again on resume | P0 |
 // | BW-08 | Happy    | /btw open and a click on its line open the box; esc closes it; right click offers it | P1   |
 // | BW-04 | Happy    | What /btw asks says /btw asks it                                               | P1       |
@@ -103,7 +104,7 @@ func specNames(specs []llm.ToolSpec) []string {
 }
 
 func TestBtw(t *testing.T) {
-	t.Run("BW-01 /btw asks with the conversation so far and only its tools; the answer is shown, not kept", func(t *testing.T) {
+	t.Run("BW-01 /btw asks with the conversation so far and only its tools; its answer shows open under a pill that folds it, not kept", func(t *testing.T) {
 		provider := &recording{replies: []llm.Message{{Role: llm.RoleAssistant, Text: "It listed six files."}}}
 		m, _ := btwModel(t, provider)
 
@@ -116,14 +117,15 @@ func TestBtw(t *testing.T) {
 		if names := specNames(sent.Tools); slices.Contains(names, "bash") || !slices.Contains(names, "read") {
 			t.Errorf("tools %v", names)
 		}
-		folded := shown(m)
-		m.toggleBtw(m.blocks[len(m.blocks)-1].btw)
 		opened := shown(m)
-		if !strings.Contains(folded, "btw #1  what did you do? · 1 line") || strings.Contains(folded, "It listed six files.") {
-			t.Errorf("folded:\n%s", folded)
-		}
-		if !strings.Contains(opened, "│") || !strings.Contains(opened, "It listed six files.") || !strings.Contains(opened, "not kept in the conversation") {
+		m.toggleBtw(m.blocks[len(m.blocks)-1].btw)
+		folded := shown(m)
+		if !strings.Contains(opened, "▾ btw #1  1 line · click to fold") || !strings.Contains(opened, "│ › what did you do?") ||
+			!strings.Contains(opened, "It listed six files.") || !strings.Contains(opened, "not kept in the conversation") {
 			t.Errorf("opened:\n%s", opened)
+		}
+		if !strings.Contains(folded, "▸ btw #1  1 line · click to open") || strings.Contains(folded, "It listed six files.") {
+			t.Errorf("folded:\n%s", folded)
 		}
 		if len(m.session.Agent.History) != len(chat) || m.btw != nil {
 			t.Errorf("history %d, btw %v", len(m.session.Agent.History), m.btw)
@@ -150,7 +152,6 @@ func TestBtw(t *testing.T) {
 		if last := told[len(told)-1].Text; !strings.Contains(last, "/btw!") || !strings.Contains(last, "write") || !strings.Contains(last, "notes.txt") {
 			t.Errorf("told %q", last)
 		}
-		m.toggleBtw(m.blocks[len(m.blocks)-1].btw)
 		if view := shown(m); !strings.Contains(view, "the model is told it did: write") {
 			t.Errorf("shown:\n%s", view)
 		}
@@ -200,7 +201,6 @@ func TestBtwLive(t *testing.T) {
 		answer := &btwAnswer{question: "why?"}
 		m.btw = &btwRun{answer: answer, cancel: func() {}}
 		m.addBtwBlock(answer)
-		m.toggleBtw(answer)
 
 		updated, _ := m.Update(btwEventMsg{Kind: llm.EventText, Text: "Because the"})
 		before := shown(updated.(model))
@@ -283,8 +283,28 @@ func TestBtwKept(t *testing.T) {
 		if last := told[len(told)-1].Text; !strings.Contains(last, "/btw #1") || !strings.Contains(last, "btw_log read 1") {
 			t.Errorf("told %q", last)
 		}
-		if len(kept) != 1 || !strings.Contains(shown(resumed.(model)), "btw #1  how many files?") {
+		if len(kept) != 1 || !strings.Contains(shown(resumed.(model)), "btw #1  1 line") || !strings.Contains(shown(resumed.(model)), "› how many files?") {
 			t.Errorf("kept %+v, shown:\n%s", kept, shown(resumed.(model)))
+		}
+	})
+}
+
+func TestBtwLook(t *testing.T) {
+	t.Run("BW-10 the question wraps under the pill; with a powerline font the pill has round ends, without none", func(t *testing.T) {
+		m, _ := btwModel(t, &recording{})
+		long := strings.Repeat("why does the cache keep the old key ", 6)
+		answer := &btwAnswer{question: long, text: "Because.", done: true}
+
+		m.printer.setRounded(true)
+		rounded := ansi.Strip(m.printer.btw(answer, true))
+		m.printer.setRounded(false)
+		square := ansi.Strip(m.printer.btw(answer, true))
+
+		if strings.Count(rounded, btwRoundEnd) != 2 || strings.Contains(square, btwRoundEnd) {
+			t.Errorf("rounded:\n%s\nsquare:\n%s", rounded, square)
+		}
+		if questionRows := strings.Count(square, "│ "); questionRows < 4 || strings.Contains(square, "…") {
+			t.Errorf("question not wrapped:\n%s", square)
 		}
 	})
 }
