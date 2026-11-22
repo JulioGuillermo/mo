@@ -1020,3 +1020,8 @@ examples; [docs/examples/plugins/git.lua](docs/examples/plugins/git.lua) is a co
 | wheel over the side panel | scroll its tasks and jobs |
 | `/new` `/resume` `/rewind` `/fork` `/delete` `/clean <age>` `/title` `/model` `/login` `/logout` `/usage [provider\|all]` `/voice` `/compact [instruction]` `/cache clear` `/settings` `/reload` `/providers` `/mcp` `/plugins` `/agents` `/view [file]` `/git <action> [repo]` `/peers` `/help` `/quit` | commands; type `/` for suggestions, tab or enter to take one |
 | `/<name> text` | a plugin command |
+
+## License
+
+Apache License 2.0, in [LICENSE](LICENSE). A copy or a version of mo that is given to others keeps
+the [NOTICE](NOTICE) file, which says it is based on mo.
