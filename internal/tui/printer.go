@@ -503,6 +503,7 @@ func (p *printer) setDark(dark bool) {
 
 // Markdown renders text, with its tables drawn as stripes.
 func (p *printer) Markdown(text string) string {
+	text = plainFences(text)
 	parts := splitTables(text)
 	if len(parts) == 1 && !parts[0].isTable {
 		return p.glamour(text)

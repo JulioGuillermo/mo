@@ -49,9 +49,14 @@ func shifted(regions []region, lines int) []region {
 	return moved
 }
 
-// click does what is under the pointer: something in the bottom rows, a job
-// in the side panel, or opening a folded block of the conversation.
+// click does what is under the pointer: the cursor to where the input was
+// clicked, something in the bottom rows, a job in the side panel, or opening
+// a folded block of the conversation.
 func (m model) click(x, y int) (tea.Model, tea.Cmd) {
+	if row, ok := m.inputRowAt(y); ok && m.dialog == nil {
+		m.placeCursor(row, x)
+		return m, nil
+	}
 	_, regions := m.screenLayout()
 	for _, r := range regions {
 		if r.holds(x, y) {
