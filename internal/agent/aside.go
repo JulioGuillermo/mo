@@ -17,7 +17,7 @@ func (a *Agent) Aside(registry *tools.Registry, history []llm.Message, readOnly 
 	a.modelMu.RLock()
 	model, window := a.Model, a.Window
 	a.modelMu.RUnlock()
-	return &Agent{
+	aside := &Agent{
 		Provider:      a.Provider,
 		ProviderName:  a.ProviderName,
 		Model:         model,
@@ -40,6 +40,8 @@ func (a *Agent) Aside(registry *tools.Registry, history []llm.Message, readOnly 
 		ReadOnly:      readOnly,
 		History:       withoutPendingCalls(history),
 	}
+	aside.SetVisuals(a.visualsNote())
+	return aside
 }
 
 // withoutPendingCalls is a copy of history without a last reply whose calls

@@ -18,6 +18,12 @@ const mmdcTimeout = 30 * time.Second
 // instead of HTML.
 const plainLabels = `{"htmlLabels":false,"flowchart":{"htmlLabels":false}}`
 
+// MermaidCLI tells whether mermaid-cli is installed, to draw any diagram.
+func MermaidCLI() bool {
+	_, err := exec.LookPath("mmdc")
+	return err == nil
+}
+
 // mermaidSVG draws a diagram with mermaid-cli when it is installed.
 func mermaidSVG(source string) ([]byte, bool) {
 	mmdc, err := exec.LookPath("mmdc")

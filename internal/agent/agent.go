@@ -119,6 +119,9 @@ type Agent struct {
 	// readers outside the agent's own goroutine.
 	Refresh func(ctx context.Context, reason CheckReason, model string, window int) ModelCheck
 	modelMu sync.RWMutex
+	// visuals says what the user's screen draws of an answer; modelMu
+	// guards it too.
+	visuals string
 
 	alwaysAllowed map[string]bool
 	queued        queue
@@ -590,7 +593,7 @@ func (a *Agent) announceBlocked(call llm.ToolCall, reason string, hooks Hooks) {
 func (a *Agent) request() llm.Request {
 	return llm.Request{
 		Model:     a.Model,
-		System:    a.System,
+		System:    a.system(),
 		Messages:  a.sentHistory(),
 		Tools:     a.Tools.Specs(a.History),
 		MaxTokens: a.MaxTokens,

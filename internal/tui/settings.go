@@ -406,6 +406,7 @@ func (m model) useSession(session Session) (tea.Model, tea.Cmd) {
 func (m *model) applyUI() tea.Cmd {
 	settings := m.session.Config.Render
 	m.printer.setImages(imagesFor(settings.Images, m.sixelTerminal))
+	m.tellVisuals()
 	useCellSize(settings.CellSize)
 	if useSyntaxTheme(settings.Syntax) {
 		m.printer.forgetMarkdown()

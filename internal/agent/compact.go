@@ -67,7 +67,7 @@ func (a *Agent) fixedPartTokens() int {
 }
 
 func (a *Agent) fixedPartBytes() int {
-	size := len(a.System)
+	size := len(a.system())
 	for _, spec := range a.Tools.Specs(a.History) {
 		size += len(spec.Name) + len(spec.Description) + len(spec.Schema)
 	}

@@ -324,6 +324,7 @@ sidebar = "auto"           # side panel of tasks and jobs when wide enough; "on"
 ui_fps = 20                # the most a plugin's canvas draws itself again a second
 keys = "default"           # "vim" for vim keys: modes, and ctrl+h/j/k/l between the panes
 status = "powerline"       # segments on backgrounds with arrows (needs a Nerd Font); "plain" for any font
+tell_model = true          # tell the model what its answers can show: local images, svg and mermaid, as far as this terminal draws them
 pill_left = "round"        # ends of pills, as /btw's, with a powerline status line:
 pill_right = "round"       # round, arrow, slant, flame, pixel or square; the right one also joins name and details
 pill_details = "segment"   # details beside the name: segment (a darker ground) or text (dim, after the pill)

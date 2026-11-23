@@ -924,6 +924,11 @@ func appearanceItems(_ model, menu *settingsMenu) []settingItem {
 				Description("a dot beside each file and folder of /tree and /view, green new, amber changed, red deleted\n/tree status turns it on and off for the session").
 				Affirmative("On").Negative("Off").Value(&d.treeStatus)
 		}},
+		{"Tell the model what is drawn", func(d *settingsDraft) string { return onOff(d.tellModel) }, func(d *settingsDraft) huh.Field {
+			return huh.NewConfirm().Title("Tell the model what is drawn").
+				Description("a few lines after the system prompt: local images, svg and mermaid blocks drawn as pictures, as far as this terminal draws them").
+				Affirmative("On").Negative("Off").Value(&d.tellModel)
+		}},
 	}, replyItems(menu)...)
 }
 

@@ -2,7 +2,7 @@ package agent
 
 // Test Traceability Table
 // | ID    | Category | Description                                                                 | Priority |
-// | AS-01 | Happy    | Aside has the main agent's model and history, without a reply still waiting for its results | P0 |
+// | AS-01 | Happy    | Aside has the main agent's model, prompt, what the screen draws and history, without a reply still waiting for its results | P0 |
 // | AS-02 | Security | A read-only aside blocks a call that changes something, without running it   | P0       |
 // | AS-03 | Happy    | ChangesFrom lists the calls that ran well and change something, not reads nor failures | P0 |
 
@@ -16,9 +16,10 @@ import (
 )
 
 func TestAside(t *testing.T) {
-	t.Run("AS-01 aside has the main agent's model and history, without a reply still waiting for its results", func(t *testing.T) {
+	t.Run("AS-01 aside has the main agent's model, prompt, what the screen draws and history, without a reply still waiting for its results", func(t *testing.T) {
 		main := newAgent(t, &scriptedProvider{})
 		main.Model, main.System = "qwen3", "be brief"
+		main.SetVisuals("draws mermaid")
 		main.History = []llm.Message{
 			{Role: llm.RoleUser, Text: "fix it"},
 			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("c1", "read", `{"path":"a.txt"}`)}},
@@ -26,7 +27,7 @@ func TestAside(t *testing.T) {
 
 		aside := main.Aside(main.Tools, main.History, true)
 
-		if aside.Model != "qwen3" || aside.System != "be brief" || len(aside.History) != 1 || aside.History[0].Text != "fix it" {
+		if aside.Model != "qwen3" || aside.system() != "be brief\n\ndraws mermaid" || len(aside.History) != 1 || aside.History[0].Text != "fix it" {
 			t.Errorf("aside = %q %q %+v", aside.Model, aside.System, aside.History)
 		}
 		if len(main.History) != 2 {

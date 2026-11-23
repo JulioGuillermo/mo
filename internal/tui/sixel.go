@@ -44,6 +44,7 @@ func (m model) terminalAnswered(attributes uv.PrimaryDeviceAttributesEvent) (tea
 	}
 	m.sixelTerminal = true
 	m.printer.setImages(imagesFor(m.session.Config.Render.Images, true))
+	m.tellVisuals()
 	return m, tea.Batch(tea.Raw(ansi.WindowOp(ansi.RequestCellSizeWinOp)), m.fitWidth())
 }
 

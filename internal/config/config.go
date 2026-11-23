@@ -482,6 +482,9 @@ type Render struct {
 	// TreeStatus marks each file and folder of the file trees with a dot in
 	// the colour of what git says of it; on unless false.
 	TreeStatus *bool `toml:"tree_status,omitempty"`
+	// TellModel tells the model what of its answers the screen draws:
+	// images, SVG and Mermaid; on unless false.
+	TellModel *bool `toml:"tell_model,omitempty"`
 }
 
 // The side panel's width in columns.
@@ -1194,6 +1197,9 @@ func mergeHarmless(base, layer Config) Config {
 	}
 	if layer.Render.TreeStatus != nil {
 		base.Render.TreeStatus = layer.Render.TreeStatus
+	}
+	if layer.Render.TellModel != nil {
+		base.Render.TellModel = layer.Render.TellModel
 	}
 	base.Render.Icons = override(base.Render.Icons, layer.Render.Icons)
 	base.Loop = mergeLoop(base.Loop, layer.Loop)
